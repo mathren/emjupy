@@ -58,8 +58,8 @@
     (define-key map (kbd "M-<up>") 'emjupy-move-cell-up)
     (define-key map (kbd "M-<down>") 'emjupy-move-cell-down)
     (define-key map (kbd "C-c C-c") 'code-cells-eval)
-    (define-key map (kbd "M-p") 'code-cells-backward-cell)
-    (define-key map (kbd "M-n") 'code-cells-forward-cell)
+    (define-key map (kbd "M-p") (lambda () (interactive) (code-cells-backward-cell 1)))
+    (define-key map (kbd "M-n") (lambda () (interactive) (code-cells-forward-cell 1)))
     map)
   "Keymap for emjupy-mode.")
 
@@ -73,7 +73,7 @@
         (unless (derived-mode-p 'poly-emjupy-mode) (poly-emjupy-mode))
         (code-cells-mode 1)
         ;; Associate with the existing client if one is active
-        (when-let ((client (jupyter-it)))
+        (when-let ((client (emjupy--get-client)))
           (jupyter-repl-associate-buffer client))
         (add-hook 'after-save-hook #'emjupy-sync-to-ipynb nil t))
     (code-cells-mode -1)))
