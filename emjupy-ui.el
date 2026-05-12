@@ -3,26 +3,30 @@
 (require 'emjupy-core)
 (require 'emjupy-io)
 
-;; Host and Inner modes for multi-syntax cells
 (define-hostmode emjupy-poly-hostmode :mode 'python-mode)
-
 (define-innermode emjupy-poly-markdown-innermode
-  :mode 'markdown-mode
-  :head-matcher "^# %% \\[markdown\\]\n"
-  :tail-matcher "^# %%"
-  :head-mode 'host
-  :tail-mode 'host)
-
+  :mode 'markdown-mode :head-matcher "^# %% \\[markdown\\]\n" :tail-matcher "^# %%" :head-mode 'host :tail-mode 'host)
 (define-innermode emjupy-poly-org-innermode
-  :mode 'org-mode
-  :head-matcher "^# %% \\[org\\]\n"
-  :tail-matcher "^# %%"
-  :head-mode 'host
-  :tail-mode 'host)
+  :mode 'org-mode :head-matcher "^# %% \\[org\\]\n" :tail-matcher "^# %%" :head-mode 'host :tail-mode 'host)
 
 (define-polymode poly-emjupy-mode
   :hostmode 'emjupy-poly-hostmode
   :innermodes '(emjupy-poly-markdown-innermode emjupy-poly-org-innermode))
+
+(defun emjupy-save-and-export-all ()
+  "Save and export to valid .ipynb format."
+  (interactive)
+  (let ((target-buffer (if (and (buffer-file-name) emjupy-mode)
+                           (current-buffer)
+                         (cl-find-if (lambda (b)
+                                       (and (buffer-local-value 'emjupy-mode b)
+                                            (buffer-file-name b)))
+                                     (buffer-list)))))
+    (if target-buffer
+        (with-current-buffer target-buffer
+          (save-buffer)
+          (emjupy-sync-to-ipynb))
+      (save-buffer))))
 
 (defun emjupy-cycle-type ()
   "Cycle cell type between Python, Markdown, and Org."
@@ -36,46 +40,32 @@
                       (t "# %% [markdown]"))))
         (replace-match n)))))
 
-(defun emjupy-move-cell-up ()
-  "Move current cell block up."
-  (interactive)
-  (code-cells-backward-cell)
-  (transpose-paragraphs 1)
-  (code-cells-backward-cell))
-
-(defun emjupy-move-cell-down ()
-  "Move current cell block down."
-  (interactive)
-  (code-cells-forward-cell)
-  (transpose-paragraphs -1))
-
 (defvar emjupy-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-t") 'emjupy-cycle-type)
     (define-key map (kbd "C-c C-e") 'emjupy-sync-to-ipynb)
     (define-key map (kbd "C-c C-r") 'emjupy-restart)
     (define-key map (kbd "C-c C-l") 'emjupy-connect)
-    (define-key map (kbd "M-<up>") 'emjupy-move-cell-up)
-    (define-key map (kbd "M-<down>") 'emjupy-move-cell-down)
     (define-key map (kbd "C-c C-c") 'code-cells-eval)
     (define-key map (kbd "M-p") (lambda () (interactive) (code-cells-backward-cell 1)))
     (define-key map (kbd "M-n") (lambda () (interactive) (code-cells-forward-cell 1)))
-    map)
-  "Keymap for emjupy-mode.")
+    (define-key map (kbd "C-x C-s") 'emjupy-save-and-export-all)
+    map))
 
 ;;;###autoload
 (define-minor-mode emjupy-mode
-  "Emjupy: Integrated Jupyter-Emacs workflow with .ipynb sync."
-  :lighter " emjupy"
-  :keymap emjupy-mode-map
+  "Emjupy: Integrated Jupyter-Emacs workflow."
+  :lighter " emjupy" :keymap emjupy-mode-map
   (if emjupy-mode
       (progn
         (unless (derived-mode-p 'poly-emjupy-mode) (poly-emjupy-mode))
         (code-cells-mode 1)
-        ;; Associate with the existing client if one is active
         (when-let ((client (emjupy--get-client)))
-          (jupyter-repl-associate-buffer client))
+          (ignore-errors (jupyter-repl-associate-buffer client)))
         (add-hook 'after-save-hook #'emjupy-sync-to-ipynb nil t))
     (code-cells-mode -1)))
+
+(add-hook 'jupyter-repl-mode-hook
+          (lambda () (local-set-key (kbd "C-x C-s") 'emjupy-save-and-export-all)))
 
 (provide 'emjupy-ui)

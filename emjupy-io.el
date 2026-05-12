@@ -1,40 +1,62 @@
 ;;; emjupy-io.el --- JSON persistence and reconciliation -*- lexical-binding: t; -*-
 (require 'json)
 (require 'code-cells)
-(require 'ox-md)
 
-(defun emjupy--calculate-fingerprint (text)
-  "Generate a hash for cell content."
-  (secure-hash 'sha256 (substring-no-properties text)))
-
-(defun emjupy--convert-org-to-md (start end)
-  "Convert Org syntax to Markdown for JSON compatibility."
-  (let ((org-text (buffer-substring-no-properties start end)))
-    (delete-region start end)
-    (insert (org-export-string-as org-text 'md t))))
+(defun emjupy--get-cell-content (start end)
+  "Extract text and split it into a list of lines with newlines, as Jupyter expects."
+  (let ((text (buffer-substring-no-properties start end)))
+    (with-temp-buffer
+      (insert text)
+      (goto-char (point-min))
+      (let (lines)
+        (while (not (eobp))
+          (push (concat (buffer-substring (line-beginning-position) (line-end-position)) "\n") lines)
+          (forward-line 1))
+        (vconcat (nreverse lines))))))
 
 ;;;###autoload
 (defun emjupy-sync-to-ipynb ()
-  "Export current buffer to .ipynb. Org cells are converted to Markdown."
+  "Export current buffer to a properly formatted .ipynb file for JupyterLab."
   (interactive)
-  (let* ((py-file (buffer-file-name))
-         (ipynb-file (concat (file-name-sans-extension py-file) ".ipynb"))
-         (temp-buffer (generate-new-buffer " *emjupy-export*")))
-    (copy-to-buffer temp-buffer (point-min) (point-max))
-    (with-current-buffer temp-buffer
-      (save-excursion
-        (goto-char (point-min))
-        (while (re-search-forward "^# %% \\[org\\]" nil t)
-          (replace-match "# %% [markdown]")
-          (forward-line 1)
-          (let ((s (point))
-                (e (save-excursion (if (re-search-forward code-cells-boundary-regexp nil t)
-                                       (match-beginning 0) (point-max)))))
-            (emjupy--convert-org-to-md s e))))
-      (let ((json-data (code-cells--to-ipynb)))
-        (with-temp-file ipynb-file
-          (let ((json-encoding-pretty-print t))
-            (insert (json-encode json-data))))))
-    (kill-buffer temp-buffer)))
+  (let ((py-file (buffer-file-name)))
+    (if (not py-file)
+        (message "Emjupy: No file associated with this buffer.")
+      (let* ((ipynb-file (concat (file-name-sans-extension py-file) ".ipynb"))
+             (cells []))
+        ;; Parse the buffer using code-cells' logic
+        (save-excursion
+          (goto-char (point-min))
+          (let ((nodes (code-cells--parse-cells (point-min) (point-max))))
+            (dolist (node nodes)
+              (let* ((start (car node))
+                     (end (cdr node))
+                     (header (buffer-substring-no-properties start (save-excursion (goto-char start) (line-end-position))))
+                     (type (cond ((string-match-p "\\[markdown\\]" header) "markdown")
+                                 ((string-match-p "\\[org\\]" header) "markdown")
+                                 (t "code")))
+                     ;; Strip the header line from the source
+                     (content-start (save-excursion (goto-char start) (forward-line 1) (point)))
+                     (source (emjupy--get-cell-content content-start end))
+                     (cell (list :cell_type type
+                                 :metadata (make-hash-table)
+                                 :source source)))
+                ;; Add execution count/outputs for code cells
+                (when (string= type "code")
+                  (setq cell (append cell (list :execution_count nil :outputs []))))
+                (setq cells (vconcat cells (list cell)))))))
+
+        ;; Construct the full Jupyter Notebook v4 object
+        (let* ((nb-data (list :cells cells
+                             :metadata (list :kernelspec (list :display_name "Python 3"
+                                                              :language "python"
+                                                              :name "python3")
+                                            :language_info (list :name "python"
+                                                                 :version "3.x"))
+                             :nbformat 4
+                             :nbformat_minor 5))
+               (json-encoding-pretty-print t))
+          (with-temp-file ipynb-file
+            (insert (json-encode nb-data)))
+          (message "Emjupy: Successfully exported %s" (file-name-nondirectory ipynb-file)))))))
 
 (provide 'emjupy-io)
