@@ -1,9 +1,9 @@
-;;; emjupy-ui.el --- Interaction and rendering -*- lexical-binding: t; -*-
+;;; emjupy-ui.el --- Interaction, rendering, and polymode -*- lexical-binding: t; -*-
 (require 'polymode)
-(require 'jupyter-repl)
 (require 'emjupy-core)
 (require 'emjupy-io)
 
+;; Host and Inner modes for multi-syntax cells
 (define-hostmode emjupy-poly-hostmode :mode 'python-mode)
 
 (define-innermode emjupy-poly-markdown-innermode
@@ -54,25 +54,27 @@
     (define-key map (kbd "C-c C-t") 'emjupy-cycle-type)
     (define-key map (kbd "C-c C-e") 'emjupy-sync-to-ipynb)
     (define-key map (kbd "C-c C-r") 'emjupy-restart)
+    (define-key map (kbd "C-c C-l") 'emjupy-connect)
     (define-key map (kbd "M-<up>") 'emjupy-move-cell-up)
     (define-key map (kbd "M-<down>") 'emjupy-move-cell-down)
     (define-key map (kbd "C-c C-c") 'code-cells-eval)
     (define-key map (kbd "M-p") 'code-cells-backward-cell)
     (define-key map (kbd "M-n") 'code-cells-forward-cell)
-    map))
+    map)
+  "Keymap for emjupy-mode.")
 
 ;;;###autoload
 (define-minor-mode emjupy-mode
-  "Emjupy: Integrated Jupyter-Emacs workflow."
+  "Emjupy: Integrated Jupyter-Emacs workflow with .ipynb sync."
   :lighter " emjupy"
   :keymap emjupy-mode-map
   (if emjupy-mode
       (progn
         (unless (derived-mode-p 'poly-emjupy-mode) (poly-emjupy-mode))
         (code-cells-mode 1)
-        ;; Auto-associate if a session exists
-        (when-let ((session (jupyter-current-session)))
-          (jupyter-repl-associate-buffer session))
+        ;; Associate with the existing client if one is active
+        (when-let ((client (jupyter-it)))
+          (jupyter-repl-associate-buffer client))
         (add-hook 'after-save-hook #'emjupy-sync-to-ipynb nil t))
     (code-cells-mode -1)))
 

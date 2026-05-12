@@ -1,4 +1,4 @@
-;;; emjupy-core.el --- Core kernel and connection management -*- lexical-binding: t; -*-
+;;; emjupy-core.el --- Core kernel management and session fixes -*- lexical-binding: t; -*-
 (require 'jupyter)
 (require 'jupyter-base)
 (require 'jupyter-server)
@@ -7,33 +7,38 @@
 (require 'jupyter-client)
 (require 'eglot)
 
-(defgroup emjupy nil "Jupyter integration for code-cells.el." :group 'programming)
+(defgroup emjupy nil
+  "Jupyter integration for code-cells.el."
+  :group 'programming)
 
 (defcustom emjupy-save-outputs t
   "If non-nil, save graphical and text outputs into the companion .ipynb file."
   :type 'boolean)
 
-;;;###autoload
-(defun emjupy-connect (port)
-  "Connect to a Jupyter kernel on PORT."
-  (interactive "nConnect to port: ")
-  ;; Safety check: ensure the server module is loaded
-  (unless (fboundp 'jupyter-run-server-session)
-    (require 'jupyter-server))
-  (let* ((session (jupyter-run-server-session :name (format "emjupy-%d" port) :port port))
-         (client (jupyter-session-client session)))
-    (jupyter-repl-associate-buffer session)
+;; BUG FIX: Patch the void 'state' variable in emacs-jupyter Issue #613
+(with-eval-after-load 'jupyter-repl
+  (defun jupyter-repl-sync-execution-state (client)
+    "Correctly define 'state' to prevent void-variable errors."
     (jupyter-kernel-info client
       (lambda (info)
-        (let ((py-path (plist-get (plist-get info :content) :executable)))
-          (setq-local eglot-server-programs `((python-mode . (,py-path "-m" "pylsp"))))
-          (eglot-ensure))))))
+        (let ((state (plist-get (plist-get info :content) :execution_state)))
+          (message "Kernel state: %s" (or state "unknown")))))))
+
+;;;###autoload
+(defun emjupy-connect (url)
+  "Connect to a Jupyter server URL and list available kernels/notebooks.
+Passes the URL as a keyword argument to satisfy the EIEIO constructor."
+  (interactive (list (read-string "Jupyter Server URL: " "http://localhost:8888")))
+  ;; The fix: use :url keyword to avoid the cl--assertion-failed error
+  (let ((server (jupyter-server :url url)))
+    (jupyter-server-list-kernels server)))
 
 (defun emjupy-restart ()
   "Restart the current jupyter kernel."
   (interactive)
-  (if-let ((session (jupyter-current-session)))
-      (jupyter-repl-restart-kernel session)
-    (message "No active session found.")))
+  ;; jupyter-it retrieves the client; jupyter-kernel gets the kernel object from it
+  (if-let ((client (jupyter-it)))
+      (jupyter-kernel-restart (jupyter-kernel client))
+    (message "No active jupyter client found in this buffer.")))
 
 (provide 'emjupy-core)
