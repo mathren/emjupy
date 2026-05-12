@@ -1,0 +1,10 @@
+;;; minimal setup to try
+(setq package-user-dir "/tmp/jpy-test/elpa")
+(package-initialize)
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+(package-refresh-contents)
+(package-install 'code-cells)
+(package-install 'jupyter)
+(package-install 'polymode)
+(package-install 'markdown-mode)
+(require 'emjupy-ui)

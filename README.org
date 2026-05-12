@@ -1,0 +1,97 @@
+#+TITLE: Emjupy
+#+author: Mathieu Renzo (with LLM help)
+
+Jupyter notebooks with remote kernel execution using emacs built-ins
+(=eglot= and =tramp=, completion frameworks like =vertico= + =corfu= +
+=orderless=) while maintaining compatibility with standard =*.ipynb= for
+sharing with non-emacs users.
+
+Allows for comment cells in =org-mode= (automatically converted to
+=markdown= when saving a =ipynb=).
+
+* Try it with emacs -Q
+To test this in an isolated environment without touching your current config:
+
+1. Create a temporary directory:
+   #+begin_src bash
+   mkdir -p /tmp/
+   #+end_src
+
+2. Save the files above into ~/tmp/~.
+
+3. Launch Emacs with this invocation:
+   #+begin_src bash
+   emacs -Q -L . -l quicktry.el test_notebook.py
+   #+end_src
+   =-Q= ignores your setup of emacs, =-L .= installs *locally* the
+   requirements (to not clutter your emacs installation).
+
+4. Inside Emacs, run =M-x jupyter-cells-mode=.
+
+* Dependencies
+
+- =code-cells.el= and =tramp= for editing
+- =emacs-jupyter= to interact with the kernel
+- =eglot= for LSP capabilities (reading the environment from the kernel)
+- Your Emacs completion framework (e.g. =vertico= + =corfu= + =orderless=)
+- =polymode= for syntax highlighting in =markdown=, =org=, and =python= cells.
+
+* Features
+- *Shadow Notebook*: Automatically saves to =.ipynb= with outputs for sharing.
+- *Reconciliation*: Clears stale outputs if code diverges from JSON.
+- *Truth in Script*: Your Python file is the ultimate truth in case of
+  conflict, output cells are cleared if code is overwritten.
+
+* Comparison with other packages
+Comparing =emjupy= (based on =code-cells.el=) to =Org Babel= involves
+a choice between a "Script-First" workflow and a "Document-First"
+workflow.
+
+While =Org Babel= is the gold standard for literate programming in
+Emacs, this new package addresses specific friction points regarding
+external compatibility and remote execution.
+
+** emjupy
+
+- *Structure*: The file is a valid =.py= script. The UI uses "invisible"
+  boundaries (=# %%=) to simulate cells. You get full IDE power (=eglot=,
+  =corfu=) directly in the buffer without switching windows.
+- *Visuals*: By using =polymode=, =markdown= and/or =org= cells have native
+  syntax highlighting, but the code remains primary. Images are
+  handled as ephemeral overlays, more closely mimicking Jupyter
+  Lab or VS Code notebooks.
+- *Robustness of connection:* Uses the Jupyter Protocol (ZeroMQ). This
+  is a decoupled architecture. You can connect to a remote kernel via
+  an SSH tunnel (e.g., =localhost:8888=).
+- *Resilience*: If your local emacs crashes or your ssh connection
+  drops, the remote kernel continues running. When you reconnect, the
+  kernel state (variables, long-running loops) is preserved. It is
+  significantly more robust for long-running data science tasks on
+  heavy-duty remote servers.
+- Non-emacs compatibility*: the output is a standard =.py= file (which
+  anyone can run) and a standard =.ipynb= file (which any jupyter setup
+  user can open). You can share the generated =.ipynb= to a colleague
+  using VS Code, PyCharm, or Google Colab, and they will see your
+  code, your markdown, and your graphical outputs exactly as you left
+  them.
+
+** EIN
+I have used this throughout my PhD and postdocs, it's a great package,
+but currently unmaintained and with multiple quirks.
+
+** Org Babel
+
+- *Structure*: Code is contained within =#+begin_src= blocks. You edit in
+  =org=, and to get full IDE features (LSP, indentation), you typically
+  must pop into a separate buffer using =C-c '=.
+- *Visuals*: Results (text or images) are inserted directly into the =org=
+  buffer. It feels like a structured document or a lab notebook.
+- *Robustness of connection*: relies heavily on =tramp=. Executing a block
+  on a remote server requires =tramp= to handle the communication for
+  every execution. While powerful, it can be sluggish and prone to
+  "hanging" if the SSH connection flickers, as the emacs process is
+  tightly coupled to the remote shell.
+- *Non-emacs compatibility*: Low Compatibility. Non-emacs users cannot
+  run an =.org= file natively. You must export it to html or pdf. If you
+  want to share "runnable" code, you have to "tangle" the =org= file
+  into a =.py= file, but then you lose the narrative and the outputs.
