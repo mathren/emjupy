@@ -16,17 +16,30 @@
 
 ;;;###autoload
 (defun emjupy-sync-to-ipynb ()
-  "Export current buffer to a properly formatted .ipynb file for JupyterLab."
+  "Export current buffer to a properly formatted .ipynb file."
   (interactive)
   (let ((py-file (buffer-file-name)))
     (if (not py-file)
         (message "Emjupy: No file associated with this buffer.")
       (let* ((ipynb-file (concat (file-name-sans-extension py-file) ".ipynb"))
              (cells []))
-        ;; Parse the buffer using code-cells' logic
         (save-excursion
           (goto-char (point-min))
-          (let ((nodes (code-cells--parse-cells (point-min) (point-max))))
+          ;; Compatible with 2024 code-cells: manual boundary collection
+          (let (nodes)
+            (save-excursion
+              (goto-char (point-min))
+              (while (not (eobp))
+                (let ((start (point))
+                      (end (save-excursion
+                             (if (re-search-forward code-cells-boundary-regexp nil t)
+                                 (match-beginning 0)
+                               (point-max)))))
+                  (push (cons start end) nodes)
+                  (goto-char end)
+                  (unless (eobp) (forward-line 1)))))
+            (setq nodes (nreverse nodes))
+
             (dolist (node nodes)
               (let* ((start (car node))
                      (end (cdr node))
@@ -35,28 +48,25 @@
                                  ((string-match-p "\\[org\\]" header) "markdown")
                                  (t "code")))
                      ;; Strip the header line from the source
-                     (content-start (save-excursion (goto-char start) (forward-line 1) (point)))
+                     (content-start (save-excursion (goto-char start) (if (looking-at code-cells-boundary-regexp) (forward-line 1)) (point)))
                      (source (emjupy--get-cell-content content-start end))
                      (cell (list :cell_type type
                                  :metadata (make-hash-table)
                                  :source source)))
-                ;; Add execution count/outputs for code cells
                 (when (string= type "code")
                   (setq cell (append cell (list :execution_count nil :outputs []))))
                 (setq cells (vconcat cells (list cell)))))))
 
-        ;; Construct the full Jupyter Notebook v4 object
         (let* ((nb-data (list :cells cells
-                             :metadata (list :kernelspec (list :display_name "Python 3"
-                                                              :language "python"
-                                                              :name "python3")
-                                            :language_info (list :name "python"
-                                                                 :version "3.x"))
-                             :nbformat 4
-                             :nbformat_minor 5))
+                             :metadata (list :kernelspec (list :display_name "Python 3" :language "python" :name "python3")
+                                            :language_info (list :name "python" :version "3.x"))
+                             :nbformat 4 :nbformat_minor 5))
                (json-encoding-pretty-print t))
-          (with-temp-file ipynb-file
-            (insert (json-encode nb-data)))
+          (let ((json-encoding-pretty-print t)
+		(json-encoding-default-indentation "  "))
+	    (with-temp-file ipynb-file
+	      (set-buffer-file-coding-system 'utf-8)
+	      (insert (json-encode nb-data))))
           (message "Emjupy: Successfully exported %s" (file-name-nondirectory ipynb-file)))))))
 
 (provide 'emjupy-io)

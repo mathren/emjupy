@@ -21,12 +21,13 @@ To test this in an isolated environment without touching your current config:
 
 3. Launch Emacs with this invocation:
    #+begin_src bash
-   emacs -Q -L . -l quicktry.el test_notebook.py
+   emacs -Q -L . -l quicktry.el
    #+end_src
    =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-4. Inside Emacs, run =M-x jupyter-cells-mode=.
+4. Run =emjupy-connect= to be prompted for the port where the notebook
+   is running (possibly through an ssh tunnel).
 
 * Dependencies
 
@@ -41,6 +42,17 @@ To test this in an isolated environment without touching your current config:
 - *Reconciliation*: Clears stale outputs if code diverges from JSON.
 - *Truth in Script*: Your Python file is the ultimate truth in case of
   conflict, output cells are cleared if code is overwritten.
+
+* Testing
+
+To test the connectivity to the kernel, launch a kernel on port
+=8.8.8.8= without password:
+
+#+BEGIN_SRC bash
+jupyter-notebook --no-browser --port=888  --ServerApp.token='' --ServerApp.password=''
+#+END_SRC
+
+Then open =emjupy-test.el=, run =M-x eval-buffer= and then test with =M-x ert RET=.
 
 * Comparison with other packages
 Comparing =emjupy= (based on =code-cells.el=) to =Org Babel= involves
@@ -95,3 +107,12 @@ but currently unmaintained and with multiple quirks.
   run an =.org= file natively. You must export it to html or pdf. If you
   want to share "runnable" code, you have to "tangle" the =org= file
   into a =.py= file, but then you lose the narrative and the outputs.
+
+* TODO
+
+- connection to local server failing: proposes to launch a server but fails
+- =jupyter-repl= buffer UI improvements
+- check saving properly exports =ipynb=
+- check that it works with existing notebooks (implement function akin
+  to =ein:notebooklist-login=)
+- test on =tramp=
