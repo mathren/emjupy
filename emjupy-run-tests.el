@@ -19,5 +19,9 @@
 (add-to-list 'load-path default-directory)
 (require 'emjupy)
 
+(message "Dependencies loaded. Running emjupy step-by-step ERT tests...")
+
+;; Execute tests and output results to stdout
+(ert-run-tests-batch-and-exit)
 
 ;;; quicktry.el ends here
