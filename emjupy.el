@@ -33,7 +33,7 @@
   id name server ws status pending)
 
 (cl-defstruct emjupy-cell
-  type source outputs metadata overlay output-ov)
+  type exec-count source outputs metadata overlay output-ov)
 
 (cl-defstruct emjupy-notebook
   path server kernel cells metadata buffer)
@@ -95,15 +95,12 @@
           (setf (emjupy-notebook-path nb-struct) path)
           (setf (emjupy-notebook-buffer nb-struct) buf)
 
-          (with-current-buffer buf
+	  (with-current-buffer buf
             (let ((inhibit-read-only t))
               (erase-buffer)
-              ;; Basic rendering loop of cells to screen
+              ;; Loop through and draw all cells
               (cl-loop for cell across (emjupy-notebook-cells nb-struct)
-                       do
-                       (insert (format "=== [%s Cell] ===\n" (upcase (symbol-name (emjupy-cell-type cell)))))
-                       (insert (emjupy-cell-source cell))
-                       (insert "\n\n")))
+                       do (emjupy--render-cell cell)))
             (setq emjupy--buffer-notebook nb-struct))
 
           (switch-to-buffer buf)
@@ -210,10 +207,9 @@
              do (aset (emjupy-notebook-cells nb) i
                       (make-emjupy-cell
                        :type (intern (gethash "cell_type" c-data))
+                       :exec-count (gethash "execution_count" c-data)
                        :source (let ((src (gethash "source" c-data)))
-                                 (if (vectorp src)
-                                     (mapconcat #'identity src "")
-                                   src))
+                                 (if (vectorp src) (mapconcat #'identity src "") src))
                        :outputs (gethash "outputs" c-data)
                        :metadata (gethash "metadata" c-data))))
     nb))
@@ -246,6 +242,71 @@
 ;; =============================================================================
 ;; 4. Output Rendering
 ;; =============================================================================
+
+(defun emjupy--fontify-code (beg end)
+  "Apply python-mode syntax highlighting to the region."
+  (let ((font-lock-mode t)
+        (major-mode 'python-mode))
+    (unless (featurep 'python) (require 'python))
+    (font-lock-fontify-region beg end)))
+
+(defun emjupy--render-cell (cell)
+  "Render a CELL at point using overlays for the visual boundary boxes."
+  (let* ((type (emjupy-cell-type cell))
+         (source (emjupy-cell-source cell))
+         (outputs (emjupy-cell-outputs cell))
+         (exec-val (emjupy-cell-exec-count cell))
+         (exec-str (if exec-val (number-to-string exec-val) " "))
+         (src-start (point)))
+
+    ;; 1. Insert and fontify the source code
+    (insert (if (string-empty-p source) "\n" source))
+    (unless (string-suffix-p "\n" source) (insert "\n"))
+
+    ;; Tag the text with the struct so we can easily look it up later
+    (put-text-property src-start (point) 'emjupy-cell cell)
+    (when (eq type 'code)
+      (emjupy--fontify-code src-start (point)))
+
+    ;; 2. Create the Source Overlay (Draws the top box and bottom line)
+    (let* ((ov (make-overlay src-start (point)))
+           (header (propertize (format "┌─ [In: %s] %s ──────────────────────────────────────────────────────────────────────────────────────────\n"
+                                       exec-str (if (eq type 'code) "python" "markdown"))
+                               'face 'shadow))
+           ;; If there are outputs, we skip the bottom line here and let the output box draw it
+           (footer (if (or (not outputs) (= (length outputs) 0))
+                       (propertize "└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘\n" 'face 'shadow)
+                     "")))
+      (overlay-put ov 'before-string header)
+      (overlay-put ov 'after-string footer)
+      (setf (emjupy-cell-overlay cell) ov))
+
+    ;; 3. Insert and box the Outputs (if any)
+    (when (and (eq type 'code) outputs (> (length outputs) 0))
+      (let ((out-start (point)))
+        (cl-loop for out across outputs
+                 do (let ((out-type (gethash "output_type" out)))
+                      (cond
+                       ((string= out-type "stream")
+                        (insert (gethash "text" out)))
+                       ((string= out-type "execute_result")
+                        (let ((data (gethash "data" out)))
+                          (when (gethash "text/plain" data)
+                            (insert (gethash "text/plain" data) "\n")))))))
+
+        (unless (string-suffix-p "\n" (buffer-substring (max (point-min) (- (point) 1)) (point)))
+          (insert "\n"))
+
+        ;; Create Output Overlay
+        (let* ((ov (make-overlay out-start (point)))
+               (header (propertize (format "┌─ [Out: %s] ─────────────────────────────────\n" exec-str) 'face 'shadow))
+               (footer (propertize "└─────────────────────────────────────────────┘\n" 'face 'shadow)))
+          (overlay-put ov 'before-string header)
+          (overlay-put ov 'after-string footer)
+          (setf (emjupy-cell-output-ov cell) ov))))
+
+    ;; Gap between cells
+    (insert "\n")))
 
 (defun emjupy--render-image-output (base64-string)
   "Convert BASE64-STRING from cell output into an Emacs image descriptor."
