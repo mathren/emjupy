@@ -30,6 +30,9 @@
 (defvar emjupy--xsrf-token nil
   "The XSRF token automatically extracted from the Jupyter server.")
 
+(defvar emjupy--current-notebook-buffer nil
+  "Buffer of the currently active emjupy notebook.")
+
 (cl-defstruct emjupy-server
   host port token base-url)
 
@@ -57,6 +60,7 @@
     (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
+    (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
 
     ;; Navigation
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
@@ -81,7 +85,7 @@
 ;; =============================================================================
 
 (defun emjupy-login (url token)
-  "Connect to a Jupyter server and fetch available notebooks."
+  "Connect to a Jupyter server, open a notebook, and attach a fresh kernel."
   (interactive "sJupyter Server URL (e.g., localhost:8888) or port (e.g., 8888): \nsToken: ")
   (let ((clean-url (if (string-match-p "^[0-9]+$" url)
                        (concat "localhost:" url)
@@ -94,7 +98,14 @@
       (error nil))
 
     (message "Logging into %s..." clean-url)
-    (emjupy-list-notebooks)))
+    (emjupy-list-notebooks)
+
+    ;; Streamline setup: attach a fresh kernel right away so C-c C-z is only
+    ;; needed if you want to pick an already-running kernel instead.
+    (let* ((parts (split-string clean-url ":"))
+           (host (car parts))
+           (port (or (cadr parts) "8888")))
+      (emjupy--spawn-and-connect-kernel host port token))))
 
 
 (defun emjupy-list-notebooks ()
@@ -143,6 +154,7 @@
             (setq emjupy--buffer-notebook nb-struct))
 
           (switch-to-buffer buf)
+          (setq emjupy--current-notebook-buffer buf)
           (message "Opened notebook: %s. Press C-c C-z to select or spawn a kernel." path))))))
 
 (defun emjupy-create-notebook ()
@@ -315,21 +327,28 @@
   "Re-render all cell overlays in current buffer. If TARGET-CELL is given, move point to it."
   (when emjupy--buffer-notebook
     (let ((inhibit-read-only t)
-          (cells (emjupy-notebook-cells emjupy--buffer-notebook)))
+          (cells (emjupy-notebook-cells emjupy--buffer-notebook))
+          (target-start nil))
       ;; Delete old overlays
       (cl-loop for cell across cells
                do (when (emjupy-cell-overlay cell)
                     (delete-overlay (emjupy-cell-overlay cell))
                     (setf (emjupy-cell-overlay cell) nil))
-                  (when (emjupy-cell-output-ov cell)
-                    (delete-overlay (emjupy-cell-output-ov cell))
-                    (setf (emjupy-cell-output-ov cell) nil)))
+               (when (emjupy-cell-output-ov cell)
+                 (delete-overlay (emjupy-cell-output-ov cell))
+                 (setf (emjupy-cell-output-ov cell) nil)))
       (erase-buffer)
+      ;; Render every cell first; only move point afterward. Jumping point
+      ;; back to target-cell mid-loop would make later `insert' calls land
+      ;; inside target-cell's own overlay (which then grows to swallow
+      ;; them), shoving it -- and its output -- to the end of the buffer.
       (cl-loop for cell across cells
                do (let ((start (point)))
                     (emjupy--render-cell cell)
                     (when (eq cell target-cell)
-                      (goto-char start)))))))
+                      (setq target-start start))))
+      (when target-start
+        (goto-char target-start)))))
 
 (defun emjupy-insert-cell-below ()
   "Insert a new empty code cell below the cell at point."
@@ -376,6 +395,17 @@
       (setq cells (delete curr-cell cells))
       (setf (emjupy-notebook-cells nb) (vconcat cells))
       (emjupy--rerender-notebook))))
+
+(defun emjupy-cycle-cell-type ()
+  "Cycle the cell at point between `code' and `markdown'."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let ((cell (get-text-property (point) 'emjupy-cell)))
+    (unless cell
+      (user-error "No cell found at point"))
+    (setf (emjupy-cell-type cell)
+          (if (eq (emjupy-cell-type cell) 'code) 'markdown 'code))
+    (emjupy--rerender-notebook cell)))
 
 (defun emjupy-next-cell ()
   "Move point to the next cell."
@@ -455,7 +485,7 @@
   "Append OUTPUT-HASH frame to CELL outputs and visually refresh the notebook overlay."
   (let ((existing (append (or (emjupy-cell-outputs cell) []) nil)))
     (setf (emjupy-cell-outputs cell) (vconcat (append existing (list output-hash))))
-    (when-let ((buf (and emjupy--buffer-notebook (emjupy-notebook-buffer emjupy--buffer-notebook))))
+    (when-let ((buf emjupy--current-notebook-buffer))
       (when (buffer-live-p buf)
         (with-current-buffer buf
           (emjupy--rerender-notebook cell))))))
@@ -511,6 +541,10 @@
                (count (gethash "execution_count" content)))
           (setf (emjupy-cell-exec-count cell) count)
           (remhash parent-id emjupy--pending-requests)
+          (when-let ((buf emjupy--current-notebook-buffer))
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (emjupy--rerender-notebook cell))))
           (message "[emjupy] Cell execution complete. [In: %s]" count)))))))
 
 (defun emjupy-execute-cell-at-point ()
@@ -523,11 +557,15 @@
     (unless cell
       (user-error "No cell found at point"))
 
-    ;; 1. Sync buffer edits back into the cell struct
-    (emjupy--sync-cell-source-from-buffer cell)
+    ;; 1. Sync buffer edits back into ALL cells (not just this one) --
+    ;; the upcoming rerender rebuilds the whole buffer from cell structs,
+    ;; so unsynced edits sitting in other cells would otherwise be lost.
+    (emjupy--sync-all-cells)
 
-    ;; 2. Clear previous outputs for rerun
+    ;; 2. Clear previous outputs for rerun so a stale output box doesn't
+    ;;    linger while the new run is in flight.
     (setf (emjupy-cell-outputs cell) [])
+    (emjupy--rerender-notebook cell)
 
     ;; 3. Build execution payload
     (let* ((code (emjupy-cell-source cell))
@@ -557,6 +595,15 @@
            :on-close (lambda (_ws) (message "[emjupy] Kernel WebSocket closed."))
            :on-error (lambda (_ws type err) (message "[emjupy] WebSocket Error (%s): %s" type err))))))
 
+(defun emjupy--spawn-and-connect-kernel (host port token)
+  "Start a fresh Python 3 kernel on the server and connect to it via websocket."
+  (let ((payload (make-hash-table :test 'equal)))
+    (puthash "name" "python3" payload)
+    (let* ((res (emjupy--http-request "POST" emjupy--current-server "/api/kernels" (json-serialize payload)))
+           (new-id (gethash "id" res)))
+      (message "Started Python 3 kernel (%s). Connecting..." new-id)
+      (emjupy-connect-kernel host port new-id token))))
+
 (defun emjupy-connect-kernel-interactive ()
   "Select an existing kernel or spawn a new Python 3 kernel interactively."
   (interactive)
@@ -581,12 +628,7 @@
              (token (or (emjupy-server-token emjupy--current-server) "")))
 
         (if (string= choice "[Start New Python 3 Kernel]")
-            (let* ((payload (make-hash-table :test 'equal)))
-              (puthash "name" "python3" payload)
-              (let* ((res (emjupy--http-request "POST" emjupy--current-server "/api/kernels" (json-serialize payload)))
-                     (new-id (gethash "id" res)))
-                (message "Started Python 3 kernel (%s). Connecting..." new-id)
-                (emjupy-connect-kernel host port new-id token)))
+            (emjupy--spawn-and-connect-kernel host port token)
           (let ((selected-id (gethash choice kernel-map)))
             (message "Connecting to existing kernel %s..." selected-id)
             (emjupy-connect-kernel host port selected-id token)))))))
@@ -594,6 +636,19 @@
 ;; =============================================================================
 ;; 7. Visual Rendering Overlays
 ;; =============================================================================
+
+(defconst emjupy--box-width 80
+  "Target character width for cell boundary box-drawing lines.")
+
+(defun emjupy--box-header (label)
+  "Return an `emjupy--box-width'-column box-drawing header line with LABEL."
+  (let* ((prefix (format "┌─ %s " label))
+         (fill (max 0 (- emjupy--box-width (length prefix)))))
+    (concat prefix (make-string fill ?─) "\n")))
+
+(defun emjupy--box-footer ()
+  "Return an `emjupy--box-width'-column box-drawing footer line."
+  (concat "└" (make-string (max 0 (- emjupy--box-width 2)) ?─) "┘\n"))
 
 (defun emjupy--fontify-code (beg end)
   "Apply python-mode syntax highlighting to the region."
@@ -610,6 +665,9 @@
          (exec-val (emjupy-cell-exec-count cell))
          ;; Safely handle :null values from unexecuted cells
          (exec-str (if (numberp exec-val) (number-to-string exec-val) " "))
+         ;; Only show the output box when the cell actually has output --
+         ;; e.g. a bare `import numpy as np' shouldn't grow an empty box.
+         (has-outputs (and (eq type 'code) outputs (> (length outputs) 0)))
          (src-start (point)))
 
     ;; 1. Insert source code and tag text
@@ -622,18 +680,17 @@
 
     ;; 2. Source Box Overlay
     (let* ((ov (make-overlay src-start (point)))
-           (header (propertize (format "┌─ [In: %s] %s ──────────────────────────────────────────────────────────────────────────────────────────\n"
-                                       exec-str (if (eq type 'code) "python" "markdown"))
+           (header (propertize (emjupy--box-header
+                                 (format "[In: %s] %s" exec-str
+                                         (if (eq type 'code) "python" "markdown")))
                                'face 'shadow))
-           (footer (if (or (not outputs) (= (length outputs) 0))
-                       (propertize "└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘\n" 'face 'shadow)
-                     "")))
+           (footer (propertize (emjupy--box-footer) 'face 'shadow)))
       (overlay-put ov 'before-string header)
       (overlay-put ov 'after-string footer)
       (setf (emjupy-cell-overlay cell) ov))
 
     ;; 3. Output Box Overlay
-    (when (and (eq type 'code) outputs (> (length outputs) 0))
+    (when has-outputs
       (let ((out-start (point)))
         (cl-loop for out across outputs
                  do (let ((out-type (gethash "output_type" out)))
@@ -657,8 +714,8 @@
           (insert "\n"))
 
         (let* ((ov (make-overlay out-start (point)))
-               (header (propertize (format "┌─ [Out: %s] ─────────────────────────────────\n" exec-str) 'face 'shadow))
-               (footer (propertize "└─────────────────────────────────────────────┘\n" 'face 'shadow)))
+               (header (propertize (emjupy--box-header (format "[Out: %s]" exec-str)) 'face 'shadow))
+               (footer (propertize (emjupy--box-footer) 'face 'shadow)))
           (overlay-put ov 'before-string header)
           (overlay-put ov 'after-string footer)
           (setf (emjupy-cell-output-ov cell) ov))))
