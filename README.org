@@ -63,7 +63,6 @@ emacs -batch -Q -L . -l emjupy-run-tests.el
 | =ein=            | HTTP + WebSocket  | Sunset 2023; polymode + fragile overlay; no undo; no eglot                                       |
 | =emacs-jupyter=  | ZMQ directly      | Needs =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=     | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                       |
-| EIN greenfield | Overlay rewrite   | Still in early development (2025); same polymode issues                                          |
 
 ** Key insight: use the browser's transport, not ZMQ
 
