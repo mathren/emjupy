@@ -21,19 +21,14 @@ sharing with non-emacs users.
 * Try it with =emacs -Q=
 To test this in an isolated environment without touching your current config:
 
-1. Create a temporary directory:
-   #+begin_src bash
-   mkdir -p /tmp/
-   #+end_src
-
-2. Launch Emacs with:
+1. Launch Emacs with:
    #+begin_src bash
    emacs -Q -L . -l quicktry.el
    #+end_src
    =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-3. Run =emjupy-connect= to be prompted for the port where the notebook
+3. Run =emjupy-login= to be prompted for the port where the notebook
    is running (possibly through an ssh tunnel), connect to the
    associated kernel, and offer in the minibuffer a list of notebooks.
 
