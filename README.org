@@ -18,8 +18,7 @@ sharing with non-emacs users.
   reconnect emacs)
 - =ein=-like workflow and key bindings
 
-
-* Try it with emacs -Q
+* Try it with =emacs -Q=
 To test this in an isolated environment without touching your current config:
 
 1. Create a temporary directory:
@@ -35,16 +34,24 @@ To test this in an isolated environment without touching your current config:
    requirements (to not clutter your emacs installation).
 
 3. Run =emjupy-connect= to be prompted for the port where the notebook
-   is running (possibly through an ssh tunnel).
+   is running (possibly through an ssh tunnel), connect to the
+   associated kernel, and offer in the minibuffer a list of notebooks.
+
+On a plain =emacs= installation, you should see something like:
+
+#+DOWNLOADED: screenshot @ 2026-07-26 10:19:19
+[[file:.org_notes_figures/Try_it_with_=emacs_-Q=/2026-07-26_10-19-19_screenshot.png]]
 
 * Testing
 
 To test the connectivity to the kernel, launch a kernel on port
-=8.8.8.8= without password:
+=8888= without password:
 
 #+BEGIN_SRC bash
  jupyter-notebook --no-browser --port=8888 --IdentityProvider.token='abc' --NotebookApp.token='abc'
 #+END_SRC
+
+then launch emacs, run =emjupy-login=, and follow the minibuffer prompts.
 
 You can run the =emjupy= unit tests with:
 
@@ -52,8 +59,30 @@ You can run the =emjupy= unit tests with:
 emacs -batch -Q -L . -l emjupy-run-tests.el
 #+end_src
 
+* Landscape of emacs/jupyter packages
 
-* Developing
+** What exists and why we don't use it
 
-Run the function =emjupy-login=, provide the port (e.g., =8.8.8.8=),
-password or token, and then you should get a list of notebooks.
+| Package        | Approach          | Limitations                                                                                      |
+|----------------+-------------------+--------------------------------------------------------------------------------------------------|
+| =ein=            | HTTP + WebSocket  | Sunset 2023; polymode + fragile overlay; no undo; no eglot                                       |
+| =emacs-jupyter=  | ZMQ directly      | Needs =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
+| =ob-jupyter=     | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                       |
+| EIN greenfield | Overlay rewrite   | Still in early development (2025); same polymode issues                                          |
+
+** Key insight: use the browser's transport, not ZMQ
+
+When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
+
+- =GET  /api/kernels=          \rightarrow list running kernels
+- =POST /api/kernels=          \rightarrow start a kernel
+- =GET  /api/sessions=         \rightarrow list sessions (kernel ↔ notebook pairs)
+- =POST /api/sessions=         \rightarrow create/attach session
+- =GET  /api/contents=         \rightarrow list notebooks
+- =GET  /api/contents/<path>=  \rightarrow fetch notebook JSON
+- =PUT  /api/contents/<path>=  \rightarrow save notebook JSON
+- =WS   /api/kernels/<id>/channels= \rightarrow Jupyter wire protocol over WebSocket
+
+This is exactly what every browser-based client (JupyterLab, Classic Notebook)
+uses. It works transparently through an SSH tunnel, survives reconnects, and
+requires only =url.el= (built-in) and =websocket.el= (GNU ELPA, zero C deps).

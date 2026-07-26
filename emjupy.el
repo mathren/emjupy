@@ -522,6 +522,16 @@
           (puthash "data" data-obj out-hash)
           (emjupy--append-output-to-cell cell out-hash)))
 
+       ;; Rich display data -- this is how matplotlib's inline figure
+       ;; actually arrives (separately from the execute_result text repr)
+       ((string= msg-type "display_data")
+        (let* ((content (gethash "content" data))
+               (data-obj (gethash "data" content))
+               (out-hash (make-hash-table :test 'equal)))
+          (puthash "output_type" "display_data" out-hash)
+          (puthash "data" data-obj out-hash)
+          (emjupy--append-output-to-cell cell out-hash)))
+
        ;; Python Error Tracebacks
        ((string= msg-type "error")
         (let* ((content (gethash "content" data))
@@ -697,10 +707,18 @@
                       (cond
                        ((string= out-type "stream")
                         (insert (gethash "text" out)))
-                       ((string= out-type "execute_result")
-                        (let ((data (gethash "data" out)))
-                          (when (gethash "text/plain" data)
-                            (insert (gethash "text/plain" data) "\n"))))
+                       ((or (string= out-type "execute_result")
+                            (string= out-type "display_data"))
+                        (let* ((data (gethash "data" out))
+                               (png (gethash "image/png" data))
+                               (jpeg (gethash "image/jpeg" data)))
+                          (cond
+                           (png (insert-image (emjupy--render-image-output png 'png))
+                                (insert "\n"))
+                           (jpeg (insert-image (emjupy--render-image-output jpeg 'jpeg))
+                                 (insert "\n"))
+                           ((gethash "text/plain" data)
+                            (insert (gethash "text/plain" data) "\n")))))
                        ((string= out-type "error")
                         (let ((ename (gethash "ename" out))
                               (evalue (gethash "evalue" out))
@@ -722,10 +740,10 @@
 
     (insert "\n")))
 
-(defun emjupy--render-image-output (base64-string)
-  "Convert BASE64-STRING output into an Emacs image object."
+(defun emjupy--render-image-output (base64-string &optional type)
+  "Convert BASE64-STRING output into an Emacs image object of TYPE (default png)."
   (let ((image-data (base64-decode-string base64-string)))
-    (create-image image-data 'png t)))
+    (create-image image-data (or type 'png) t)))
 
 (defun emjupy-restart-kernel (kernel)
   "Issue restart request to KERNEL via HTTP API."
