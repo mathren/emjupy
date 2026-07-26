@@ -61,6 +61,11 @@
     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
+    (define-key map (kbd "M-<up>")   #'emjupy-move-cell-up)
+    (define-key map (kbd "M-<down>") #'emjupy-move-cell-down)
+
+    ;; Kernel
+    (define-key map (kbd "C-c C-x C-r") #'emjupy-restart-kernel)
 
     ;; Navigation
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
@@ -102,10 +107,8 @@
 
     ;; Streamline setup: attach a fresh kernel right away so C-c C-z is only
     ;; needed if you want to pick an already-running kernel instead.
-    (let* ((parts (split-string clean-url ":"))
-           (host (car parts))
-           (port (or (cadr parts) "8888")))
-      (emjupy--spawn-and-connect-kernel host port token))))
+    (let* ((hp (emjupy--server-host-port)))
+      (emjupy--spawn-and-connect-kernel (car hp) (cdr hp) token))))
 
 
 (defun emjupy-list-notebooks ()
@@ -384,6 +387,36 @@
     (setf (emjupy-notebook-cells nb) (vconcat cells))
     (emjupy--rerender-notebook new-cell)))
 
+(defun emjupy-move-cell-up ()
+  "Move the cell at point up, swapping it with the cell above.
+Since a cell's output lives inside its own struct rather than as a
+separate entity, the output always travels with its cell automatically."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
+         (cell (get-text-property (point) 'emjupy-cell))
+         (idx (cl-position cell cells)))
+    (if (or (not idx) (= idx 0))
+        (message "[emjupy] Cell is already at the top.")
+      (let ((above (aref cells (1- idx))))
+        (aset cells (1- idx) cell)
+        (aset cells idx above))
+      (emjupy--rerender-notebook cell))))
+
+(defun emjupy-move-cell-down ()
+  "Move the cell at point down, swapping it with the cell below."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
+         (cell (get-text-property (point) 'emjupy-cell))
+         (idx (cl-position cell cells)))
+    (if (or (not idx) (= idx (1- (length cells))))
+        (message "[emjupy] Cell is already at the bottom.")
+      (let ((below (aref cells (1+ idx))))
+        (aset cells (1+ idx) cell)
+        (aset cells idx below))
+      (emjupy--rerender-notebook cell))))
+
 (defun emjupy-delete-cell ()
   "Delete current cell at point."
   (interactive)
@@ -448,6 +481,9 @@
 
 (defvar emjupy--ws-connection nil
   "Active WebSocket process for the Jupyter Kernel.")
+
+(defvar emjupy--current-kernel-id nil
+  "Kernel id of the currently connected Jupyter kernel, if any.")
 
 (defvar emjupy--pending-requests (make-hash-table :test 'equal)
   "Map of msg_id -> target `emjupy-cell` struct awaiting execution output.")
@@ -593,8 +629,15 @@
   (emjupy-execute-cell-at-point)
   (emjupy-next-cell))
 
+(defun emjupy--server-host-port ()
+  "Return (HOST . PORT) parsed from the current server's base-url."
+  (let* ((clean-url (replace-regexp-in-string "^https?://" "" (emjupy-server-base-url emjupy--current-server)))
+         (parts (split-string clean-url ":")))
+    (cons (car parts) (or (cadr parts) "8888"))))
+
 (defun emjupy-connect-kernel (host port kernel-id token)
   "Establish WebSocket channels connection to KERNEL-ID."
+  (setq emjupy--current-kernel-id kernel-id)
   (let ((ws-url (format "ws://%s:%s/api/kernels/%s/channels?token=%s"
                         host port kernel-id token)))
     (setq emjupy--ws-connection
@@ -631,10 +674,9 @@
                 (puthash label id kernel-map))
 
     (let ((choice (completing-read "Select Kernel: " (nreverse kernel-options))))
-      (let* ((clean-url (replace-regexp-in-string "^https?://" "" (emjupy-server-base-url emjupy--current-server)))
-             (parts (split-string clean-url ":"))
-             (host (car parts))
-             (port (or (cadr parts) "8888"))
+      (let* ((hp (emjupy--server-host-port))
+             (host (car hp))
+             (port (cdr hp))
              (token (or (emjupy-server-token emjupy--current-server) "")))
 
         (if (string= choice "[Start New Python 3 Kernel]")
@@ -660,12 +702,20 @@
   "Return an `emjupy--box-width'-column box-drawing footer line."
   (concat "└" (make-string (max 0 (- emjupy--box-width 2)) ?─) "┘\n"))
 
-(defun emjupy--fontify-code (beg end)
-  "Apply python-mode syntax highlighting to the region."
-  (let ((font-lock-mode t)
-        (major-mode 'python-mode))
-    (unless (featurep 'python) (require 'python))
-    (font-lock-fontify-region beg end)))
+(defun emjupy--fontify-as (text mode-fn)
+  "Return TEXT with font-lock faces applied as if visited in MODE-FN.
+Falls back to plain TEXT if MODE-FN is nil or unavailable -- e.g. an
+optional mode like `markdown-mode' that isn't installed."
+  (if (not (and mode-fn (fboundp mode-fn)))
+      text
+    (with-temp-buffer
+      (insert text)
+      ;; delay-mode-hooks avoids running the user's own mode hooks (linters,
+      ;; minor modes, etc.) in this throwaway buffer -- same technique
+      ;; org-mode uses to fontify source blocks.
+      (delay-mode-hooks (funcall mode-fn))
+      (font-lock-ensure)
+      (buffer-string))))
 
 (defun emjupy--render-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
@@ -680,13 +730,14 @@
          (has-outputs (and (eq type 'code) outputs (> (length outputs) 0)))
          (src-start (point)))
 
-    ;; 1. Insert source code and tag text
-    (insert (if (string-empty-p source) "\n" source))
+    ;; 1. Insert source code (syntax-highlighted per cell type) and tag text
+    (let* ((mode-fn (cond ((eq type 'code) 'python-mode)
+                           ((eq type 'markdown) 'markdown-mode)))
+           (to-insert (emjupy--fontify-as (if (string-empty-p source) "\n" source) mode-fn)))
+      (insert to-insert))
     (unless (string-suffix-p "\n" source) (insert "\n"))
 
     (put-text-property src-start (point) 'emjupy-cell cell)
-    (when (eq type 'code)
-      (emjupy--fontify-code src-start (point)))
 
     ;; 2. Source Box Overlay
     (let* ((ov (make-overlay src-start (point)))
@@ -745,13 +796,24 @@
   (let ((image-data (base64-decode-string base64-string)))
     (create-image image-data (or type 'png) t)))
 
-(defun emjupy-restart-kernel (kernel)
-  "Issue restart request to KERNEL via HTTP API."
-  (let ((server (emjupy-kernel-server kernel))
-        (kernel-id (emjupy-kernel-id kernel)))
-    (emjupy--http-request "POST" server (format "/api/kernels/%s/restart" kernel-id))
-    (setf (emjupy-kernel-status kernel) 'restarting)
-    (message "Kernel %s restarting..." kernel-id)))
+(defun emjupy-restart-kernel ()
+  "Restart the currently connected kernel and reconnect its websocket."
+  (interactive)
+  (unless (and emjupy--current-server emjupy--current-kernel-id)
+    (user-error "No kernel connected! Use C-c C-z to select/start a kernel"))
+  (let* ((hp (emjupy--server-host-port))
+         (host (car hp))
+         (port (cdr hp))
+         (token (or (emjupy-server-token emjupy--current-server) ""))
+         (kernel-id emjupy--current-kernel-id))
+    (when (and emjupy--ws-connection (websocket-openp emjupy--ws-connection))
+      (websocket-close emjupy--ws-connection))
+    ;; Old in-flight requests will never get a reply from the restarted
+    ;; kernel process, so drop them rather than leave them pending forever.
+    (clrhash emjupy--pending-requests)
+    (emjupy--http-request "POST" emjupy--current-server (format "/api/kernels/%s/restart" kernel-id))
+    (message "Kernel %s restarting..." kernel-id)
+    (emjupy-connect-kernel host port kernel-id token)))
 
 ;; =============================================================================
 ;; 8. Unit Tests (ERT)
