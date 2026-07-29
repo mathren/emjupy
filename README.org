@@ -80,3 +80,12 @@ When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
 This is exactly what every browser-based client (JupyterLab, Classic Notebook)
 uses. It works transparently through an SSH tunnel, survives reconnects, and
 requires only =url.el= (built-in) and =websocket.el= (GNU ELPA, zero C deps).
+
+* Known limitations
+
+Multi-cursor: Works fine editing within one cell while nothing else is happening. multiple-cursors.el places its fake-cursor overlays on real buffer text (the box-drawing borders are display-only overlay strings, not actual characters, so they don't interfere), and a normal edit session applies correctly to all cursor positions.
+The catch: emjupy-mode rebuilds the entire buffer (erase-buffer + reinsert) any time a cell executes, gets inserted/deleted/moved, or — critically — any time another cell's output streams in. Fake-cursor overlays collapsed to buffer position 1, and the next multi-cursor edit produced genuinely garbled text (!! at the start of the buffer, a stray ! landing inside unrelated text). 
+
+So: 
+safe for a focused burst of multi-cursor edits in one cell. Unsafe if a background cell might finish or stream output while you're doing it — which is a real risk in a notebook, since that's the normal way a long-running cell behaves. In the shadow buffer (C-c '), none of this applies — it's a plain, ordinary buffer that never gets torn down, so multi-cursor is fully safe there. That's the actual reason I'd steered you toward it for heavier editing earlier, now with a concrete mechanism behind the claim rather than just a hunch.
+
