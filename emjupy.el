@@ -21,23 +21,39 @@
   "Minimal Jupyter Notebook editor."
   :group 'tools)
 
+;; --- State model -----------------------------------------------------------
+;; emjupy supports several notebooks open at once, from several servers at
+;; once (e.g. two ssh tunnels on different local ports). Nothing about a
+;; connection is global: a server owns its own token and XSRF cookie, a
+;; notebook owns its own kernel, and a kernel owns its own WebSocket and its
+;; own table of in-flight requests. The only globals left are the registry of
+;; known servers and a "most recently used" default for commands invoked from
+;; outside a notebook buffer.
+
+(defvar emjupy--servers (make-hash-table :test 'equal)
+  "Registry of known servers, keyed by base-url string.
+Lets several Jupyter servers -- typically several ssh tunnels on
+different local ports -- be live in one Emacs session.")
+
 (defvar emjupy--current-server nil
-  "The currently active `emjupy-server' object.")
+  "Default `emjupy-server' for commands run outside a notebook buffer.
+Inside a notebook buffer the notebook's OWN server is always used
+instead; this is only the fallback for things like `emjupy-login'.")
 
 (defvar-local emjupy--buffer-notebook nil
   "The `emjupy-notebook' struct associated with the current buffer.")
 
-(defvar emjupy--xsrf-token nil
-  "The XSRF token automatically extracted from the Jupyter server.")
-
-(defvar emjupy--current-notebook-buffer nil
-  "Buffer of the currently active emjupy notebook.")
-
 (cl-defstruct emjupy-server
-  host port token base-url)
+  host port token base-url
+  ;; Per-server, not global: two servers issue different XSRF cookies, and
+  ;; replaying one server's cookie at another gets a 403.
+  xsrf)
 
 (cl-defstruct emjupy-kernel
-  id name server ws status pending)
+  id name server ws pending
+  ;; Backlink to the notebook this kernel drives, so an incoming WebSocket
+  ;; frame can be routed to the right buffer without consulting any global.
+  notebook)
 
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")
@@ -47,10 +63,48 @@
   (setq emjupy--next-cell-id (1+ emjupy--next-cell-id)))
 
 (cl-defstruct emjupy-cell
-  id type exec-count source outputs metadata overlay output-ov)
+  id type exec-count source outputs metadata overlay output-ov nb-id)
 
 (cl-defstruct emjupy-notebook
   path server kernel cells metadata buffer shadow-buffer)
+
+;; --- Lookups ---------------------------------------------------------------
+
+(defun emjupy--intern-server (base-url token)
+  "Return the registered `emjupy-server' for BASE-URL, creating it if new.
+Re-logging into a server already open updates its token and keeps the
+same object, so notebooks already pointing at it stay valid."
+  (let ((server (gethash base-url emjupy--servers)))
+    (if server
+        (progn (setf (emjupy-server-token server) token) server)
+      (setq server (make-emjupy-server :base-url base-url :token token))
+      (puthash base-url server emjupy--servers)
+      server)))
+
+(defun emjupy--server ()
+  "Return the server this buffer's notebook belongs to, else the default."
+  (or (and emjupy--buffer-notebook (emjupy-notebook-server emjupy--buffer-notebook))
+      emjupy--current-server
+      (user-error "Not logged in! Call `emjupy-login' first")))
+
+(defun emjupy--notebook ()
+  "Return this buffer's notebook, or signal a clear error."
+  (or emjupy--buffer-notebook
+      (user-error "No emjupy notebook associated with this buffer")))
+
+(defun emjupy--kernel ()
+  "Return the `emjupy-kernel' driving this buffer's notebook, or nil."
+  (and emjupy--buffer-notebook (emjupy-notebook-kernel emjupy--buffer-notebook)))
+
+(defun emjupy--notebook-buffers ()
+  "Return the list of live emjupy notebook buffers."
+  (cl-remove-if-not
+   (lambda (b) (buffer-local-value 'emjupy--buffer-notebook b))
+   (buffer-list)))
+
+(defun emjupy--server-label (server)
+  "Return a short human label for SERVER."
+  (emjupy-server-base-url server))
 
 ;; =============================================================================
 ;; 2. Major Mode & EIN-Style Keymaps
@@ -74,6 +128,12 @@
 
     ;; Kernel
     (define-key map (kbd "C-c C-x C-r") #'emjupy-restart-kernel)
+    (define-key map (kbd "C-c C-x C-c") #'emjupy-reconnect-kernel)
+
+    ;; Multiple notebooks / servers
+    (define-key map (kbd "C-c C-x b") #'emjupy-switch-notebook)
+    (define-key map (kbd "C-c C-x s") #'emjupy-status)
+    (define-key map (kbd "C-c C-x l") #'emjupy-login)
 
     ;; Navigation
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
@@ -104,61 +164,73 @@
 ;; =============================================================================
 
 (defun emjupy-login (url token)
-  "Connect to a Jupyter server, open a notebook, and attach a fresh kernel."
+  "Connect to a Jupyter server and open a notebook on it.
+
+No kernel is started: use \\[emjupy-connect-kernel-interactive] to pick
+an already-running kernel or spawn a new one. That matters once several
+servers are in play, since auto-spawning would leave an idle kernel
+process behind on every server you log into.
+
+Several servers can be logged into at once -- each ssh tunnel is just a
+different local port, and each gets its own `emjupy-server' object."
   (interactive "sJupyter Server URL (e.g., localhost:8888) or port (e.g., 8888): \nsToken: ")
-  (let ((clean-url (if (string-match-p "^[0-9]+$" url)
-                       (concat "localhost:" url)
-                     url)))
-    (setq emjupy--current-server (make-emjupy-server :base-url clean-url :token token))
+  (let* ((clean-url (if (string-match-p "^[0-9]+$" url)
+                        (concat "localhost:" url)
+                      url))
+         (server (emjupy--intern-server clean-url token)))
+    (setq emjupy--current-server server)
 
     ;; Ping the API root to harvest the _xsrf cookie before proceeding
     (condition-case nil
-        (emjupy--http-request "GET" emjupy--current-server "/api")
+        (emjupy--http-request "GET" server "/api")
       (error nil))
 
     (message "Logging into %s..." clean-url)
-    (emjupy-list-notebooks)
+    (emjupy-list-notebooks server)))
 
-    ;; Streamline setup: attach a fresh kernel right away so C-c C-z is only
-    ;; needed if you want to pick an already-running kernel instead.
-    (let* ((hp (emjupy--server-host-port)))
-      (emjupy--spawn-and-connect-kernel (car hp) (cdr hp) token))))
-
-
-(defun emjupy-list-notebooks ()
-  "Fetch root directory contents and prompt user to open or create a notebook."
+(defun emjupy-list-notebooks (&optional server)
+  "Fetch SERVER's root contents and prompt to open or create a notebook.
+Returns the notebook buffer. SERVER defaults to this buffer's server,
+or the last one logged into."
   (interactive)
-  (if (not emjupy--current-server)
-      (error "Not logged in! Call emjupy-login first.")
-    (let* ((data (emjupy--http-request "GET" emjupy--current-server "/api/contents"))
-           (content (if (hash-table-p data) (gethash "content" data) []))
-           (notebooks (list "[Create New Notebook]")))
+  (let* ((server (or server (emjupy--server)))
+         (data (emjupy--http-request "GET" server "/api/contents"))
+         (content (if (hash-table-p data) (gethash "content" data) []))
+         (notebooks (list "[Create New Notebook]")))
 
-      (cl-loop for item across content
-               when (and (hash-table-p item)
-                         (string= (gethash "type" item) "notebook"))
-               do (push (gethash "path" item) notebooks))
+    (cl-loop for item across content
+             when (and (hash-table-p item)
+                       (string= (gethash "type" item) "notebook"))
+             do (push (gethash "path" item) notebooks))
 
-      (let ((choice (completing-read "Select Notebook: " (nreverse notebooks))))
-        (if (string= choice "[Create New Notebook]")
-            (emjupy-create-notebook)
-          (emjupy-open-notebook choice))))))
+    (let ((choice (completing-read (format "Select Notebook (%s): "
+                                           (emjupy--server-label server))
+                                   (nreverse notebooks))))
+      (if (string= choice "[Create New Notebook]")
+          (emjupy-create-notebook server)
+        (emjupy-open-notebook choice server)))))
 
-(defun emjupy-open-notebook (path)
-  "Fetch notebook JSON from server, parse it, and render it in `emjupy-mode'."
-  (if (not emjupy--current-server)
-      (error "Not logged in!")
+(defun emjupy--notebook-buffer-name (path server)
+  "Return the buffer name for PATH on SERVER.
+The server is part of the name: the same notebook path can exist on two
+different servers, and one buffer cannot represent both."
+  (format "*emjupy: %s [%s]*" path (emjupy--server-label server)))
+
+(defun emjupy-open-notebook (path &optional server)
+  "Fetch notebook JSON from SERVER, parse it, and render it in `emjupy-mode'.
+Returns the notebook buffer."
+  (let* ((server (or server (emjupy--server))))
     (message "Fetching notebook: %s..." path)
-    (let* ((response-data (emjupy--http-request "GET" emjupy--current-server (concat "/api/contents/" path)))
+    (let* ((response-data (emjupy--http-request "GET" server (concat "/api/contents/" path)))
            (content-hash (and response-data (gethash "content" response-data))))
       (if (not content-hash)
           (error "Failed to fetch notebook content from server")
         (let* ((ipynb-json (json-serialize content-hash))
                (nb-struct (emjupy--parse-ipynb ipynb-json))
-               (buf-name (format "*emjupy: %s*" path))
+               (buf-name (emjupy--notebook-buffer-name path server))
                (buf (get-buffer-create buf-name)))
 
-          (setf (emjupy-notebook-server nb-struct) emjupy--current-server)
+          (setf (emjupy-notebook-server nb-struct) server)
           (setf (emjupy-notebook-path nb-struct) path)
           (setf (emjupy-notebook-buffer nb-struct) buf)
 
@@ -171,40 +243,40 @@
             (setq emjupy--buffer-notebook nb-struct))
 
           (switch-to-buffer buf)
-          (setq emjupy--current-notebook-buffer buf)
           ;; Warm up the code shadow-buffer + Eglot now, in the background,
           ;; so completions are ready once the user starts typing instead of
           ;; paying the LSP server startup cost on the first keystroke.
-          (ignore-errors (emjupy--ensure-shadow-buffer nb-struct))
-          (message "Opened notebook: %s. Press C-c C-z to select or spawn a kernel." path))))))
+          (ignore-errors
+            (with-current-buffer buf (emjupy--ensure-shadow-buffer nb-struct)))
+          (message "Opened notebook: %s. Press C-c C-z to select or spawn a kernel." path)
+          buf)))))
 
-(defun emjupy-create-notebook ()
-  "Create a brand new blank notebook on the Jupyter server and open it."
+(defun emjupy-create-notebook (&optional server)
+  "Create a brand new blank notebook on SERVER and open it."
   (interactive)
-  (if (not emjupy--current-server)
-      (error "Not logged in!")
-    (let* ((raw-name (read-string "New notebook name (default Untitled.ipynb): "))
-           (name (if (string-empty-p raw-name) "Untitled.ipynb" raw-name))
-           (filename (if (string-match-p "\\.ipynb$" name) name (concat name ".ipynb")))
-           (nb-payload (make-hash-table :test 'equal))
-           (req-body (make-hash-table :test 'equal)))
+  (let* ((server (or server (emjupy--server)))
+         (raw-name (read-string "New notebook name (default Untitled.ipynb): "))
+         (name (if (string-empty-p raw-name) "Untitled.ipynb" raw-name))
+         (filename (if (string-match-p "\\.ipynb$" name) name (concat name ".ipynb")))
+         (nb-payload (make-hash-table :test 'equal))
+         (req-body (make-hash-table :test 'equal)))
 
-      (puthash "cells" [] nb-payload)
-      (puthash "metadata" (make-hash-table :test 'equal) nb-payload)
-      (puthash "nbformat" 4 nb-payload)
-      (puthash "nbformat_minor" 5 nb-payload)
+    (puthash "cells" [] nb-payload)
+    (puthash "metadata" (make-hash-table :test 'equal) nb-payload)
+    (puthash "nbformat" 4 nb-payload)
+    (puthash "nbformat_minor" 5 nb-payload)
 
-      (puthash "type" "notebook" req-body)
-      (puthash "format" "json" req-body)
-      (puthash "content" nb-payload req-body)
+    (puthash "type" "notebook" req-body)
+    (puthash "format" "json" req-body)
+    (puthash "content" nb-payload req-body)
 
-      (message "Creating %s on Jupyter server..." filename)
-      (let ((response (emjupy--http-request "PUT" emjupy--current-server
-                                            (concat "/api/contents/" filename)
-                                            (json-serialize req-body))))
-        (if response
-            (emjupy-open-notebook filename)
-          (error "Failed to write %s to server" filename))))))
+    (message "Creating %s on Jupyter server..." filename)
+    (let ((response (emjupy--http-request "PUT" server
+                                          (concat "/api/contents/" filename)
+                                          (json-serialize req-body))))
+      (if response
+          (emjupy-open-notebook filename server)
+        (error "Failed to write %s to server" filename)))))
 
 (defun emjupy--http-request (method server path &optional body callback)
   "Internal wrapper for url-retrieve that reports exact HTTP errors and handles XSRF."
@@ -216,10 +288,12 @@
           (append `(("Content-Type" . "application/json"))
                   (when (and token (not (string-empty-p token)))
                     `(("Authorization" . ,(format "token %s" token))))
-                  ;; Automatically inject XSRF tokens to bypass Jupyter 403 CSRF blocks
-                  (when emjupy--xsrf-token
-                    `(("X-XSRFToken" . ,emjupy--xsrf-token)
-                      ("Cookie" . ,(format "_xsrf=%s" emjupy--xsrf-token))))))
+                  ;; Automatically inject XSRF tokens to bypass Jupyter 403 CSRF blocks.
+                  ;; Read from THIS server: a cookie issued by another server
+                  ;; (a second tunnel, say) would just earn a 403.
+                  (when (emjupy-server-xsrf server)
+                    `(("X-XSRFToken" . ,(emjupy-server-xsrf server))
+                      ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server)))))))
          (base-url (emjupy-server-base-url server))
          (cache-buster (if (string= method "GET")
                            (format (if (string-match-p "\\?" path) "&_t=%s" "?_t=%s")
@@ -239,10 +313,10 @@
               (when (re-search-forward "^HTTP/[0-9.]+ \\([0-9]+\\)" nil t)
                 (setq status (string-to-number (match-string 1))))
 
-              ;; Harvest XSRF cookie from server response
+              ;; Harvest XSRF cookie from response, onto THIS server
               (goto-char (point-min))
               (when (re-search-forward "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
-                (setq emjupy--xsrf-token (match-string 1)))
+                (setf (emjupy-server-xsrf server) (match-string 1)))
 
               (goto-char (point-min))
               (re-search-forward "\r?\n\r?\n" nil t)
@@ -269,6 +343,11 @@
              do (aset (emjupy-notebook-cells nb) i
                       (make-emjupy-cell
                        :id (emjupy--new-cell-id)
+                       ;; The notebook's OWN nbformat >=4.5 cell id, kept
+                       ;; distinct from our internal buffer-local `id' so a
+                       ;; round trip doesn't renumber cells for collaborators.
+                       :nb-id (let ((v (gethash "id" c-data)))
+                                (and (stringp v) v))
                        :type (intern (gethash "cell_type" c-data))
                        :exec-count (gethash "execution_count" c-data)
                        :source (let ((src (gethash "source" c-data)))
@@ -276,6 +355,46 @@
                        :outputs (gethash "outputs" c-data)
                        :metadata (gethash "metadata" c-data))))
     nb))
+
+(defun emjupy--source-lines (source)
+  "Split SOURCE into an nbformat `source' array.
+Every line keeps its newline EXCEPT the last, matching the nbformat
+convention -- appending one unconditionally makes each save/reload
+cycle grow the cell by a trailing blank line."
+  (let* ((lines (split-string (or source "") "\n"))
+         (n (length lines)))
+    (vconcat
+     (cl-loop for line in lines
+              for i from 1
+              collect (if (= i n) line (concat line "\n"))))))
+
+(defun emjupy--nb-cell-id (cell)
+  "Return a stable nbformat >=4.5 id for CELL, creating one if needed.
+Cells created inside emjupy have no notebook id yet; nbformat_minor 5
+requires one on every cell, so a notebook missing them fails
+`nbformat.validate' and is rejected by nbconvert and friends."
+  (or (emjupy-cell-nb-id cell)
+      (setf (emjupy-cell-nb-id cell)
+            (substring (md5 (format "%s-%s" (emjupy-cell-id cell) (random 1000000))) 0 8))))
+
+(defun emjupy--normalize-output (out)
+  "Return OUT with the fields the nbformat v4 schema requires.
+Kernels don't always send `metadata', and an execute_result without
+`execution_count' is invalid -- both make a saved notebook fail
+validation even though it looks fine in emjupy."
+  (if (not (hash-table-p out))
+      out
+    (let ((o (copy-hash-table out))
+          (type (gethash "output_type" out)))
+      (when (member type '("execute_result" "display_data"))
+        (unless (gethash "data" o) (puthash "data" (make-hash-table :test 'equal) o))
+        (unless (gethash "metadata" o) (puthash "metadata" (make-hash-table :test 'equal) o)))
+      (when (string= type "execute_result")
+        (unless (gethash "execution_count" o) (puthash "execution_count" :null o)))
+      (when (string= type "stream")
+        (unless (gethash "name" o) (puthash "name" "stdout" o))
+        (unless (gethash "text" o) (puthash "text" "" o)))
+      o)))
 
 (defun emjupy--serialize-notebook (nb)
   "Serialize NB `emjupy-notebook' struct back to strict nbformat v4 JSON."
@@ -290,13 +409,14 @@
                for c-hash = (make-hash-table :test 'equal)
                do
                (puthash "cell_type" (symbol-name (emjupy-cell-type cell)) c-hash)
+               (puthash "id" (emjupy--nb-cell-id cell) c-hash)
                (puthash "metadata" (or (emjupy-cell-metadata cell) (make-hash-table)) c-hash)
-               (puthash "source"
-                        (vconcat (mapcar (lambda (s) (concat s "\n"))
-                                         (split-string (emjupy-cell-source cell) "\n")))
-                        c-hash)
+               (puthash "source" (emjupy--source-lines (emjupy-cell-source cell)) c-hash)
                (when (eq (emjupy-cell-type cell) 'code)
-                 (puthash "outputs" (or (emjupy-cell-outputs cell) []) c-hash)
+                 (puthash "outputs"
+                          (vconcat (mapcar #'emjupy--normalize-output
+                                           (append (or (emjupy-cell-outputs cell) []) nil)))
+                          c-hash)
                  ;; Safely write :null back to the JSON payload for unexecuted cells
                  (puthash "execution_count" (if (numberp (emjupy-cell-exec-count cell))
                                                 (emjupy-cell-exec-count cell)
@@ -498,15 +618,6 @@ separate entity, the output always travels with its cell automatically."
 (defvar emjupy--session-id (emjupy--uuid)
   "Unique identifier for the current Emacs session.")
 
-(defvar emjupy--ws-connection nil
-  "Active WebSocket process for the Jupyter Kernel.")
-
-(defvar emjupy--current-kernel-id nil
-  "Kernel id of the currently connected Jupyter kernel, if any.")
-
-(defvar emjupy--pending-requests (make-hash-table :test 'equal)
-  "Map of msg_id -> target `emjupy-cell` struct awaiting execution output.")
-
 (defun emjupy--make-execute-request (code)
   "Construct a Jupyter protocol `execute_request` message payload."
   (let* ((msg-id (emjupy--uuid))
@@ -536,24 +647,44 @@ separate entity, the output always travels with its cell automatically."
 
     (cons msg-id (json-serialize msg))))
 
-(defun emjupy--append-output-to-cell (cell output-hash)
-  "Append OUTPUT-HASH frame to CELL outputs and visually refresh the notebook overlay."
+(defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
+  "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK's buffer."
   (let ((existing (append (or (emjupy-cell-outputs cell) []) nil)))
     (setf (emjupy-cell-outputs cell) (vconcat (append existing (list output-hash))))
-    (when-let ((buf emjupy--current-notebook-buffer))
+    (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
       (when (buffer-live-p buf)
         (with-current-buffer buf
-          (emjupy--rerender-notebook cell))))))
+          ;; Rendering runs inside the WebSocket callback, and websocket.el
+          ;; catches errors raised there -- so an un-renderable output (a PNG
+          ;; on a build without image support, say) would otherwise leave the
+          ;; box silently blank with nothing logged anywhere.
+          (condition-case err
+              (emjupy--rerender-notebook cell)
+            (error
+             (message "[emjupy] Failed to render cell output: %s"
+                      (error-message-string err)))))))))
 
-(defun emjupy--handle-ws-message (_ws frame)
-  "Callback for incoming WebSocket frames from Jupyter kernel."
-  (let* ((payload (websocket-frame-payload frame))
+(defun emjupy--ws-payload (frame)
+  "Return the text payload of FRAME.
+Accepts either a `websocket-frame' (what websocket.el hands the
+callback) or a plain JSON string, so recorded kernel traffic can be
+replayed straight through the handler."
+  (if (websocket-frame-p frame) (websocket-frame-payload frame) frame))
+
+(defun emjupy--handle-ws-message (kernel frame)
+  "Handle an incoming WebSocket FRAME belonging to KERNEL.
+KERNEL carries both the pending-request table and the backlink to the
+notebook whose buffer should be refreshed, so frames from several
+kernels never cross-talk."
+  (let* ((payload (emjupy--ws-payload frame))
          (data (json-parse-string payload :object-type 'hash-table :array-type 'array))
          (header (gethash "header" data))
          (parent-header (gethash "parent_header" data))
          (msg-type (gethash "msg_type" header))
          (parent-id (when parent-header (gethash "msg_id" parent-header)))
-         (cell (when parent-id (gethash parent-id emjupy--pending-requests))))
+         (pending (and kernel (emjupy-kernel-pending kernel)))
+         (notebook (and kernel (emjupy-kernel-notebook kernel)))
+         (cell (when (and parent-id pending) (gethash parent-id pending))))
 
     (when cell
       (cond
@@ -564,9 +695,9 @@ separate entity, the output always travels with its cell automatically."
                (name (gethash "name" content))
                (out-hash (make-hash-table :test 'equal)))
           (puthash "output_type" "stream" out-hash)
-          (puthash "name" name out-hash)
-          (puthash "text" text out-hash)
-          (emjupy--append-output-to-cell cell out-hash)))
+          (puthash "name" (or name "stdout") out-hash)
+          (puthash "text" (or text "") out-hash)
+          (emjupy--append-output-to-cell cell out-hash notebook)))
 
        ;; Returned execution evaluation results
        ((string= msg-type "execute_result")
@@ -574,8 +705,17 @@ separate entity, the output always travels with its cell automatically."
                (data-obj (gethash "data" content))
                (out-hash (make-hash-table :test 'equal)))
           (puthash "output_type" "execute_result" out-hash)
-          (puthash "data" data-obj out-hash)
-          (emjupy--append-output-to-cell cell out-hash)))
+          (puthash "data" (or data-obj (make-hash-table :test 'equal)) out-hash)
+          ;; `metadata' and `execution_count' are REQUIRED on an
+          ;; execute_result by the nbformat v4 schema; omitting them makes
+          ;; the notebook we save fail `nbformat.validate' and so unusable
+          ;; by nbconvert/papermill/other tools.
+          (puthash "metadata" (or (gethash "metadata" content)
+                                  (make-hash-table :test 'equal))
+                   out-hash)
+          (puthash "execution_count" (or (gethash "execution_count" content) :null)
+                   out-hash)
+          (emjupy--append-output-to-cell cell out-hash notebook)))
 
        ;; Rich display data -- this is how matplotlib's inline figure
        ;; actually arrives (separately from the execute_result text repr)
@@ -584,8 +724,12 @@ separate entity, the output always travels with its cell automatically."
                (data-obj (gethash "data" content))
                (out-hash (make-hash-table :test 'equal)))
           (puthash "output_type" "display_data" out-hash)
-          (puthash "data" data-obj out-hash)
-          (emjupy--append-output-to-cell cell out-hash)))
+          (puthash "data" (or data-obj (make-hash-table :test 'equal)) out-hash)
+          ;; Also schema-required (see execute_result above).
+          (puthash "metadata" (or (gethash "metadata" content)
+                                  (make-hash-table :test 'equal))
+                   out-hash)
+          (emjupy--append-output-to-cell cell out-hash notebook)))
 
        ;; Python Error Tracebacks
        ((string= msg-type "error")
@@ -598,49 +742,52 @@ separate entity, the output always travels with its cell automatically."
           (puthash "ename" ename out-hash)
           (puthash "evalue" evalue out-hash)
           (puthash "traceback" traceback out-hash)
-          (emjupy--append-output-to-cell cell out-hash)))
+          (emjupy--append-output-to-cell cell out-hash notebook)))
 
        ;; Finish execution frame
        ((string= msg-type "execute_reply")
         (let* ((content (gethash "content" data))
                (count (gethash "execution_count" content)))
           (setf (emjupy-cell-exec-count cell) count)
-          (remhash parent-id emjupy--pending-requests)
-          (when-let ((buf emjupy--current-notebook-buffer))
+          (remhash parent-id pending)
+          (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p buf)
               (with-current-buffer buf
                 (emjupy--rerender-notebook cell))))
-          (message "[emjupy] Cell execution complete. [In: %s]" count)))))))
+          (message "[emjupy] %s: cell execution complete. [In: %s]"
+                   (if notebook (emjupy-notebook-path notebook) "notebook")
+                   count)))))))
 
 (defun emjupy-execute-cell-at-point ()
-  "Sync cell code and send to kernel WebSocket for execution."
+  "Sync cell code and send to this notebook's kernel for execution."
   (interactive)
-  (unless (and emjupy--ws-connection (websocket-openp emjupy--ws-connection))
-    (user-error "Not connected to a Jupyter kernel! Use C-c C-z to select/start a kernel"))
+  (let ((kernel (emjupy--kernel)))
+    (unless (emjupy--ws-live-p kernel)
+      (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
 
-  (let* ((cell (get-text-property (point) 'emjupy-cell)))
-    (unless cell
-      (user-error "No cell found at point"))
+    (let* ((cell (get-text-property (point) 'emjupy-cell)))
+      (unless cell
+        (user-error "No cell found at point"))
 
-    ;; 1. Sync buffer edits back into ALL cells (not just this one) --
-    ;; the upcoming rerender rebuilds the whole buffer from cell structs,
-    ;; so unsynced edits sitting in other cells would otherwise be lost.
-    (emjupy--sync-all-cells)
+      ;; 1. Sync buffer edits back into ALL cells (not just this one) --
+      ;; the upcoming rerender rebuilds the whole buffer from cell structs,
+      ;; so unsynced edits sitting in other cells would otherwise be lost.
+      (emjupy--sync-all-cells)
 
-    ;; 2. Clear previous outputs for rerun so a stale output box doesn't
-    ;;    linger while the new run is in flight.
-    (setf (emjupy-cell-outputs cell) [])
-    (emjupy--rerender-notebook cell)
+      ;; 2. Clear previous outputs for rerun so a stale output box doesn't
+      ;;    linger while the new run is in flight.
+      (setf (emjupy-cell-outputs cell) [])
+      (emjupy--rerender-notebook cell)
 
-    ;; 3. Build execution payload
-    (let* ((code (emjupy-cell-source cell))
-           (req (emjupy--make-execute-request code))
-           (msg-id (car req))
-           (json-payload (cdr req)))
+      ;; 3. Build execution payload
+      (let* ((code (emjupy-cell-source cell))
+             (req (emjupy--make-execute-request code))
+             (msg-id (car req))
+             (json-payload (cdr req)))
 
-      (puthash msg-id cell emjupy--pending-requests)
-      (websocket-send-text emjupy--ws-connection json-payload)
-      (message "[emjupy] Executing cell (%s)..." msg-id))))
+        (puthash msg-id cell (emjupy-kernel-pending kernel))
+        (emjupy--ws-send json-payload kernel)
+        (message "[emjupy] Executing cell (%s)..." msg-id)))))
 
 (defun emjupy-execute-cell-and-goto-next ()
   "Execute cell at point and advance to the next cell."
@@ -648,61 +795,163 @@ separate entity, the output always travels with its cell automatically."
   (emjupy-execute-cell-at-point)
   (emjupy-next-cell))
 
+(defun emjupy--server-parts (&optional server)
+  "Return a plist describing SERVER's base-url.
+
+Keys are :scheme, :ws-scheme, :host, :port and :path. Accepts a bare
+port (\"8888\"), a host:port pair, a full http(s) URL, and an optional
+trailing base path -- the last of which matters for servers reached
+through an SSH tunnel into a proxied setup (e.g. a JupyterHub
+single-user server at localhost:8888/user/alice), where the prefix has
+to survive into the WebSocket URL as well as the REST calls."
+  (let* ((server (or server emjupy--current-server))
+         (raw (emjupy-server-base-url server))
+         (secure (string-prefix-p "https" raw))
+         (stripped (replace-regexp-in-string "\\`https?://" "" raw))
+         (slash (string-match-p "/" stripped))
+         (hostport (if slash (substring stripped 0 slash) stripped))
+         (path (if slash
+                   (string-trim-right (substring stripped slash) "/+")
+                 ""))
+         (parts (split-string hostport ":"))
+         (host (if (string-empty-p (or (car parts) "")) "localhost" (car parts)))
+         (port (or (cadr parts) (if secure "443" "80"))))
+    (list :scheme (if secure "https" "http")
+          :ws-scheme (if secure "wss" "ws")
+          :host host :port port :path path)))
+
 (defun emjupy--server-host-port ()
   "Return (HOST . PORT) parsed from the current server's base-url."
-  (let* ((clean-url (replace-regexp-in-string "^https?://" "" (emjupy-server-base-url emjupy--current-server)))
-         (parts (split-string clean-url ":")))
-    (cons (car parts) (or (cadr parts) "8888"))))
+  (let ((p (emjupy--server-parts)))
+    (cons (plist-get p :host) (plist-get p :port))))
 
-(defun emjupy-connect-kernel (host port kernel-id token)
-  "Establish WebSocket channels connection to KERNEL-ID."
-  (setq emjupy--current-kernel-id kernel-id)
-  (let ((ws-url (format "ws://%s:%s/api/kernels/%s/channels?token=%s"
-                        host port kernel-id token)))
-    (setq emjupy--ws-connection
+;; --- Kernel transport seam -------------------------------------------------
+;; Everything that touches a live WebSocket goes through these two functions,
+;; each scoped to ONE kernel. That keeps a stale value from blowing up with an
+;; opaque `wrong-type-argument' deep inside websocket.el -- the user just gets
+;; told this notebook has no kernel -- and gives the test-suite a single,
+;; honest place to substitute a fake transport.
+
+(defun emjupy--ws-live-p (&optional kernel)
+  "Return non-nil when KERNEL (default this buffer's) has a usable socket."
+  (let* ((kernel (or kernel (emjupy--kernel)))
+         (ws (and kernel (emjupy-kernel-ws kernel))))
+    (and ws (websocket-p ws) (websocket-openp ws))))
+
+(defun emjupy--ws-send (payload &optional kernel)
+  "Send PAYLOAD, a string, over KERNEL's WebSocket."
+  (let ((kernel (or kernel (emjupy--kernel))))
+    (websocket-send-text (emjupy-kernel-ws kernel) payload)))
+
+(defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
+  "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
+Returns the `emjupy-kernel'. Each notebook keeps its own kernel, so
+several notebooks -- from several servers -- stay live at once."
+  (let* ((server (emjupy-notebook-server notebook))
+         (parts (emjupy--server-parts server))
+         (token (or (emjupy-server-token server) ""))
+         ;; https:// servers require wss://, and any base path (proxy or
+         ;; JupyterHub prefix) has to be kept -- rebuilding the URL from
+         ;; host+port alone silently drops both.
+         (ws-url (format "%s://%s:%s%s/api/kernels/%s/channels%s"
+                         (plist-get parts :ws-scheme)
+                         (plist-get parts :host)
+                         (plist-get parts :port)
+                         (plist-get parts :path)
+                         kernel-id
+                         (if (string-empty-p token)
+                             ""
+                           (concat "?token=" (url-hexify-string token)))))
+         ;; Belt and braces: some deployments (and some reverse proxies in
+         ;; front of a tunnel) strip or ignore the query-string token but
+         ;; honour the Authorization header.
+         (headers (append
+                   (unless (string-empty-p token)
+                     `(("Authorization" . ,(format "token %s" token))))
+                   (when (emjupy-server-xsrf server)
+                     `(("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server)))))))
+         (kernel (make-emjupy-kernel
+                  :id kernel-id :name kernel-name :server server
+                  :pending (make-hash-table :test 'equal)
+                  :notebook notebook))
+         (label (emjupy-notebook-path notebook)))
+    ;; The callbacks close over KERNEL, so a frame is always delivered to the
+    ;; notebook that asked for it -- never to whichever one happens to be
+    ;; current when it arrives.
+    (setf (emjupy-kernel-ws kernel)
           (websocket-open
            ws-url
-           :on-message #'emjupy--handle-ws-message
-           :on-open (lambda (_ws) (message "[emjupy] Connected to Kernel %s!" kernel-id))
-           :on-close (lambda (_ws) (message "[emjupy] Kernel WebSocket closed."))
-           :on-error (lambda (_ws type err) (message "[emjupy] WebSocket Error (%s): %s" type err))))))
+           :custom-header-alist headers
+           :on-message (lambda (_ws frame) (emjupy--handle-ws-message kernel frame))
+           :on-open (lambda (_ws) (message "[emjupy] %s connected to kernel %s" label kernel-id))
+           :on-close (lambda (_ws) (message "[emjupy] %s: kernel WebSocket closed." label))
+           :on-error (lambda (_ws type err)
+                       (message "[emjupy] %s WebSocket error (%s): %s" label type err))))
+    (setf (emjupy-notebook-kernel notebook) kernel)
+    kernel))
 
-(defun emjupy--spawn-and-connect-kernel (host port token)
-  "Start a fresh Python 3 kernel on the server and connect to it via websocket."
-  (let ((payload (make-hash-table :test 'equal)))
+(defun emjupy--spawn-and-connect-kernel (notebook)
+  "Start a fresh Python 3 kernel on NOTEBOOK's server and attach it."
+  (let ((payload (make-hash-table :test 'equal))
+        (server (emjupy-notebook-server notebook)))
     (puthash "name" "python3" payload)
-    (let* ((res (emjupy--http-request "POST" emjupy--current-server "/api/kernels" (json-serialize payload)))
+    (let* ((res (emjupy--http-request "POST" server "/api/kernels" (json-serialize payload)))
            (new-id (gethash "id" res)))
-      (message "Started Python 3 kernel (%s). Connecting..." new-id)
-      (emjupy-connect-kernel host port new-id token))))
+      (message "Started Python 3 kernel (%s) for %s. Connecting..."
+               new-id (emjupy-notebook-path notebook))
+      (emjupy-connect-kernel notebook new-id "python3"))))
 
 (defun emjupy-connect-kernel-interactive ()
-  "Select an existing kernel or spawn a new Python 3 kernel interactively."
+  "Select an existing kernel, or spawn a new one, for THIS notebook.
+Kernels already driving another open notebook are marked, since
+attaching two notebooks to one kernel makes them share state."
   (interactive)
-  (unless emjupy--current-server
-    (user-error "Not logged in! Call emjupy-login first"))
-  (let* ((kernels-data (emjupy--http-request "GET" emjupy--current-server "/api/kernels"))
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (kernels-data (emjupy--http-request "GET" server "/api/kernels"))
+         (in-use (emjupy--kernel-ids-in-use))
          (kernel-options '("[Start New Python 3 Kernel]"))
          (kernel-map (make-hash-table :test 'equal)))
 
     (cl-loop for k across kernels-data
              for id = (gethash "id" k)
              for name = (gethash "name" k)
-             for label = (format "%s (%s)" name id)
+             for label = (format "%s (%s)%s" name id
+                                 (if (member id in-use) " [in use]" ""))
              do (push label kernel-options)
                 (puthash label id kernel-map))
 
-    (let ((choice (completing-read "Select Kernel: " (nreverse kernel-options))))
-      (let* ((hp (emjupy--server-host-port))
-             (host (car hp))
-             (port (cdr hp))
-             (token (or (emjupy-server-token emjupy--current-server) "")))
+    (let ((choice (completing-read (format "Kernel for %s on %s: "
+                                           (emjupy-notebook-path nb)
+                                           (emjupy--server-label server))
+                                   (nreverse kernel-options))))
+      ;; Drop any socket this notebook already had, or it keeps receiving
+      ;; frames from the kernel we are replacing.
+      (emjupy--disconnect-kernel nb)
+      (if (string= choice "[Start New Python 3 Kernel]")
+          (emjupy--spawn-and-connect-kernel nb)
+        (let ((selected-id (gethash choice kernel-map)))
+          (message "Connecting %s to existing kernel %s..."
+                   (emjupy-notebook-path nb) selected-id)
+          (emjupy-connect-kernel nb selected-id))))))
 
-        (if (string= choice "[Start New Python 3 Kernel]")
-            (emjupy--spawn-and-connect-kernel host port token)
-          (let ((selected-id (gethash choice kernel-map)))
-            (message "Connecting to existing kernel %s..." selected-id)
-            (emjupy-connect-kernel host port selected-id token)))))))
+(defun emjupy--kernel-ids-in-use ()
+  "Return kernel ids currently attached to some open emjupy notebook."
+  (delq nil
+        (mapcar (lambda (b)
+                  (let* ((nb (buffer-local-value 'emjupy--buffer-notebook b))
+                         (k (and nb (emjupy-notebook-kernel nb))))
+                    (and k (emjupy-kernel-id k))))
+                (emjupy--notebook-buffers))))
+
+(defun emjupy--disconnect-kernel (notebook)
+  "Close NOTEBOOK's WebSocket, if any, and drop its in-flight requests."
+  (when-let ((kernel (emjupy-notebook-kernel notebook)))
+    (when (emjupy--ws-live-p kernel)
+      (websocket-close (emjupy-kernel-ws kernel)))
+    (when (emjupy-kernel-pending kernel)
+      (clrhash (emjupy-kernel-pending kernel)))
+    (setf (emjupy-kernel-ws kernel) nil)))
 
 ;; =============================================================================
 ;; 7. Visual Rendering Overlays
@@ -794,31 +1043,25 @@ back to plain text if no markdown package is installed."
     ;; 3. Output Box Overlay
     (when has-outputs
       (let ((out-start (point)))
-        (cl-loop for out across outputs
+        (cl-loop for out in (emjupy--outputs-for-render outputs)
                  do (let ((out-type (gethash "output_type" out)))
                       (cond
                        ((string= out-type "stream")
-                        (insert (gethash "text" out)))
+                        (insert (emjupy--mime-text (gethash "text" out))))
                        ((or (string= out-type "execute_result")
                             (string= out-type "display_data"))
-                        (let* ((data (gethash "data" out))
-                               (png (gethash "image/png" data))
-                               (jpeg (gethash "image/jpeg" data)))
-                          (cond
-                           (png (insert-image (emjupy--render-image-output png 'png))
-                                (insert "\n"))
-                           (jpeg (insert-image (emjupy--render-image-output jpeg 'jpeg))
-                                 (insert "\n"))
-                           ((gethash "text/plain" data)
-                            (insert (gethash "text/plain" data) "\n")))))
+                        (emjupy--insert-rich-output (gethash "data" out)))
                        ((string= out-type "error")
                         (let ((ename (gethash "ename" out))
                               (evalue (gethash "evalue" out))
                               (traceback (gethash "traceback" out)))
                           (insert (format "Error (%s): %s\n" ename evalue))
-                          (when (vectorp traceback)
-                            (cl-loop for line across traceback
-                                     do (insert (replace-regexp-in-string "\033\\[[0-9;]*m" "" line) "\n"))))))))
+                          (when (or (vectorp traceback) (listp traceback))
+                            (cl-loop for line in (append traceback nil)
+                                     do (insert (replace-regexp-in-string
+                                                 "\033\\[[0-9;]*m" ""
+                                                 (emjupy--mime-text line))
+                                                "\n"))))))))
 
         (unless (string-suffix-p "\n" (buffer-substring-no-properties (max (point-min) (- (point) 1)) (point)))
           (insert "\n"))
@@ -834,29 +1077,187 @@ back to plain text if no markdown package is installed."
 
     (insert "\n")))
 
-(defun emjupy--render-image-output (base64-string &optional type)
-  "Convert BASE64-STRING output into an Emacs image object of TYPE (default png)."
-  (let ((image-data (base64-decode-string base64-string)))
-    (create-image image-data (or type 'png) t)))
+(defconst emjupy--image-mime-types
+  '(("image/png"     . png)
+    ("image/jpeg"    . jpeg)
+    ("image/gif"     . gif)
+    ("image/svg+xml" . svg))
+  "MIME types emjupy can render inline, in preference order.
+Maps each to the Emacs image type used to display it.")
+
+(defun emjupy--mime-text (value)
+  "Return VALUE as a string.
+nbformat stores multi-line MIME payloads (`text/plain', stream `text',
+tracebacks) as either a single string or an array of line strings
+depending on where the JSON came from -- the Contents API joins them,
+a notebook read straight off disk does not."
+  (cond
+   ((null value) "")
+   ((stringp value) value)
+   ((vectorp value) (mapconcat #'identity (append value nil) ""))
+   ((listp value) (mapconcat #'identity value ""))
+   (t (format "%s" value))))
+
+(defun emjupy--image-displayable-p (type)
+  "Return non-nil if this Emacs can actually display an image of TYPE.
+Both halves matter: a tty frame can't show images at all, and a build
+without the relevant library (very common for `emacs-nox') will make
+`create-image' signal rather than degrade."
+  (and (display-graphic-p)
+       (image-type-available-p type)))
+
+(defun emjupy--insert-rich-output (data)
+  "Insert the best available representation of the DATA MIME bundle at point.
+
+Prefers an inline image when this Emacs can genuinely display one, and
+otherwise falls back to the bundle's own `text/plain' representation
+plus a short note. Without that fallback a figure renders as a
+silently empty output box on a terminal or no-image Emacs: rendering
+happens inside the WebSocket callback, where websocket.el swallows the
+`Invalid image type' error `create-image' raises."
+  (let* ((image (cl-loop for (mime . type) in emjupy--image-mime-types
+                         for payload = (and data (gethash mime data))
+                         when payload return (list mime type payload)))
+         (text (and data (gethash "text/plain" data))))
+    (cond
+     ((and image (emjupy--image-displayable-p (nth 1 image)))
+      (condition-case err
+          (progn (insert-image (emjupy--render-image-output (nth 2 image) (nth 1 image)))
+                 (insert "\n"))
+        (error
+         (insert (format "[emjupy: could not render %s: %s]\n"
+                         (nth 0 image) (error-message-string err)))
+         (when text (insert (emjupy--mime-text text) "\n")))))
+     (image
+      (when text (insert (emjupy--mime-text text) "\n"))
+      (insert (propertize
+               (format "[emjupy: %s output (%d bytes) not shown -- this Emacs has no %s image support]\n"
+                       (nth 0 image) (length (nth 2 image)) (nth 1 image))
+               'face 'shadow)))
+     (text (insert (emjupy--mime-text text) "\n"))
+     ;; Some bundle we don't know how to show at all: say so rather than
+     ;; rendering an empty box.
+     (data
+      (let ((mimes (cl-loop for k being the hash-keys of data collect k)))
+        (when mimes
+          (insert (propertize (format "[emjupy: unsupported output types: %s]\n"
+                                      (string-join mimes ", "))
+                              'face 'shadow))))))))
+
+(defcustom emjupy-deduplicate-image-outputs t
+  "When non-nil, render a repeated identical image only once per cell.
+
+A cell whose last expression is a figure gets the SAME picture twice
+from the kernel: once as the `execute_result' repr and again as the
+inline backend's `display_data'. That is kernel-side behaviour, so the
+duplicate is dropped only at render time -- the cell's `outputs' vector
+still holds exactly what the kernel sent, and is saved back to the
+.ipynb unchanged, so the file stays byte-faithful for other clients."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--output-image-key (out)
+  "Return a key identifying OUT's image payload, or nil if it carries none.
+The payload is hashed rather than compared directly: a figure is
+hundreds of kilobytes of base64, and this runs on every re-render."
+  (when (hash-table-p out)
+    (let ((data (gethash "data" out)))
+      (when (hash-table-p data)
+        (cl-loop for (mime . _type) in emjupy--image-mime-types
+                 for payload = (gethash mime data)
+                 when payload
+                 return (cons mime (md5 (emjupy--mime-text payload))))))))
+
+(defun emjupy--outputs-for-render (outputs)
+  "Return OUTPUTS as a list, with repeated identical images dropped.
+
+Only image-bearing outputs are collapsed, and only against images
+already seen in the same cell: two `print' calls emitting the same text
+are genuinely two outputs and both must show."
+  (let ((all (append (or outputs []) nil)))
+    (if (not emjupy-deduplicate-image-outputs)
+        all
+      (let ((seen (make-hash-table :test 'equal))
+            (acc nil))
+        (dolist (out all (nreverse acc))
+          (let ((key (emjupy--output-image-key out)))
+            (cond
+             ((null key) (push out acc))
+             ((gethash key seen) nil)   ; same picture again -- skip
+             (t (puthash key t seen)
+                (push out acc)))))))))
+
+(defun emjupy--render-image-output (payload &optional type)
+  "Convert PAYLOAD output into an Emacs image object of TYPE (default png).
+Bitmap MIME payloads arrive base64-encoded; `image/svg+xml' arrives as
+literal markup and must not be decoded."
+  (let* ((type (or type 'png))
+         (image-data (if (eq type 'svg)
+                         (emjupy--mime-text payload)
+                       (base64-decode-string (emjupy--mime-text payload)))))
+    (create-image image-data type t)))
 
 (defun emjupy-restart-kernel ()
-  "Restart the currently connected kernel and reconnect its websocket."
+  "Restart THIS notebook's kernel and reconnect its websocket.
+Other open notebooks, and their kernels, are untouched."
   (interactive)
-  (unless (and emjupy--current-server emjupy--current-kernel-id)
-    (user-error "No kernel connected! Use C-c C-z to select/start a kernel"))
-  (let* ((hp (emjupy--server-host-port))
-         (host (car hp))
-         (port (cdr hp))
-         (token (or (emjupy-server-token emjupy--current-server) ""))
-         (kernel-id emjupy--current-kernel-id))
-    (when (and emjupy--ws-connection (websocket-openp emjupy--ws-connection))
-      (websocket-close emjupy--ws-connection))
-    ;; Old in-flight requests will never get a reply from the restarted
-    ;; kernel process, so drop them rather than leave them pending forever.
-    (clrhash emjupy--pending-requests)
-    (emjupy--http-request "POST" emjupy--current-server (format "/api/kernels/%s/restart" kernel-id))
-    (message "Kernel %s restarting..." kernel-id)
-    (emjupy-connect-kernel host port kernel-id token)))
+  (let* ((nb (emjupy--notebook))
+         (kernel (emjupy-notebook-kernel nb)))
+    (unless (and kernel (emjupy-kernel-id kernel))
+      (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
+    (let ((kernel-id (emjupy-kernel-id kernel))
+          (server (emjupy-notebook-server nb))
+          (name (emjupy-kernel-name kernel)))
+      ;; Old in-flight requests will never get a reply from the restarted
+      ;; kernel process, so drop them rather than leave them pending forever.
+      (emjupy--disconnect-kernel nb)
+      (emjupy--http-request "POST" server (format "/api/kernels/%s/restart" kernel-id))
+      (message "Kernel %s restarting..." kernel-id)
+      (emjupy-connect-kernel nb kernel-id name))))
+
+(defun emjupy-reconnect-kernel ()
+  "Reopen this notebook's WebSocket to the SAME kernel.
+For when the tunnel dropped but the remote kernel kept running: the
+kernel's state is intact, only Emacs's socket needs re-establishing."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (kernel (emjupy-notebook-kernel nb)))
+    (unless (and kernel (emjupy-kernel-id kernel))
+      (user-error "This notebook has no kernel to reconnect to"))
+    (let ((id (emjupy-kernel-id kernel))
+          (name (emjupy-kernel-name kernel)))
+      (emjupy--disconnect-kernel nb)
+      (emjupy-connect-kernel nb id name)
+      (message "[emjupy] Reconnecting %s to kernel %s..." (emjupy-notebook-path nb) id))))
+
+(defun emjupy-switch-notebook ()
+  "Switch to another open emjupy notebook, labelled by server."
+  (interactive)
+  (let* ((buffers (emjupy--notebook-buffers))
+         (names (mapcar #'buffer-name buffers)))
+    (unless names (user-error "No emjupy notebooks are open"))
+    (switch-to-buffer (completing-read "Notebook: " names nil t))))
+
+(defun emjupy-status ()
+  "Report every open notebook, its server, and its kernel."
+  (interactive)
+  (let ((buffers (emjupy--notebook-buffers)))
+    (if (not buffers)
+        (message "[emjupy] No notebooks open.")
+      (message
+       "%s"
+       (mapconcat
+        (lambda (b)
+          (let* ((nb (buffer-local-value 'emjupy--buffer-notebook b))
+                 (k (emjupy-notebook-kernel nb)))
+            (format "%-28s %-22s %s"
+                    (emjupy-notebook-path nb)
+                    (emjupy--server-label (emjupy-notebook-server nb))
+                    (cond ((null k) "no kernel")
+                          ((emjupy--ws-live-p k)
+                           (format "kernel %s (connected)" (emjupy-kernel-id k)))
+                          (t (format "kernel %s (disconnected)" (emjupy-kernel-id k)))))))
+        buffers "\n")))))
 
 ;; =============================================================================
 ;; 8. External Editing (real major-mode buffer, for Eglot/LSP etc.)
@@ -992,10 +1393,15 @@ buffer like any ordinary Python file."
     (nreverse sections)))
 
 (defun emjupy--shadow-file-path (nb)
-  "Return a stable on-disk path for NB's shadow Python file."
+  "Return a stable on-disk path for NB's shadow Python file.
+The server is folded into the name: two servers can both host
+`analysis.ipynb', and one shadow file cannot stand for both."
   (let* ((dir (expand-file-name "emjupy-shadow" temporary-file-directory))
+         (server (emjupy-notebook-server nb))
+         (tag (if server (emjupy--server-label server) "local"))
          (safe-name (replace-regexp-in-string
-                     "[^A-Za-z0-9._-]" "_" (or (emjupy-notebook-path nb) "untitled"))))
+                     "[^A-Za-z0-9._-]" "_"
+                     (format "%s__%s" tag (or (emjupy-notebook-path nb) "untitled")))))
     (make-directory dir t)
     (expand-file-name (concat safe-name ".py") dir)))
 
@@ -1003,21 +1409,46 @@ buffer like any ordinary Python file."
   "Get-or-create NB's persistent code shadow-buffer, refresh its content to
 match the current cells, and make sure Eglot is (or becomes) attached --
 automatically, with nothing for the user to run."
-  (let ((buf (emjupy-notebook-shadow-buffer nb)))
+  (let ((buf (emjupy-notebook-shadow-buffer nb))
+        (content (emjupy--build-shadow-content nb))
+        (path (emjupy--shadow-file-path nb)))
     (unless (buffer-live-p buf)
-      (setq buf (find-file-noselect (emjupy--shadow-file-path nb)))
+      ;; A buffer may already be visiting this path from an earlier open of
+      ;; the same notebook. Reuse it rather than writing the file behind its
+      ;; back, which would leave a stale modtime and make the next visit
+      ;; interrupt with "changed on disk. Reread from disk?".
+      (setq buf (find-buffer-visiting path))
+      (unless (buffer-live-p buf)
+        ;; Write the real content to disk BEFORE visiting the file.
+        ;;
+        ;; Once any server is running for this project, Eglot auto-manages a
+        ;; newly visited file from `find-file-hook' and sends didOpen with
+        ;; whatever the buffer holds at that instant. Visiting first and
+        ;; filling the buffer afterwards therefore hands the server a stale
+        ;; (or empty) document -- which is why the SECOND notebook opened in
+        ;; a session silently got no hover and almost no completions, even
+        ;; though `eglot--managed-mode' reported t.
+        (write-region content nil path nil 'quiet)
+        (setq buf (find-file-noselect path)))
       (setf (emjupy-notebook-shadow-buffer nb) buf)
       (with-current-buffer buf
-        (python-mode)
+        ;; `find-file-noselect' already picked python-mode from the .py
+        ;; suffix. Re-running it would `kill-all-local-variables', tearing
+        ;; down both Eglot's buffer-local state and the two variables set
+        ;; just below.
+        (unless (derived-mode-p 'python-mode 'python-ts-mode)
+          (python-mode))
         (emjupy-shadow-edit-mode 1)
         (setq emjupy--edit-shadow-notebook nb)))
     (with-current-buffer buf
-      (let ((new-content (emjupy--build-shadow-content nb)))
-        (unless (string= new-content (buffer-string))
-          (erase-buffer)
-          (insert new-content)
-          (write-region (point-min) (point-max) buffer-file-name nil 'quiet)
-          (set-buffer-modified-p nil)))
+      (unless (string= content (buffer-string))
+        (erase-buffer)
+        (insert content)
+        (write-region (point-min) (point-max) buffer-file-name nil 'quiet)
+        ;; Record the modtime we just created, otherwise this buffer looks
+        ;; stale to Emacs forever after and every later visit prompts.
+        (set-visited-file-modtime)
+        (set-buffer-modified-p nil))
       (if (not (require 'eglot nil t))
           (message "[emjupy] Eglot isn't available in this Emacs (needs Emacs 29+).")
         (condition-case err
@@ -1147,7 +1578,12 @@ value, or nil if point isn't in a code cell."
              (buf (emjupy--ensure-shadow-buffer nb))
              (shadow-start (emjupy--shadow-section-start buf (emjupy-cell-id cell))))
         (with-current-buffer buf
-          (goto-char (+ shadow-start (- main-point cell-start)))
+          ;; Clamp: if the cell's shadow section is shorter than the offset
+          ;; (mid-edit, before a resync), an unclamped goto-char signals
+          ;; `args-out-of-range' and kills completion for the whole buffer.
+          (goto-char (max (point-min)
+                          (min (point-max)
+                               (+ shadow-start (- main-point cell-start)))))
           (funcall fn cell-start shadow-start buf))))))
 
 (defun emjupy--cell-completion-at-point ()
@@ -1174,6 +1610,16 @@ cell in the notebook, automatically."
                          wrapped)
                    (nthcdr 3 result))))))))
 
+(defun emjupy--eglot-capable-p (&rest capabilities)
+  "Return non-nil if the current Eglot server advertises CAPABILITIES.
+`eglot--server-capable' was renamed `eglot-server-capable' in Emacs
+30, so guarding on the old private name alone silently disables eldoc
+on newer Emacs."
+  (cond
+   ((fboundp 'eglot-server-capable) (apply #'eglot-server-capable capabilities))
+   ((fboundp 'eglot--server-capable) (apply #'eglot--server-capable capabilities))
+   (t nil)))
+
 (defun emjupy--cell-eldoc-function (callback)
   "`eldoc-documentation-functions' entry: request hover info from Eglot
 directly via the shared code shadow buffer.
@@ -1187,8 +1633,7 @@ is the whole point. `jsonrpc-request' (blocking) bypasses that gate."
    (lambda (_cell-start _shadow-start _buf)
      (when (and (fboundp 'eglot-current-server) (eglot-current-server)
                 (fboundp 'jsonrpc-request)
-                (fboundp 'eglot--server-capable)
-                (ignore-errors (eglot--server-capable :hoverProvider)))
+                (ignore-errors (emjupy--eglot-capable-p :hoverProvider)))
        (ignore-errors
          (let* ((server (eglot--current-server-or-lose))
                 (resp (jsonrpc-request server :textDocument/hover

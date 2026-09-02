@@ -25,10 +25,6 @@ buffer it created)."
            (emjupy-mode)
            (setq emjupy--buffer-notebook ,nb-var)
            (setf (emjupy-notebook-buffer ,nb-var) ,buf-var)
-           ;; Real usage sets this in emjupy-open-notebook; several
-           ;; functions (e.g. emjupy--append-output-to-cell) depend on
-           ;; it rather than on Emacs's ambient current-buffer.
-           (setq emjupy--current-notebook-buffer ,buf-var)
            (emjupy--rerender-notebook)
            ,@body)
        (let ((kill-buffer-query-functions nil))
@@ -36,6 +32,28 @@ buffer it created)."
          (when (and (emjupy-notebook-shadow-buffer ,nb-var)
                     (buffer-live-p (emjupy-notebook-shadow-buffer ,nb-var)))
            (ignore-errors (kill-buffer (emjupy-notebook-shadow-buffer ,nb-var))))))))
+
+(defvar emjupy-test--sent nil
+  "Payloads captured by `emjupy-test--with-fake-kernel'.")
+
+(defmacro emjupy-test--with-fake-kernel (&rest body)
+  "Run BODY with a stubbed-out kernel attached to this buffer's notebook.
+
+Stubs the two seam functions rather than stuffing a non-websocket
+sentinel into the kernel: the real `websocket-openp' type-checks its
+argument, so a sentinel raises `wrong-type-argument' instead of
+exercising the code under test. Sent payloads land in
+`emjupy-test--sent'."
+  `(let ((emjupy-test--sent nil))
+     (when emjupy--buffer-notebook
+       (setf (emjupy-notebook-kernel emjupy--buffer-notebook)
+             (make-emjupy-kernel :id "fake-kernel"
+                                 :pending (make-hash-table :test 'equal)
+                                 :notebook emjupy--buffer-notebook)))
+     (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+               ((symbol-function 'emjupy--ws-send)
+                (lambda (payload &rest _) (push payload emjupy-test--sent))))
+       ,@body)))
 
 ;;; ---------------------------------------------------------------------
 ;;; 1. Data structures
@@ -61,6 +79,145 @@ buffer it created)."
     (should (string= (emjupy-cell-source first-cell) "import numpy as np\nprint(1)"))
     (should (string-match-p "\"nbformat\":4" reserialized))
     (should (string-match-p "\"import numpy as np\\\\n\"" reserialized))))
+
+;;; ---------------------------------------------------------------------
+;;; 2b. nbformat validity of what we WRITE BACK
+;;; ---------------------------------------------------------------------
+;; The whole point of the .ipynb-as-source-of-truth design is that
+;; non-emacs collaborators can open what we save. A notebook that fails
+;; `nbformat.validate' is rejected by nbconvert, papermill and friends
+;; even though it looks fine inside emjupy.
+
+(ert-deftest emjupy-test-serialize-emits-cell-ids ()
+  "nbformat_minor 5 requires an `id' on EVERY cell."
+  (let* ((c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x=1"
+                              :outputs [] :metadata (make-hash-table)))
+         (nb (make-emjupy-notebook :cells (vector c)))
+         (out (json-parse-string (emjupy--serialize-notebook nb)
+                                 :object-type 'hash-table :array-type 'array))
+         (cell (aref (gethash "cells" out) 0)))
+    (should (stringp (gethash "id" cell)))
+    (should (> (length (gethash "id" cell)) 0))))
+
+(ert-deftest emjupy-test-serialize-preserves-original-cell-id ()
+  "A cell that came from a real notebook keeps ITS id on the way back
+out, so a round trip doesn't renumber cells for collaborators."
+  (let* ((raw "{\"cells\":[{\"cell_type\":\"code\",\"id\":\"abc12345\",\"execution_count\":null,\"metadata\":{},\"outputs\":[],\"source\":[\"x=1\"]}],\"metadata\":{},\"nbformat\":4,\"nbformat_minor\":5}")
+         (nb (emjupy--parse-ipynb raw))
+         (out (json-parse-string (emjupy--serialize-notebook nb)
+                                 :object-type 'hash-table :array-type 'array)))
+    (should (equal (gethash "id" (aref (gethash "cells" out) 0)) "abc12345"))))
+
+(ert-deftest emjupy-test-serialize-normalizes-required-output-fields ()
+  "display_data/execute_result outputs REQUIRE `metadata' (and
+execute_result also `execution_count') per the nbformat v4 schema.
+Kernels don't always send them."
+  (let* ((oh (make-hash-table :test 'equal))
+         (dat (make-hash-table :test 'equal))
+         (c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "plot()"
+                              :metadata (make-hash-table))))
+    (puthash "text/plain" "<Figure>" dat)
+    (puthash "output_type" "display_data" oh)
+    (puthash "data" dat oh)                ; deliberately NO metadata
+    (setf (emjupy-cell-outputs c) (vector oh))
+    (let* ((nb (make-emjupy-notebook :cells (vector c)))
+           (out (json-parse-string (emjupy--serialize-notebook nb)
+                                   :object-type 'hash-table :array-type 'array))
+           (o (aref (gethash "outputs" (aref (gethash "cells" out) 0)) 0)))
+      (should (hash-table-p (gethash "metadata" o))))))
+
+(ert-deftest emjupy-test-source-roundtrip-is-idempotent ()
+  "Only interior lines carry a newline in the nbformat `source' array.
+Appending one to the last line too makes every save/reload cycle grow
+the cell by a trailing blank line."
+  (should (equal (append (emjupy--source-lines "a\nb") nil) '("a\n" "b")))
+  (should (equal (append (emjupy--source-lines "solo") nil) '("solo")))
+  ;; parse(serialize(x)) == x
+  (let* ((src "import numpy as np\nprint(1)")
+         (c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source src
+                              :outputs [] :metadata (make-hash-table)))
+         (nb (make-emjupy-notebook :cells (vector c)))
+         (again (emjupy--parse-ipynb (emjupy--serialize-notebook nb))))
+    (should (equal (emjupy-cell-source (aref (emjupy-notebook-cells again) 0)) src))))
+
+;;; ---------------------------------------------------------------------
+;;; 2c. Server URL parsing (remote kernels reached through an SSH tunnel)
+;;; ---------------------------------------------------------------------
+
+(ert-deftest emjupy-test-server-parts-handles-tunnel-urls ()
+  "A tunnelled server may be given as a bare port, a host:port, a full
+https URL, or a proxied base path -- all of which have to survive into
+the WebSocket URL, not just the REST calls."
+  (cl-flet ((parts (url) (emjupy--server-parts (make-emjupy-server :base-url url))))
+    (let ((p (parts "localhost:18888")))
+      (should (equal (plist-get p :host) "localhost"))
+      (should (equal (plist-get p :port) "18888"))
+      (should (equal (plist-get p :ws-scheme) "ws"))
+      (should (equal (plist-get p :path) "")))
+    ;; https must become wss, or the handshake is plaintext against a TLS port
+    (let ((p (parts "https://example.org:8443")))
+      (should (equal (plist-get p :ws-scheme) "wss"))
+      (should (equal (plist-get p :port) "8443")))
+    ;; a proxy / JupyterHub prefix must be kept
+    (let ((p (parts "localhost:8888/user/alice")))
+      (should (equal (plist-get p :host) "localhost"))
+      (should (equal (plist-get p :port) "8888"))
+      (should (equal (plist-get p :path) "/user/alice")))))
+
+(ert-deftest emjupy-test-kernel-ws-url-is-scheme-and-path-aware ()
+  "The kernel WebSocket URL must carry the scheme, the base path, and a
+url-encoded token -- and must NOT emit a bare `?token=' when there is
+no token."
+  (let ((captured nil))
+    (cl-letf (((symbol-function 'websocket-open)
+               (lambda (url &rest _) (setq captured url) nil)))
+      (let* ((server (make-emjupy-server
+                      :base-url "https://example.org:8443/user/alice" :token "t o k"))
+             (nb (make-emjupy-notebook :path "a.ipynb" :server server)))
+        (emjupy-connect-kernel nb "kid")
+        (should (string-prefix-p "wss://" captured))
+        (should (string-match-p "/user/alice/api/kernels/kid/channels" captured))
+        (should (string-match-p "token=t%20o%20k" captured)))
+      (let* ((server (make-emjupy-server :base-url "localhost:18888" :token ""))
+             (nb (make-emjupy-notebook :path "b.ipynb" :server server)))
+        (emjupy-connect-kernel nb "kid")
+        (should (string-prefix-p "ws://" captured))
+        (should-not (string-match-p "token=" captured))))))
+
+(ert-deftest emjupy-test-two-servers-keep-separate-xsrf ()
+  "The XSRF cookie belongs to ONE server. Sharing it globally means a
+second tunnel replays the first server's cookie and earns a 403."
+  (let ((a (emjupy--intern-server "localhost:18888" "tok-a"))
+        (b (emjupy--intern-server "localhost:19999" "tok-b")))
+    (setf (emjupy-server-xsrf a) "xsrf-a")
+    (setf (emjupy-server-xsrf b) "xsrf-b")
+    (should (equal (emjupy-server-xsrf a) "xsrf-a"))
+    (should (equal (emjupy-server-xsrf b) "xsrf-b"))
+    (should-not (eq a b))
+    ;; re-login to a known server updates its token but keeps the object,
+    ;; so notebooks already pointing at it stay valid
+    (let ((again (emjupy--intern-server "localhost:18888" "tok-a2")))
+      (should (eq again a))
+      (should (equal (emjupy-server-token a) "tok-a2"))
+      (should (equal (emjupy-server-xsrf a) "xsrf-a")))))
+
+(ert-deftest emjupy-test-notebook-buffer-name-includes-server ()
+  "The same notebook path can exist on two servers; one buffer cannot
+represent both."
+  (let ((a (make-emjupy-server :base-url "localhost:18888"))
+        (b (make-emjupy-server :base-url "localhost:19999")))
+    (should-not (equal (emjupy--notebook-buffer-name "analysis.ipynb" a)
+                       (emjupy--notebook-buffer-name "analysis.ipynb" b)))))
+
+(ert-deftest emjupy-test-shadow-path-includes-server ()
+  "Likewise for the Eglot shadow file: two servers hosting
+`analysis.ipynb' must not share one shadow buffer, or each would
+clobber the other's code."
+  (let* ((a (make-emjupy-notebook :path "analysis.ipynb"
+                                  :server (make-emjupy-server :base-url "localhost:18888")))
+         (b (make-emjupy-notebook :path "analysis.ipynb"
+                                  :server (make-emjupy-server :base-url "localhost:19999"))))
+    (should-not (equal (emjupy--shadow-file-path a) (emjupy--shadow-file-path b)))))
 
 ;;; ---------------------------------------------------------------------
 ;;; 3. Cell operations: insert / delete / move / cycle-type
@@ -125,12 +282,14 @@ every later cell must still render after it, in order."
         (c3 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "3+3" :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector c1 c2 c3) buf nb
       (with-current-buffer buf
-        (let ((emjupy--ws-connection 'fake-connection))
-          (goto-char (overlay-start (emjupy-cell-overlay c1)))
-          (emjupy-execute-cell-at-point))
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-at-point)
+         ;; the code that got sent is the cell we asked for, not a neighbour
+         (should (string-match-p (regexp-quote "1+1") (car emjupy-test--sent))))
         (let ((oh (make-hash-table :test 'equal)))
           (puthash "output_type" "stream" oh) (puthash "name" "stdout" oh) (puthash "text" "2\n" oh)
-          (emjupy--append-output-to-cell c1 oh))
+          (emjupy--append-output-to-cell c1 oh nb))
         (should (< (overlay-start (emjupy-cell-output-ov c1)) (overlay-start (emjupy-cell-overlay c2))))
         (should (< (overlay-start (emjupy-cell-overlay c2)) (overlay-start (emjupy-cell-overlay c3))))))))
 
@@ -143,13 +302,13 @@ one being run."
         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector c1 c2) buf nb
       (with-current-buffer buf
-        (let ((emjupy--ws-connection 'fake-connection))
-          ;; type into cell 2 with no explicit sync, the way live typing works
-          (goto-char (overlay-start (emjupy-cell-overlay c2)))
-          (insert "999")
-          ;; then execute cell 1
-          (goto-char (overlay-start (emjupy-cell-overlay c1)))
-          (emjupy-execute-cell-at-point))
+        (emjupy-test--with-fake-kernel
+         ;; type into cell 2 with no explicit sync, the way live typing works
+         (goto-char (overlay-start (emjupy-cell-overlay c2)))
+         (insert "999")
+         ;; then execute cell 1
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-at-point))
         (should (string-match-p "999" (buffer-string)))))))
 
 ;;; ---------------------------------------------------------------------
@@ -196,11 +355,14 @@ overlong label."
   "display_data messages -- how matplotlib's inline figure actually
 arrives, separately from the execute_result text repr -- must be
 captured, not silently ignored."
-  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "plot()"
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "plot()"
                                  :outputs [] :metadata (make-hash-table)))
-        (msg-id "msg-display-data-test")
-        (emjupy--pending-requests (make-hash-table :test 'equal)))
-    (puthash msg-id cell emjupy--pending-requests)
+         (msg-id "msg-display-data-test")
+         (nb (make-emjupy-notebook :cells (vector cell)))
+         (kernel (make-emjupy-kernel :id "k1"
+                                     :pending (make-hash-table :test 'equal)
+                                     :notebook nb)))
+    (puthash msg-id cell (emjupy-kernel-pending kernel))
     (let* ((hdr (make-hash-table :test 'equal)) (ph (make-hash-table :test 'equal))
            (dat (make-hash-table :test 'equal)) (content (make-hash-table :test 'equal))
            (msg (make-hash-table :test 'equal)))
@@ -209,14 +371,19 @@ captured, not silently ignored."
       (puthash "image/png" "iVBORw0KGgo=" dat)
       (puthash "data" dat content)
       (puthash "header" hdr msg) (puthash "parent_header" ph msg) (puthash "content" content msg)
-      (ignore-errors (emjupy--handle-ws-message nil (json-serialize msg)))
+      ;; Handed the raw payload rather than a websocket-frame -- the handler
+      ;; accepts either, so recorded kernel traffic can be replayed. NOT
+      ;; wrapped in ignore-errors: a throw here must fail the test, not be
+      ;; silently absorbed into a passing "0 outputs" assertion.
+      (emjupy--handle-ws-message kernel (json-serialize msg))
       (should (> (length (emjupy-cell-outputs cell)) 0))
       (should (equal (gethash "output_type" (aref (emjupy-cell-outputs cell) 0)) "display_data")))))
 
 (ert-deftest emjupy-test-image-preferred-over-text ()
   "When a result carries both image/png and text/plain, the image
-branch is taken; a text-only result still renders its text normally."
-  (cl-letf (((symbol-function 'create-image)
+branch is taken -- on an Emacs that can actually display images."
+  (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) t))
+            ((symbol-function 'create-image)
              (lambda (data &optional type &rest _) (list 'image :type type :len (length data))))
             ((symbol-function 'insert-image)
              (lambda (img &rest _) (insert (format "<<IMG:%s>>" (plist-get (cdr img) :type))))))
@@ -231,40 +398,287 @@ branch is taken; a text-only result still renders its text normally."
         (with-current-buffer buf
           (should (string-match-p "<<IMG:png>>" (buffer-string))))))))
 
+(ert-deftest emjupy-test-image-falls-back-to-text-without-image-support ()
+  "On an Emacs that CANNOT display images (a tty frame, or a build
+without libpng -- `emacs-nox' is the common case), an image output must
+degrade to the bundle's own text/plain repr plus a visible note.
+
+Regression test: `create-image' SIGNALS `Invalid image type' rather
+than returning nil, and rendering happens inside the websocket
+callback where websocket.el swallows errors -- so the failure mode was
+a silently blank output box with nothing logged."
+  (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) nil)))
+    (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "plot()"
+                                    :outputs [] :metadata (make-hash-table)))
+           (oh (make-hash-table :test 'equal)) (dat (make-hash-table :test 'equal)))
+      (puthash "image/png" "iVBORw0KGgo=" dat)
+      (puthash "text/plain" "<Figure size 640x480>" dat)
+      (puthash "output_type" "display_data" oh) (puthash "data" dat oh)
+      (setf (emjupy-cell-outputs cell) (vector oh))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (let ((text (buffer-string)))
+            ;; the text repr is shown ...
+            (should (string-match-p "<Figure size 640x480>" text))
+            ;; ... and the user is told why there's no picture
+            (should (string-match-p "image/png" text))
+            ;; and the output box is NOT empty
+            (should (emjupy-cell-output-ov cell))))))))
+
+(ert-deftest emjupy-test-image-render-error-is-reported-not-swallowed ()
+  "If `create-image' signals even though the type looked available, the
+cell must still render something explaining itself rather than a blank box."
+  (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) t))
+            ((symbol-function 'create-image)
+             (lambda (&rest _) (error "Invalid image type `png'"))))
+    (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "plot()"
+                                    :outputs [] :metadata (make-hash-table)))
+           (oh (make-hash-table :test 'equal)) (dat (make-hash-table :test 'equal)))
+      (puthash "image/png" "iVBORw0KGgo=" dat)
+      (puthash "text/plain" "<Figure>" dat)
+      (puthash "output_type" "display_data" oh) (puthash "data" dat oh)
+      (setf (emjupy-cell-outputs cell) (vector oh))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (should (string-match-p "could not render" (buffer-string))))))))
+
+(ert-deftest emjupy-test-svg-is-not-base64-decoded ()
+  "image/svg+xml arrives as literal markup, not base64 -- decoding it
+would corrupt it (or signal)."
+  (cl-letf (((symbol-function 'create-image)
+             (lambda (data &optional type &rest _) (list 'image :type type :data data))))
+    (let ((img (emjupy--render-image-output "<svg width='1'></svg>" 'svg)))
+      (should (equal (plist-get (cdr img) :data) "<svg width='1'></svg>")))))
+
+(ert-deftest emjupy-test-mime-text-accepts-string-or-array ()
+  "nbformat stores multi-line MIME payloads as a string OR an array of
+lines depending on whether the JSON came from the Contents API or
+straight off disk; both must render."
+  (should (equal (emjupy--mime-text "a\nb") "a\nb"))
+  (should (equal (emjupy--mime-text ["a\n" "b"]) "a\nb"))
+  (should (equal (emjupy--mime-text nil) "")))
+
+(ert-deftest emjupy-test-duplicate-image-rendered-once ()
+  "A cell whose last expression is a figure receives the SAME picture
+twice from the kernel -- once as the execute_result repr, once as the
+inline backend's display_data. It must be drawn once."
+  (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) t))
+            ((symbol-function 'create-image)
+             (lambda (data &optional type &rest _) (list 'image :type type :len (length data))))
+            ((symbol-function 'insert-image)
+             (lambda (img &rest _) (insert (format "<<IMG:%s>>" (plist-get (cdr img) :type))))))
+    (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "fig"
+                                   :outputs [] :metadata (make-hash-table)))
+           (mk (lambda (kind)
+                 (let ((oh (make-hash-table :test 'equal))
+                       (dat (make-hash-table :test 'equal)))
+                   (puthash "image/png" "iVBORw0KGgoSAMEPAYLOAD==" dat)
+                   (puthash "text/plain" "<Figure size 640x480 with 1 Axes>" dat)
+                   (puthash "output_type" kind oh)
+                   (puthash "data" dat oh)
+                   oh))))
+      (setf (emjupy-cell-outputs cell)
+            (vector (funcall mk "execute_result") (funcall mk "display_data")))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (let ((n 0) (start 0))
+            (while (string-match "<<IMG:png>>" (buffer-string) start)
+              (setq n (1+ n) start (match-end 0)))
+            (should (= n 1))))))))
+
+(ert-deftest emjupy-test-distinct-images-both-rendered ()
+  "Deduplication must only collapse IDENTICAL images -- two different
+figures in one cell are two outputs and both have to show."
+  (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) t))
+            ((symbol-function 'create-image)
+             (lambda (data &optional type &rest _) (list 'image :type type :len (length data))))
+            ((symbol-function 'insert-image)
+             (lambda (img &rest _) (insert (format "<<IMG:%s>>" (plist-get (cdr img) :type))))))
+    (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "two figs"
+                                   :outputs [] :metadata (make-hash-table)))
+           (mk (lambda (payload)
+                 (let ((oh (make-hash-table :test 'equal))
+                       (dat (make-hash-table :test 'equal)))
+                   (puthash "image/png" payload dat)
+                   (puthash "output_type" "display_data" oh)
+                   (puthash "data" dat oh)
+                   oh))))
+      (setf (emjupy-cell-outputs cell)
+            (vector (funcall mk "iVBORw0KGgoAAAAA") (funcall mk "iVBORw0KGgoBBBBB")))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (let ((n 0) (start 0))
+            (while (string-match "<<IMG:" (buffer-string) start)
+              (setq n (1+ n) start (match-end 0)))
+            (should (= n 2))))))))
+
+(ert-deftest emjupy-test-repeated-text-output-is-not-deduplicated ()
+  "Two identical `print' calls really are two outputs -- only images
+are collapsed."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "print"
+                                 :outputs [] :metadata (make-hash-table)))
+         (mk (lambda ()
+               (let ((oh (make-hash-table :test 'equal)))
+                 (puthash "output_type" "stream" oh)
+                 (puthash "name" "stdout" oh)
+                 (puthash "text" "same line\n" oh)
+                 oh))))
+    (setf (emjupy-cell-outputs cell) (vector (funcall mk) (funcall mk)))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((n 0) (start 0))
+          (while (string-match "same line" (buffer-string) start)
+            (setq n (1+ n) start (match-end 0)))
+          (should (= n 2)))))))
+
+(ert-deftest emjupy-test-dedup-does-not-alter-saved-outputs ()
+  "Deduplication is a RENDER-time concern only. The cell's outputs --
+and therefore the .ipynb we write back -- must still contain exactly
+what the kernel sent, so the file stays faithful for other clients."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "fig"
+                                 :outputs [] :metadata (make-hash-table)))
+         (mk (lambda (kind)
+               (let ((oh (make-hash-table :test 'equal))
+                     (dat (make-hash-table :test 'equal)))
+                 (puthash "image/png" "iVBORw0KGgoSAME=" dat)
+                 (puthash "output_type" kind oh)
+                 (puthash "data" dat oh)
+                 oh))))
+    (setf (emjupy-cell-outputs cell)
+          (vector (funcall mk "execute_result") (funcall mk "display_data")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      ;; render collapses to one ...
+      (should (= (length (emjupy--outputs-for-render (emjupy-cell-outputs cell))) 1))
+      ;; ... but the struct, and the serialized notebook, keep both
+      (should (= (length (emjupy-cell-outputs cell)) 2))
+      (let* ((json (emjupy--serialize-notebook nb))
+             (out (json-parse-string json :object-type 'hash-table :array-type 'array)))
+        (should (= (length (gethash "outputs" (aref (gethash "cells" out) 0))) 2))))))
+
+(ert-deftest emjupy-test-dedup-can-be-disabled ()
+  "`emjupy-deduplicate-image-outputs' nil restores the raw behaviour."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "fig"
+                                 :outputs [] :metadata (make-hash-table)))
+         (mk (lambda ()
+               (let ((oh (make-hash-table :test 'equal))
+                     (dat (make-hash-table :test 'equal)))
+                 (puthash "image/png" "iVBORw0KGgoSAME=" dat)
+                 (puthash "output_type" "display_data" oh)
+                 (puthash "data" dat oh)
+                 oh))))
+    (setf (emjupy-cell-outputs cell) (vector (funcall mk) (funcall mk)))
+    (let ((emjupy-deduplicate-image-outputs nil))
+      (should (= (length (emjupy--outputs-for-render (emjupy-cell-outputs cell))) 2)))
+    (let ((emjupy-deduplicate-image-outputs t))
+      (should (= (length (emjupy--outputs-for-render (emjupy-cell-outputs cell))) 1)))))
+
 ;;; ---------------------------------------------------------------------
 ;;; 7. Kernel restart
 ;;; ---------------------------------------------------------------------
 
 (ert-deftest emjupy-test-restart-kernel-requires-connection ()
-  "Restarting with no kernel connected signals a clear user-error
-instead of failing deep inside some HTTP call."
-  (let ((emjupy--current-server nil)
-        (emjupy--current-kernel-id nil))
+  "Restarting with no kernel signals a clear user-error instead of
+failing deep inside some HTTP call."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                                :outputs [] :metadata (make-hash-table)))
+      buf nb
     (should-error (emjupy-restart-kernel) :type 'user-error)))
 
 (ert-deftest emjupy-test-restart-kernel-reuses-same-id ()
-  "Restart must POST to the connected kernel's OWN id and reconnect
+  "Restart must POST to THIS notebook's own kernel id and reconnect
 with that SAME id (not spawn a fresh one), and drop now-orphaned
 pending requests."
-  (let ((emjupy--current-server (make-emjupy-server :base-url "localhost:8888" :token "tok"))
-        (emjupy--current-kernel-id "kernel-abc")
-        (emjupy--ws-connection 'fake-open)
-        (emjupy--pending-requests (make-hash-table :test 'equal))
-        (restart-path nil) (reconnected-with nil))
-    (puthash "stale-msg" 'some-cell emjupy--pending-requests)
-    (cl-letf (((symbol-function 'emjupy--http-request)
-               (lambda (_method _server path &rest _)
-                 (when (string-match-p "/restart" path) (setq restart-path path))
-                 (make-hash-table :test 'equal)))
-              ((symbol-function 'emjupy-connect-kernel)
-               (lambda (host port kernel-id token)
-                 (setq reconnected-with (list host port kernel-id token))))
-              ((symbol-function 'websocket-openp) (lambda (&rest _) t))
-              ((symbol-function 'websocket-close) (lambda (&rest _) nil)))
-      (emjupy-restart-kernel))
-    (should (string-match-p "kernel-abc" restart-path))
-    (should (equal (nth 2 reconnected-with) "kernel-abc"))
-    (should (= (hash-table-count emjupy--pending-requests) 0))))
+  (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "tok"))
+         (restart-path nil) (reconnected-with nil))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                                  :outputs [] :metadata (make-hash-table)))
+        buf nb
+      (setf (emjupy-notebook-server nb) server)
+      (let ((kernel (make-emjupy-kernel :id "kernel-abc" :server server
+                                        :pending (make-hash-table :test 'equal)
+                                        :notebook nb)))
+        (setf (emjupy-notebook-kernel nb) kernel)
+        (puthash "stale-msg" 'some-cell (emjupy-kernel-pending kernel))
+        (cl-letf (((symbol-function 'emjupy--http-request)
+                   (lambda (_method _server path &rest _)
+                     (when (string-match-p "/restart" path) (setq restart-path path))
+                     (make-hash-table :test 'equal)))
+                  ((symbol-function 'emjupy-connect-kernel)
+                   (lambda (notebook kernel-id &optional name)
+                     (setq reconnected-with (list notebook kernel-id name))))
+                  ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) nil)))
+          (emjupy-restart-kernel))
+        (should (string-match-p "kernel-abc" restart-path))
+        (should (equal (nth 1 reconnected-with) "kernel-abc"))
+        (should (eq (nth 0 reconnected-with) nb))
+        (should (= (hash-table-count (emjupy-kernel-pending kernel)) 0))))))
+
+;;; ---------------------------------------------------------------------
+;;; 7b. Several notebooks / several servers at once
+;;; ---------------------------------------------------------------------
+
+(ert-deftest emjupy-test-each-notebook-has-its-own-kernel ()
+  "Two open notebooks must hold two independent kernels. When kernel
+state was global, opening the second silently stole the first's
+connection."
+  (let* ((nb1 (make-emjupy-notebook :path "one.ipynb"
+                                    :server (make-emjupy-server :base-url "localhost:18888")))
+         (nb2 (make-emjupy-notebook :path "two.ipynb"
+                                    :server (make-emjupy-server :base-url "localhost:19999")))
+         (k1 (make-emjupy-kernel :id "k-one" :pending (make-hash-table :test 'equal) :notebook nb1))
+         (k2 (make-emjupy-kernel :id "k-two" :pending (make-hash-table :test 'equal) :notebook nb2)))
+    (setf (emjupy-notebook-kernel nb1) k1)
+    (setf (emjupy-notebook-kernel nb2) k2)
+    (should-not (eq (emjupy-notebook-kernel nb1) (emjupy-notebook-kernel nb2)))
+    (should-not (eq (emjupy-kernel-pending k1) (emjupy-kernel-pending k2)))
+    ;; and each kernel points back at its OWN notebook
+    (should (eq (emjupy-kernel-notebook k1) nb1))
+    (should (eq (emjupy-kernel-notebook k2) nb2))))
+
+(ert-deftest emjupy-test-output-goes-to-the-requesting-notebook ()
+  "A frame must be delivered to the notebook whose kernel produced it,
+not to whichever buffer happens to be current. This is the
+cross-talk that global `emjupy--current-notebook-buffer' caused: a
+slow cell in notebook A finishing while you were reading notebook B
+wrote A's output into B."
+  (let* ((cell-a (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
+                                   :outputs [] :metadata (make-hash-table)))
+         (cell-b (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b"
+                                   :outputs [] :metadata (make-hash-table)))
+         (buf-a (generate-new-buffer "*emjupy-A*"))
+         (buf-b (generate-new-buffer "*emjupy-B*"))
+         (nb-a (make-emjupy-notebook :path "A.ipynb" :cells (vector cell-a) :buffer buf-a))
+         (nb-b (make-emjupy-notebook :path "B.ipynb" :cells (vector cell-b) :buffer buf-b))
+         (k-a (make-emjupy-kernel :id "ka" :pending (make-hash-table :test 'equal) :notebook nb-a)))
+    (unwind-protect
+        (progn
+          (dolist (pair (list (cons buf-a nb-a) (cons buf-b nb-b)))
+            (with-current-buffer (car pair)
+              (emjupy-mode)
+              (setq emjupy--buffer-notebook (cdr pair))
+              (emjupy--rerender-notebook)))
+          (puthash "msg-a" cell-a (emjupy-kernel-pending k-a))
+          ;; deliver A's frame while B is the current buffer
+          (with-current-buffer buf-b
+            (let* ((hdr (make-hash-table :test 'equal)) (ph (make-hash-table :test 'equal))
+                   (content (make-hash-table :test 'equal)) (msg (make-hash-table :test 'equal)))
+              (puthash "msg_type" "stream" hdr)
+              (puthash "msg_id" "msg-a" ph)
+              (puthash "name" "stdout" content)
+              (puthash "text" "belongs-to-A\n" content)
+              (puthash "header" hdr msg) (puthash "parent_header" ph msg)
+              (puthash "content" content msg)
+              (emjupy--handle-ws-message k-a (json-serialize msg))))
+          (should (= (length (emjupy-cell-outputs cell-a)) 1))
+          (should (= (length (emjupy-cell-outputs cell-b)) 0))
+          (with-current-buffer buf-a
+            (should (string-match-p "belongs-to-A" (buffer-string))))
+          (with-current-buffer buf-b
+            (should-not (string-match-p "belongs-to-A" (buffer-string)))))
+      (let ((kill-buffer-query-functions nil))
+        (dolist (b (list buf-a buf-b)) (when (buffer-live-p b) (kill-buffer b)))))))
 
 ;;; ---------------------------------------------------------------------
 ;;; 8. Syntax highlighting
