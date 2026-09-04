@@ -42,14 +42,6 @@ test:
 check:
 	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
 
-# Deliberately NOT a timestamp-driven rule.
-#
-# If the tree is unpacked with mtimes ahead of the system clock -- a release
-# tarball built elsewhere, a checkout restored from backup, a container with a
-# skewed clock -- a `$(TAR): $(SOURCES)' rule can decide the tar is already up
-# to date and silently ship a STALE package, while make only mumbles "Clock
-# skew detected. Your build may be incomplete." Rebuilding ten small files
-# unconditionally costs nothing and cannot go stale.
 package:
 	@rm -rf $(PKG) $(TAR)
 	@mkdir -p $(PKG)
@@ -62,9 +54,6 @@ install: package
 	$(EMACS) -batch -Q --eval "(progn (require 'package) (package-initialize) \
 	  (package-install-file (expand-file-name \"$(TAR)\")))"
 
-# Reset mtimes to now. Run this if make warns that files have a modification
-# time "in the future" -- that means the files are stamped ahead of your
-# clock, not that anything is wrong with the sources.
 timestamps:
 	@find . -name '*.el' -o -name 'Makefile' -o -name '*.org' | xargs touch
 	@echo "timestamps reset to now"

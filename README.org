@@ -97,7 +97,6 @@ Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
 | =make install=  | install that tar via =package-install-file=           |
 | =make clean=    | remove =.elc= files and the tar                       |
 
-
 ** Unit tests
 
 The fast, self-contained suite needs nothing but Emacs and =websocket=:
@@ -153,6 +152,62 @@ EMJUPY_TEST_ROOT=/path/to/notebook/root \
 The eglot tests additionally need a Python language server on =PATH=
 (=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
 none is found.
+
+
+* Complete keymap
+* Keybindings
+
+** =emjupy-mode= (notebook buffers)
+
+| Key         | Command                           | Effect                                                            |
+|-------------+-----------------------------------+-------------------------------------------------------------------|
+| =C-c C-c=     | =emjupy-execute-cell-at-point=      | Execute the cell at point, leaving point where it is              |
+| =M-RET=       | =emjupy-execute-cell-and-goto-next= | Execute the cell and move to the next one                         |
+| =C-c C-r=     | =emjupy-execute-cell-and-goto-next= | Same as =M-RET=                                                     |
+| =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                      |
+| =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                      |
+| =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                          |
+| =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                         |
+| =M-<up>=      | =emjupy-move-cell-up=               | Move the cell one position earlier                                |
+| =M-<down>=    | =emjupy-move-cell-down=             | Move the cell one position later                                  |
+| =C-c '=       | =emjupy-edit-cell-externally=       | Edit the cell in the shadow buffer in a real major mode           |
+| =C-c C-n=     | =emjupy-next-cell=                  | Move point to the next cell                                       |
+| =M-n=         | =emjupy-next-cell=                  | Same as =C-c C-n=                                                   |
+| =C-c C-p=     | =emjupy-previous-cell=              | Move point to the previous cell                                   |
+| =M-p=         | =emjupy-previous-cell=              | Same as =C-c C-p=                                                   |
+| =C-x C-s=     | =emjupy-save-notebook=              | Write the notebook back to the server as nbformat v4              |
+| =C-c C-s=     | =emjupy-save-notebook=              | Same as =C-x C-s=                                                   |
+| =C-c C-z=     | =emjupy-connect-kernel-interactive= | Pick a running kernel or spawn one, for this notebook only        |
+| =C-c C-x C-r= | =emjupy-restart-kernel=             | Restart this notebook's kernel; other notebooks are untouched     |
+| =C-c C-x C-c= | =emjupy-reconnect-kernel=           | Reopen the socket to the same kernel after a drop; state survives |
+| =C-c C-x b=   | =emjupy-switch-notebook=            | Switch to another open notebook, labelled by server               |
+| =C-c C-x s=   | =emjupy-status=                     | List every open notebook with its server and kernel               |
+| =C-c C-x l=   | =emjupy-login=                      | Log in to another server (another ssh tunnel)                     |
+
+** =emjupy-shadow-edit-mode= (the =C-c '= buffer)
+
+| Key     | Command                   | Effect                                              |
+|---------+---------------------------+-----------------------------------------------------|
+| =C-c C-c= | =emjupy-commit-shadow-edit= | Write edits back into the notebook cells and return |
+| =C-c '=   | =emjupy-commit-shadow-edit= | Same as =C-c C-c=                                     |
+| =C-c C-k= | =emjupy-abort-shadow-edit=  | Discard edits and return to the notebook            |
+
+Note that =C-c C-k= means /delete cell/ in the notebook but /abort edit/ in
+the shadow buffer, while =C-c C-c= and =C-c '= behave the same in both.
+
+** Unbound commands (=M-x= only)
+
+| Command                   | Effect                                           |
+|---------------------------+--------------------------------------------------|
+| =emjupy-open-notebook=      | Open a notebook by path on a given server        |
+| =emjupy-list-notebooks=     | Prompt with the server's notebook list           |
+| =emjupy-create-notebook=    | Create a new blank notebook on the server        |
+| =emjupy-refresh-appearance= | Re-derive page colours from the theme and redraw |
+
+Completion (=M-TAB=) and eldoc need no emjupy binding: they are wired into
+the standard hooks and reach the language server through the shadow buffer
+automatically.
+
 
 * Landscape of emacs/jupyter packages
 
@@ -223,15 +278,6 @@ Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
 path can exist on two servers and one buffer cannot stand for both. The
 Eglot shadow file is qualified the same way, so two servers hosting
 =analysis.ipynb= don't clobber each other's code.
-
-| Key         | Command                           | Effect                                           |
-|-------------+-----------------------------------+--------------------------------------------------|
-| =C-c C-z=     | =emjupy-connect-kernel-interactive= | pick/spawn a kernel *for this notebook*            |
-| =C-c C-x C-r= | =emjupy-restart-kernel=             | restart *this* notebook's kernel only              |
-| =C-c C-x C-c= | =emjupy-reconnect-kernel=           | re-open the socket to the SAME kernel            |
-| =C-c C-x b=   | =emjupy-switch-notebook=            | jump between open notebooks (labelled by server) |
-| =C-c C-x s=   | =emjupy-status=                     | list every notebook, its server, its kernel      |
-| =C-c C-x l=   | =emjupy-login=                      | add another server                               |
 
 =C-c C-z= marks kernels already driving another open notebook as =[in
 use]=: attaching two notebooks to one kernel makes them share
