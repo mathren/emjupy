@@ -410,6 +410,84 @@ colour."
         (emjupy--sync-theme-colors)
         (should-not touched)))))
 
+(ert-deftest emjupy-test-cell-face-sets-only-background ()
+  "`emjupy-cell' must specify a background and NOTHING else.
+
+It is applied as an overlay face over cell text, and overlay faces merge
+on top of text properties -- so every attribute it specifies overrides
+font-lock. When it inherited `default' it carried a `:foreground',
+which silently masked all syntax highlighting."
+  (cl-letf (((symbol-function 'face-attribute)
+             (lambda (face attr &rest _)
+               (if (eq face 'default)
+                   (cond ((eq attr :background) "#ffffff")
+                         ((eq attr :foreground) "#000000"))
+                 (funcall (symbol-function 'face-attribute) face attr)))))
+    (ignore-errors (emjupy--sync-theme-colors)))
+  (dolist (face '(emjupy-cell emjupy-canvas))
+    ;; No inheritance at all: `:inherit default' is what dragged a
+    ;; foreground in, and it also resolves through the canvas remap.
+    (should (eq (face-attribute face :inherit nil nil) 'unspecified))
+    ;; INHERIT must be t here -- with nil, `face-attribute' does not follow
+    ;; `:inherit', so an inheriting face still reports `unspecified' and the
+    ;; check passes while the bug is present. (It did.)
+    (dolist (attr '(:foreground :weight :slant :underline :overline
+                    :strike-through :box :inverse-video))
+      (should (eq (face-attribute face attr nil t) 'unspecified)))))
+
+(ert-deftest emjupy-test-cell-overlay-does-not-mask-font-lock ()
+  "Rendered code keeps its font-lock faces underneath the cell overlay,
+and the overlay contributes no foreground to fight them."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "def f():\n    return 1" :outputs []
+                                :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (should (search-forward "def" nil t))
+        (let ((p (match-beginning 0)))
+          ;; font-lock is still on the text ...
+          (should (get-text-property p 'face))
+          ;; ... and the overlay on top adds no foreground of its own
+          (should (eq (face-attribute 'emjupy-cell :inherit nil nil) 'unspecified))
+          (should (eq (face-attribute 'emjupy-cell :foreground nil t) 'unspecified)))))))
+
+(ert-deftest emjupy-test-canvas-remap-installed-when-colors-usable ()
+  "Given two usable, distinct colours, the buffer's background IS
+remapped to the canvas -- that remap is what makes the gaps between
+cells read as the page behind them."
+  (let ((emjupy-canvas-color 'auto))
+    (cl-letf (((symbol-function 'face-attribute)
+               (lambda (face attr &rest _)
+                 (if (eq face 'default)
+                     (cond ((eq attr :background) "#ffffff")
+                           ((eq attr :foreground) "#000000")
+                           (t 'unspecified))
+                   'unspecified))))
+      (with-temp-buffer
+        (let ((face-remapping-alist nil))
+          (should (emjupy--sync-theme-colors))
+          (emjupy--apply-page-colors)
+          (should (equal (assq 'default face-remapping-alist)
+                         '(default emjupy-canvas)))
+          ;; installing twice must not stack duplicate entries
+          (emjupy--apply-page-colors)
+          (should (= 1 (length (seq-filter (lambda (e) (eq (car-safe e) 'default))
+                                           face-remapping-alist)))))))))
+
+(ert-deftest emjupy-test-no-canvas-remap-without-usable-colors ()
+  "If no cell colour can be derived, leave the buffer alone entirely.
+
+Remapping `default' to the canvas while `emjupy-cell' has no background
+of its own makes cells inherit the canvas colour -- inverting the look
+so the grey lands INSIDE the outlines instead of outside."
+  (cl-letf (((symbol-function 'face-attribute) (lambda (&rest _) "unspecified-bg")))
+    (with-temp-buffer
+      (let ((face-remapping-alist nil))
+        (should-not (emjupy--sync-theme-colors))
+        (emjupy--apply-page-colors)
+        (should-not (assq 'default face-remapping-alist))))))
+
 (ert-deftest emjupy-test-cells-painted-and-gutters-left-bare ()
   "Cell overlays carry `emjupy-cell' so their interiors read as paper,
 and the newline BETWEEN cells stays uncovered so the canvas shows
@@ -420,8 +498,6 @@ through -- that gap is the whole visual effect."
                                :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector c1 c2) buf nb
       (with-current-buffer buf
-        ;; the buffer's own background is remapped to the canvas
-        (should (equal (assq 'default face-remapping-alist) '(default emjupy-canvas)))
         ;; every cell overlay paints its interior
         (dolist (cell (list c1 c2))
           (should (eq (overlay-get (emjupy-cell-overlay cell) 'face) 'emjupy-cell))
@@ -434,6 +510,31 @@ through -- that gap is the whole visual effect."
         (should (cl-loop for p from (point-min) below (point-max)
                          thereis (and (eq (char-after p) ?\n)
                                       (null (overlays-at p)))))))))
+
+(ert-deftest emjupy-test-box-rules-are-closed-on-both-sides ()
+  "Every rule ends in a corner, not a bare horizontal line.
+
+The right-hand glyph has to match the left: a `┌' header closes with
+`┐', and the shared edge between an input box and its output box opens
+with `├' and closes with `┤'."
+  (let ((emjupy-box-width 40))
+    (let ((top (string-trim-right (emjupy--box-header "[In: 1] python"))))
+      (should (string-prefix-p "┌" top))
+      (should (string-suffix-p "┐" top)))
+    (let ((mid (string-trim-right (emjupy--box-header "[Out: 1]" "├"))))
+      (should (string-prefix-p "├" mid))
+      (should (string-suffix-p "┤" mid)))
+    (let ((bot (string-trim-right (emjupy--box-footer))))
+      (should (string-prefix-p "└" bot))
+      (should (string-suffix-p "┘" bot)))
+    ;; the corners are inside the width, not appended past it
+    (should (= (length (string-trim-right (emjupy--box-header "[In: 1] python"))) 40))
+    (should (= (length (string-trim-right (emjupy--box-header "[Out: 1]" "├"))) 40))
+    (should (= (length (string-trim-right (emjupy--box-footer))) 40)))
+  ;; an overlong label must still close the box rather than crash
+  (let ((emjupy-box-width 20))
+    (should (string-suffix-p "┐" (string-trim-right
+                                   (emjupy--box-header (make-string 200 ?x)))))))
 
 (ert-deftest emjupy-test-box-rules-follow-window-resize ()
   "Outlines are rebuilt when the window width changes.
@@ -494,6 +595,35 @@ rule looks far worse than a short one."
               ((symbol-function 'window-body-width)
                (lambda (w) (if (eq w 'w1) 200 80))))
       (should (= (emjupy--box-width) 79)))))
+
+(defvar emjupy-test--source-dir
+  (file-name-directory (or load-file-name buffer-file-name default-directory))
+  "Directory this test file was loaded from.
+Captured at load time: `load-file-name' is nil once a test actually
+runs, and deferring it there made the check below scan nothing and pass
+vacuously.")
+
+(ert-deftest emjupy-test-each-file-provides-only-itself ()
+  "Every file must `provide' its own feature and nothing else.
+
+Regression test: the split left a stray `(provide \='emjupy)' at the end
+of emjupy-eglot.el.  That made `(require \='emjupy)' a silent no-op for
+anyone who had loaded emjupy-eglot first -- emjupy.el never ran, so
+`emjupy-mode' was simply undefined, with no error to explain it."
+  (let ((files (directory-files emjupy-test--source-dir t "\\`emjupy.*\\.el\\'")))
+    ;; Guard against passing vacuously if the sources ever move.
+    (should (> (length files) 5))
+    (dolist (file files)
+      (let ((feature (intern (file-name-base file)))
+            (provides nil))
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward "^(provide '\\([a-z-]+\\))" nil t)
+            (push (intern (match-string 1)) provides)))
+        ;; test runners and emjupy-pkg.el legitimately provide nothing
+        (when provides
+          (should (equal provides (list feature))))))))
 
 ;;; ---------------------------------------------------------------------
 ;;; 3. Cell operations: insert / delete / move / cycle-type

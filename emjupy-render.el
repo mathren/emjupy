@@ -60,13 +60,26 @@ effect, leaving the whole buffer the theme's normal background."
   :group 'emjupy)
 
 (defface emjupy-cell
-  '((t :inherit default))
-  "Background INSIDE a cell outline -- the `paper' the cell sits on."
+  ;; Deliberately specifies NOTHING by default, and only ever gains a
+  ;; `:background'. Two reasons, both of which bit:
+  ;;
+  ;; 1. This face is applied as an OVERLAY face over cell text, and overlay
+  ;;    faces merge on top of text properties. Any attribute it specifies
+  ;;    wins -- so inheriting `default' (which carries a `:foreground')
+  ;;    masked every font-lock colour and killed syntax highlighting.
+  ;;
+  ;; 2. `default' is remapped to `emjupy-canvas' inside notebook buffers, so
+  ;;    `:inherit default' resolves THROUGH that remap and paints cells with
+  ;;    the canvas colour -- exactly inverting the intended look.
+  '((t))
+  "Background INSIDE a cell outline -- the `paper' the cell sits on.
+Only `:background' is ever set on this face; see the comment above."
   :group 'emjupy)
 
 (defface emjupy-canvas
-  '((t :inherit default))
-  "Background OUTSIDE cell outlines -- the page behind the cells."
+  '((t))
+  "Background OUTSIDE cell outlines -- the page behind the cells.
+Only `:background' is ever set on this face."
   :group 'emjupy)
 
 (defface emjupy-box-line
@@ -109,8 +122,11 @@ blend and the effect should simply be skipped."
 
 (defun emjupy--sync-theme-colors ()
   "Recompute `emjupy-cell' and `emjupy-canvas' from the active theme.
-Called when a notebook opens and whenever the theme changes, so the
-page colours track the theme instead of freezing at load time."
+
+Returns non-nil when both colours could be derived AND differ, i.e. when
+painting a canvas is actually meaningful. Callers use that to decide
+whether to install the remap at all: remapping without a usable cell
+colour would leave cells inheriting the canvas and invert the look."
   (let* ((bg (face-attribute 'default :background nil t))
          (fg (face-attribute 'default :foreground nil t))
          (canvas (cond
@@ -120,7 +136,22 @@ page colours track the theme instead of freezing at load time."
     (when (emjupy--color-rgb bg)
       (set-face-attribute 'emjupy-cell nil :background bg))
     (when (emjupy--color-rgb canvas)
-      (set-face-attribute 'emjupy-canvas nil :background canvas))))
+      (set-face-attribute 'emjupy-canvas nil :background canvas))
+    (and (emjupy--color-rgb bg)
+         (emjupy--color-rgb canvas)
+         (not (equal bg canvas)))))
+
+(defun emjupy--apply-page-colors ()
+  "Paint this buffer's background with the canvas colour, if there is one.
+
+Installs the remap only when `emjupy--sync-theme-colors' reports two
+usable, distinct colours. Otherwise the buffer is left entirely alone --
+better a flat notebook than one where every cell is painted the canvas
+colour because no cell colour could be derived."
+  (when (emjupy--sync-theme-colors)
+    (unless (assq 'default face-remapping-alist)
+      (setq-local face-remapping-alist
+                  (cons '(default emjupy-canvas) face-remapping-alist)))))
 
 (defun emjupy--on-theme-change (&rest _)
   "Re-derive emjupy's page colours after a theme is enabled or disabled."
@@ -226,13 +257,23 @@ markers and the undo history are all untouched."
     (with-current-buffer buf
       (emjupy--refresh-box-rules))))
 
+(defconst emjupy--box-corner-pairs
+  '(("┌" . "┐")   ; top of a box
+    ("├" . "┤"))  ; a shared edge: input box's bottom, output box's top
+  "Left corner glyph -> matching right corner glyph.")
+
 (defun emjupy--box-header (label &optional corner)
   "Return a box-drawing header line of `emjupy--box-width' columns with LABEL.
 CORNER is the left corner glyph, default \"┌\"; pass \"├\" when this
-header is meant to double as the closing edge of the box above it."
-  (let* ((prefix (format "%s─ %s " (or corner "┌") label))
-         (fill (max 0 (- (emjupy--box-width) (length prefix)))))
-    (concat prefix (make-string fill ?─) "\n")))
+header is meant to double as the closing edge of the box above it.  The
+matching right corner is chosen to suit, so the rule closes the box
+instead of trailing off into a bare horizontal line."
+  (let* ((corner (or corner "┌"))
+         (right (or (cdr (assoc corner emjupy--box-corner-pairs)) "┐"))
+         (prefix (format "%s─ %s " corner label))
+         ;; Reserve the last column for the right corner.
+         (fill (max 0 (- (emjupy--box-width) (length prefix) (length right)))))
+    (concat prefix (make-string fill ?─) right "\n")))
 
 (defun emjupy--box-footer ()
   "Return a box-drawing footer line of `emjupy--box-width' columns."

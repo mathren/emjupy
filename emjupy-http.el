@@ -57,7 +57,11 @@ to survive into the WebSocket URL as well as the REST calls."
     (cons (plist-get p :host) (plist-get p :port))))
 
 (defun emjupy--http-request (method server path &optional body callback)
-  "Internal wrapper for url-retrieve that reports exact HTTP errors and handles XSRF."
+  "Send a request to SERVER and return the parsed JSON response.
+METHOD is an HTTP method string, PATH the API path, BODY an optional
+request body.  CALLBACK, if given, makes the request asynchronous.
+Reports the exact HTTP status on failure and carries SERVER's own XSRF
+cookie."
   (let* ((url-request-method method)
          (url-request-data (when body (encode-coding-string body 'utf-8)))
          (url-automatic-caching nil)

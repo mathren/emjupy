@@ -38,7 +38,8 @@
              do (emjupy--sync-cell-source-from-buffer cell))))
 
 (defun emjupy--rerender-notebook (&optional target-cell)
-  "Re-render all cell overlays in current buffer. If TARGET-CELL is given, move point to it."
+  "Re-render every cell overlay in the current buffer.
+If TARGET-CELL is given, leave point at that cell afterwards."
   (when emjupy--buffer-notebook
     (let ((inhibit-read-only t)
           (cells (emjupy-notebook-cells emjupy--buffer-notebook))

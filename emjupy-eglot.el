@@ -27,6 +27,33 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 
+;; Eglot ships with Emacs (29.1+, which this package requires) but is pulled in
+;; at COMPILE time only: emjupy is fully usable without a language server, so
+;; nothing here loads Eglot until a shadow buffer actually asks for it -- see
+;; the runtime `require' in `emjupy--ensure-shadow-buffer'.
+(eval-when-compile (require 'eglot nil t))
+
+;; Eglot's private API. Every call site below is already guarded by `fboundp'
+;; or a runtime `require', but the compiler cannot see that and reports each
+;; one as "not known to be defined" -- noisy under native compilation, where
+;; the warnings surface in the user's *Warnings* buffer at install time.
+;;
+;; These are declared rather than assumed: they are internal names with no
+;; stability promise, and one of them has already been renamed once
+;; (`eglot--server-capable' -> `eglot-server-capable' in Emacs 30), which is
+;; why `emjupy--eglot-capable-p' probes for both.
+(declare-function eglot--connect "eglot")
+(declare-function eglot--guess-contact "eglot")
+(declare-function eglot--current-server-or-lose "eglot")
+(declare-function eglot--TextDocumentPositionParams "eglot")
+(declare-function eglot--hover-info "eglot")
+(declare-function eglot--server-capable "eglot")
+(declare-function eglot-server-capable "eglot")
+(declare-function eglot-current-server "eglot")
+(declare-function eglot-ensure "eglot")
+(declare-function eglot-hover-eldoc-function "eglot")
+(declare-function jsonrpc-request "jsonrpc")
+
 ;; emjupy-mode is a single fundamental-mode-derived buffer mixing code cells,
 ;; markdown cells, box-drawing decoration, and output text all interleaved --
 ;; nothing like the single-language file Eglot (or any tool that expects
@@ -407,9 +434,6 @@ is the whole point. `jsonrpc-request' (blocking) bypasses that gate."
            (unless (seq-empty-p contents)
              (funcall callback (eglot--hover-info contents (plist-get resp :range))))))
        t))))
-
-(provide 'emjupy)
-;;; emjupy.el ends here
 
 (provide 'emjupy-eglot)
 ;;; emjupy-eglot.el ends here
