@@ -28,14 +28,61 @@ To test this in an isolated environment without touching your current config:
    =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-3. Run =emjupy-login= to be prompted for the port where the notebook
-   is running (possibly through an ssh tunnel), connect to the
-   associated kernel, and offer in the minibuffer a list of notebooks.
+3. Run =emjupy-login= and give it the port. That is the whole prompt:
+   the token is only asked for if the server actually needs one. emjupy
+   adopts the kernel already running behind that port and shows you the
+   notebook list; picking one drops you straight into that live REPL.
 
 On a plain =emacs= installation, you should see something like:
 
-#+DOWNLOADED: screenshot @ 2026-07-26 10:19:19
+#+CAPTION: simple notebook rendering in a fresh emacs with no customization. Screenshot may be out of date.
 [[file:.org_notes_figures/Try_it_with_=emacs_-Q=/2026-07-26_10-19-19_screenshot.png]]
+
+* Installation
+
+emjupy is a multi-file Emacs package (see the Emacs Lisp manual, "Multi-file
+Packages"). Build a tar and install it:
+
+#+begin_src bash
+make package                 # -> emjupy-0.1.0.tar
+make install                 # package-install-file into your Emacs
+#+end_src
+
+or from Emacs: =M-x package-install-file RET emjupy-0.1.0.tar RET=.
+
+The only external dependency is =websocket= (1.15+); Emacs 29.1+ is required.
+=emjupy-login= is autoloaded, so =M-x emjupy-login= works without any
+=require=.
+
+** Source layout
+
+| File                | Contains                                                   |
+|---------------------+------------------------------------------------------------|
+| =emjupy.el=           | major mode, keymap, entry point                            |
+| =emjupy-core.el=      | structs, state, server registry, lookups                   |
+| =emjupy-http.el=      | REST transport, URL/scheme/base-path parsing               |
+| =emjupy-render.el=    | faces, page colours, cell outlines, syntax highlighting     |
+| =emjupy-cells.el=     | buffer<->struct syncing and cell editing commands           |
+| =emjupy-kernel.el=    | kernel WebSocket, execution, message routing               |
+| =emjupy-notebook.el=  | login/session management, .ipynb parse and serialize        |
+| =emjupy-eglot.el=     | shadow buffer, completion, eldoc                           |
+| =emjupy-pkg.el=       | package metadata                                            |
+
+Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
+=eglot= on top of =cells=. The two genuine cycles (=emjupy-mode= and
+=emjupy--rerender-notebook=) are runtime-only and marked with
+=declare-function=.
+
+** Makefile targets
+
+| Target        | Effect                                              |
+|---------------+-----------------------------------------------------|
+| =make compile=  | byte-compile all sources in dependency order        |
+| =make test=     | run the suite (integration tests skip without a server) |
+| =make check=    | same, with the integration environment set          |
+| =make package=  | build =emjupy-VERSION.tar=                            |
+| =make install=  | install that tar via =package-install-file=           |
+| =make clean=    | remove =.elc= files and the tar                       |
 
 * Testing
 
@@ -48,11 +95,61 @@ To test the connectivity to the kernel, launch a kernel on port
 
 then launch emacs, run =emjupy-login=, and follow the minibuffer prompts.
 
-You can run the =emjupy= unit tests with:
+** Unit tests
+
+The fast, self-contained suite needs nothing but Emacs and =websocket=:
 
 #+begin_src bash
 emacs -batch -Q -L . -l emjupy-run-tests.el
 #+end_src
+
+=websocket= is resolved from =load-path= first, then from
+=EMJUPY_WEBSOCKET_DIR=, and only then from GNU ELPA -- so the suite
+also runs offline / in CI:
+
+#+begin_src bash
+EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket \
+  emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+** Integration tests (real server, real kernel, real LSP)
+
+=emjupy-integration-test.el= talks to a live Jupyter server and runs
+real Python in a real kernel. These are opt-in and =ert-skip= unless
+the environment points at a running server, so the default run stays
+fast and hermetic.
+
+Some things only break against a live server -- an image arriving that
+this Emacs cannot display, a WebSocket URL that drops its base path, a
+saved notebook no other tool will open -- so they are worth running
+before trusting a change.
+
+| Variable           | Meaning                                                   |
+|--------------------+-----------------------------------------------------------|
+| =EMJUPY_TEST_URL=    | =host:port= of a running server (the LOCAL end of a tunnel) |
+| =EMJUPY_TEST_TOKEN=  | its token                                                 |
+| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test         |
+| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests               |
+| =EMJUPY_TEST_TOKEN2= | its token (defaults to =EMJUPY_TEST_TOKEN=)                 |
+
+To exercise the *remote* path, point =EMJUPY_TEST_URL= at the local end
+of an ssh tunnel rather than at the server directly:
+
+#+begin_src bash
+# server side: jupyter listens only on loopback
+jupyter server --no-browser --port=8888 --ip=127.0.0.1 --IdentityProvider.token=abc
+
+# client side: forward a local port through ssh
+ssh -N -L 18888:127.0.0.1:8888 user@remote-host &
+
+EMJUPY_TEST_URL=127.0.0.1:18888 EMJUPY_TEST_TOKEN=abc \
+EMJUPY_TEST_ROOT=/path/to/notebook/root \
+  emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+The eglot tests additionally need a Python language server on =PATH=
+(=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
+none is found.
 
 * Landscape of emacs/jupyter packages
 
@@ -81,11 +178,162 @@ This is exactly what every browser-based client (JupyterLab, Classic Notebook)
 uses. It works transparently through an SSH tunnel, survives reconnects, and
 requires only =url.el= (built-in) and =websocket.el= (GNU ELPA, zero C deps).
 
+** Multiple notebooks and multiple servers
+
+One port = one kernel. Each server owns its token and its XSRF cookie; a notebook owns its
+kernel; a kernel owns its WebSocket and its table of in-flight
+requests. So you can keep several notebooks open at once, from several
+servers at once -- typically several ssh tunnels on different local
+ports.
+
+Run =emjupy-login= once per tunnel:
+
+#+begin_src
+M-x emjupy-login RET 18888 RET     ;; tunnel to machine A
+M-x emjupy-login RET 19999 RET     ;; tunnel to machine B
+#+end_src
+
+The typical workflow this is built around:
+
+1. On the remote host, start a notebook kernel on port X.
+2. Locally, =ssh -L X:127.0.0.1:X user@remote=.
+3. =M-x emjupy-login RET X RET=.
+
+emjupy adopts the kernel already running behind that port rather than
+spawning a second one next to it, so opening a notebook puts you in the
+REPL you started. A port with nothing running gets a fresh kernel; a
+port with several asks which one.
+
+Each port keeps its own kernel, so several remote sessions stay live in
+one Emacs. Use =C-c C-z= to give an individual notebook a different
+kernel. Logging in again to a server you already know updates its token
+and keeps the same object, so notebooks already pointing at it stay
+valid.
+
+The token is resolved without bothering you where possible: an explicit
+argument, else the token already registered for that server, else no
+token at all (common for tunnelled servers started with
+=--IdentityProvider.token=), and only then a prompt. =C-u M-x emjupy-login=
+always prompts.
+
+Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
+path can exist on two servers and one buffer cannot stand for both. The
+Eglot shadow file is qualified the same way, so two servers hosting
+=analysis.ipynb= don't clobber each other's code.
+
+| Key         | Command                           | Effect                                           |
+|-------------+-----------------------------------+--------------------------------------------------|
+| =C-c C-z=     | =emjupy-connect-kernel-interactive= | pick/spawn a kernel *for this notebook*            |
+| =C-c C-x C-r= | =emjupy-restart-kernel=             | restart *this* notebook's kernel only              |
+| =C-c C-x C-c= | =emjupy-reconnect-kernel=           | re-open the socket to the SAME kernel            |
+| =C-c C-x b=   | =emjupy-switch-notebook=            | jump between open notebooks (labelled by server) |
+| =C-c C-x s=   | =emjupy-status=                     | list every notebook, its server, its kernel      |
+| =C-c C-x l=   | =emjupy-login=                      | add another server                               |
+
+=C-c C-z= marks kernels already driving another open notebook as =[in
+use]=: attaching two notebooks to one kernel makes them share
+interpreter state, which is occasionally what you want and usually not.
+
+=emjupy-reconnect-kernel= is the connection-drop path: when a tunnel
+dies the remote kernel keeps running, so only Emacs's socket needs
+re-establishing and your session state survives.
+
+* Rendering notes
+
+** Page colours
+
+Cells sit on the theme's normal background; the gaps between them show
+a slightly contrasting canvas, so the notebook reads as a page of cells
+rather than one undifferentiated wall of text.
+
+Both colours are *derived from the active theme* rather than hard-coded:
+=emjupy-canvas-color= defaults to ='auto=, which blends the default
+background =emjupy-canvas-blend= (12%) of the way toward the default
+foreground. That darkens a light theme and lightens a dark one, and
+picks up the theme's tint -- a warm solarized background yields a warm
+canvas, not a neutral gray. Themes switched mid-session are followed
+automatically via =enable-theme-functions=.
+
+To pin a specific colour instead:
+
+#+begin_src elisp
+(setq emjupy-canvas-color "#888888")   ;; any colour you like
+(setq emjupy-canvas-color nil)         ;; or turn the effect off
+#+end_src
+
+=M-x emjupy-refresh-appearance= re-derives the colours and redraws open
+notebooks. The relevant faces are =emjupy-cell= (inside the outline),
+=emjupy-canvas= (outside it) and =emjupy-box-line= (the rule itself), all
+customisable in the usual way.
+
+** Cell outlines
+
+The rule that outlines each cell is sized by =emjupy-box-width=. The
+default, ='window=, fits it to the window, so the outline spans a wide
+frame instead of stopping short at a fixed 80 columns. Set it to an
+integer for a fixed width, and =emjupy-box-min-width= is the floor when
+fitting.
+
+Outlines follow the window as it changes: splitting, dragging a mode
+line or toggling full screen all redraw the rules at the new width, so
+they never wrap onto a second line. Only the overlay strings are
+rebuilt, not the buffer text, so point, markers and the undo history
+are untouched. When the buffer is shown in two windows at once the
+*narrower* one wins, since a rule sized for the wide window would wrap
+in the narrow one.
+
+** Markdown highlighting
+
+Markdown cells are highlighted out of the box -- headings, emphasis,
+inline code and fences, links, list markers and blockquotes -- with no
+external package. =markdown-mode= and =markdown-ts-mode= are MELPA
+packages emjupy does not depend on; when one of them IS installed it is
+used in preference to the built-in approximation.
+
+
+** Inline images need a graphical Emacs
+
+Images are only drawn when the running Emacs can actually display them
+(=display-graphic-p= *and* =image-type-available-p=). On a terminal
+frame or an image-less build (=emacs-nox= is the common case),
+=create-image= *signals* rather than degrading, and because rendering
+happens inside the WebSocket callback -- where =websocket.el= swallows
+errors -- the old behaviour was a silently blank output box. emjupy now
+falls back to the bundle's own =text/plain= repr plus a short note
+saying why there is no picture.
+
+Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
+=image/svg+xml=.
+
+** Duplicate figures
+
+A cell whose last expression is a figure receives the same picture
+twice from the kernel: once as the =execute_result= repr and again as
+the inline backend's =display_data=. That is kernel-side behaviour, so
+emjupy drops the repeat at *render* time only -- the cell's outputs, and
+the =.ipynb= written back, still contain exactly what the kernel sent,
+keeping the file faithful for other clients. Set
+=emjupy-deduplicate-image-outputs= to =nil= to draw both.
+
 * Known limitations
 
-Multi-cursor: Works fine editing within one cell while nothing else is happening. multiple-cursors.el places its fake-cursor overlays on real buffer text (the box-drawing borders are display-only overlay strings, not actual characters, so they don't interfere), and a normal edit session applies correctly to all cursor positions.
-The catch: emjupy-mode rebuilds the entire buffer (erase-buffer + reinsert) any time a cell executes, gets inserted/deleted/moved, or — critically — any time another cell's output streams in. Fake-cursor overlays collapsed to buffer position 1, and the next multi-cursor edit produced genuinely garbled text (!! at the start of the buffer, a stray ! landing inside unrelated text). 
+Multi-cursor: Works fine editing within one cell while nothing else is
+happening. multiple-cursors.el places its fake-cursor overlays on real
+buffer text (the box-drawing borders are display-only overlay strings,
+not actual characters, so they don't interfere), and a normal edit
+session applies correctly to all cursor positions. The catch:
+emjupy-mode rebuilds the entire buffer (erase-buffer + reinsert) any
+time a cell executes, gets inserted/deleted/moved, or — critically —
+any time another cell's output streams in. Fake-cursor overlays
+collapsed to buffer position 1, and the next multi-cursor edit
+produced genuinely garbled text (!! at the start of the buffer, a
+stray ! landing inside unrelated text).
 
-So: 
-safe for a focused burst of multi-cursor edits in one cell. Unsafe if a background cell might finish or stream output while you're doing it — which is a real risk in a notebook, since that's the normal way a long-running cell behaves. In the shadow buffer (C-c '), none of this applies — it's a plain, ordinary buffer that never gets torn down, so multi-cursor is fully safe there. That's the actual reason I'd steered you toward it for heavier editing earlier, now with a concrete mechanism behind the claim rather than just a hunch.
-
+So: safe for a focused burst of multi-cursor edits in one cell. Unsafe
+if a background cell might finish or stream output while you're doing
+it — which is a real risk in a notebook, since that's the normal way a
+long-running cell behaves. In the shadow buffer (C-c '), none of this
+applies — it's a plain, ordinary buffer that never gets torn down, so
+multi-cursor is fully safe there. That's the actual reason I'd steered
+you toward it for heavier editing earlier, now with a concrete
+mechanism behind the claim rather than just a hunch.

@@ -486,6 +486,29 @@ the saved .ipynb matches what the kernel sent) but drawn only once."
 ;;; 6. Several notebooks, and several servers, at once
 ;;; --------------------------------------------------------------------
 
+(defun emjupy-int--shutdown-all-kernels (server)
+  "Shut down every kernel on SERVER.
+Leftovers from earlier tests would otherwise make \"exactly one kernel
+is running behind this tunnel\" false, and the login tests would be
+asserting against noise."
+  (cl-loop for k across (emjupy--http-request "GET" server "/api/kernels")
+           do (ignore-errors
+                (emjupy--http-request "DELETE" server
+                                      (concat "/api/kernels/" (gethash "id" k))))))
+
+(defun emjupy-int--blank-notebook-json ()
+  "Return the JSON body for creating an empty notebook."
+  (let ((payload (make-hash-table :test 'equal))
+        (content (make-hash-table :test 'equal)))
+    (puthash "cells" (vector) content)
+    (puthash "metadata" (make-hash-table :test 'equal) content)
+    (puthash "nbformat" 4 content)
+    (puthash "nbformat_minor" 5 content)
+    (puthash "type" "notebook" payload)
+    (puthash "format" "json" payload)
+    (puthash "content" content payload)
+    (json-serialize payload)))
+
 (defun emjupy-int--open-with-kernel (server path)
   "Create PATH on SERVER, open it, attach a kernel. Returns the buffer."
   (let ((payload (make-hash-table :test 'equal))
@@ -510,6 +533,11 @@ the saved .ipynb matches what the kernel sent) but drawn only once."
 (defun emjupy-int--run-in (buf code &optional seconds)
   "Run CODE in BUF's first cell and wait for the reply. Returns the cell."
   (with-current-buffer buf
+    ;; A notebook just fetched from the server may legitimately have no
+    ;; cells; give it one so there is somewhere to type.
+    (when (zerop (length (emjupy-notebook-cells emjupy--buffer-notebook)))
+      (goto-char (point-min))
+      (emjupy-insert-cell-below))
     (let ((cell (aref (emjupy-notebook-cells emjupy--buffer-notebook) 0)))
       (setf (emjupy-cell-source cell) code)
       (setf (emjupy-cell-outputs cell) [])
@@ -635,47 +663,100 @@ kernel -- and its interpreter state -- untouched."
             (with-current-buffer buf (emjupy--disconnect-kernel (emjupy--notebook)))
             (kill-buffer buf)))))))
 
-(ert-deftest emjupy-int-login-does-not-spawn-a-kernel ()
-  "`emjupy-login' connects and opens a notebook, and that is all.
+(ert-deftest emjupy-int-login-adopts-the-running-kernel ()
+  "The headline workflow: a kernel is already running behind the tunnel,
+`emjupy-login' on that port adopts it, and opening a notebook lands in
+that LIVE REPL -- state defined before login is still there.
 
-Starting a kernel eagerly would leave an idle process behind on every
-server logged into -- wasteful with one server, actively bad with
-several. Kernel creation belongs to
-\\[emjupy-connect-kernel-interactive]."
+Also asserts no second kernel is created: spawning one next to the
+kernel the user started on the remote host is the failure this is
+guarding against."
   (emjupy-int--skip-unless-live)
   (let* ((server emjupy--current-server)
-         (path "login-no-kernel.ipynb")
-         (count (lambda ()
-                  (length (emjupy--http-request "GET" server "/api/kernels"))))
-         (before (funcall count))
-         buf)
-    ;; Create the notebook up front so the picker has something to choose.
-    (let ((payload (make-hash-table :test 'equal))
-          (content (make-hash-table :test 'equal)))
-      (puthash "cells" (vector) content)
-      (puthash "metadata" (make-hash-table :test 'equal) content)
-      (puthash "nbformat" 4 content)
-      (puthash "nbformat_minor" 5 content)
-      (puthash "type" "notebook" payload)
-      (puthash "format" "json" payload)
-      (puthash "content" content payload)
-      (emjupy--http-request "PUT" server (concat "/api/contents/" path)
-                            (json-serialize payload)))
+         (path "login-repl.ipynb")
+         (_ (emjupy-int--shutdown-all-kernels server))
+         (setup (emjupy-int--open-with-kernel server path))
+         before-count kernel-id buf)
     (unwind-protect
         (progn
+          ;; Establish live state in the kernel behind this port.
+          (emjupy-int--run-in setup "SET_BEFORE_LOGIN = 31337")
+          (setq kernel-id (with-current-buffer setup (emjupy-kernel-id (emjupy--kernel))))
+          ;; Drop our client entirely: the kernel keeps running server-side,
+          ;; exactly as it would if Emacs had never connected yet.
+          (with-current-buffer setup (emjupy--disconnect-kernel (emjupy--notebook)))
+          (let ((kill-buffer-query-functions nil)) (kill-buffer setup))
+          (setq setup nil)
+          (setq before-count (length (emjupy--http-request "GET" server "/api/kernels")))
+          ;; Fresh login on that port.
           (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) path)))
             (setq buf (emjupy-login (emjupy-int--url) (emjupy-int--token))))
-          ;; the notebook opened ...
           (should (buffer-live-p buf))
+          ;; no extra kernel was spawned
+          (should (= (length (emjupy--http-request "GET" server "/api/kernels")) before-count))
           (with-current-buffer buf
-            (should (equal (emjupy-notebook-path (emjupy--notebook)) path))
-            ;; ... with no kernel attached
-            (should-not (emjupy--kernel))
-            (should-not (emjupy--ws-live-p)))
-          ;; and none was created server-side
-          (should (= (funcall count) before)))
+            ;; attached automatically, to the kernel that was already running
+            (should (emjupy--kernel))
+            (should (equal (emjupy-kernel-id (emjupy--kernel)) kernel-id))
+            (should (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p)))))
+          ;; ... and it is the SAME live REPL
+          (let ((cell (emjupy-int--run-in buf "print(SET_BEFORE_LOGIN)")))
+            (should (string-match-p "31337" (emjupy-int--stdout cell)))))
       (let ((kill-buffer-query-functions nil))
-        (when (and buf (buffer-live-p buf)) (kill-buffer buf))))))
+        (dolist (b (list setup buf))
+          (when (and b (buffer-live-p b))
+            (with-current-buffer b (emjupy--disconnect-kernel (emjupy--notebook)))
+            (kill-buffer b)))))))
+
+(ert-deftest emjupy-int-login-on-two-ports-gives-two-kernels ()
+  "One port = one kernel. Logging into two tunnels in the same Emacs
+must leave two independent REPLs, each reachable from its own notebook.
+
+Needs EMJUPY_TEST_URL2; skipped otherwise."
+  (emjupy-int--skip-unless-live)
+  (let ((url2 (getenv "EMJUPY_TEST_URL2")))
+    (unless url2 (ert-skip "EMJUPY_TEST_URL2 not set -- no second server"))
+    (let ((s1 (emjupy--intern-server (emjupy-int--url) (emjupy-int--token)))
+          (s2 (emjupy--intern-server url2 (or (getenv "EMJUPY_TEST_TOKEN2")
+                                              (emjupy-int--token))))
+          buf1 buf2)
+      (emjupy-int--shutdown-all-kernels s1)
+      (emjupy-int--shutdown-all-kernels s2)
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'completing-read)
+                       (lambda (&rest _) "port-one.ipynb")))
+              (emjupy--http-request
+               "PUT" (emjupy--intern-server (emjupy-int--url) (emjupy-int--token))
+               "/api/contents/port-one.ipynb" (emjupy-int--blank-notebook-json))
+              (setq buf1 (emjupy-login (emjupy-int--url) (emjupy-int--token))))
+            (cl-letf (((symbol-function 'completing-read)
+                       (lambda (&rest _) "port-two.ipynb")))
+              (emjupy--http-request
+               "PUT" (emjupy--intern-server url2 (or (getenv "EMJUPY_TEST_TOKEN2")
+                                                     (emjupy-int--token)))
+               "/api/contents/port-two.ipynb" (emjupy-int--blank-notebook-json))
+              (setq buf2 (emjupy-login url2 (or (getenv "EMJUPY_TEST_TOKEN2")
+                                                (emjupy-int--token)))))
+            (should (buffer-live-p buf1))
+            (should (buffer-live-p buf2))
+            (dolist (b (list buf1 buf2))
+              (with-current-buffer b
+                (should (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))))
+            ;; two distinct kernels ...
+            (let ((k1 (with-current-buffer buf1 (emjupy-kernel-id (emjupy--kernel))))
+                  (k2 (with-current-buffer buf2 (emjupy-kernel-id (emjupy--kernel)))))
+              (should (stringp k1)) (should (stringp k2))
+              (should-not (equal k1 k2)))
+            ;; ... in genuinely separate interpreters
+            (emjupy-int--run-in buf1 "PORT_ONE_ONLY = 1")
+            (let ((cell (emjupy-int--run-in buf2 "print('PORT_ONE_ONLY' in dir())")))
+              (should (string-match-p "False" (emjupy-int--stdout cell)))))
+        (let ((kill-buffer-query-functions nil))
+          (dolist (b (list buf1 buf2))
+            (when (and b (buffer-live-p b))
+              (with-current-buffer b (emjupy--disconnect-kernel (emjupy--notebook)))
+              (kill-buffer b))))))))
 
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

@@ -219,6 +219,282 @@ clobber the other's code."
                                   :server (make-emjupy-server :base-url "localhost:19999"))))
     (should-not (equal (emjupy--shadow-file-path a) (emjupy--shadow-file-path b)))))
 
+(ert-deftest emjupy-test-markdown-highlighted-without-markdown-mode ()
+  "Markdown cells must be highlighted even when no markdown package is
+installed. `markdown-mode' is a MELPA package emjupy does not depend
+on, so relying on it alone left markdown cells as flat, undifferentiated
+plain text for most users."
+  (cl-letf (((symbol-function 'emjupy--markdown-mode-fn) (lambda () nil)))
+    (let* ((src "# A heading\n\nSome **bold** and *italic* and `code`.\n\n- a bullet\n> a quote\n\n[label](http://example.org)")
+           (out (emjupy--fontify-as src 'markdown))
+           (face-at (lambda (needle &optional off)
+                      (let ((i (+ (string-match (regexp-quote needle) out) (or off 0))))
+                        (get-text-property i 'face out)))))
+      (cl-flet ((has (faces f) (if (listp faces) (memq f faces) (eq faces f))))
+        ;; heading
+        (should (has (funcall face-at "# A heading") 'font-lock-function-name-face))
+        ;; emphasis
+        (should (has (funcall face-at "**bold**") 'bold))
+        (should (has (funcall face-at "*italic*" 1) 'italic))
+        ;; inline code
+        (should (has (funcall face-at "`code`") 'font-lock-constant-face))
+        ;; list bullet
+        (should (has (funcall face-at "- a bullet") 'font-lock-keyword-face))
+        ;; blockquote
+        (should (has (funcall face-at "> a quote") 'font-lock-comment-face))
+        ;; link label
+        (should (has (funcall face-at "label") 'link))))))
+
+(ert-deftest emjupy-test-markdown-fallback-not-used-when-mode-available ()
+  "When a real markdown mode IS installed, defer to it rather than
+layering emjupy's approximation on top."
+  (let ((called nil))
+    (cl-letf (((symbol-function 'emjupy--markdown-mode-fn) (lambda () 'text-mode))
+              ((symbol-function 'emjupy--markdown-fontify-fallback)
+               (lambda () (setq called t))))
+      (emjupy--fontify-as "# hi" 'markdown)
+      (should-not called))))
+
+(ert-deftest emjupy-test-code-cells-still-use-python ()
+  "The markdown work must not disturb python highlighting."
+  (let ((out (emjupy--fontify-as "def f():\n    return 1" 'code)))
+    (should (text-property-not-all 0 (length out) 'face nil out))))
+
+;;; ---------------------------------------------------------------------
+;;; 2d. Login: one port, one kernel
+;;; ---------------------------------------------------------------------
+
+(ert-deftest emjupy-test-login-adopts-single-running-kernel ()
+  "A port with exactly one kernel behind it is adopted silently -- no
+prompt, and crucially no second kernel spawned next to the one the
+user already started on the remote host."
+  (let* ((server (make-emjupy-server :base-url "localhost:18888" :token ""))
+         (posted nil)
+         (k (make-hash-table :test 'equal)))
+    (puthash "id" "kern-existing" k)
+    (puthash "name" "python3" k)
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (method _server path &rest _)
+                 (cond
+                  ((and (string= method "POST") (string-match-p "/api/kernels" path))
+                   (setq posted t) (make-hash-table :test 'equal))
+                  ((string-match-p "/api/kernels" path) (vector k))
+                  (t (make-hash-table :test 'equal)))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (error "must not prompt for a single kernel"))))
+      (should (equal (emjupy--bind-server-kernel server) "kern-existing")))
+    (should-not posted)
+    (should (equal (emjupy-server-kernel-id server) "kern-existing"))))
+
+(ert-deftest emjupy-test-login-spawns-only-when-port-has-none ()
+  "An empty server does get a fresh kernel -- otherwise the workflow
+dead-ends on a server you just started."
+  (let ((server (make-emjupy-server :base-url "localhost:18888" :token ""))
+        (spawned (make-hash-table :test 'equal)))
+    (puthash "id" "kern-new" spawned)
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (method _server path &rest _)
+                 (cond
+                  ((and (string= method "POST") (string-match-p "/api/kernels" path)) spawned)
+                  ((string-match-p "/api/kernels" path) (vector))
+                  (t (make-hash-table :test 'equal))))))
+      (should (equal (emjupy--bind-server-kernel server) "kern-new")))))
+
+(ert-deftest emjupy-test-login-normalizes-bare-port ()
+  "A bare port means localhost, which is what an `ssh -L' forward gives you."
+  (should (equal (emjupy--normalize-url "8888") "localhost:8888"))
+  (should (equal (emjupy--normalize-url "localhost:8888") "localhost:8888"))
+  (should (equal (emjupy--normalize-url "https://example.org/jup")
+                 "https://example.org/jup")))
+
+(ert-deftest emjupy-test-login-does-not-prompt-for-token-when-unneeded ()
+  "Many tunnelled servers run token-less. Asking every time is what made
+logging into a second tunnel tedious."
+  (cl-letf (((symbol-function 'emjupy--server-reachable-p) (lambda (&rest _) t))
+            ((symbol-function 'read-string)
+             (lambda (&rest _) (error "must not prompt when no token is needed"))))
+    (should (equal (emjupy--resolve-token "localhost:18888" nil) "")))
+  ;; but it does ask when the server rejects an empty token
+  (cl-letf (((symbol-function 'emjupy--server-reachable-p) (lambda (&rest _) nil))
+            ((symbol-function 'read-string) (lambda (&rest _) "typed-token")))
+    (should (equal (emjupy--resolve-token "localhost:18888" nil) "typed-token")))
+  ;; an explicit token always wins
+  (should (equal (emjupy--resolve-token "localhost:18888" "explicit") "explicit")))
+
+(ert-deftest emjupy-test-each-port-binds-its-own-kernel ()
+  "One port = one kernel: two tunnels must not end up sharing one."
+  (let ((a (emjupy--intern-server "localhost:18888" ""))
+        (b (emjupy--intern-server "localhost:19999" "")))
+    (setf (emjupy-server-kernel-id a) "kern-a")
+    (setf (emjupy-server-kernel-id b) "kern-b")
+    (should (equal (emjupy-server-kernel-id a) "kern-a"))
+    (should (equal (emjupy-server-kernel-id b) "kern-b"))))
+
+;;; ---------------------------------------------------------------------
+;;; 2e. Page colours: cells on a contrasting canvas
+;;; ---------------------------------------------------------------------
+
+(ert-deftest emjupy-test-hex-colors-parsed-exactly ()
+  "Hex colours must be parsed arithmetically, NOT through
+`color-name-to-rgb', which resolves via the display palette and on a
+tty quantises \"#1c1c1c\" all the way to black -- silently flattening
+the derived canvas on every dark theme."
+  (should (equal (emjupy--color-rgb "#000000") '(0.0 0.0 0.0)))
+  (should (equal (emjupy--color-rgb "#ffffff") '(1.0 1.0 1.0)))
+  ;; the case that broke: a near-black that must NOT collapse to 0
+  (let ((rgb (emjupy--color-rgb "#1c1c1c")))
+    (should rgb)
+    (should (> (car rgb) 0.0))
+    (should (< (car rgb) 0.2)))
+  ;; short form and garbage
+  (should (equal (emjupy--color-rgb "#fff") '(1.0 1.0 1.0)))
+  (should-not (emjupy--color-rgb "not-a-color"))
+  (should-not (emjupy--color-rgb nil)))
+
+(ert-deftest emjupy-test-canvas-contrasts-with-cell-on-light-and-dark ()
+  "The canvas has to differ visibly from the cell background in BOTH
+directions: darker than a light theme, lighter than a dark one."
+  (cl-flet ((canvas (bg fg)
+              (emjupy--blend-colors bg fg emjupy-canvas-blend))
+            (lum (c) (apply #'+ (emjupy--color-rgb c))))
+    ;; light theme -> canvas darker
+    (let ((c (canvas "#ffffff" "#000000")))
+      (should c)
+      (should (< (lum c) (lum "#ffffff"))))
+    ;; dark theme -> canvas lighter
+    (let ((c (canvas "#1c1c1c" "#e5e5e5")))
+      (should c)
+      (should (> (lum c) (lum "#1c1c1c"))))
+    ;; and the difference is actually perceptible, not a rounding artefact
+    (should (> (abs (- (lum (canvas "#1c1c1c" "#e5e5e5")) (lum "#1c1c1c"))) 0.1))))
+
+(ert-deftest emjupy-test-canvas-follows-the-theme-not-a-fixed-gray ()
+  "An `auto' canvas is tinted by the theme rather than pinned to a
+neutral gray, so it sits with the colour scheme instead of against it."
+  (let ((emjupy-canvas-color 'auto))
+    ;; a warm (solarized-light-ish) background yields a warm canvas:
+    ;; red channel stays above blue rather than equalising to gray
+    (let ((rgb (emjupy--color-rgb (emjupy--blend-colors "#fdf6e3" "#657b83" 0.12))))
+      (should (> (nth 0 rgb) (nth 2 rgb))))))
+
+(ert-deftest emjupy-test-canvas-color-explicit-and-disabled ()
+  "An explicit colour is honoured verbatim; nil disables the effect by
+leaving canvas and cell identical."
+  (cl-letf (((symbol-function 'face-attribute)
+             (lambda (face attr &rest _)
+               (cond ((and (eq face 'default) (eq attr :background)) "#ffffff")
+                     ((and (eq face 'default) (eq attr :foreground)) "#000000")
+                     (t nil)))))
+    (let ((captured (make-hash-table :test 'eq)))
+      (cl-letf (((symbol-function 'set-face-attribute)
+                 (lambda (face _frame _attr value) (puthash face value captured))))
+        (let ((emjupy-canvas-color "#888888"))
+          (emjupy--sync-theme-colors)
+          (should (equal (gethash 'emjupy-canvas captured) "#888888"))
+          (should (equal (gethash 'emjupy-cell captured) "#ffffff")))
+        (clrhash captured)
+        (let ((emjupy-canvas-color nil))
+          (emjupy--sync-theme-colors)
+          (should (equal (gethash 'emjupy-canvas captured)
+                         (gethash 'emjupy-cell captured))))))))
+
+(ert-deftest emjupy-test-unknown-background-is-skipped-not-crashed ()
+  "A tty reporting `unspecified-bg' has nothing to blend; the effect
+must be skipped silently rather than erroring or setting a nonsense
+colour."
+  (cl-letf (((symbol-function 'face-attribute)
+             (lambda (&rest _) "unspecified-bg")))
+    (let ((touched nil))
+      (cl-letf (((symbol-function 'set-face-attribute)
+                 (lambda (&rest _) (setq touched t))))
+        (emjupy--sync-theme-colors)
+        (should-not touched)))))
+
+(ert-deftest emjupy-test-cells-painted-and-gutters-left-bare ()
+  "Cell overlays carry `emjupy-cell' so their interiors read as paper,
+and the newline BETWEEN cells stays uncovered so the canvas shows
+through -- that gap is the whole visual effect."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown :source "# Notes"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        ;; the buffer's own background is remapped to the canvas
+        (should (equal (assq 'default face-remapping-alist) '(default emjupy-canvas)))
+        ;; every cell overlay paints its interior
+        (dolist (cell (list c1 c2))
+          (should (eq (overlay-get (emjupy-cell-overlay cell) 'face) 'emjupy-cell))
+          ;; and the rule keeps the cell background so the outline is an edge,
+          ;; not a stripe floating on the canvas
+          (should (member 'emjupy-cell
+                          (get-text-property
+                           0 'face (overlay-get (emjupy-cell-overlay cell) 'before-string)))))
+        ;; at least one newline is covered by no overlay at all
+        (should (cl-loop for p from (point-min) below (point-max)
+                         thereis (and (eq (char-after p) ?\n)
+                                      (null (overlays-at p)))))))))
+
+(ert-deftest emjupy-test-box-rules-follow-window-resize ()
+  "Outlines are rebuilt when the window width changes.
+
+The rules live in overlay strings built once at render time, so without
+a refresh a rule sized for a full-screen frame stays that long after
+the window shrinks and wraps onto a second line."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                 :outputs [] :metadata (make-hash-table)))
+         (oh (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" oh)
+    (puthash "name" "stdout" oh)
+    (puthash "text" "hi\n" oh)
+    (setf (emjupy-cell-outputs cell) (vector oh))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-flet ((rule-widths ()
+                    (list (1- (length (overlay-get (emjupy-cell-overlay cell) 'before-string)))
+                          (1- (length (overlay-get (emjupy-cell-output-ov cell) 'before-string)))
+                          (1- (length (overlay-get (emjupy-cell-output-ov cell) 'after-string))))))
+          (let ((emjupy-box-width 120))
+            (emjupy--refresh-box-rules t)
+            (should (equal (rule-widths) '(120 120 120))))
+          ;; shrink
+          (let ((emjupy-box-width 70))
+            (emjupy--refresh-box-rules)
+            (should (equal (rule-widths) '(70 70 70))))
+          ;; grow again
+          (let ((emjupy-box-width 150))
+            (emjupy--refresh-box-rules)
+            (should (equal (rule-widths) '(150 150 150))))
+          ;; the input box still has no footer of its own -- the output
+          ;; header remains its bottom edge after a refresh
+          (should (equal "" (overlay-get (emjupy-cell-overlay cell) 'after-string))))))))
+
+(ert-deftest emjupy-test-box-refresh-preserves-labels-and-faces ()
+  "Rebuilding the rules must keep the execution count, the cell type and
+the paper background -- a refresh is a resize, not a reset."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                                :source "# hi" :exec-count 7
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((emjupy-box-width 90))
+          (emjupy--refresh-box-rules t)
+          (let ((header (overlay-get (emjupy-cell-overlay cell) 'before-string)))
+            (should (string-match-p "markdown" header))
+            (should (string-match-p "\\[In: 7\\]" header))
+            (should (member 'emjupy-cell (get-text-property 0 'face header)))))))))
+
+(ert-deftest emjupy-test-box-width-uses-narrowest-window ()
+  "With the buffer in two windows, the rule must fit the NARROWER one --
+a rule sized to the wide window wraps in the narrow one, and a wrapped
+rule looks far worse than a short one."
+  (let ((emjupy-box-width 'window)
+        (emjupy-box-min-width 10))
+    (cl-letf (((symbol-function 'get-buffer-window-list) (lambda (&rest _) '(w1 w2)))
+              ((symbol-function 'window-body-width)
+               (lambda (w) (if (eq w 'w1) 200 80))))
+      (should (= (emjupy--box-width) 79)))))
+
 ;;; ---------------------------------------------------------------------
 ;;; 3. Cell operations: insert / delete / move / cycle-type
 ;;; ---------------------------------------------------------------------
@@ -339,13 +615,32 @@ closing border immediately followed by a separate opening one."
       (should (string= (overlay-get (emjupy-cell-overlay cell) 'after-string) ""))
       (should (string-prefix-p "├" (overlay-get (emjupy-cell-output-ov cell) 'before-string))))))
 
-(ert-deftest emjupy-test-box-borders-are-80-columns ()
+(ert-deftest emjupy-test-box-borders-match-configured-width ()
   "Box-drawing borders (excluding their trailing newline) are pinned to
-`emjupy--box-width', regardless of label length, and never crash on an
+`emjupy-box-width', regardless of label length, and never crash on an
 overlong label."
-  (should (= (1- (length (emjupy--box-header "[In: 1] python"))) emjupy--box-width))
-  (should (= (1- (length (emjupy--box-footer))) emjupy--box-width))
-  (should (string-suffix-p "\n" (emjupy--box-header (make-string 500 ?x)))))
+  (let ((emjupy-box-width 80))
+    (should (= (1- (length (emjupy--box-header "[In: 1] python"))) 80))
+    (should (= (1- (length (emjupy--box-footer))) 80))
+    (should (string-suffix-p "\n" (emjupy--box-header (make-string 500 ?x)))))
+  ;; header and footer always agree, at any configured width
+  (dolist (w '(60 100 140))
+    (let ((emjupy-box-width w))
+      (should (= (length (emjupy--box-header "[In: 12] python"))
+                 (length (emjupy--box-footer))))
+      (should (= (1- (length (emjupy--box-footer))) w)))))
+
+(ert-deftest emjupy-test-box-width-fits-the-window ()
+  "The default `window' setting sizes the outline to the window, so the
+rule spans a wide frame instead of stopping short at 80 columns."
+  (let ((emjupy-box-width 'window)
+        (emjupy-box-min-width 60))
+    ;; With no window (batch), fall back to a sane fixed width rather than
+    ;; erroring or collapsing to zero.
+    (should (>= (emjupy--box-width) emjupy-box-min-width))
+    ;; Never narrower than the configured floor.
+    (let ((emjupy-box-min-width 200))
+      (should (>= (emjupy--box-width) 200)))))
 
 ;;; ---------------------------------------------------------------------
 ;;; 6. Rich output: display_data / image routing
