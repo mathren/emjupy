@@ -1,5 +1,6 @@
 #+TITLE: Emjupy
-#+author: Mathieu Renzo (with LLM help)
+#+author: Mathieu Renzo
+#+Assisted-by: various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
 
 Jupyter notebooks with remote kernel execution using emacs built-ins
 (=eglot= and =tramp=, completion frameworks like =vertico= + =corfu= +
@@ -21,14 +22,26 @@ sharing with non-emacs users.
 * Try it with =emacs -Q=
 To test this in an isolated environment without touching your current config:
 
-1. Launch Emacs with:
+1. Launch a =jupyter-notebook= on a known =<PORT>=:
    #+begin_src bash
-   emacs -Q -L . -l quicktry.el
+     jupyter-notebook --port=<PORT> --no-browser
    #+end_src
-   =-Q= ignores your setup of emacs, =-L .= installs *locally* the
+
+2. *Optional*: if the server is on a remote machine, if so, ssh into the
+   remote machine and create a tunnel to it running on your local
+   machine:
+   #+begin_src bash
+     ssh -L <PORT>:localhost:<PORT> <remote machine>
+   #+end_src
+
+3. Launch Emacs with:
+   #+begin_src bash
+     emacs -Q -L . -l quicktry.el
+   #+end_src
+   where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-3. Run =emjupy-login= and give it the port. That is the whole prompt:
+4. Run =emjupy-login= and give it the port. That is the whole prompt:
    the token is only asked for if the server actually needs one. emjupy
    adopts the kernel already running behind that port and shows you the
    notebook list; picking one drops you straight into that live REPL.
@@ -40,8 +53,8 @@ On a plain =emacs= installation, you should see something like:
 
 * Installation
 
-emjupy is a multi-file Emacs package (see the Emacs Lisp manual, "Multi-file
-Packages"). Build a tar and install it:
+=emjupy= is a multi-file Emacs package (see the Emacs Lisp manual,
+"Multi-file Packages"). Build a tar and install it:
 
 #+begin_src bash
 make package                 # -> emjupy-0.1.0.tar
@@ -50,9 +63,9 @@ make install                 # package-install-file into your Emacs
 
 or from Emacs: =M-x package-install-file RET emjupy-0.1.0.tar RET=.
 
-The only external dependency is =websocket= (1.15+); Emacs 29.1+ is required.
-=emjupy-login= is autoloaded, so =M-x emjupy-login= works without any
-=require=.
+The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
+required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
+without any =require=.
 
 ** Source layout
 
