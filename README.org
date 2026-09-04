@@ -84,16 +84,6 @@ Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
 | =make install=  | install that tar via =package-install-file=           |
 | =make clean=    | remove =.elc= files and the tar                       |
 
-* Testing
-
-To test the connectivity to the kernel, launch a kernel on port
-=8888= without password:
-
-#+BEGIN_SRC bash
- jupyter-notebook --no-browser --port=8888 --IdentityProvider.token='abc' --NotebookApp.token='abc'
-#+END_SRC
-
-then launch emacs, run =emjupy-login=, and follow the minibuffer prompts.
 
 ** Unit tests
 
