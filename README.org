@@ -393,7 +393,13 @@ multi-cursor is fully safe there. That's the actual reason I'd steered
 you toward it for heavier editing earlier, now with a concrete
 mechanism behind the claim rather than just a hunch.
 
-* TODO
+* TODO fixes needed
 
-- [ ] implement view similar to the buffer =*ein:notebooklist <address>=
-- [ ]Basic highlighting
+- [ ] =undo= scrambles everything if undoing something in another cell:
+  rendering issue? :rendering:
+- [ ] fix highlighting/background :rendering:
+  - [ ] syntax highlighting is at cell execution, not while typing
+  - [ ] wrong background color
+- [ ] implement view similar to the buffer =*ein:notebooklist <address>= :feature:
+- [ ] Makefile: emacs now says =package-buffer-info: Package lacks a
+  file header= :bug:
