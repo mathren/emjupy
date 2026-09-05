@@ -1174,5 +1174,54 @@ skipped otherwise so the rest of the suite isn't held hostage to it."
               (should (<= end (overlay-end (emjupy-cell-overlay c2))))
               (should (member "MY_TEST_MARKER_VALUE" cands)))))))))
 
+(ert-deftest emjupy-test-eglot-live-server-rejects-dead-ones ()
+  "A server whose process has died must not be handed back.
+
+Eglot's own capf calls `eglot--current-server-or-lose' on it, which
+signals \"No current JSON-RPC connection\" -- and that jsonrpc-error
+escaped the completion machinery and reached the user."
+  (cl-letf (((symbol-function 'eglot-current-server) (lambda (&rest _) nil)))
+    (should-not (emjupy--eglot-live-server)))
+  (cl-letf (((symbol-function 'eglot-current-server) (lambda (&rest _) 'srv))
+            ((symbol-function 'jsonrpc-running-p) (lambda (&rest _) nil)))
+    (should-not (emjupy--eglot-live-server)))
+  (cl-letf (((symbol-function 'eglot-current-server) (lambda (&rest _) 'srv))
+            ((symbol-function 'jsonrpc-running-p) (lambda (&rest _) t)))
+    (should (eq (emjupy--eglot-live-server) 'srv))))
+
+(ert-deftest emjupy-test-completion-and-eldoc-survive-a-dead-server ()
+  "Neither completion nor eldoc may signal when the language server is
+gone -- they simply have nothing to offer."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "import os\nos.pat" :outputs []
+                                :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-letf (((symbol-function 'emjupy--eglot-live-server) (lambda (&rest _) nil)))
+          (goto-char (point-min))
+          (should-not (emjupy--cell-completion-at-point))
+          (should-not (emjupy--cell-eldoc-function #'ignore)))))))
+
+(ert-deftest emjupy-test-shadow-directory-can-be-remote ()
+  "`emjupy-shadow-directory' selects where the shadow file lives, so the
+language server can be started on the machine the kernel runs on.
+
+Computing the path must not touch the filesystem: with a TRAMP
+directory that would open an ssh connection just to ask for a name."
+  (let ((nb (make-emjupy-notebook
+             :path "a.ipynb"
+             :server (make-emjupy-server :base-url "localhost:18888"))))
+    (let ((emjupy-shadow-directory nil))
+      (should (string-prefix-p (expand-file-name "emjupy-shadow"
+                                                 temporary-file-directory)
+                               (emjupy--shadow-file-path nb))))
+    (let ((emjupy-shadow-directory "/tmp/custom-shadow"))
+      (should (string-prefix-p "/tmp/custom-shadow/" (emjupy--shadow-file-path nb))))
+    ;; a TRAMP path is carried through verbatim, with no connection attempt
+    (let* ((emjupy-shadow-directory "/ssh:user@host:/tmp/emjupy-shadow")
+           (path (emjupy--shadow-file-path nb)))
+      (should (string-prefix-p "/ssh:user@host:/tmp/emjupy-shadow/" path))
+      (should (string-suffix-p ".py" path)))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

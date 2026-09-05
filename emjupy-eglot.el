@@ -184,26 +184,65 @@ buffer like any ordinary Python file."
             sections))
     (nreverse sections)))
 
+(defcustom emjupy-shadow-directory nil
+  "Directory holding the Eglot shadow files, or nil for a local temp dir.
+
+Set this to a TRAMP path to run the language server on the machine the
+kernel runs on:
+
+  (setq emjupy-shadow-directory \"/ssh:user@host:/tmp/emjupy-shadow\")
+
+The shadow file is an ordinary Python file, so Eglot starts whatever
+server that directory implies -- a remote one over TRAMP, a local one
+otherwise.  That matters when the Jupyter server is remote: a local
+language server sees the local environment, not the packages the kernel
+actually has.  It is a setting rather than something inferred, because a
+server reached through `ssh -L\' looks like localhost from here."
+  :type '(choice (const :tag "Local temporary directory" nil)
+                 (directory :tag "Directory (may be a TRAMP path)"))
+  :group 'emjupy)
+
+(defun emjupy--eglot-live-server (&optional buffer)
+  "Return the live Eglot server for BUFFER, or nil.
+
+Both halves matter: `eglot-current-server' can return a server whose
+process has since died, and calling into Eglot with one of those raises
+\"No current JSON-RPC connection\" out of the completion machinery, where
+it surfaces to the user as a raw jsonrpc-error."
+  (with-current-buffer (or buffer (current-buffer))
+    (and (fboundp 'eglot-current-server)
+         (let ((server (ignore-errors (eglot-current-server))))
+           (and server
+                (or (not (fboundp 'jsonrpc-running-p))
+                    (ignore-errors (jsonrpc-running-p server)))
+                server)))))
+
 (defun emjupy--shadow-file-path (nb)
   "Return a stable on-disk path for NB's shadow Python file.
 The server is folded into the name: two servers can both host
 `analysis.ipynb', and one shadow file cannot stand for both."
-  (let* ((dir (expand-file-name "emjupy-shadow" temporary-file-directory))
+  (let* ((dir (if emjupy-shadow-directory
+                  (file-name-as-directory emjupy-shadow-directory)
+                (expand-file-name "emjupy-shadow" temporary-file-directory)))
          (server (emjupy-notebook-server nb))
          (tag (if server (emjupy--server-label server) "local"))
          (safe-name (replace-regexp-in-string
                      "[^A-Za-z0-9._-]" "_"
                      (format "%s__%s" tag (or (emjupy-notebook-path nb) "untitled")))))
-    (make-directory dir t)
+    ;; Deliberately no `make-directory' here: with a TRAMP
+    ;; `emjupy-shadow-directory' that would open an ssh connection merely to
+    ;; ask what the path is. The directory is created in
+    ;; `emjupy--ensure-shadow-buffer', which is already about to do remote I/O.
     (expand-file-name (concat safe-name ".py") dir)))
 
 (defun emjupy--ensure-shadow-buffer (nb)
   "Get-or-create NB's persistent code shadow-buffer, refresh its content to
 match the current cells, and make sure Eglot is (or becomes) attached --
 automatically, with nothing for the user to run."
-  (let ((buf (emjupy-notebook-shadow-buffer nb))
-        (content (emjupy--build-shadow-content nb))
-        (path (emjupy--shadow-file-path nb)))
+  (let* ((buf (emjupy-notebook-shadow-buffer nb))
+         (content (emjupy--build-shadow-content nb))
+         (path (emjupy--shadow-file-path nb)))
+    (make-directory (file-name-directory path) t)
     (unless (buffer-live-p buf)
       ;; A buffer may already be visiting this path from an earlier open of
       ;; the same notebook. Reuse it rather than writing the file behind its
@@ -384,7 +423,18 @@ shared code shadow buffer, so completions see definitions from every
 cell in the notebook, automatically."
   (emjupy--cell-shadow-delegate
    (lambda (cell-start shadow-start buf)
-     (let ((result (run-hook-with-args-until-success 'completion-at-point-functions)))
+     ;; Eglot's own capf calls `eglot--current-server-or-lose', which signals
+     ;; a jsonrpc-error when the server is gone -- that error escaped from
+     ;; here and reached the user.  Skip the delegation entirely rather than
+     ;; let a dead server be queried.
+     (let ((result (and (emjupy--eglot-live-server buf)
+                        (condition-case err
+                            (run-hook-with-args-until-success
+                             'completion-at-point-functions)
+                          (error
+                           (message "[emjupy] completion unavailable: %s"
+                                    (error-message-string err))
+                           nil)))))
        (when (consp result)
          (let* ((orig-collection (nth 2 result))
                 ;; Eglot's collection is a closure the completion UI calls
@@ -423,11 +473,11 @@ never true for this shadow buffer -- staying hidden in the background
 is the whole point. `jsonrpc-request' (blocking) bypasses that gate."
   (emjupy--cell-shadow-delegate
    (lambda (_cell-start _shadow-start _buf)
-     (when (and (fboundp 'eglot-current-server) (eglot-current-server)
+     (when (and (emjupy--eglot-live-server)
                 (fboundp 'jsonrpc-request)
                 (ignore-errors (emjupy--eglot-capable-p :hoverProvider)))
        (ignore-errors
-         (let* ((server (eglot--current-server-or-lose))
+         (let* ((server (emjupy--eglot-live-server))
                 (resp (jsonrpc-request server :textDocument/hover
                                         (eglot--TextDocumentPositionParams)))
                 (contents (plist-get resp :contents)))
