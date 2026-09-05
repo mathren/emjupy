@@ -386,3 +386,8 @@ applies — it's a plain, ordinary buffer that never gets torn down, so
 multi-cursor is fully safe there. That's the actual reason I'd steered
 you toward it for heavier editing earlier, now with a concrete
 mechanism behind the claim rather than just a hunch.
+
+* TODO
+
+- [ ] implement view similar to the buffer =*ein:notebooklist <address>=
+- [ ] fix colors bug
