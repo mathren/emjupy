@@ -1223,5 +1223,48 @@ directory that would open an ssh connection just to ask for a name."
       (should (string-prefix-p "/ssh:user@host:/tmp/emjupy-shadow/" path))
       (should (string-suffix-p ".py" path)))))
 
+(ert-deftest emjupy-test-shadow-sanitizes-raw-bytes-for-lsp ()
+  "Undecodable raw bytes must not reach the language server.
+
+The shadow document is handed over as a JSON string, and `jsonrpc'
+rejects anything that is not valid UTF-8 with `wrong-type-argument
+utf-8-string-p', so the connection never starts."
+  (let* ((raw (concat "x = 1" (string #x3FFF97) "\ny = 2"))
+         (clean (emjupy--sanitize-for-lsp raw)))
+    ;; before: not serialisable; after: fine
+    (should-error (json-serialize (vector raw)))
+    (should (json-serialize (vector clean)))
+    ;; one character for one character, so shadow offsets still map back
+    ;; onto the cell source they came from
+    (should (= (length raw) (length clean)))))
+
+(ert-deftest emjupy-test-shadow-leaves-ordinary-unicode-alone ()
+  "Sanitising must only touch raw bytes -- accented text, dashes, maths
+and non-Latin scripts are perfectly good UTF-8 and pass through."
+  (let ((s "caf\u00e9 \u2014 na\u00efve \u2713 \u03b1\u03b2\u03b3"))
+    (should (equal s (emjupy--sanitize-for-lsp s))))
+  (should (equal "" (emjupy--sanitize-for-lsp "")))
+  (should (equal "plain ascii" (emjupy--sanitize-for-lsp "plain ascii"))))
+
+(ert-deftest emjupy-test-shadow-content-is-serialisable ()
+  "The assembled shadow document is valid UTF-8 even when a cell holds a
+raw byte."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source (concat "a = 1" (string #x3FFF97))
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "b = 2" :outputs [] :metadata (make-hash-table)))
+         (nb (make-emjupy-notebook :cells (vector c1 c2) :path "raw.ipynb")))
+    (should (json-serialize (vector (emjupy--build-shadow-content nb))))))
+
+(ert-deftest emjupy-test-shadow-coding-is-pinned ()
+  "The shadow file's coding system is fixed, not negotiated.
+
+Left to itself `write-region' calls `select-safe-coding-system', which
+for content it cannot encode cleanly stops and ASKS, defaulting to
+`raw-text' -- and a shadow file written as raw text reads back as
+mojibake."
+  (should (eq emjupy--shadow-coding 'utf-8-unix)))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

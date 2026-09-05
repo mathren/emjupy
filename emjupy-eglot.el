@@ -158,11 +158,35 @@ buffer like any ordinary Python file."
   "Return the `# %% [emjupy:ID]' section-header line text for cell ID."
   (format "# %%%% [emjupy:%d]" id))
 
+(defun emjupy--sanitize-for-lsp (string)
+  "Return STRING with undecodable raw bytes replaced by U+FFFD.
+
+A byte that never decoded cleanly (Emacs holds these as characters in
+the #x3FFF80..#x3FFFFF range) is not valid UTF-8, and the whole shadow
+document is handed to the language server as a JSON string: `jsonrpc'
+rejects it with `wrong-type-argument utf-8-string-p' and the connection
+never gets off the ground.
+
+The replacement is one character for one character, so every offset in
+the shadow buffer still lines up with the cell source it came from --
+which is what the completion and hover position mapping relies on.  The
+notebook itself is untouched; only the copy the server sees is cleaned."
+  (if (not (stringp string))
+      string
+    (apply #'string
+           (mapcar (lambda (ch)
+                     (if (and (>= ch #x3FFF80) (<= ch #x3FFFFF))
+                         ?\uFFFD
+                       ch))
+                   (append string nil)))))
+
 (defun emjupy--build-shadow-content (nb)
   "Concatenate every code cell in NB into one Python source, section-marked."
   (mapconcat
    (lambda (cell) (concat (emjupy--shadow-cell-marker (emjupy-cell-id cell))
-                          "\n" (emjupy-cell-source cell) "\n"))
+                          "\n"
+                          (emjupy--sanitize-for-lsp (emjupy-cell-source cell))
+                          "\n"))
    (cl-remove-if-not (lambda (c) (eq (emjupy-cell-type c) 'code))
                       (append (emjupy-notebook-cells nb) nil))
    "\n"))
@@ -201,6 +225,17 @@ server reached through `ssh -L\' looks like localhost from here."
   :type '(choice (const :tag "Local temporary directory" nil)
                  (directory :tag "Directory (may be a TRAMP path)"))
   :group 'emjupy)
+
+(defconst emjupy--shadow-coding 'utf-8-unix
+  "Coding system used for the Eglot shadow file, in both directions.
+
+Pinned rather than negotiated. Left to itself `write-region' calls
+`select-safe-coding-system', which for anything it cannot encode
+cleanly -- a stray undecodable byte in a cell, say -- stops and ASKS,
+defaulting to `raw-text'. Answering that turns the shadow file into raw
+bytes, so the next visit reads mojibake back (a lone #x97 shows up as
+`\\227') and Emacs then chokes trying to save it. LSP mandates UTF-8
+anyway, so there is nothing to negotiate.")
 
 (defun emjupy--eglot-live-server (&optional buffer)
   "Return the live Eglot server for BUFFER, or nil.
@@ -259,8 +294,10 @@ automatically, with nothing for the user to run."
         ;; (or empty) document -- which is why the SECOND notebook opened in
         ;; a session silently got no hover and almost no completions, even
         ;; though `eglot--managed-mode' reported t.
-        (write-region content nil path nil 'quiet)
-        (setq buf (find-file-noselect path)))
+        (let ((coding-system-for-write emjupy--shadow-coding))
+          (write-region content nil path nil 'quiet))
+        (setq buf (let ((coding-system-for-read emjupy--shadow-coding))
+                    (find-file-noselect path))))
       (setf (emjupy-notebook-shadow-buffer nb) buf)
       (with-current-buffer buf
         ;; `find-file-noselect' already picked python-mode from the .py
@@ -269,13 +306,16 @@ automatically, with nothing for the user to run."
         ;; just below.
         (unless (derived-mode-p 'python-mode 'python-ts-mode)
           (python-mode))
+        ;; Saving must never stop to ask either.
+        (set-buffer-file-coding-system emjupy--shadow-coding t)
         (emjupy-shadow-edit-mode 1)
         (setq emjupy--edit-shadow-notebook nb)))
     (with-current-buffer buf
       (unless (string= content (buffer-string))
         (erase-buffer)
         (insert content)
-        (write-region (point-min) (point-max) buffer-file-name nil 'quiet)
+        (let ((coding-system-for-write emjupy--shadow-coding))
+          (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
         ;; Record the modtime we just created, otherwise this buffer looks
         ;; stale to Emacs forever after and every later visit prompts.
         (set-visited-file-modtime)
@@ -347,7 +387,8 @@ The buffer and its Eglot connection are kept alive, not killed."
       (when nb
         (erase-buffer)
         (insert (emjupy--build-shadow-content nb))
-        (write-region (point-min) (point-max) buffer-file-name nil 'quiet)
+        (let ((coding-system-for-write emjupy--shadow-coding))
+          (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
         (set-buffer-modified-p nil)
         (when (buffer-live-p (emjupy-notebook-buffer nb))
           (switch-to-buffer (emjupy-notebook-buffer nb)))))))
