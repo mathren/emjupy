@@ -2,6 +2,9 @@
 #+author: Mathieu Renzo
 #+Assisted-by: various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
 
+#+CAPTION: Python Jupyter Notebook in Emacs.
+[[./images/emjupy-logo.png]]
+
 Jupyter notebooks with remote kernel execution using emacs built-ins
 (=eglot= and =tramp=, completion frameworks like =vertico= + =corfu= +
 =orderless=) while maintaining compatibility with standard =*.ipynb= for
