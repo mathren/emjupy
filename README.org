@@ -390,4 +390,4 @@ mechanism behind the claim rather than just a hunch.
 * TODO
 
 - [ ] implement view similar to the buffer =*ein:notebooklist <address>=
-- [ ] fix colors bug
+- [ ]Basic highlighting
