@@ -758,5 +758,125 @@ Needs EMJUPY_TEST_URL2; skipped otherwise."
               (with-current-buffer b (emjupy--disconnect-kernel (emjupy--notebook)))
               (kill-buffer b))))))))
 
+(ert-deftest emjupy-int-eglot-rename-works-from-a-notebook ()
+  "`eglot-rename\' run in a notebook buffer renames through the shadow
+buffer, across every cell -- rather than failing with \"No current
+JSON-RPC connection\" because the notebook buffer is not the one Eglot
+manages."
+  (unless (and (emjupy-int--lsp-available-p) (require 'eglot nil 'noerror))
+    (ert-skip "No Python language server on PATH"))
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "my_variable = 41" :outputs []
+                               :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "print(my_variable + 1)" :outputs []
+                               :metadata (make-hash-table)))
+         (nb (make-emjupy-notebook :cells (vector c1 c2) :path "int-rename.ipynb"))
+         (buf (generate-new-buffer "*emjupy-int-rename*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (emjupy-mode)
+          (setq emjupy--buffer-notebook nb)
+          (setf (emjupy-notebook-buffer nb) buf)
+          (emjupy--rerender-notebook)
+          (unless (emjupy-int--wait-for-eglot nb)
+            (ert-skip "Eglot did not connect"))
+          (goto-char (overlay-start (emjupy-cell-overlay c1)))
+          (should (search-forward "my_var" nil t))
+          (goto-char (match-beginning 0))
+          (eglot-rename "renamed_var")
+          ;; both cells updated, not just the one point was in
+          (should (equal (emjupy-cell-source c1) "renamed_var = 41"))
+          (should (equal (emjupy-cell-source c2) "print(renamed_var + 1)"))
+          (should (string-match-p "renamed_var" (buffer-string)))
+          (should-not (string-match-p "my_variable" (buffer-string))))
+      (let ((kill-buffer-query-functions nil))
+        (when (buffer-live-p buf) (kill-buffer buf))
+        (when (and (emjupy-notebook-shadow-buffer nb)
+                   (buffer-live-p (emjupy-notebook-shadow-buffer nb)))
+          (ignore-errors (kill-buffer (emjupy-notebook-shadow-buffer nb))))))))
+
+(ert-deftest emjupy-int-xref-finds-definitions-across-cells ()
+  "M-. from a use in one cell jumps to the definition in another, landing
+in the notebook buffer rather than in the shadow file."
+  (unless (and (emjupy-int--lsp-available-p) (require 'eglot nil 'noerror))
+    (ert-skip "No Python language server on PATH"))
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "def my_function(a):\n    return a + 1"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "result = my_function(2)"
+                               :outputs [] :metadata (make-hash-table)))
+         (nb (make-emjupy-notebook :cells (vector c1 c2) :path "int-xref.ipynb"))
+         (buf (generate-new-buffer "*emjupy-int-xref*")))
+    (unwind-protect
+        (with-current-buffer buf
+          (emjupy-mode)
+          (setq emjupy--buffer-notebook nb)
+          (setf (emjupy-notebook-buffer nb) buf)
+          (emjupy--rerender-notebook)
+          (unless (emjupy-int--wait-for-eglot nb)
+            (ert-skip "Eglot did not connect"))
+          (goto-char (overlay-start (emjupy-cell-overlay c2)))
+          (should (search-forward "my_function" nil t))
+          (goto-char (match-beginning 0))
+          (should (eq (run-hook-with-args-until-success 'xref-backend-functions) 'emjupy))
+          (let* ((id (xref-backend-identifier-at-point 'emjupy))
+                 (defs (xref-backend-definitions 'emjupy id)))
+            (should defs)
+            (let ((loc (xref-item-location (car defs))))
+              ;; remapped into the notebook, not left pointing at the shadow file
+              (should (cl-typep loc 'xref-buffer-location))
+              (should (eq (xref-buffer-location-buffer loc) buf))
+              (let ((pos (xref-buffer-location-position loc)))
+                ;; and it lands on the definition, which lives in the OTHER cell
+                (should (eq (get-text-property pos 'emjupy-cell) c1))
+                (should (string-prefix-p "my_function"
+                                         (buffer-substring-no-properties
+                                          pos (min (point-max) (+ pos 11)))))))))
+      (let ((kill-buffer-query-functions nil))
+        (when (buffer-live-p buf) (kill-buffer buf))
+        (when (and (emjupy-notebook-shadow-buffer nb)
+                   (buffer-live-p (emjupy-notebook-shadow-buffer nb)))
+          (ignore-errors (kill-buffer (emjupy-notebook-shadow-buffer nb))))))))
+
+(ert-deftest emjupy-int-dashboard-lists-kernels-and-notebooks ()
+  "The dashboard shows what the server has, and descends into folders."
+  (emjupy-int--skip-unless-live)
+  (let ((server emjupy--current-server) dash)
+    (emjupy--http-request "PUT" server "/api/contents/int-dash.ipynb"
+                          (emjupy-int--blank-notebook-json))
+    (let ((p (make-hash-table :test 'equal)))
+      (puthash "name" "python3" p)
+      (emjupy--http-request "POST" server "/api/kernels" (json-serialize p)))
+    (unwind-protect
+        (with-current-buffer (setq dash (emjupy-server-dashboard server))
+          (should (eq major-mode 'emjupy-list-mode))
+          (let ((kinds (mapcar (lambda (e) (plist-get (car e) :kind))
+                               tabulated-list-entries))
+                (names (mapcar (lambda (e) (aref (cadr e) 1))
+                               tabulated-list-entries)))
+            ;; kernels AND notebooks, in one place
+            (should (memq 'kernel kinds))
+            (should (memq 'notebook kinds))
+            (should (member "int-dash.ipynb" names)))
+          ;; opening a notebook row gives a real notebook buffer
+          (goto-char (point-min))
+          (let ((found nil))
+            (while (and (not found) (not (eobp)))
+              (if (and (eq (plist-get (tabulated-list-get-id) :kind) 'notebook)
+                       (equal (aref (tabulated-list-get-entry) 1) "int-dash.ipynb"))
+                  (setq found t)
+                (forward-line 1)))
+            (should found)
+            (let ((nbbuf (emjupy-list-open)))
+              (should (bufferp nbbuf))
+              (with-current-buffer nbbuf
+                (should (equal (emjupy-notebook-path (emjupy--notebook))
+                               "int-dash.ipynb")))
+              (let ((kill-buffer-query-functions nil)) (kill-buffer nbbuf)))))
+      (let ((kill-buffer-query-functions nil))
+        (when (buffer-live-p dash) (kill-buffer dash))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

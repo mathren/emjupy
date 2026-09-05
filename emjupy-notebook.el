@@ -233,6 +233,219 @@ Returns the notebook buffer."
           (emjupy-open-notebook filename server)
         (error "Failed to write %s to server" filename)))))
 
+
+;;; ---------------------------------------------------------------------
+;;; Server dashboard
+;;; ---------------------------------------------------------------------
+;; One buffer per server showing what it has: the kernels running on it and
+;; the notebooks stored on it, browsable into subdirectories. Built on
+;; `tabulated-list-mode' rather than hand-drawn, so sorting, navigation and
+;; column handling come from Emacs. It is emphatically NOT a file manager --
+;; press `d\' to hand the directory to Dired, over TRAMP if the server is
+;; remote.
+
+(defcustom emjupy-remote-root nil
+  "Where the notebook directory lives as a *file name*, for Dired.
+
+The Contents API tells emjupy what notebooks a server has, but not how
+to reach them as files -- and a tunnelled server looks like localhost
+from here, so there is nothing to infer.  Set this to hand `d\' in the
+dashboard somewhere useful:
+
+  (setq emjupy-remote-root \"/ssh:user@host:/home/user/notebooks\")
+
+An alist maps it per server:
+
+  (setq emjupy-remote-root
+        \='((\"localhost:8888\" . \"~/notebooks\")
+          (\"localhost:9999\" . \"/ssh:box:/srv/nb\")))
+
+nil disables `d\'."
+  :type '(choice (const :tag "Disabled" nil)
+                 (directory :tag "One directory for every server")
+                 (alist :key-type string :value-type directory))
+  :group 'emjupy)
+
+(defvar-local emjupy-list--server nil
+  "The `emjupy-server\' this dashboard describes.")
+(defvar-local emjupy-list--path ""
+  "Contents-API subdirectory this dashboard is showing.")
+
+(defun emjupy--remote-root-for (server)
+  "Return the Dired root configured for SERVER, or nil."
+  (cond
+   ((null emjupy-remote-root) nil)
+   ((stringp emjupy-remote-root) emjupy-remote-root)
+   ((consp emjupy-remote-root)
+    (cdr (assoc (emjupy--server-label server) emjupy-remote-root)))))
+
+(defun emjupy--list-entries (server path)
+  "Return `tabulated-list-entries\' for PATH on SERVER."
+  (let* ((contents (emjupy--http-request
+                    "GET" server (concat "/api/contents/" path)))
+         (items (and contents (gethash "content" contents)))
+         (kernels (ignore-errors
+                    (emjupy--http-request "GET" server "/api/kernels")))
+         (rows nil))
+    (cl-loop for k across (or kernels [])
+             do (push (list (list :kind 'kernel :id (gethash "id" k))
+                            (vector "kernel"
+                                    (or (gethash "name" k) "?")
+                                    (format "%s  (%s connection%s)"
+                                            (substring (or (gethash "id" k) "") 0 8)
+                                            (or (gethash "connections" k) 0)
+                                            (if (eql (gethash "connections" k) 1) "" "s"))))
+                      rows))
+    (unless (string-empty-p path)
+      (push (list (list :kind 'up)
+                  (vector "dir" ".." ""))
+            rows))
+    (cl-loop for item across (or items [])
+             for type = (gethash "type" item)
+             for name = (gethash "name" item)
+             for ipath = (gethash "path" item)
+             do (push (list (list :kind (intern type) :path ipath)
+                            (vector type name
+                                    (or (gethash "last_modified" item) "")))
+                      rows))
+    (nreverse rows)))
+
+(defun emjupy-list-refresh ()
+  "Re-fetch this dashboard from the server."
+  (interactive)
+  (let ((server emjupy-list--server)
+        (path emjupy-list--path))
+    (setq tabulated-list-entries (emjupy--list-entries server path))
+    (setq header-line-format
+          (format "  %s   %s   %d kernel(s)   [RET] open  [^] up  [g] refresh  [k] kill kernel  [d] dired"
+                  (emjupy--server-label server)
+                  (if (string-empty-p path) "/" (concat "/" path))
+                  (length (cl-remove-if-not
+                           (lambda (e) (eq (plist-get (car e) :kind) 'kernel))
+                           tabulated-list-entries))))
+    (tabulated-list-print t)))
+
+(defun emjupy-list-open ()
+  "Open the notebook, or descend into the directory, at point."
+  (interactive)
+  (let* ((row (tabulated-list-get-id))
+         (kind (plist-get row :kind)))
+    (pcase kind
+      ('up (setq emjupy-list--path
+                 (let ((parent (file-name-directory
+                                (directory-file-name emjupy-list--path))))
+                   (if parent (directory-file-name parent) "")))
+           (emjupy-list-refresh))
+      ('directory (setq emjupy-list--path (plist-get row :path))
+                  (emjupy-list-refresh))
+      ('notebook (emjupy-open-notebook (plist-get row :path) emjupy-list--server))
+      ('kernel (message "[emjupy] Kernel %s -- press k to shut it down."
+                        (plist-get row :id)))
+      (_ (message "[emjupy] Not a notebook; press d for Dired.")))))
+
+(defun emjupy-list-kill-kernel ()
+  "Shut down the kernel on this line."
+  (interactive)
+  (let* ((row (tabulated-list-get-id))
+         (id (plist-get row :id)))
+    (unless (eq (plist-get row :kind) 'kernel)
+      (user-error "Not a kernel"))
+    (when (yes-or-no-p (format "Shut down kernel %s? " id))
+      (emjupy--http-request "DELETE" emjupy-list--server
+                            (format "/api/kernels/%s" id))
+      (emjupy-list-refresh))))
+
+(defun emjupy-list-dired ()
+  "Open this directory in Dired, over TRAMP when the server is remote.
+
+emjupy deliberately does not implement a file manager: Dired already is
+one, and TRAMP already knows how to reach another machine."
+  (interactive)
+  (let ((root (emjupy--remote-root-for emjupy-list--server)))
+    (unless root
+      (user-error "Set `emjupy-remote-root\' to browse this server\='s files in Dired"))
+    (dired (expand-file-name emjupy-list--path (file-name-as-directory root)))))
+
+(defun emjupy-list-new-notebook ()
+  "Create a new notebook in the directory being shown, and open it."
+  (interactive)
+  (let* ((server emjupy-list--server)
+         (dir emjupy-list--path)
+         (raw (read-string "New notebook name: "))
+         (name (if (string-match-p "\\.ipynb\\'" raw) raw (concat raw ".ipynb")))
+         (path (if (string-empty-p dir)
+                   name
+                 (concat (directory-file-name dir) "/" name)))
+         (nb (make-hash-table :test 'equal))
+         (req (make-hash-table :test 'equal)))
+    (puthash "cells" [] nb)
+    (puthash "metadata" (make-hash-table :test 'equal) nb)
+    (puthash "nbformat" 4 nb)
+    (puthash "nbformat_minor" 5 nb)
+    (puthash "type" "notebook" req)
+    (puthash "format" "json" req)
+    (puthash "content" nb req)
+    (when (and (ignore-errors
+                 (emjupy--http-request "GET" server (concat "/api/contents/" path)))
+               (not (yes-or-no-p (format "%s already exists.  Overwrite it? " path))))
+      (user-error "Not overwriting %s" path))
+    (emjupy--http-request "PUT" server (concat "/api/contents/" path)
+                          (json-serialize req))
+    (emjupy-open-notebook path server)))
+
+(defun emjupy-list-kill-all-kernels ()
+  "Shut down every kernel on this server."
+  (interactive)
+  (let* ((server emjupy-list--server)
+         (kernels (emjupy--http-request "GET" server "/api/kernels"))
+         (ids (cl-loop for k across kernels collect (gethash "id" k))))
+    (cond
+     ((null ids) (message "[emjupy] No kernels running."))
+     ((yes-or-no-p (format "Shut down all %d kernel(s)? " (length ids)))
+      (dolist (id ids)
+        (ignore-errors
+          (emjupy--http-request "DELETE" server (format "/api/kernels/%s" id))))
+      (emjupy-list-refresh)))))
+
+(defvar emjupy-list-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'emjupy-list-open)
+    (define-key map (kbd "^")   #'emjupy-list-open)
+    (define-key map (kbd "g")   #'emjupy-list-refresh)
+    (define-key map (kbd "k")   #'emjupy-list-kill-kernel)
+    (define-key map (kbd "K")   #'emjupy-list-kill-all-kernels)
+    (define-key map (kbd "d")   #'emjupy-list-dired)
+    (define-key map (kbd "n")   #'emjupy-list-new-notebook)
+    map)
+  "Keymap for `emjupy-list-mode\'.")
+
+(define-derived-mode emjupy-list-mode tabulated-list-mode "emjupy-server"
+  "Dashboard for one Jupyter server: its kernels and its notebooks."
+  (setq tabulated-list-format [("Kind" 10 t) ("Name" 44 t) ("Info" 40 t)])
+  (setq tabulated-list-padding 2)
+  (tabulated-list-init-header))
+
+;;;###autoload
+(defun emjupy-server-dashboard (&optional server)
+  "Show what SERVER has: the kernels running on it and its notebooks.
+
+Defaults to this buffer\='s server, or the last one logged into.  One
+buffer per server, so several tunnels can be inspected side by side."
+  (interactive)
+  (let* ((server (or server (emjupy--server)))
+         (buf (get-buffer-create
+               (format "*emjupy server: %s*" (emjupy--server-label server)))))
+    (with-current-buffer buf
+      (emjupy-list-mode)
+      (setq emjupy-list--server server)
+      (unless emjupy-list--path (setq emjupy-list--path ""))
+      (emjupy-list-refresh))
+    (switch-to-buffer buf)
+    buf))
+
+(defalias 'emjupy-notebook-list #'emjupy-server-dashboard
+  "Alias for `emjupy-server-dashboard\'.")
+
 (defun emjupy--parse-ipynb (json-string)
   "Parse strict nbformat v4 JSON-STRING into an `emjupy-notebook' struct."
   (let* ((data (json-parse-string json-string :object-type 'hash-table :array-type 'array))

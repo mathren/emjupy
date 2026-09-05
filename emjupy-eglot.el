@@ -26,6 +26,7 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 (require 'emjupy-cells)
+(require 'xref)
 
 ;; Eglot ships with Emacs (29.1+, which this package requires) but is pulled in
 ;; at COMPILE time only: emjupy is fully usable without a language server, so
@@ -353,6 +354,193 @@ automatically, with nothing for the user to run."
     (if (search-forward (emjupy--shadow-cell-marker cell-id) nil t)
         (forward-line 1)
       (goto-char (point-min)))))
+
+(defun emjupy--shadow-position-to-cell (nb shadow-pos)
+  "Map SHADOW-POS in NB\='s shadow buffer to (CELL . NOTEBOOK-POS).
+
+Returns nil when the position falls outside every cell section -- on a
+`# %%\=' marker line, say.  This is the inverse of the mapping
+`emjupy--cell-shadow-delegate\' performs on the way in, and it is what
+lets a location the server describes in shadow-file coordinates land on
+the right character of the right cell."
+  (let ((buf (emjupy-notebook-shadow-buffer nb))
+        (found nil))
+    (when (buffer-live-p buf)
+      (cl-loop for cell across (emjupy-notebook-cells nb)
+               until found
+               when (eq (emjupy-cell-type cell) 'code)
+               do (let* ((start (ignore-errors
+                                  (emjupy--shadow-section-start buf (emjupy-cell-id cell))))
+                         (len (length (emjupy-cell-source cell)))
+                         (ov (emjupy-cell-overlay cell)))
+                    (when (and start (overlayp ov)
+                               (>= shadow-pos start)
+                               (<= shadow-pos (+ start len)))
+                      (setq found (cons cell (+ (overlay-start ov)
+                                                (- shadow-pos start))))))))
+    found))
+
+;; --- xref ------------------------------------------------------------------
+;; M-. reaches the server through the same shadow buffer as everything else.
+;; Eglot installs its xref backend in the buffer it manages -- the shadow
+;; buffer, not the notebook -- so in a notebook M-. found nothing, or fell
+;; through to a backend that knew nothing about the code.
+
+(defun emjupy--xref-backend ()
+  "`xref-backend-functions' entry for notebook buffers."
+  (and emjupy--buffer-notebook 'emjupy))
+
+(defun emjupy--xref-in-shadow (fn)
+  "Call FN with Eglot's own xref backend, inside the shadow buffer at point."
+  (emjupy--cell-shadow-delegate
+   (lambda (_cell-start _shadow-start buf)
+     (when (emjupy--eglot-live-server buf)
+       (let ((backend (run-hook-with-args-until-success 'xref-backend-functions)))
+         (when backend (funcall fn backend)))))))
+
+(defun emjupy--xref-remap (nb items)
+  "Rewrite ITEMS pointing into NB's shadow file so they point at its cells.
+
+An xref into the shadow file is useless: it is a scratch copy in a temp
+directory (or on the remote host).  Anything pointing elsewhere -- into a
+library, say -- is left exactly as it is, because the real file is the
+right destination there."
+  (let* ((buf (emjupy-notebook-shadow-buffer nb))
+         (shadow-file (and (buffer-live-p buf)
+                           (buffer-local-value 'buffer-file-name buf)))
+         (nb-buf (emjupy-notebook-buffer nb)))
+    (if (not (and items shadow-file (buffer-live-p nb-buf)))
+        items
+      (mapcar
+       (lambda (item)
+         (let* ((loc (xref-item-location item))
+                (file (ignore-errors (xref-location-group loc)))
+                (same (and file (equal (file-truename file)
+                                       (file-truename shadow-file)))))
+           (if (not same)
+               item
+             (let* ((line (ignore-errors (xref-location-line loc)))
+                    (col (or (ignore-errors (xref-file-location-column loc)) 0))
+                    (spos (when line
+                            (with-current-buffer buf
+                              (save-excursion
+                                (goto-char (point-min))
+                                (forward-line (1- line))
+                                (min (point-max) (+ (point) col))))))
+                    (mapped (and spos (emjupy--shadow-position-to-cell nb spos))))
+               (if (not mapped)
+                   item
+                 (xref-make (xref-item-summary item)
+                            (xref-make-buffer-location nb-buf (cdr mapped))))))))
+       items))))
+
+(cl-defmethod xref-backend-identifier-at-point ((_backend (eql emjupy)))
+  (or (emjupy--xref-in-shadow #'xref-backend-identifier-at-point)
+      (thing-at-point 'symbol t)))
+
+(cl-defmethod xref-backend-identifier-completion-table ((_backend (eql emjupy)))
+  (emjupy--xref-in-shadow #'xref-backend-identifier-completion-table))
+
+(cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
+  (let ((nb emjupy--buffer-notebook))
+    (emjupy--xref-remap
+     nb (emjupy--xref-in-shadow
+         (lambda (b) (xref-backend-definitions b identifier))))))
+
+(cl-defmethod xref-backend-references ((_backend (eql emjupy)) identifier)
+  (let ((nb emjupy--buffer-notebook))
+    (emjupy--xref-remap
+     nb (emjupy--xref-in-shadow
+         (lambda (b) (xref-backend-references b identifier))))))
+
+(cl-defmethod xref-backend-apropos ((_backend (eql emjupy)) pattern)
+  (let ((nb emjupy--buffer-notebook))
+    (emjupy--xref-remap
+     nb (emjupy--xref-in-shadow
+         (lambda (b) (xref-backend-apropos b pattern))))))
+
+(defun emjupy--pull-shadow-into-cells (nb)
+  "Write NB\='s shadow sections back into its cells, re-rendering if any
+changed.  Returns the number of cells updated."
+  (let ((buf (emjupy-notebook-shadow-buffer nb))
+        (updated 0))
+    (when (buffer-live-p buf)
+      (let ((sections (with-current-buffer buf
+                        (emjupy--parse-shadow-sections (buffer-string)))))
+        (cl-loop for cell across (emjupy-notebook-cells nb)
+                 do (let ((match (assq (emjupy-cell-id cell) sections)))
+                      (when (and match
+                                 (not (string= (cdr match) (emjupy-cell-source cell))))
+                        (setf (emjupy-cell-source cell) (cdr match))
+                        (setq updated (1+ updated)))))
+        (when (> updated 0)
+          (let ((nb-buf (emjupy-notebook-buffer nb)))
+            (when (buffer-live-p nb-buf)
+              (with-current-buffer nb-buf (emjupy--rerender-notebook)))))))
+    updated))
+
+(defun emjupy-eglot-delegate (fn)
+  "Run FN in this notebook\='s shadow buffer, at the position matching
+point, then pull anything it changed back into the cells.
+
+This is what makes Eglot\='s own commands usable from a notebook.  They
+call `eglot--current-server-or-lose\', and the notebook buffer is not the
+one Eglot manages -- the hidden shadow buffer is -- so invoked directly
+they fail with a bare \"No current JSON-RPC connection\".  Completion and
+eldoc already went through the shadow buffer; everything else did not."
+  (let ((nb (emjupy--notebook)))
+    (unless (get-text-property (point) 'emjupy-cell)
+      (user-error "Point is not in a cell"))
+    (unless (emjupy--cell-shadow-delegate
+             (lambda (_cell-start _shadow-start buf)
+               (unless (emjupy--eglot-live-server buf)
+                 (user-error "No language server is running for this notebook"))
+               (funcall fn)
+               t))
+      (user-error "Point is not in a code cell"))
+    (let ((updated (emjupy--pull-shadow-into-cells nb)))
+      (when (> updated 0)
+        (message "[emjupy] %d cell%s updated." updated (if (= updated 1) "" "s")))
+      updated)))
+
+(defcustom emjupy-eglot-delegated-commands
+  '(eglot-rename
+    eglot-code-actions
+    eglot-format
+    eglot-format-buffer
+    eglot-find-declaration
+    eglot-find-implementation
+    eglot-find-typeDefinition)
+  "Eglot commands redirected to the shadow buffer when run in a notebook.
+
+Each is advised so that inside `emjupy-mode\' it runs against the buffer
+Eglot actually manages, with point at the matching position, and any
+edits it makes are pulled back into the cells.  Outside `emjupy-mode\'
+the advice does nothing at all."
+  :type '(repeat symbol)
+  :group 'emjupy)
+
+(defun emjupy--eglot-command-advice (orig &rest args)
+  "Around-advice running ORIG with ARGS in the shadow buffer, in notebooks.
+
+The interactive arguments are still read in the notebook buffer, before
+this runs, so prompts like `eglot-rename\'s see the symbol under the
+real cursor rather than whatever is under point in the shadow buffer."
+  (if (and (derived-mode-p 'emjupy-mode) emjupy--buffer-notebook)
+      (emjupy-eglot-delegate (lambda () (apply orig args)))
+    (apply orig args)))
+
+(defun emjupy-eglot-install-advice ()
+  "Advise `emjupy-eglot-delegated-commands\' to work inside notebooks."
+  (dolist (cmd emjupy-eglot-delegated-commands)
+    (advice-add cmd :around #'emjupy--eglot-command-advice)))
+
+(defun emjupy-eglot-remove-advice ()
+  "Undo `emjupy-eglot-install-advice\'."
+  (dolist (cmd emjupy-eglot-delegated-commands)
+    (advice-remove cmd #'emjupy--eglot-command-advice)))
+
+(emjupy-eglot-install-advice)
 
 (defun emjupy-commit-shadow-edit ()
   "Write each `# %% [emjupy:ID]' section in this buffer back into its cell

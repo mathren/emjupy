@@ -108,6 +108,9 @@
   ;; from the user beyond normal editing and the usual M-TAB/eldoc UI.
   (add-hook 'completion-at-point-functions #'emjupy--cell-completion-at-point nil t)
   (add-hook 'eldoc-documentation-functions #'emjupy--cell-eldoc-function nil t)
+  ;; M-. and friends: Eglot's xref backend lives in the shadow buffer, so the
+  ;; notebook needs a backend of its own that forwards there.
+  (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t)
   (eldoc-mode 1))
 
 (provide 'emjupy)

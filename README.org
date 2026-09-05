@@ -386,6 +386,66 @@ the =.ipynb= written back, still contain exactly what the kernel sent,
 keeping the file faithful for other clients. Set
 =emjupy-deduplicate-image-outputs= to =nil= to draw both.
 
+* Eglot commands in a notebook
+
+Completion and eldoc reach the language server through a hidden shadow
+buffer holding the notebook's code.  Eglot's own commands did not: they
+call =eglot--current-server-or-lose=, and the notebook buffer is not the
+one Eglot manages, so =M-x eglot-rename= failed with a bare "No current
+JSON-RPC connection".
+
+The commands in =emjupy-eglot-delegated-commands= -- =eglot-rename=,
+=eglot-code-actions=, =eglot-format= and the =eglot-find-*= family -- now run
+in the shadow buffer at the position matching point, with any edits
+pulled back into the cells.  Because that buffer holds every cell at
+once, a rename fixes references in *all* of them, not only the cell
+point was in.
+
+The advice does nothing outside =emjupy-mode=; =M-x
+emjupy-eglot-remove-advice= takes it off entirely.
+
+* Server dashboard
+
+=M-x emjupy-server-dashboard= (also =emjupy-notebook-list=) opens one buffer
+per server showing what it has: the kernels running on it and the
+notebooks stored on it, browsable into subdirectories.
+
+| Key   | Effect                                        |
+|-------+-----------------------------------------------|
+| =RET=   | open the notebook, or descend into the folder |
+| =^=     | up a directory (the =..= row)                   |
+| =g=     | re-fetch from the server                      |
+| =k=     | shut down the kernel on this line             |
+| =K=     | shut down every kernel on this server         |
+| =n=     | create a notebook in the folder being shown   |
+| =d=     | hand this directory to Dired                  |
+
+It is built on =tabulated-list-mode=, so sorting and navigation are
+Emacs's own.  It is deliberately *not* a file manager: =d= hands the
+directory to Dired, over TRAMP when the server is remote.  The Contents
+API says what notebooks exist but not how to reach them as files -- and a
+tunnelled server looks like localhost from here -- so tell emjupy where
+they live:
+
+#+begin_src elisp
+(setq emjupy-remote-root "/ssh:user@host:/home/user/notebooks")
+;; or per server:
+(setq emjupy-remote-root
+      \='(("localhost:8888" . "~/notebooks")
+        ("localhost:9999" . "/ssh:box:/srv/nb")))
+#+end_src
+
+* Jumping to definitions
+
+=M-.= works inside a notebook.  Eglot installs its xref backend in the
+buffer it manages -- the hidden shadow buffer, not the notebook -- so
+emjupy adds a backend that forwards there and maps the answer back.
+
+Because the shadow buffer holds every cell at once, a jump crosses
+cells: =M-.= on a call in one cell lands on the definition in another.
+Locations pointing anywhere else, into a library say, are left alone,
+because the real file is the right destination there.
+
 * Known limitations
 
 Multi-cursor: Works fine editing within one cell while nothing else is

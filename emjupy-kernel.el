@@ -212,7 +212,8 @@ kernels never cross-talk."
 
         (puthash msg-id cell (emjupy-kernel-pending kernel))
         (emjupy--ws-send json-payload kernel)
-        (message "[emjupy] Executing cell (%s)..." msg-id)))))
+        ;; (message "[emjupy] Executing cell (%s)..." msg-id)
+	))))
 
 (defun emjupy-execute-cell-and-goto-next ()
   "Execute cell at point and advance to the next cell."

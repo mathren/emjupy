@@ -1266,5 +1266,151 @@ for content it cannot encode cleanly stops and ASKS, defaulting to
 mojibake."
   (should (eq emjupy--shadow-coding 'utf-8-unix)))
 
+(ert-deftest emjupy-test-eglot-advice-is-inert-outside-notebooks ()
+  "The advice must not change how Eglot commands behave in ordinary
+buffers -- it only redirects inside `emjupy-mode\'."
+  (with-temp-buffer
+    (python-mode)
+    (should (equal (emjupy--eglot-command-advice (lambda (&rest args) (cons 'ran args))
+                                                 1 2)
+                   '(ran 1 2)))))
+
+(ert-deftest emjupy-test-eglot-delegate-errors-clearly-without-a-server ()
+  "With no language server the user gets a plain explanation, not a raw
+jsonrpc-error out of Eglot\'s innards."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "x = 1" :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (cl-letf (((symbol-function 'emjupy--eglot-live-server) (lambda (&rest _) nil)))
+          (should-error (emjupy-eglot-delegate #'ignore) :type 'user-error))))))
+
+(ert-deftest emjupy-test-eglot-delegate-refuses-outside-a-cell ()
+  "Point has to be in a cell for there to be anything to delegate."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "x = 1" :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (point-max))
+        (should-error (emjupy-eglot-delegate #'ignore) :type 'user-error)))))
+
+(ert-deftest emjupy-test-pull-shadow-into-cells ()
+  "Edits an Eglot command made in the shadow buffer come back into the
+cells -- including edits spanning more than one cell, which is the whole
+reason the shadow buffer exists."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "aaa = 1" :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "print(aaa)" :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((shadow (generate-new-buffer " *fake-shadow*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer shadow
+                  (insert (emjupy--shadow-cell-marker (emjupy-cell-id c1)) "\n"
+                          "bbb = 1" "\n\n"
+                          (emjupy--shadow-cell-marker (emjupy-cell-id c2)) "\n"
+                          "print(bbb)" "\n"))
+                (setf (emjupy-notebook-shadow-buffer nb) shadow)
+                (should (= (emjupy--pull-shadow-into-cells nb) 2))
+                (should (equal (emjupy-cell-source c1) "bbb = 1"))
+                (should (equal (emjupy-cell-source c2) "print(bbb)"))
+                ;; and the notebook buffer shows the new text
+                (should (string-match-p "bbb = 1" (buffer-string)))
+                ;; a second pull with nothing changed reports no updates
+                (should (= (emjupy--pull-shadow-into-cells nb) 0)))
+            (let ((kill-buffer-query-functions nil))
+              (when (buffer-live-p shadow) (kill-buffer shadow)))))))))
+
+(ert-deftest emjupy-test-eglot-advice-installed-on-the-listed-commands ()
+  "Every command in `emjupy-eglot-delegated-commands\' is actually advised."
+  (dolist (cmd emjupy-eglot-delegated-commands)
+    (should (advice-member-p #'emjupy--eglot-command-advice cmd))))
+
+(ert-deftest emjupy-test-xref-backend-only-in-notebooks ()
+  "The xref backend announces itself only where there is a notebook."
+  (with-temp-buffer
+    (should-not (emjupy--xref-backend)))
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (should (eq (emjupy--xref-backend) 'emjupy))
+        (should (eq (run-hook-with-args-until-success 'xref-backend-functions)
+                    'emjupy))))))
+
+(ert-deftest emjupy-test-shadow-position-maps-back-to-a-cell ()
+  "A position in the shadow buffer maps back onto the character it came
+from, in the right cell.  This is what turns a location the server
+describes in shadow-file coordinates into a usable jump."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "alpha = 1" :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "beta = 2" :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((shadow (generate-new-buffer " *fake-shadow*")))
+          (unwind-protect
+              (progn
+                (with-current-buffer shadow
+                  (insert (emjupy--shadow-cell-marker (emjupy-cell-id c1)) "\n"
+                          "alpha = 1" "\n\n"
+                          (emjupy--shadow-cell-marker (emjupy-cell-id c2)) "\n"
+                          "beta = 2" "\n"))
+                (setf (emjupy-notebook-shadow-buffer nb) shadow)
+                ;; start of cell 2's section in the shadow
+                (let* ((s2 (emjupy--shadow-section-start shadow (emjupy-cell-id c2)))
+                       (mapped (emjupy--shadow-position-to-cell nb s2)))
+                  (should mapped)
+                  (should (eq (car mapped) c2))
+                  (should (eq (get-text-property (cdr mapped) 'emjupy-cell) c2))
+                  (should (equal (buffer-substring-no-properties
+                                  (cdr mapped) (+ (cdr mapped) 4))
+                                 "beta")))
+                ;; and a few characters in still lands in the same cell
+                (let* ((s1 (emjupy--shadow-section-start shadow (emjupy-cell-id c1)))
+                       (mapped (emjupy--shadow-position-to-cell nb (+ s1 6))))
+                  (should (eq (car mapped) c1))
+                  (should (eq (get-text-property (cdr mapped) 'emjupy-cell) c1))))
+            (let ((kill-buffer-query-functions nil))
+              (when (buffer-live-p shadow) (kill-buffer shadow)))))))))
+
+(ert-deftest emjupy-test-xref-remap-leaves-foreign-locations-alone ()
+  "An xref into some other file -- a library, say -- must be handed back
+untouched: the real file is the right destination there."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((item (xref-make "elsewhere"
+                               (xref-make-file-location "/usr/lib/python/os.py" 10 0))))
+          (should (equal (emjupy--xref-remap nb (list item)) (list item))))))))
+
+(ert-deftest emjupy-test-dashboard-remote-root-lookup ()
+  "`emjupy-remote-root\' takes one directory for every server, or an
+alist keyed by server."
+  (let ((a (make-emjupy-server :base-url "localhost:8888"))
+        (b (make-emjupy-server :base-url "localhost:9999")))
+    (let ((emjupy-remote-root nil))
+      (should-not (emjupy--remote-root-for a)))
+    (let ((emjupy-remote-root "/ssh:box:/srv/nb"))
+      (should (equal (emjupy--remote-root-for a) "/ssh:box:/srv/nb"))
+      (should (equal (emjupy--remote-root-for b) "/ssh:box:/srv/nb")))
+    (let ((emjupy-remote-root '(("localhost:8888" . "~/notebooks")
+                               ("localhost:9999" . "/ssh:box:/srv/nb"))))
+      (should (equal (emjupy--remote-root-for a) "~/notebooks"))
+      (should (equal (emjupy--remote-root-for b) "/ssh:box:/srv/nb")))))
+
+(ert-deftest emjupy-test-dashboard-dired-needs-a-root ()
+  "Without `emjupy-remote-root\' set, `d\' says so rather than guessing."
+  (with-temp-buffer
+    (emjupy-list-mode)
+    (setq emjupy-list--server (make-emjupy-server :base-url "localhost:8888"))
+    (setq emjupy-list--path "")
+    (let ((emjupy-remote-root nil))
+      (should-error (emjupy-list-dired) :type 'user-error))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
