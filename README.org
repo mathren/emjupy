@@ -413,6 +413,10 @@ mechanism behind the claim rather than just a hunch.
 
 - [X] =undo= scrambles everything if undoing something in another cell:
   rendering issue? :rendering:
-- [-] fix highlighting/background :rendering:
+- [X] fix highlighting/background :rendering:
   - [X] syntax highlighting is at cell execution, not while typing
   - [X] wrong background color
+- [ ] fix remote server eglot error, from *Messages* buffer:
+  #+BEGIN_SRC
+  eglot--current-server-or-lose: jsonrpc-error: "No current JSON-RPC connection", (jsonrpc-error-code . -32603), (jsonrpc-error-message . "No current JSON-RPC connection")
+  #+END_SRC
