@@ -39,31 +39,50 @@
 
 (defun emjupy--rerender-notebook (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
-If TARGET-CELL is given, leave point at that cell afterwards."
+If TARGET-CELL is given, leave point at that cell afterwards.
+
+Rendering is kept OUT of the undo history.  It erases the whole buffer
+and rebuilds it from the cell structs, which as a recorded change is
+both enormous and meaningless to undo -- a single re-render used to push
+~20 entries onto the list, and undoing one of them tore the notebook
+apart, deleting every cell after the one being edited.
+
+Because the rebuild is invisible to undo, any entries recorded BEFORE it
+now refer to positions in a buffer that no longer exists, so they are
+discarded when the rebuild actually changed the text.  Undo therefore
+stops at the last render rather than corrupting the buffer.  When the
+text comes out identical -- a re-render triggered by something that
+changed nothing -- the history is left intact."
   (when emjupy--buffer-notebook
     (let ((inhibit-read-only t)
           (cells (emjupy-notebook-cells emjupy--buffer-notebook))
-          (target-start nil))
-      ;; Delete old overlays
-      (cl-loop for cell across cells
-               do (when (emjupy-cell-overlay cell)
-                    (delete-overlay (emjupy-cell-overlay cell))
-                    (setf (emjupy-cell-overlay cell) nil))
-               (when (emjupy-cell-output-ov cell)
-                 (delete-overlay (emjupy-cell-output-ov cell))
-                 (setf (emjupy-cell-output-ov cell) nil)))
-      (erase-buffer)
-      ;; Render every cell first; only move point afterward. Jumping point
-      ;; back to target-cell mid-loop would make later `insert' calls land
-      ;; inside target-cell's own overlay (which then grows to swallow
-      ;; them), shoving it -- and its output -- to the end of the buffer.
-      (cl-loop for cell across cells
-               do (let ((start (point)))
-                    (emjupy--render-cell cell)
-                    (when (eq cell target-cell)
-                      (setq target-start start))))
-      (when target-start
-        (goto-char target-start)))))
+          (target-start nil)
+          (before (buffer-substring-no-properties (point-min) (point-max))))
+      (save-restriction
+        (widen)
+        (let ((buffer-undo-list t))
+          ;; Delete old overlays
+          (cl-loop for cell across cells
+                   do (when (emjupy-cell-overlay cell)
+                        (delete-overlay (emjupy-cell-overlay cell))
+                        (setf (emjupy-cell-overlay cell) nil))
+                   (when (emjupy-cell-output-ov cell)
+                     (delete-overlay (emjupy-cell-output-ov cell))
+                     (setf (emjupy-cell-output-ov cell) nil)))
+          (erase-buffer)
+          ;; Render every cell first; only move point afterward. Jumping point
+          ;; back to target-cell mid-loop would make later `insert' calls land
+          ;; inside target-cell's own overlay (which then grows to swallow
+          ;; them), shoving it -- and its output -- to the end of the buffer.
+          (cl-loop for cell across cells
+                   do (let ((start (point)))
+                        (emjupy--render-cell cell)
+                        (when (eq cell target-cell)
+                          (setq target-start start))))
+          (when target-start
+            (goto-char target-start))))
+      (unless (equal before (buffer-substring-no-properties (point-min) (point-max)))
+        (setq buffer-undo-list nil)))))
 
 (defun emjupy-insert-cell-below ()
   "Insert a new empty code cell below the cell at point."

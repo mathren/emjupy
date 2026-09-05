@@ -1,8 +1,8 @@
 #+TITLE: Emjupy
-#+author: Mathieu Renzo
-#+Assisted-by: various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
+#+author: Mathieu Renzo w/ various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
 
 #+CAPTION: Python Jupyter Notebook in Emacs.
+#+ATTR_HTML: :width 50%
 [[./images/emjupy-logo.png]]
 
 Jupyter notebooks with remote kernel execution using emacs built-ins
@@ -298,31 +298,44 @@ re-establishing and your session state survives.
 
 * Rendering notes
 
-** Page colours
+** Cell appearance
 
-Cells sit on the theme's normal background; the gaps between them show
-a slightly contrasting canvas, so the notebook reads as a page of cells
-rather than one undifferentiated wall of text.
+Cells are marked out by their horizontal rules alone -- the buffer keeps
+its normal background throughout.  The one exception is a cell's
+*output*, which gets a faint background band so results are
+distinguishable from the code that produced them.  The band lives on the
+output overlay, so when the outputs are cleared and the box shrinks the
+background goes with them.
 
-Both colours are *derived from the active theme* rather than hard-coded:
-=emjupy-canvas-color= defaults to ='auto=, which blends the default
-background =emjupy-canvas-blend= (12%) of the way toward the default
-foreground. That darkens a light theme and lightens a dark one, and
-picks up the theme's tint -- a warm solarized background yields a warm
-canvas, not a neutral gray. Themes switched mid-session are followed
-automatically via =enable-theme-functions=.
-
-To pin a specific colour instead:
+=emjupy-output-color= sets that band.  It defaults to ='auto=, which
+blends the buffer background =emjupy-output-blend= (8%) of the way
+toward the foreground: darker on a light theme, lighter on a dark one,
+and tinted by the theme rather than a flat neutral grey.  Theme switches
+are followed automatically.
 
 #+begin_src elisp
-(setq emjupy-canvas-color "#888888")   ;; any colour you like
-(setq emjupy-canvas-color nil)         ;; or turn the effect off
+(setq emjupy-output-color "#f0f0f0")   ;; pin a colour
+(setq emjupy-output-color nil)         ;; no band at all
 #+end_src
 
-=M-x emjupy-refresh-appearance= re-derives the colours and redraws open
-notebooks. The relevant faces are =emjupy-cell= (inside the outline),
-=emjupy-canvas= (outside it) and =emjupy-box-line= (the rule itself), all
-customisable in the usual way.
+The band fills each output line edge to edge -- the =emjupy-output= face
+sets =:extend t=, without which a face's background stops at the last
+character and short lines look ragged beside long ones.
+
+=M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
+faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
+
+** Undo
+
+Re-rendering erases the buffer and rebuilds it from the cell structs, so
+it is kept out of the undo history entirely -- as a recorded change it
+is both enormous and meaningless to undo.
+
+Because the rebuild is invisible to undo, entries recorded before it
+refer to a buffer layout that no longer exists, so they are dropped when
+a rebuild actually changed the text.  Undo therefore stops at the last
+render instead of corrupting the notebook.  A re-render that produces
+identical text leaves the history alone.
 
 ** Cell outlines
 
@@ -398,11 +411,8 @@ mechanism behind the claim rather than just a hunch.
 
 * TODO fixes needed
 
-- [ ] =undo= scrambles everything if undoing something in another cell:
+- [X] =undo= scrambles everything if undoing something in another cell:
   rendering issue? :rendering:
-- [ ] fix highlighting/background :rendering:
-  - [ ] syntax highlighting is at cell execution, not while typing
-  - [ ] wrong background color
-- [ ] implement view similar to the buffer =*ein:notebooklist <address>= :feature:
-- [ ] Makefile: emacs now says =package-buffer-info: Package lacks a
-  file header= :bug:
+- [-] fix highlighting/background :rendering:
+  - [X] syntax highlighting is at cell execution, not while typing
+  - [X] wrong background color

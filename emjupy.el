@@ -95,11 +95,12 @@
   ;; background -- so the gaps between cells read as the page behind them.
   ;; Remapping (rather than setting a colour here) means the faces can be
   ;; re-derived on a theme change without redrawing anything.
-  (emjupy--apply-page-colors)
+  (emjupy--sync-theme-colors)
   ;; Keep the outlines matched to the window. `window-configuration-change-hook'
   ;; catches splits and manual drags; `window-size-change-functions' catches
   ;; whole-frame resizes (full-screen toggles), which do not always change the
   ;; window configuration.
+  (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t)
   (add-hook 'window-configuration-change-hook #'emjupy--refresh-box-rules nil t)
   (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
   ;; Completion/eldoc for code cells are delegated to the shared code

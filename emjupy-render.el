@@ -33,53 +33,51 @@
 (declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
 
 ;; --- Page colours ----------------------------------------------------------
-;; The notebook reads as a page: cells sit on a lighter surface, the gaps
-;; between them show a slightly contrasting canvas. Both colours are derived
-;; from the active theme rather than hard-coded, so this follows whatever
-;; theme is loaded instead of fighting it.
+;; Cells are marked out by their horizontal rules alone -- the buffer keeps
+;; its normal background throughout.  The one exception is a cell's OUTPUT,
+;; which gets a faint background so results are distinguishable from the code
+;; that produced them.  That band lives on the output overlay, so when the
+;; outputs are cleared and the box shrinks the background goes with them.
 
-(defcustom emjupy-canvas-color 'auto
-  "Background shown OUTSIDE cell outlines.
+(defcustom emjupy-output-color 'auto
+  "Background used behind a cell's output.
 
-`auto' (the default) derives a colour from the current theme by
-blending the default background `emjupy-canvas-blend' of the way
-toward the default foreground -- which darkens a light theme and
-lightens a dark one, so it works both ways round.
+`auto' (the default) derives a faint accent from the current theme by
+blending the default background `emjupy-output-blend' of the way toward
+the default foreground -- which tints a light theme slightly darker and
+a dark theme slightly lighter, so it works both ways round and picks up
+the theme's hue instead of forcing a neutral grey.
 
-A colour string (e.g. \"#e8e8e8\") is used verbatim. nil disables the
-effect, leaving the whole buffer the theme's normal background."
+A colour string (e.g. \"#f0f0f0\") is used verbatim.  nil disables the
+band, leaving output on the normal background like everything else.
+
+Nothing else in the buffer is ever recoloured."
   :type '(choice (const :tag "Derive from theme" auto)
                  (color :tag "Explicit colour")
                  (const :tag "Disabled" nil))
   :group 'emjupy)
 
-(defcustom emjupy-canvas-blend 0.12
-  "How far to blend toward the foreground for an `auto' canvas colour.
+(defcustom emjupy-output-blend 0.08
+  "How far to blend toward the foreground for an `auto' output colour.
 0 is invisible, 1 is the foreground colour itself."
   :type 'float
   :group 'emjupy)
 
-(defface emjupy-cell
-  ;; Deliberately specifies NOTHING by default, and only ever gains a
-  ;; `:background'. Two reasons, both of which bit:
+(defface emjupy-output
+  ;; `:extend t' is what makes the band fill the whole line rather than
+  ;; stopping at the last character. Since Emacs 27 a face's background stops
+  ;; at end-of-line unless it says otherwise, so an output line ends up
+  ;; highlighted only as far as its text -- ragged, and worse for short lines
+  ;; next to long ones. This is the same attribute `region' and `hl-line' set.
   ;;
-  ;; 1. This face is applied as an OVERLAY face over cell text, and overlay
-  ;;    faces merge on top of text properties. Any attribute it specifies
-  ;;    wins -- so inheriting `default' (which carries a `:foreground')
-  ;;    masked every font-lock colour and killed syntax highlighting.
-  ;;
-  ;; 2. `default' is remapped to `emjupy-canvas' inside notebook buffers, so
-  ;;    `:inherit default' resolves THROUGH that remap and paints cells with
-  ;;    the canvas colour -- exactly inverting the intended look.
-  '((t))
-  "Background INSIDE a cell outline -- the `paper' the cell sits on.
-Only `:background' is ever set on this face; see the comment above."
-  :group 'emjupy)
-
-(defface emjupy-canvas
-  '((t))
-  "Background OUTSIDE cell outlines -- the page behind the cells.
-Only `:background' is ever set on this face."
+  ;; Apart from `:extend' the face specifies NOTHING by default and only ever
+  ;; gains a `:background'. It is applied as an OVERLAY face over output text,
+  ;; and overlay faces merge on top of text properties -- so any colour
+  ;; attribute it specified would mask the faces on tracebacks and rich
+  ;; output. `:extend' is not a colour, so it is safe here.
+  '((t :extend t))
+  "Background behind a cell's output.
+Only `:background' and `:extend' are ever set on this face."
   :group 'emjupy)
 
 (defface emjupy-box-line
@@ -121,37 +119,26 @@ blend and the effect should simply be skipped."
                      (list 2))))))
 
 (defun emjupy--sync-theme-colors ()
-  "Recompute `emjupy-cell' and `emjupy-canvas' from the active theme.
+  "Recompute `emjupy-output' from the active theme.
+Returns non-nil when a usable colour was derived.
 
-Returns non-nil when both colours could be derived AND differ, i.e. when
-painting a canvas is actually meaningful. Callers use that to decide
-whether to install the remap at all: remapping without a usable cell
-colour would leave cells inheriting the canvas and invert the look."
+Note what this does NOT do: it never touches the buffer's own
+background.  An earlier design remapped `default' to a canvas colour and
+painted cells back on top, which inverted the moment anything was wrong
+with the cell colour."
   (let* ((bg (face-attribute 'default :background nil t))
          (fg (face-attribute 'default :foreground nil t))
-         (canvas (cond
-                  ((stringp emjupy-canvas-color) emjupy-canvas-color)
-                  ((null emjupy-canvas-color) bg)
-                  (t (or (emjupy--blend-colors bg fg emjupy-canvas-blend) bg)))))
-    (when (emjupy--color-rgb bg)
-      (set-face-attribute 'emjupy-cell nil :background bg))
-    (when (emjupy--color-rgb canvas)
-      (set-face-attribute 'emjupy-canvas nil :background canvas))
-    (and (emjupy--color-rgb bg)
-         (emjupy--color-rgb canvas)
-         (not (equal bg canvas)))))
-
-(defun emjupy--apply-page-colors ()
-  "Paint this buffer's background with the canvas colour, if there is one.
-
-Installs the remap only when `emjupy--sync-theme-colors' reports two
-usable, distinct colours. Otherwise the buffer is left entirely alone --
-better a flat notebook than one where every cell is painted the canvas
-colour because no cell colour could be derived."
-  (when (emjupy--sync-theme-colors)
-    (unless (assq 'default face-remapping-alist)
-      (setq-local face-remapping-alist
-                  (cons '(default emjupy-canvas) face-remapping-alist)))))
+         (accent (cond
+                  ((stringp emjupy-output-color) emjupy-output-color)
+                  ((null emjupy-output-color) nil)
+                  (t (emjupy--blend-colors bg fg emjupy-output-blend)))))
+    (cond
+     ((and accent (emjupy--color-rgb accent))
+      (set-face-attribute 'emjupy-output nil :background accent)
+      t)
+     (t
+      (set-face-attribute 'emjupy-output nil :background 'unspecified)
+      nil))))
 
 (defun emjupy--on-theme-change (&rest _)
   "Re-derive emjupy's page colours after a theme is enabled or disabled."
@@ -164,7 +151,7 @@ colour because no cell colour could be derived."
 
 (defun emjupy-refresh-appearance ()
   "Re-derive page colours from the theme and redraw open notebooks.
-Useful after changing `emjupy-canvas-color' or loading a theme in an
+Useful after changing `emjupy-output-color' or loading a theme in an
 Emacs too old for `enable-theme-functions'."
   (interactive)
   (emjupy--sync-theme-colors)
@@ -217,7 +204,7 @@ and a wrapped rule is far uglier than a short one."
 (defun emjupy--rule (label &optional corner)
   "Return a propertized box rule line, or a footer when LABEL is nil."
   (propertize (if label (emjupy--box-header label corner) (emjupy--box-footer))
-              'face '(emjupy-box-line emjupy-cell)))
+              'face 'emjupy-box-line))
 
 ;; --- Keeping the rules the right width ------------------------------------
 
@@ -358,6 +345,57 @@ installed."
      (t (font-lock-ensure)))
     (buffer-string)))
 
+(defvar-local emjupy--refontifying nil
+  "Non-nil while emjupy is re-applying faces, to stop the hook recursing.")
+
+(defun emjupy--apply-faces-from (string start)
+  "Copy the `face' properties of STRING onto the buffer text at START.
+Only properties are touched; the buffer text itself is left alone."
+  (let ((i 0) (len (length string)))
+    (remove-text-properties start (+ start len) '(face nil))
+    (while (< i len)
+      (let* ((next (or (next-single-property-change i 'face string) len))
+             (f (get-text-property i 'face string)))
+        (when f
+          (put-text-property (+ start i) (+ start next) 'face f))
+        (setq i next)))))
+
+(defun emjupy--refontify-cell (cell)
+  "Re-highlight CELL's source in place, from its current buffer text."
+  (let ((ov (emjupy-cell-overlay cell)))
+    (when (overlayp ov)
+      (let* ((start (overlay-start ov))
+             (end (overlay-end ov))
+             (text (buffer-substring-no-properties start end))
+             (inhibit-read-only t)
+             (inhibit-modification-hooks t)
+             (buffer-undo-list t)
+             (emjupy--refontifying t)
+             (modified (buffer-modified-p)))
+        (emjupy--apply-faces-from (emjupy--fontify-as text (emjupy-cell-type cell))
+                                  start)
+        (set-buffer-modified-p modified)))))
+
+(defun emjupy--refontify-after-change (beg end _len)
+  "Re-highlight the cell touched by an edit between BEG and END.
+
+Highlighting is otherwise applied only when a cell is rendered, so
+freshly typed text stays unhighlighted until something triggers a
+re-render -- and `self-insert-command' inherits the sticky face of the
+character before it, so typing after a keyword picks up that keyword's
+face."
+  (unless emjupy--refontifying
+    (when emjupy--buffer-notebook
+      (condition-case nil
+          (let* ((lo (max (point-min) (min beg (point-max))))
+                 (cell (or (and (< lo (point-max)) (get-text-property lo 'emjupy-cell))
+                           (and (> lo (point-min))
+                                (get-text-property (1- lo) 'emjupy-cell))
+                           (and (< end (point-max))
+                                (get-text-property end 'emjupy-cell)))))
+            (when cell (emjupy--refontify-cell cell)))
+        (error nil)))))
+
 (defun emjupy--render-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
   (let* ((type (emjupy-cell-type cell))
@@ -370,7 +408,10 @@ installed."
 
     ;; 1. Insert source code (syntax-highlighted per cell type) and tag text
     (let ((to-insert (emjupy--fontify-as (if (string-empty-p source) "\n" source) type)))
-      (insert to-insert))
+      (insert to-insert)
+      ;; Faces are applied as plain (non-sticky) `face' properties so that
+      ;; text typed at a cell edge does not inherit the neighbouring face.
+      (remove-text-properties src-start (point) '(rear-nonsticky nil)))
     (unless (string-suffix-p "\n" source) (insert "\n"))
 
     (put-text-property src-start (point) 'emjupy-cell cell)
@@ -385,9 +426,8 @@ installed."
            (footer (if has-outputs "" (emjupy--rule nil))))
       (overlay-put ov 'before-string header)
       (overlay-put ov 'after-string footer)
-      ;; Only `:background' is set, so font-lock's foreground colours on the
-      ;; text underneath still show through.
-      (overlay-put ov 'face 'emjupy-cell)
+      ;; No face: source cells keep the buffer's normal background, and are
+      ;; marked out by their rules alone.
       (setf (emjupy-cell-overlay cell) ov))
 
     ;; 3. Output Box Overlay
@@ -423,7 +463,11 @@ installed."
                (footer (emjupy--rule nil)))
           (overlay-put ov 'before-string header)
           (overlay-put ov 'after-string footer)
-          (overlay-put ov 'face 'emjupy-cell)
+          ;; Only `:background' is set, so the foreground colours on
+          ;; tracebacks and rich output still show through. The band is a
+          ;; property of THIS overlay, so clearing the outputs deletes it and
+          ;; the background disappears along with the lines.
+          (overlay-put ov 'face 'emjupy-output)
           (setf (emjupy-cell-output-ov cell) ov))))
 
     (insert "\n")))
