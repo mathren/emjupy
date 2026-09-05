@@ -53,108 +53,13 @@ On a plain =emacs= installation, you should see something like:
 
 * Installation
 
-=emjupy= is a multi-file Emacs package (see the Emacs Lisp manual,
-"Multi-file Packages"). Build a tar and install it:
+Add to load-path this repo and load it:
 
-#+begin_src bash
-make package                 # -> emjupy-0.1.0.tar
-make install                 # package-install-file into your Emacs
-#+end_src
+#+BEGIN_SRC elisp
+  (add-to-list 'load-path "/path/to/emjupy")
+  (require 'emjupy)
+#+END_SRC
 
-or from Emacs: =M-x package-install-file RET emjupy-0.1.0.tar RET=.
-
-The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
-required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
-without any =require=.
-
-** Source layout
-
-| File                | Contains                                                   |
-|---------------------+------------------------------------------------------------|
-| =emjupy.el=           | major mode, keymap, entry point                            |
-| =emjupy-core.el=      | structs, state, server registry, lookups                   |
-| =emjupy-http.el=      | REST transport, URL/scheme/base-path parsing               |
-| =emjupy-render.el=    | faces, page colours, cell outlines, syntax highlighting     |
-| =emjupy-cells.el=     | buffer<->struct syncing and cell editing commands           |
-| =emjupy-kernel.el=    | kernel WebSocket, execution, message routing               |
-| =emjupy-notebook.el=  | login/session management, .ipynb parse and serialize        |
-| =emjupy-eglot.el=     | shadow buffer, completion, eldoc                           |
-| =emjupy-pkg.el=       | package metadata                                            |
-
-Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
-=eglot= on top of =cells=. The two genuine cycles (=emjupy-mode= and
-=emjupy--rerender-notebook=) are runtime-only and marked with
-=declare-function=.
-
-** Makefile targets
-
-| Target        | Effect                                              |
-|---------------+-----------------------------------------------------|
-| =make compile=  | byte-compile all sources in dependency order        |
-| =make test=     | run the suite (integration tests skip without a server) |
-| =make check=    | same, with the integration environment set          |
-| =make package=  | build =emjupy-VERSION.tar=                            |
-| =make install=  | install that tar via =package-install-file=           |
-| =make clean=    | remove =.elc= files and the tar                       |
-
-** Unit tests
-
-The fast, self-contained suite needs nothing but Emacs and =websocket=:
-
-#+begin_src bash
-emacs -batch -Q -L . -l emjupy-run-tests.el
-#+end_src
-
-=websocket= is resolved from =load-path= first, then from
-=EMJUPY_WEBSOCKET_DIR=, and only then from GNU ELPA -- so the suite
-also runs offline / in CI:
-
-#+begin_src bash
-EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket \
-  emacs -batch -Q -L . -l emjupy-run-tests.el
-#+end_src
-
-** Integration tests (real server, real kernel, real LSP)
-
-=emjupy-integration-test.el= talks to a live Jupyter server and runs
-real Python in a real kernel. These are opt-in and =ert-skip= unless
-the environment points at a running server, so the default run stays
-fast and hermetic.
-
-Some things only break against a live server -- an image arriving that
-this Emacs cannot display, a WebSocket URL that drops its base path, a
-saved notebook no other tool will open -- so they are worth running
-before trusting a change.
-
-| Variable           | Meaning                                                   |
-|--------------------+-----------------------------------------------------------|
-| =EMJUPY_TEST_URL=    | =host:port= of a running server (the LOCAL end of a tunnel) |
-| =EMJUPY_TEST_TOKEN=  | its token                                                 |
-| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test         |
-| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests               |
-| =EMJUPY_TEST_TOKEN2= | its token (defaults to =EMJUPY_TEST_TOKEN=)                 |
-
-To exercise the *remote* path, point =EMJUPY_TEST_URL= at the local end
-of an ssh tunnel rather than at the server directly:
-
-#+begin_src bash
-# server side: jupyter listens only on loopback
-jupyter server --no-browser --port=8888 --ip=127.0.0.1 --IdentityProvider.token=abc
-
-# client side: forward a local port through ssh
-ssh -N -L 18888:127.0.0.1:8888 user@remote-host &
-
-EMJUPY_TEST_URL=127.0.0.1:18888 EMJUPY_TEST_TOKEN=abc \
-EMJUPY_TEST_ROOT=/path/to/notebook/root \
-  emacs -batch -Q -L . -l emjupy-run-tests.el
-#+end_src
-
-The eglot tests additionally need a Python language server on =PATH=
-(=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
-none is found.
-
-
-* Complete keymap
 * Keybindings
 
 ** =emjupy-mode= (notebook buffers)
@@ -209,15 +114,116 @@ the standard hooks and reach the language server through the shadow buffer
 automatically.
 
 
-* Landscape of emacs/jupyter packages
 
-** What exists and why we don't use it
+* Building & development
 
-| Package        | Approach          | Limitations                                                                                      |
-|----------------+-------------------+--------------------------------------------------------------------------------------------------|
-| =ein=            | HTTP + WebSocket  | Sunset 2023; polymode + fragile overlay; no undo; no eglot                                       |
-| =emacs-jupyter=  | ZMQ directly      | Needs =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
-| =ob-jupyter=     | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                       |
+=emjupy= is a multi-file Emacs package. To build a tar and install it:
+
+#+begin_src bash
+make package                 # -> emjupy-0.1.0.tar
+make install                 # package-install-file into your Emacs
+#+end_src
+
+and install from Emacs: =M-x package-install-file RET emjupy-0.1.0.tar RET=.
+
+The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
+required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
+without any =require=.
+
+** Source layout
+
+| File               | Contains                                                |
+|--------------------+---------------------------------------------------------|
+| =emjupy.el=          | major mode, keymap, entry point                         |
+| =emjupy-core.el=     | structs, state, server registry, lookups                |
+| =emjupy-http.el=     | REST transport, URL/scheme/base-path parsing            |
+| =emjupy-render.el=   | faces, page colours, cell outlines, syntax highlighting |
+| =emjupy-cells.el=    | buffer<->struct syncing and cell editing commands       |
+| =emjupy-kernel.el=   | kernel WebSocket, execution, message routing            |
+| =emjupy-notebook.el= | login/session management, .ipynb parse and serialize    |
+| =emjupy-eglot.el=    | shadow buffer, completion, eldoc                        |
+| =emjupy-pkg.el=      | package metadata                                        |
+
+Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
+=eglot= on top of =cells=. The two genuine cycles (=emjupy-mode= and
+=emjupy--rerender-notebook=) are runtime-only and marked with
+=declare-function=.
+
+** Makefile targets
+
+| Target       | Effect                                                  |
+|--------------+---------------------------------------------------------|
+| =make compile= | byte-compile all sources in dependency order            |
+| =make test=    | run the suite (integration tests skip without a server) |
+| =make check=   | same, with the integration environment set              |
+| =make package= | build =emjupy-VERSION.tar=                                |
+| =make install= | install that tar via =package-install-file=               |
+| =make clean=   | remove =.elc= files and the tar                           |
+
+** Unit tests
+
+The self-contained suite requires only =websocket=:
+
+#+begin_src bash
+emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+=websocket= is resolved from =load-path= first, then from
+=EMJUPY_WEBSOCKET_DIR=, and only then from GNU ELPA -- so the suite
+also runs offline / in CI:
+
+#+begin_src bash
+EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket \
+  emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+** Integration tests (real server, real kernel, real LSP)
+
+=emjupy-integration-test.el= talks to a live Jupyter server and runs
+real Python in a real kernel. These are opt-in and =ert-skip= unless
+the environment points at a running server, so the default run stays
+fast and hermetic.
+
+Some things only break against a live server -- an image arriving that
+this Emacs cannot display, a WebSocket URL that drops its base path, a
+saved notebook no other tool will open -- so they are worth running
+before trusting a change.
+
+| Variable           | Meaning                                                   |
+|--------------------+-----------------------------------------------------------|
+| =EMJUPY_TEST_URL=    | =host:port= of a running server (the LOCAL end of a tunnel) |
+| =EMJUPY_TEST_TOKEN=  | its token                                                 |
+| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test         |
+| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests               |
+| =EMJUPY_TEST_TOKEN2= | its token (defaults to =EMJUPY_TEST_TOKEN=)                 |
+
+To exercise the *remote* path, point =EMJUPY_TEST_URL= at the local end
+of an ssh tunnel rather than at the server directly:
+
+#+begin_src bash
+# server side: jupyter listens only on loopback
+jupyter server --no-browser --port=8888 --ip=127.0.0.1 --IdentityProvider.token=abc
+
+# client side: forward a local port through ssh
+ssh -N -L 18888:127.0.0.1:8888 user@remote-host &
+
+EMJUPY_TEST_URL=127.0.0.1:18888 EMJUPY_TEST_TOKEN=abc \
+EMJUPY_TEST_ROOT=/path/to/notebook/root \
+  emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+The eglot tests additionally need a Python language server on =PATH=
+(=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
+none is found.
+
+
+* Landscape of other emacs/jupyter packages
+
+| Package       | Approach          | Limitations                                                                                           |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; no undo; no eglot                                                    |
+| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
+| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
 ** Key insight: use the browser's transport, not ZMQ
 
