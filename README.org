@@ -90,6 +90,8 @@ Add to load-path this repo and load it:
 | =C-c s=       | =emjupy-split-cell=                 | Split the cell at point in two                                    |
 | =C-c m=       | =emjupy-merge-cell-above=           | Merge this cell into the one above (clears both outputs)          |
 | =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                         |
+| =C-c <up>=    | =emjupy-beginning-of-cell=          | Go to the start of this cell                                      |
+| =C-c <down>=  | =emjupy-end-of-cell=                | Go to the end of this cell's source                               |
 | =M-<up>=      | =emjupy-move-cell-up=               | Move the cell one position earlier                                |
 | =M-<down>=    | =emjupy-move-cell-down=             | Move the cell one position later                                  |
 | =C-c '=       | =emjupy-edit-cell-externally=       | Edit the cell in the shadow buffer in a real major mode           |

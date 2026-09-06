@@ -104,19 +104,19 @@ colours.  Larger is louder."
 ;; on tracebacks and rich output.  `:extend' makes the band fill the whole
 ;; line rather than stopping at the last character.
 
-(defface emjupy-output '((t :extend t))
+(defface emjupy-output '((t))
   "Background behind ordinary cell output."
   :group 'emjupy)
 
-(defface emjupy-output-error '((t :extend t))
+(defface emjupy-output-error '((t))
   "Background behind an error output."
   :group 'emjupy)
 
-(defface emjupy-output-warning '((t :extend t))
+(defface emjupy-output-warning '((t))
   "Background behind a warning output."
   :group 'emjupy)
 
-(defface emjupy-output-image '((t :extend t))
+(defface emjupy-output-image '((t))
   "Background behind an image output."
   :group 'emjupy)
 
@@ -335,7 +335,12 @@ markers and the undo history are all untouched."
                     (when (overlayp out)
                       (overlay-put out 'before-string
                                    (emjupy--rule (emjupy--cell-out-label cell) "├"))
-                      (overlay-put out 'after-string (emjupy--rule nil))))))))
+                      (overlay-put out 'after-string (emjupy--rule nil))
+                      ;; The output band is padded to a column, so it has to
+                      ;; be re-aligned at the new width as well.
+                      (let ((inhibit-read-only t)
+                            (buffer-undo-list t))
+                        (emjupy--repad-output cell))))))))
 
 (defun emjupy--window-size-changed (&optional _frame)
   "Refresh box rules in every emjupy buffer after a window size change."
@@ -560,7 +565,10 @@ face."
                       (let ((face (emjupy--output-face out)))
                         (when face
                           (font-lock-prepend-text-property
-                           piece-start (point) 'face face)))))
+                           piece-start (point) 'face face)
+                          ;; Fill out to the border, not to the window edge.
+                          (goto-char (emjupy--pad-output-lines
+                                      piece-start (point) face))))))
 
         (unless (string-suffix-p "\n" (buffer-substring-no-properties (max (point-min) (- (point) 1)) (point)))
           (insert "\n"))
@@ -607,6 +615,44 @@ without the relevant library (very common for `emacs-nox') will make
 `create-image' signal rather than degrade."
   (and (display-graphic-p)
        (image-type-available-p type)))
+
+(defun emjupy--pad-output-lines (start end face)
+  "Fill every line between START and END out to the cell's right border.
+
+Not `:extend\', which runs the background to the WINDOW edge and so
+spilled the tint past the outline and across the rest of the frame.  A
+stretch space aligned to `emjupy--box-width\' stops it exactly at the
+border instead -- one character per line rather than a run of spaces,
+and it costs nothing to re-align when the window changes width."
+  (let ((width (emjupy--box-width)))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (end-of-line)
+        (let ((eol (min (point) end)))
+          (goto-char eol)
+          (insert (propertize " "
+                              'emjupy-pad t
+                              'face face
+                              'display `(space :align-to ,(1- width))))
+          (setq end (+ end 1)))
+        (forward-line 1)))
+    end))
+
+(defun emjupy--repad-output (cell)
+  "Re-align CELL's output padding after the window width changed."
+  (let ((ov (emjupy-cell-output-ov cell))
+        (width (emjupy--box-width)))
+    (when (overlayp ov)
+      (save-excursion
+        (goto-char (overlay-start ov))
+        (while (< (point) (overlay-end ov))
+          (if (get-text-property (point) 'emjupy-pad)
+              (progn
+                (put-text-property (point) (1+ (point))
+                                   'display `(space :align-to ,(1- width)))
+                (forward-char 1))
+            (forward-char 1)))))))
 
 (defun emjupy--output-face (out)
   "Return the background face for output OUT, or nil to leave it bare.

@@ -36,6 +36,23 @@
 ;; only ever called at runtime, so the cycle is harmless.
 (declare-function emjupy-mode "emjupy")
 
+(defvar emjupy--port-history nil
+  "Minibuffer history for server ports and URLs.")
+(defvar emjupy--notebook-history nil
+  "Minibuffer history for notebook names and paths.")
+(defvar emjupy--kernel-history nil
+  "Minibuffer history for kernel choices.")
+
+;; Tokens deliberately have NO history: they are secrets, and a history
+;; would put them back on screen -- and into savehist, for anyone who
+;; persists it -- which is the whole thing `read-passwd' avoids.
+
+(defun emjupy--read-token (prompt)
+  "Read a token or password for PROMPT without echoing it.
+`read-string' prints what is typed straight into the minibuffer, so the
+credential ends up on screen and in the minibuffer history."
+  (read-passwd prompt))
+
 (defun emjupy--normalize-url (url)
   "Return URL as a host:port base-url. A bare port means localhost."
   (if (string-match-p "\\`[0-9]+\\'" url)
@@ -65,7 +82,7 @@ what made logging into a second tunnel tedious."
       (and (emjupy--server-reachable-p
             (make-emjupy-server :base-url base-url :token ""))
            "")
-      (read-string (format "Token for %s: " base-url))))
+      (emjupy--read-token (format "Token for %s: " base-url))))
 
 (defun emjupy--server-kernels (server)
   "Return SERVER's running kernels as a list of (LABEL . ID)."
@@ -91,7 +108,8 @@ server with nothing running gets a fresh kernel."
                                 (json-serialize payload)))))
               (t (cdr (assoc (completing-read
                               (format "Kernel on %s: " (emjupy--server-label server))
-                              (mapcar #'car kernels) nil t)
+                              (mapcar #'car kernels) nil t nil
+                              'emjupy--kernel-history)
                              kernels))))))
     (setf (emjupy-server-kernel-id server) id)
     id))
@@ -115,8 +133,9 @@ own kernel, so several remote sessions can be live in one Emacs. Use
 \\[emjupy-connect-kernel-interactive] to give an individual notebook a
 different kernel. With a prefix argument, always prompt for the token."
   (interactive
-   (list (read-string "Jupyter port or URL (e.g. 8888): ")
-         (when current-prefix-arg (read-string "Token: "))))
+   (list (read-string "Jupyter port or URL (e.g. 8888): "
+                      nil 'emjupy--port-history)
+         (when current-prefix-arg (emjupy--read-token "Token: "))))
   (let* ((base-url (emjupy--normalize-url url))
          (token (emjupy--resolve-token base-url token))
          (server (emjupy--intern-server base-url token)))
@@ -147,7 +166,8 @@ or the last one logged into."
 
     (let ((choice (completing-read (format "Select Notebook (%s): "
                                            (emjupy--server-label server))
-                                   (nreverse notebooks))))
+                                   (nreverse notebooks)
+                                   nil nil nil 'emjupy--notebook-history)))
       (if (string= choice "[Create New Notebook]")
           (emjupy-create-notebook server)
         (emjupy-open-notebook choice server)))))
@@ -209,7 +229,8 @@ Returns the notebook buffer."
   "Create a brand new blank notebook on SERVER and open it."
   (interactive)
   (let* ((server (or server (emjupy--server)))
-         (raw-name (read-string "New notebook name (default Untitled.ipynb): "))
+         (raw-name (read-string "New notebook name (default Untitled.ipynb): "
+                                nil 'emjupy--notebook-history))
          (name (if (string-empty-p raw-name) "Untitled.ipynb" raw-name))
          (filename (if (string-match-p "\\.ipynb$" name) name (concat name ".ipynb")))
          (nb-payload (make-hash-table :test 'equal))
@@ -370,7 +391,7 @@ one, and TRAMP already knows how to reach another machine."
   (interactive)
   (let* ((server emjupy-list--server)
          (dir emjupy-list--path)
-         (raw (read-string "New notebook name: "))
+         (raw (read-string "New notebook name: " nil 'emjupy--notebook-history))
          (name (if (string-match-p "\\.ipynb\\'" raw) raw (concat raw ".ipynb")))
          (path (if (string-empty-p dir)
                    name
@@ -567,7 +588,8 @@ validation even though it looks fine in emjupy."
   (let* ((buffers (emjupy--notebook-buffers))
          (names (mapcar #'buffer-name buffers)))
     (unless names (user-error "No emjupy notebooks are open"))
-    (switch-to-buffer (completing-read "Notebook: " names nil t))))
+    (switch-to-buffer (completing-read "Notebook: " names nil t nil
+                                       'emjupy--notebook-history))))
 
 (defun emjupy-status ()
   "Report every open notebook, its server, and its kernel."

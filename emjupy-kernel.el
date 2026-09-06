@@ -179,9 +179,10 @@ kernels never cross-talk."
             (when (buffer-live-p buf)
               (with-current-buffer buf
                 (emjupy--rerender-preserving-point))))
-          (message "[emjupy] %s: cell execution complete. [In: %s]"
-                   (if notebook (emjupy-notebook-path notebook) "notebook")
-                   count)))))))
+          ;; (message "[emjupy] %s: cell execution complete. [In: %s]"
+          ;;          (if notebook (emjupy-notebook-path notebook) "notebook")
+          ;;          count)
+	  ))))))
 
 (defun emjupy-execute-cell-at-point ()
   "Sync cell code and send to this notebook's kernel for execution."

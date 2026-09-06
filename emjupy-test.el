@@ -484,41 +484,6 @@ untouched and nothing lands in the undo history."
           (should (equal before (buffer-substring-no-properties (point-min) (point-max))))
           (should (null (delq nil buffer-undo-list))))))))
 
-(ert-deftest emjupy-test-output-band-fills-the-whole-line ()
-  "The band must fill each output line edge to edge, not stop at the
-last character.
-
-Since Emacs 27 a face's background stops at end-of-line unless the face
-sets `:extend'.  Without it a short output line is highlighted only as
-far as its text, which looks ragged beside a long one.  Two things have
-to hold: the face extends, and the overlay actually covers each newline
-for `:extend' to act on."
-  (should (eq (face-attribute 'emjupy-output :extend nil nil) t))
-  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
-                                :outputs [] :metadata (make-hash-table)))
-        (oh (make-hash-table :test 'equal)))
-    (puthash "output_type" "stream" oh)
-    (puthash "name" "stdout" oh)
-    ;; deliberately ragged: a short line next to a long one
-    (puthash "text" "hi\na considerably longer output line\n" oh)
-    (setf (emjupy-cell-outputs cell) (vector oh))
-    (emjupy-test--with-notebook (vector cell) buf nb
-      (with-current-buffer buf
-        (let ((ov (emjupy-cell-output-ov cell))
-              (total 0) (covered 0))
-          (should ov)
-          (save-excursion
-            (goto-char (overlay-start ov))
-            (while (< (point) (overlay-end ov))
-              (when (eq (char-after) ?\n)
-                (setq total (1+ total))
-                (when (memq ov (overlays-at (point)))
-                  (setq covered (1+ covered))))
-              (forward-char 1)))
-          (should (> total 0))
-          ;; every newline inside the band is covered, so every line extends
-          (should (= total covered)))))))
-
 (ert-deftest emjupy-test-output-face-sets-only-background ()
   "`emjupy-output' must specify a background and NOTHING else.
 
@@ -1430,7 +1395,9 @@ would fight the faces on tracebacks and rich output."
   (dolist (face '(emjupy-output emjupy-output-error
                  emjupy-output-warning emjupy-output-image))
     (should (eq (face-attribute face :inherit nil nil) 'unspecified))
-    (should (eq (face-attribute face :extend nil nil) t))
+    ;; NOT :extend -- that runs the background to the window edge, past the
+    ;; cell outline. The band is padded to the border instead.
+    (should (eq (face-attribute face :extend nil nil) 'unspecified))
     (dolist (attr '(:foreground :weight :slant :underline :box :inverse-video))
       (should (eq (face-attribute face attr nil t) 'unspecified)))))
 
@@ -1894,6 +1861,149 @@ buffer mid-keystroke."
          (emjupy-execute-cell-at-point)
          (should (eq (emjupy--cell-at-point) c1))
          (should (= (length (emjupy-notebook-cells nb)) 2)))))))
+
+(ert-deftest emjupy-test-token-is-not-echoed ()
+  "Tokens are read without echoing.  `read-string' prints what is typed
+straight into the minibuffer, so the credential ends up on screen."
+  (let ((used nil))
+    (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) (setq used 'passwd) "s3cret"))
+              ((symbol-function 'read-string) (lambda (&rest _) (setq used 'plain) "leaked")))
+      (should (equal (emjupy--read-token "Token: ") "s3cret"))
+      (should (eq used 'passwd))))
+  ;; and the prompt reached from resolve-token goes the same way
+  (let ((used nil))
+    (cl-letf (((symbol-function 'emjupy--server-reachable-p) (lambda (&rest _) nil))
+              ((symbol-function 'read-passwd) (lambda (&rest _) (setq used 'passwd) "tok"))
+              ((symbol-function 'read-string) (lambda (&rest _) (setq used 'plain) "leaked")))
+      (should (equal (emjupy--resolve-token "localhost:8888" nil) "tok"))
+      (should (eq used 'passwd)))))
+
+(ert-deftest emjupy-test-token-has-no-history ()
+  "A token must not be put into any minibuffer history: that would place
+the secret back on screen, and into savehist for anyone who persists it."
+  (let ((seen 'unset))
+    (cl-letf (((symbol-function 'read-passwd)
+               (lambda (&rest args) (setq seen args) "tok")))
+      (emjupy--read-token "Token: ")
+      ;; read-passwd takes no history argument at all
+      (should (= (length seen) 1)))))
+
+(ert-deftest emjupy-test-prompt-histories-are-separate ()
+  "Ports, notebooks and kernels each keep their own history, so a port
+does not turn up while completing a notebook name."
+  (should (boundp 'emjupy--port-history))
+  (should (boundp 'emjupy--notebook-history))
+  (should (boundp 'emjupy--kernel-history))
+  ;; the port prompt reaches for the port history, and not the notebook one
+  (let ((login (flatten-tree (cadr (interactive-form 'emjupy-login)))))
+    (should (memq 'emjupy--port-history login))
+    (should-not (memq 'emjupy--notebook-history login)))
+  ;; and the notebook picker reaches for the notebook history
+  (let ((hist 'unset)
+        (server (make-emjupy-server :base-url "localhost:8888" :token "t")))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (&rest _) (make-hash-table :test 'equal)))
+              ((symbol-function 'completing-read)
+               (lambda (_p _c &optional _pr _rm _ii h &rest _)
+                 (setq hist h)
+                 "[Create New Notebook]"))
+              ((symbol-function 'emjupy-create-notebook) (lambda (&rest _) nil))
+              ((symbol-function 'emjupy-new-notebook) (lambda (&rest _) nil)))
+      (ignore-errors (emjupy-list-notebooks server))
+      (should (eq hist 'emjupy--notebook-history)))))
+
+(ert-deftest emjupy-test-output-band-stops-at-the-cell-border ()
+  "The tint fills each output line to the cell's right border and no
+further.  `:extend' would run it to the WINDOW edge, spilling the colour
+past the outline and across the rest of the frame."
+  (dolist (face '(emjupy-output emjupy-output-error
+                  emjupy-output-warning emjupy-output-image))
+    (should (eq (face-attribute face :extend nil nil) 'unspecified)))
+  (cl-flet ((mk (type &rest kv)
+              (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" type o)
+                (while kv (puthash (pop kv) (pop kv) o))
+                o)))
+    (let ((cell (make-emjupy-cell
+                 :id (emjupy--new-cell-id) :type 'code :source "run()"
+                 :outputs (vector (mk "stream" "name" "stdout"
+                                      "text" "short\nmuch longer line here\n"))
+                 :metadata (make-hash-table))))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (let ((emjupy-box-width 40))
+            (emjupy--refresh-box-rules t)
+            (let ((ov (emjupy-cell-output-ov cell))
+                  (pads 0))
+              (save-excursion
+                (goto-char (overlay-start ov))
+                (while (< (point) (overlay-end ov))
+                  (when (get-text-property (point) 'emjupy-pad)
+                    (setq pads (1+ pads))
+                    ;; every pad stops at the border column
+                    (should (= (plist-get (cdr (get-text-property (point) 'display))
+                                          :align-to)
+                               39)))
+                  (forward-char 1)))
+              ;; one per output line, not one per character
+              (should (> pads 0)))))))))
+
+(ert-deftest emjupy-test-output-padding-follows-a-resize ()
+  "The band is padded to a column, so it has to be re-aligned when the
+window width changes -- otherwise it stops short of, or runs past, the
+newly-drawn rules."
+  (cl-flet ((mk (type &rest kv)
+              (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" type o)
+                (while kv (puthash (pop kv) (pop kv) o))
+                o)))
+    (let ((cell (make-emjupy-cell
+                 :id (emjupy--new-cell-id) :type 'code :source "run()"
+                 :outputs (vector (mk "stream" "name" "stdout" "text" "out\n"))
+                 :metadata (make-hash-table))))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (cl-flet ((pad-col ()
+                      (let ((ov (emjupy-cell-output-ov cell)) (col nil))
+                        (save-excursion
+                          (goto-char (overlay-start ov))
+                          (while (and (not col) (< (point) (overlay-end ov)))
+                            (when (get-text-property (point) 'emjupy-pad)
+                              (setq col (plist-get
+                                         (cdr (get-text-property (point) 'display))
+                                         :align-to)))
+                            (forward-char 1)))
+                        col)))
+            (let ((emjupy-box-width 40))
+              (emjupy--refresh-box-rules t)
+              (should (= (pad-col) 39)))
+            (let ((emjupy-box-width 90))
+              (emjupy--refresh-box-rules t)
+              (should (= (pad-col) 89)))
+            (let ((emjupy-box-width 60))
+              (emjupy--refresh-box-rules t)
+              (should (= (pad-col) 59)))))))))
+
+(ert-deftest emjupy-test-beginning-and-end-of-cell ()
+  "`C-c <up>' and `C-c <down>' go to the start and the end of the cell's
+SOURCE -- the end of the source, not of the overlay, which takes in the
+closing newline and would land point on the next line."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "a = 1\nb = 2"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (+ 3 (overlay-start (emjupy-cell-overlay cell))))
+        (emjupy-beginning-of-cell)
+        (should (= (point) (overlay-start (emjupy-cell-overlay cell))))
+        (emjupy-end-of-cell)
+        (should (equal (buffer-substring-no-properties (- (point) 5) (point)) "b = 2"))
+        ;; still inside the cell, not on the line after it
+        (should (eq (emjupy--cell-at-point) cell))))))
+
+(ert-deftest emjupy-test-cell-navigation-bindings ()
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c <up>")) 'emjupy-beginning-of-cell))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c <down>")) 'emjupy-end-of-cell)))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

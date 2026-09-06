@@ -296,6 +296,30 @@ reverse, would silently reinterpret one of them."
           (if (eq (emjupy-cell-type cell) 'code) 'markdown 'code))
     (emjupy--rerender-notebook cell)))
 
+(defun emjupy-beginning-of-cell ()
+  "Move point to the start of the cell at point."
+  (interactive)
+  (let* ((cell (emjupy--cell-at-point))
+         (ov (and cell (emjupy-cell-overlay cell))))
+    (unless (overlayp ov)
+      (user-error "Point is not in a cell"))
+    (goto-char (overlay-start ov))))
+
+(defun emjupy-end-of-cell ()
+  "Move point to the end of the cell's source at point.
+
+The end of the source, not the end of the overlay: the overlay takes in
+the newline that closes the cell, and landing after it puts point on the
+next line, outside the code."
+  (interactive)
+  (let* ((cell (emjupy--cell-at-point))
+         (ov (and cell (emjupy-cell-overlay cell))))
+    (unless (overlayp ov)
+      (user-error "Point is not in a cell"))
+    (goto-char (max (overlay-start ov)
+                    (+ (overlay-start ov)
+                       (length (or (emjupy-cell-source cell) "")))))))
+
 (defun emjupy-next-cell ()
   "Move point to the next cell."
   (interactive)
