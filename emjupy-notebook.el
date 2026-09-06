@@ -122,10 +122,9 @@ different kernel. With a prefix argument, always prompt for the token."
          (server (emjupy--intern-server base-url token)))
     (setq emjupy--current-server server)
 
-    ;; Ping the API root to harvest the _xsrf cookie before proceeding
-    (condition-case nil
-        (emjupy--http-request "GET" server "/api")
-      (error nil))
+    ;; Prime the XSRF cookie before anything tries to write. /api does not
+    ;; hand one out; only the HTML pages do.
+    (ignore-errors (emjupy--harvest-xsrf server))
 
     (let ((kernel-id (emjupy--bind-server-kernel server)))
       (message "Connected to %s, kernel %s." base-url kernel-id))

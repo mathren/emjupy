@@ -56,15 +56,74 @@ to survive into the WebSocket URL as well as the REST calls."
   (let ((p (emjupy--server-parts)))
     (cons (plist-get p :host) (plist-get p :port))))
 
-(defun emjupy--http-request (method server path &optional body callback)
+(defconst emjupy--xsrf-endpoints '("/tree" "/lab" "/")
+  "Paths that hand out an `_xsrf' cookie, tried in order.
+
+Deliberately NOT \"/api\": the REST endpoints do not set the cookie at
+all.  emjupy used to prime itself with a GET of /api and so never had
+one -- harmless against a token-authenticated server, which skips the
+XSRF check entirely, but fatal against a token-less one, where every
+POST came back
+
+  [Jupyter HTTP 403] POST: {\"message\": \"'_xsrf' argument missing from POST\"}
+
+Only the HTML pages issue it.")
+
+(defun emjupy--harvest-xsrf (server)
+  "Fetch an `_xsrf' cookie for SERVER and remember it.  Returns it, or nil.
+
+Deliberately raw rather than going through `emjupy--http-request': these
+endpoints answer with HTML, which the JSON parse there would reject.
+Only the headers matter."
+  (let* ((base-url (emjupy-server-base-url server))
+         (token (emjupy-server-token server))
+         (prefix (if (string-prefix-p "http" base-url) "" "http://"))
+         (found nil))
+    (cl-loop for path in emjupy--xsrf-endpoints
+             until found
+             do (ignore-errors
+                  (let* ((url-request-method "GET")
+                         (url-request-data nil)
+                         (url-request-extra-headers
+                          (when (and token (not (string-empty-p token)))
+                            `(("Authorization" . ,(format "token %s" token)))))
+                         (buffer (url-retrieve-synchronously
+                                  (concat prefix base-url path) t nil 5)))
+                    (when buffer
+                      (with-current-buffer buffer
+                        (goto-char (point-min))
+                        (when (re-search-forward
+                               "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
+                          (setq found (match-string 1))))
+                      (kill-buffer buffer)))))
+    (when found (setf (emjupy-server-xsrf server) found))
+    found))
+
+(defun emjupy--http-request (method server path &optional body callback retrying)
   "Send a request to SERVER and return the parsed JSON response.
 METHOD is an HTTP method string, PATH the API path, BODY an optional
 request body.  CALLBACK, if given, makes the request asynchronous.
 Reports the exact HTTP status on failure and carries SERVER's own XSRF
 cookie."
+  ;; A write needs an XSRF cookie unless the token authenticates us, and the
+  ;; REST endpoints never hand one out -- so go and get one first.
+  (unless (or (string= method "GET")
+              (emjupy-server-xsrf server)
+              (let ((tok (emjupy-server-token server)))
+                (and tok (not (string-empty-p tok)))))
+    (emjupy--harvest-xsrf server))
   (let* ((url-request-method method)
          (url-request-data (when body (encode-coding-string body 'utf-8)))
          (url-automatic-caching nil)
+         ;; url.el keeps its own cookie jar and adds a Cookie header from it.
+         ;; With one of its own in there, the server saw that cookie next to
+         ;; our X-XSRFToken -- two different values -- and answered "XSRF
+         ;; cookie does not match POST argument". Emptying the jar for the
+         ;; duration leaves our header the only one, so the two always agree.
+         ;; This is why the failure depended on the user's session: a fresh
+         ;; `emacs -Q' has an empty jar and never hits it.
+         (url-cookie-storage nil)
+         (url-cookie-secure-storage nil)
          (token (emjupy-server-token server))
          (url-request-extra-headers
           (append `(("Content-Type" . "application/json"))
@@ -104,11 +163,23 @@ cookie."
               (re-search-forward "\r?\n\r?\n" nil t)
               (let ((json-str (buffer-substring-no-properties (point) (point-max))))
                 (kill-buffer buffer)
-                (if (>= status 400)
-                    (error "[Jupyter HTTP %d] %s: %s" status method json-str)
+                (cond
+                 ;; A missing or rotated cookie is recoverable: fetch a fresh
+                 ;; one and try once more, rather than making the user
+                 ;; reconnect over a cookie that has simply aged out.
+                 ((and (= status 403)
+                       (not retrying)
+                       (let ((case-fold-search t)) (string-match-p "xsrf" json-str)))
+                  (setf (emjupy-server-xsrf server) nil)
+                  (if (emjupy--harvest-xsrf server)
+                      (emjupy--http-request method server path body callback t)
+                    (error "[Jupyter HTTP %d] %s: %s" status method json-str)))
+                 ((>= status 400)
+                  (error "[Jupyter HTTP %d] %s: %s" status method json-str))
+                 (t
                   (condition-case err
                       (json-parse-string json-str :object-type 'hash-table :array-type 'array)
-                    (error (error "JSON Parse Error on %s: %s" path err))))))))))))
+                    (error (error "JSON Parse Error on %s: %s" path err)))))))))))))
 
 (provide 'emjupy-http)
 ;;; emjupy-http.el ends here

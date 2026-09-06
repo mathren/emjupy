@@ -1569,5 +1569,70 @@ the right edge by the width of the numbers."
           (should (= (emjupy--window-text-width win) 194)))
         (setq-local display-line-numbers nil)))))
 
+(ert-deftest emjupy-test-xsrf-not-harvested-from-api ()
+  "The `_xsrf' cookie is fetched from an HTML page, never from /api.
+
+The REST endpoints do not set the cookie at all, so priming with a GET
+of /api left emjupy without one -- harmless against a token-
+authenticated server, which skips the XSRF check, but fatal against a
+token-less one, where every POST came back 403 \"'_xsrf' argument
+missing from POST\"."
+  (should-not (member "/api" emjupy--xsrf-endpoints))
+  (should (member "/tree" emjupy--xsrf-endpoints))
+  ;; and the login path no longer primes itself from /api
+  (let ((asked nil))
+    (cl-letf (((symbol-function 'emjupy--harvest-xsrf)
+               (lambda (&rest _) (setq asked t) "cookie")))
+      (should (emjupy--harvest-xsrf nil))
+      (should asked))))
+
+(ert-deftest emjupy-test-xsrf-fetched-before-a-write ()
+  "A write on a token-less server fetches a cookie first; a GET does not
+bother, and neither does a server whose token authenticates it."
+  (let* ((server (make-emjupy-server :base-url "localhost:9" :token ""))
+         (harvests 0))
+    (cl-letf (((symbol-function 'emjupy--harvest-xsrf)
+               (lambda (s) (setq harvests (1+ harvests))
+                 (setf (emjupy-server-xsrf s) "c") "c"))
+              ((symbol-function 'url-retrieve-synchronously) (lambda (&rest _) nil)))
+      ;; GET: no cookie needed
+      (ignore-errors (emjupy--http-request "GET" server "/api/status"))
+      (should (= harvests 0))
+      ;; POST with no token and no cookie: fetch one
+      (ignore-errors (emjupy--http-request "POST" server "/api/kernels" "{}"))
+      (should (= harvests 1))
+      ;; already have one: do not fetch again
+      (ignore-errors (emjupy--http-request "POST" server "/api/kernels" "{}"))
+      (should (= harvests 1)))
+    ;; a token authenticates the write, so no cookie is needed at all
+    (let ((tokened (make-emjupy-server :base-url "localhost:9" :token "abc"))
+          (n 0))
+      (cl-letf (((symbol-function 'emjupy--harvest-xsrf)
+                 (lambda (&rest _) (setq n (1+ n)) nil))
+                ((symbol-function 'url-retrieve-synchronously) (lambda (&rest _) nil)))
+        (ignore-errors (emjupy--http-request "POST" tokened "/api/kernels" "{}"))
+        (should (= n 0))))))
+
+(ert-deftest emjupy-test-url-cookie-jar-is-emptied-per-request ()
+  "url.el keeps its own cookie jar and adds a Cookie header from it.  With
+one of its own in there the server saw that cookie beside our
+X-XSRFToken -- two different values -- and answered \"XSRF cookie does
+not match POST argument\".  This is why the failure depended on the
+session: a fresh `emacs -Q' has an empty jar and never hits it."
+  (let* ((server (make-emjupy-server :base-url "localhost:9" :token "abc"))
+         (seen 'unset)
+         ;; A jar with something in it, or the check below passes whether or
+         ;; not the binding is there: in batch the jar is empty anyway, and
+         ;; the first version of this test did exactly that.
+         (url-cookie-storage '(("localhost" . [stale])))
+         (url-cookie-secure-storage '(("localhost" . [stale]))))
+    (should url-cookie-storage)
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _)
+                 (setq seen (list url-cookie-storage url-cookie-secure-storage))
+                 nil)))
+      (ignore-errors (emjupy--http-request "GET" server "/api/status")))
+    (should (equal seen '(nil nil)))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
