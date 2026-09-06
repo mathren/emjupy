@@ -1,0 +1,638 @@
+From b26a4ebc9a6c460f10e9a8bbbbb2ffd9aff9c1aa Mon Sep 17 00:00:00 2001
+From: emjupy <dev@example.com>
+Date: Sun, 6 Sep 2026 18:20:46 +0000
+Subject: [PATCH] Tint output by kind, and stop rules running past the right
+ edge
+
+Output is no longer one flat band. Each piece is tinted for what it is:
+red for a traceback, yellow for stderr that is not one, white for a
+figure, the ordinary accent for everything else. stderr counts as a
+warning because that is where warnings.warn, logging and progress bars
+go; images default to white because a matplotlib figure is white and a
+tinted band around it reads as a frame the plot does not have.
+
+The tints are text properties on each piece rather than one overlay
+across the whole box, so a cell holding a figure, a warning and a
+traceback shows all three correctly -- an overlay face would have
+overridden every one of them. Each face still sets only :background and
+:extend, so font-lock colours on tracebacks show through.
+
+All four are customizable: emjupy-output-color,
+emjupy-output-error-color, emjupy-output-warning-color and
+emjupy-output-image-color each take a colour, 'auto, or nil to fall back
+to the ordinary output colour. 'auto derives from the theme and works on
+light and dark alike; emjupy-output-tint-blend controls how loud the red
+and yellow are.
+
+Three separate causes made rules run past the right edge, all fixed:
+window-body-width counts the line-number column, which is drawn inside
+the text area, so with display-line-numbers-mode a rule overshot by the
+width of the numbers; a notebook is rendered before it is displayed, so
+it was measured against no window and fell back to a hardcoded 100
+columns; and Emacs cannot always report exactly how many columns are
+usable, so emjupy-box-right-margin (default 2) leaves a couple spare and
+is the knob for setups that still need more.
+---
+ README.org       |  58 +++++++++----
+ emjupy-render.el | 213 +++++++++++++++++++++++++++++++++++++----------
+ emjupy-test.el   | 191 ++++++++++++++++++++++++++++++++++++++----
+ 3 files changed, 383 insertions(+), 79 deletions(-)
+
+diff --git a/README.org b/README.org
+index efcb11e..a84a42a 100644
+--- a/README.org
++++ b/README.org
+@@ -311,29 +311,40 @@ re-establishing and your session state survives.
+ ** Cell appearance
+ 
+ Cells are marked out by their horizontal rules alone -- the buffer keeps
+-its normal background throughout.  The one exception is a cell's
+-*output*, which gets a faint background band so results are
+-distinguishable from the code that produced them.  The band lives on the
+-output overlay, so when the outputs are cleared and the box shrinks the
+-background goes with them.
+-
+-=emjupy-output-color= sets that band.  It defaults to ='auto=, which
+-blends the buffer background =emjupy-output-blend= (8%) of the way
+-toward the foreground: darker on a light theme, lighter on a dark one,
+-and tinted by the theme rather than a flat neutral grey.  Theme switches
+-are followed automatically.
++its normal background throughout.  Only a cell's *output* is tinted, and
++the tint says what the output is:
++
++| Face                    | Where it is used                        | =auto= default            |
++|-------------------------+-----------------------------------------+-------------------------|
++| =emjupy-output=           | ordinary output                         | background toward the foreground |
++| =emjupy-output-error=     | a traceback                             | background toward red   |
++| =emjupy-output-warning=   | stderr that is not a traceback          | background toward yellow |
++| =emjupy-output-image=     | a figure                                | white                   |
++
++stderr counts as a warning because that is where =warnings.warn=, logging
++and progress bars go.  Images default to white because a matplotlib
++figure *is* white -- a tinted band around it reads as a frame the plot
++does not have.
++
++Each is set by its own option, taking a colour string, ='auto=, or nil to
++fall back to the ordinary output colour:
+ 
+ #+begin_src elisp
+-(setq emjupy-output-color "#f0f0f0")   ;; pin a colour
+-(setq emjupy-output-color nil)         ;; no band at all
++(setq emjupy-output-color         "#f0f0f0")
++(setq emjupy-output-error-color   "#ffd6d6")
++(setq emjupy-output-warning-color "#fff7d6")
++(setq emjupy-output-image-color   "white")
++(setq emjupy-output-color nil)      ;; no band at all
+ #+end_src
+ 
+-The band fills each output line edge to edge -- the =emjupy-output= face
+-sets =:extend t=, without which a face's background stops at the last
+-character and short lines look ragged beside long ones.
++='auto= derives from the theme, so it works on light and dark alike:
++=emjupy-output-blend= controls the ordinary tint, =emjupy-output-tint-blend=
++how loud the red and yellow are.  Theme switches are followed
++automatically; =M-x emjupy-refresh-appearance= re-derives and redraws.
+ 
+-=M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
+-faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
++The tints are text properties on each output piece rather than one
++overlay across the box, so a cell holding a figure, a warning and a
++traceback shows all three correctly.
+ 
+ ** Undo
+ 
+@@ -355,6 +366,17 @@ frame instead of stopping short at a fixed 80 columns. Set it to an
+ integer for a fixed width, and =emjupy-box-min-width= is the floor when
+ fitting.
+ 
++=emjupy-box-right-margin= (default 2) is how many columns are left free at
++the right edge.  Emacs cannot always be asked exactly how many columns
++are usable -- a right margin, a fill-column indicator, a scroll bar the
++toolkit reports oddly, or a line-number width that is off by the
++separator can each eat one or two -- so raise it if the rules still run
++past the edge in your setup, or drop it to 0 if they stop short.
++
++The line-number column is accounted for: it is drawn inside the text
++area, so =window-body-width= counts it and a rule sized from that
++overshoots by the width of the numbers.
++
+ Outlines follow the window as it changes: splitting, dragging a mode
+ line or toggling full screen all redraw the rules at the new width, so
+ they never wrap onto a second line. Only the overlay strings are
+diff --git a/emjupy-render.el b/emjupy-render.el
+index 5950738..0f1a5e6 100644
+--- a/emjupy-render.el
++++ b/emjupy-render.el
+@@ -40,7 +40,7 @@
+ ;; outputs are cleared and the box shrinks the background goes with them.
+ 
+ (defcustom emjupy-output-color 'auto
+-  "Background used behind a cell's output.
++  "Background behind ordinary cell output.
+ 
+ `auto' (the default) derives a faint accent from the current theme by
+ blending the default background `emjupy-output-blend' of the way toward
+@@ -49,35 +49,75 @@ a dark theme slightly lighter, so it works both ways round and picks up
+ the theme's hue instead of forcing a neutral grey.
+ 
+ A colour string (e.g. \"#f0f0f0\") is used verbatim.  nil disables the
+-band, leaving output on the normal background like everything else.
++band, leaving output on the normal background.
+ 
+-Nothing else in the buffer is ever recoloured."
++Nothing outside a cell's output is ever recoloured."
+   :type '(choice (const :tag "Derive from theme" auto)
+                  (color :tag "Explicit colour")
+                  (const :tag "Disabled" nil))
+   :group 'emjupy)
+ 
++(defcustom emjupy-output-error-color 'auto
++  "Background behind an error output -- a traceback, or anything on stderr
++that reads as a failure.  `auto' tints the buffer background toward red.
++See `emjupy-output-color' for the accepted values."
++  :type '(choice (const :tag "Derive from theme" auto)
++                 (color :tag "Explicit colour")
++                 (const :tag "Use the ordinary output colour" nil))
++  :group 'emjupy)
++
++(defcustom emjupy-output-warning-color 'auto
++  "Background behind a warning -- anything the kernel sent to stderr that
++is not a traceback.  `auto' tints the buffer background toward yellow."
++  :type '(choice (const :tag "Derive from theme" auto)
++                 (color :tag "Explicit colour")
++                 (const :tag "Use the ordinary output colour" nil))
++  :group 'emjupy)
++
++(defcustom emjupy-output-image-color "white"
++  "Background behind an image output.
++
++Defaults to white because that is what a matplotlib figure is: a tinted
++band around a white PNG shows as a frame the plot does not have.  Set it
++to nil to use the ordinary output colour instead, or to any colour if
++your figures have a different background."
++  :type '(choice (color :tag "Explicit colour")
++                 (const :tag "Derive from theme" auto)
++                 (const :tag "Use the ordinary output colour" nil))
++  :group 'emjupy)
++
+ (defcustom emjupy-output-blend 0.08
+   "How far to blend toward the foreground for an `auto' output colour.
+ 0 is invisible, 1 is the foreground colour itself."
+   :type 'float
+   :group 'emjupy)
+ 
+-(defface emjupy-output
+-  ;; `:extend t' is what makes the band fill the whole line rather than
+-  ;; stopping at the last character. Since Emacs 27 a face's background stops
+-  ;; at end-of-line unless it says otherwise, so an output line ends up
+-  ;; highlighted only as far as its text -- ragged, and worse for short lines
+-  ;; next to long ones. This is the same attribute `region' and `hl-line' set.
+-  ;;
+-  ;; Apart from `:extend' the face specifies NOTHING by default and only ever
+-  ;; gains a `:background'. It is applied as an OVERLAY face over output text,
+-  ;; and overlay faces merge on top of text properties -- so any colour
+-  ;; attribute it specified would mask the faces on tracebacks and rich
+-  ;; output. `:extend' is not a colour, so it is safe here.
+-  '((t :extend t))
+-  "Background behind a cell's output.
+-Only `:background' and `:extend' are ever set on this face."
++(defcustom emjupy-output-tint-blend 0.16
++  "How far to blend toward red or yellow for `auto' error and warning
++colours.  Larger is louder."
++  :type 'float
++  :group 'emjupy)
++
++;; Each of these specifies NOTHING by default beyond `:extend', and only
++;; ever gains a `:background'.  They are applied as text properties over
++;; output text, so any colour attribute they carried would fight the faces
++;; on tracebacks and rich output.  `:extend' makes the band fill the whole
++;; line rather than stopping at the last character.
++
++(defface emjupy-output '((t :extend t))
++  "Background behind ordinary cell output."
++  :group 'emjupy)
++
++(defface emjupy-output-error '((t :extend t))
++  "Background behind an error output."
++  :group 'emjupy)
++
++(defface emjupy-output-warning '((t :extend t))
++  "Background behind a warning output."
++  :group 'emjupy)
++
++(defface emjupy-output-image '((t :extend t))
++  "Background behind an image output."
+   :group 'emjupy)
+ 
+ (defface emjupy-box-line
+@@ -118,27 +158,50 @@ blend and the effect should simply be skipped."
+                               collect (+ (* (- 1.0 alpha) x) (* alpha y)))
+                      (list 2))))))
+ 
++(defconst emjupy--output-error-hue "#ff0000"
++  "Colour an `auto' error background is tinted toward.")
++(defconst emjupy--output-warning-hue "#ffd000"
++  "Colour an `auto' warning background is tinted toward.")
++
++(defun emjupy--resolve-output-color (spec fallback hue)
++  "Return a colour string for SPEC, or nil.
++SPEC is a colour, `auto', or nil meaning \"use FALLBACK\".  An `auto'
++SPEC blends the buffer background toward HUE, or toward the foreground
++when HUE is nil."
++  (let ((bg (face-attribute 'default :background nil t))
++        (fg (face-attribute 'default :foreground nil t)))
++    (cond
++     ((stringp spec) spec)
++     ((null spec) fallback)
++     (hue (emjupy--blend-colors bg hue emjupy-output-tint-blend))
++     (t (emjupy--blend-colors bg fg emjupy-output-blend)))))
++
+ (defun emjupy--sync-theme-colors ()
+-  "Recompute `emjupy-output' from the active theme.
+-Returns non-nil when a usable colour was derived.
++  "Recompute the output background faces from the active theme.
++Returns non-nil when the ordinary output colour could be derived.
+ 
+ Note what this does NOT do: it never touches the buffer's own
+ background.  An earlier design remapped `default' to a canvas colour and
+ painted cells back on top, which inverted the moment anything was wrong
+ with the cell colour."
+-  (let* ((bg (face-attribute 'default :background nil t))
+-         (fg (face-attribute 'default :foreground nil t))
+-         (accent (cond
+-                  ((stringp emjupy-output-color) emjupy-output-color)
+-                  ((null emjupy-output-color) nil)
+-                  (t (emjupy--blend-colors bg fg emjupy-output-blend)))))
+-    (cond
+-     ((and accent (emjupy--color-rgb accent))
+-      (set-face-attribute 'emjupy-output nil :background accent)
+-      t)
+-     (t
+-      (set-face-attribute 'emjupy-output nil :background 'unspecified)
+-      nil))))
++  (let* ((base (emjupy--resolve-output-color emjupy-output-color nil nil))
++         (specs (list (list 'emjupy-output base)
++                      (list 'emjupy-output-error
++                            (emjupy--resolve-output-color
++                             emjupy-output-error-color base emjupy--output-error-hue))
++                      (list 'emjupy-output-warning
++                            (emjupy--resolve-output-color
++                             emjupy-output-warning-color base emjupy--output-warning-hue))
++                      (list 'emjupy-output-image
++                            (emjupy--resolve-output-color
++                             emjupy-output-image-color base nil)))))
++    (dolist (spec specs)
++      (let ((face (nth 0 spec))
++            (colour (nth 1 spec)))
++        (if (and colour (emjupy--color-rgb colour))
++            (set-face-attribute face nil :background colour)
++          (set-face-attribute face nil :background 'unspecified))))
++    (and base (emjupy--color-rgb base) t)))
+ 
+ (defun emjupy--on-theme-change (&rest _)
+   "Re-derive emjupy's page colours after a theme is enabled or disabled."
+@@ -175,6 +238,36 @@ columns on a wide frame."
+   :type 'integer
+   :group 'emjupy)
+ 
++(defun emjupy--window-text-width (win)
++  "Return how many columns of text WIN can show without wrapping.
++
++`window-body-width' is not that number.  It counts the line-number
++column, which is drawn inside the text area, so with
++`display-line-numbers-mode' on a rule sized from it overshoots the right
++edge by the width of the numbers -- most visible on a wide window, where
++the numbers are widest and the overshoot wraps a whole line."
++  (let ((cols (or (ignore-errors (window-max-chars-per-line win))
++                  (window-body-width win)))
++        (numbers (or (ignore-errors
++                       (with-selected-window win
++                         (if (bound-and-true-p display-line-numbers)
++                             (line-number-display-width)
++                           0)))
++                     0)))
++    (max 1 (- cols numbers))))
++
++(defcustom emjupy-box-right-margin 2
++  "Columns left free at the right edge when fitting rules to the window.
++
++Emacs cannot always be asked exactly how many columns are usable: a
++right margin, a fill-column indicator, a scroll bar the toolkit reports
++oddly, or a line-number width that is off by the separator can each eat
++one or two.  Rather than guess, leave a couple spare.  Raise it if the
++rules still run past the edge in your setup, lower it to 0 if they stop
++short."
++  :type 'integer
++  :group 'emjupy)
++
+ (defun emjupy--box-width ()
+   "Return the column width to draw cell outlines at.
+ 
+@@ -183,11 +276,17 @@ a rule sized to a wide window wraps onto a second line in a narrow one,
+ and a wrapped rule is far uglier than a short one."
+   (if (integerp emjupy-box-width)
+       emjupy-box-width
+-    (let ((widths (mapcar #'window-body-width
+-                          (get-buffer-window-list (current-buffer) nil t))))
++    (let* ((windows (get-buffer-window-list (current-buffer) nil t))
++           ;; A notebook is rendered before it is displayed (see
++           ;; `emjupy-open-notebook'), so there may be no window to measure
++           ;; yet.  Falling back to a fixed 100 columns baked an over-wide
++           ;; rule into every fresh notebook; the selected window is at least
++           ;; the right order of magnitude.
++           (widths (or (mapcar #'emjupy--window-text-width windows)
++                       (list (emjupy--window-text-width (selected-window))))))
+       (max emjupy-box-min-width
+-           ;; Leave a column so the rule can't wrap onto a second line.
+-           (1- (if widths (apply #'min widths) 100))))))
++           ;; Leave a margin so the rule cannot run past the right edge.
++           (- (apply #'min widths) (max 0 emjupy-box-right-margin))))))
+ 
+ (defun emjupy--cell-label (cell)
+   "Return the header label for CELL's input box."
+@@ -434,7 +533,8 @@ face."
+     (when has-outputs
+       (let ((out-start (point)))
+         (cl-loop for out in (emjupy--outputs-for-render outputs)
+-                 do (let ((out-type (gethash "output_type" out)))
++                 do (let ((out-type (gethash "output_type" out))
++                          (piece-start (point)))
+                       (cond
+                        ((string= out-type "stream")
+                         (insert (emjupy--mime-text (gethash "text" out))))
+@@ -451,7 +551,16 @@ face."
+                                      do (insert (replace-regexp-in-string
+                                                  "\033\\[[0-9;]*m" ""
+                                                  (emjupy--mime-text line))
+-                                                "\n"))))))))
++                                                "\n"))))))
++                      ;; Paint this piece, not the whole box: one cell can
++                      ;; hold a figure, a warning and a traceback at once, and
++                      ;; each should read as what it is.  A text property
++                      ;; rather than an overlay face, so it does not override
++                      ;; the font-lock colours on the text underneath.
++                      (let ((face (emjupy--output-face out)))
++                        (when face
++                          (font-lock-prepend-text-property
++                           piece-start (point) 'face face)))))
+ 
+         (unless (string-suffix-p "\n" (buffer-substring-no-properties (max (point-min) (- (point) 1)) (point)))
+           (insert "\n"))
+@@ -463,11 +572,9 @@ face."
+                (footer (emjupy--rule nil)))
+           (overlay-put ov 'before-string header)
+           (overlay-put ov 'after-string footer)
+-          ;; Only `:background' is set, so the foreground colours on
+-          ;; tracebacks and rich output still show through. The band is a
+-          ;; property of THIS overlay, so clearing the outputs deletes it and
+-          ;; the background disappears along with the lines.
+-          (overlay-put ov 'face 'emjupy-output)
++          ;; No face on the overlay: each output piece paints itself, so a
++          ;; figure, a warning and a traceback in one cell each read as what
++          ;; they are.  An overlay face here would override all of them.
+           (setf (emjupy-cell-output-ov cell) ov))))
+ 
+     (insert "\n")))
+@@ -501,6 +608,24 @@ without the relevant library (very common for `emacs-nox') will make
+   (and (display-graphic-p)
+        (image-type-available-p type)))
+ 
++(defun emjupy--output-face (out)
++  "Return the background face for output OUT, or nil to leave it bare.
++
++An image gets its own face because a matplotlib figure is white and a
++tinted band around it reads as a frame the plot does not have.  stderr
++that is not a traceback is treated as a warning: that is where Python
++puts `warnings.warn\', logging, and progress bars."
++  (let ((type (gethash "output_type" out)))
++    (cond
++     ((equal type "error") 'emjupy-output-error)
++     ((and (equal type "stream")
++           (equal (gethash "name" out) "stderr"))
++      'emjupy-output-warning)
++     ((and (member type '("display_data" "execute_result"))
++           (emjupy--output-image-key out))
++      'emjupy-output-image)
++     (t 'emjupy-output))))
++
+ (defun emjupy--insert-rich-output (data)
+   "Insert the best available representation of the DATA MIME bundle at point.
+ 
+diff --git a/emjupy-test.el b/emjupy-test.el
+index c83caec..b326a7b 100644
+--- a/emjupy-test.el
++++ b/emjupy-test.el
+@@ -361,22 +361,27 @@ directions: darker on a light theme, lighter on a dark one."
+       (should (> (lum c) (lum "#1c1c1c"))))))
+ 
+ (ert-deftest emjupy-test-output-color-explicit-and-disabled ()
+-  "An explicit colour is used verbatim; nil disables the band."
+-  (let ((captured 'none))
+-    (cl-letf (((symbol-function 'face-attribute)
+-               (lambda (face attr &rest _)
+-                 (if (eq face 'default)
+-                     (cond ((eq attr :background) "#ffffff")
+-                           ((eq attr :foreground) "#000000"))
+-                   'unspecified)))
+-              ((symbol-function 'set-face-attribute)
+-               (lambda (_face _frame _attr value) (setq captured value))))
+-      (let ((emjupy-output-color "#f0f0f0"))
+-        (should (emjupy--sync-theme-colors))
+-        (should (equal captured "#f0f0f0")))
+-      (let ((emjupy-output-color nil))
+-        (should-not (emjupy--sync-theme-colors))
+-        (should (eq captured 'unspecified))))))
++  "An explicit colour is used verbatim; nil disables the band entirely,
++leaving output on the buffer's normal background."
++  (cl-letf (((symbol-function 'face-attribute)
++             (lambda (face attr &rest _)
++               (if (eq face 'default)
++                   (cond ((eq attr :background) "#ffffff")
++                         ((eq attr :foreground) "#000000"))
++                 'unspecified))))
++    (let ((got (make-hash-table :test 'eq)))
++      (cl-letf (((symbol-function 'set-face-attribute)
++                 (lambda (face _f _a value) (puthash face value got))))
++        (let ((emjupy-output-color "#f0f0f0"))
++          (should (emjupy--sync-theme-colors))
++          (should (equal (gethash 'emjupy-output got) "#f0f0f0")))
++        (let ((emjupy-output-color nil)
++              (emjupy-output-error-color nil)
++              (emjupy-output-warning-color nil)
++              (emjupy-output-image-color nil))
++          (should-not (emjupy--sync-theme-colors))
++          (should (eq (gethash 'emjupy-output got) 'unspecified))
++          (should (eq (gethash 'emjupy-output-error got) 'unspecified)))))))
+ 
+ (ert-deftest emjupy-test-nothing-but-output-is-recoloured ()
+   "The buffer background is left completely alone, and a cell with no
+@@ -412,7 +417,13 @@ and takes the band with it."
+         (setf (emjupy-cell-outputs cell) (vector oh))
+         (emjupy--rerender-notebook)
+         (should (emjupy-cell-output-ov cell))
+-        (should (eq (overlay-get (emjupy-cell-output-ov cell) 'face) 'emjupy-output))
++        ;; the band is painted on the output text itself now, not on the
++        ;; overlay, so several kinds of output can be coloured differently
++        ;; within one box
++        (goto-char (point-min))
++        (should (search-forward "hello" nil t))
++        (should (memq 'emjupy-output
++                      (get-text-property (match-beginning 0) 'face)))
+         ;; and the band covers the output text, not the source
+         (let ((ov (emjupy-cell-output-ov cell)))
+           (should (string-match-p "hello"
+@@ -1412,5 +1423,151 @@ alist keyed by server."
+     (let ((emjupy-remote-root nil))
+       (should-error (emjupy-list-dired) :type 'user-error))))
+ 
++(ert-deftest emjupy-test-output-faces-are-background-only ()
++  "Every output face may set a background and `:extend\' and nothing else.
++They are applied over output text, so any colour attribute they carried
++would fight the faces on tracebacks and rich output."
++  (dolist (face '(emjupy-output emjupy-output-error
++                 emjupy-output-warning emjupy-output-image))
++    (should (eq (face-attribute face :inherit nil nil) 'unspecified))
++    (should (eq (face-attribute face :extend nil nil) t))
++    (dolist (attr '(:foreground :weight :slant :underline :box :inverse-video))
++      (should (eq (face-attribute face attr nil t) 'unspecified)))))
++
++(ert-deftest emjupy-test-output-classified-by-kind ()
++  "Errors, warnings, images and ordinary output each get their own face."
++  (cl-flet ((mk (type &optional name img)
++              (let ((o (make-hash-table :test 'equal)))
++                (puthash "output_type" type o)
++                (when name (puthash "name" name o))
++                (when img
++                  (let ((d (make-hash-table :test 'equal)))
++                    (puthash "image/png" "iVBORw0KGgoAAAAA" d)
++                    (puthash "data" d o)))
++                o)))
++    (should (eq (emjupy--output-face (mk "error")) 'emjupy-output-error))
++    ;; stderr that is not a traceback is where warnings.warn and logging go
++    (should (eq (emjupy--output-face (mk "stream" "stderr")) 'emjupy-output-warning))
++    (should (eq (emjupy--output-face (mk "stream" "stdout")) 'emjupy-output))
++    (should (eq (emjupy--output-face (mk "display_data" nil t)) 'emjupy-output-image))
++    (should (eq (emjupy--output-face (mk "execute_result")) 'emjupy-output))))
++
++(ert-deftest emjupy-test-each-output-piece-painted-separately ()
++  "One cell can hold a figure, a warning and a traceback at once, and each
++must read as what it is -- so the faces go on the pieces, not on one
++overlay across the whole box."
++  (cl-flet ((mk (type &rest kv)
++              (let ((o (make-hash-table :test 'equal)))
++                (puthash "output_type" type o)
++                (while kv (puthash (pop kv) (pop kv) o))
++                o)))
++    (let* ((img (let ((d (make-hash-table :test 'equal)))
++                  (puthash "image/png" "iVBORw0KGgoAAAAA" d)
++                  (puthash "text/plain" "<Figure>" d) d))
++           (cell (make-emjupy-cell
++                  :id (emjupy--new-cell-id) :type 'code :source "run()"
++                  :outputs (vector (mk "stream" "name" "stdout" "text" "normal out\n")
++                                   (mk "stream" "name" "stderr" "text" "a warning\n")
++                                   (mk "display_data" "data" img)
++                                   (mk "error" "ename" "ValueError" "evalue" "boom"
++                                       "traceback" ["Traceback line"]))
++                  :metadata (make-hash-table))))
++      (emjupy-test--with-notebook (vector cell) buf nb
++        (with-current-buffer buf
++          (cl-flet ((face-at (probe)
++                      (goto-char (point-min))
++                      (and (search-forward probe nil t)
++                           (get-text-property (match-beginning 0) 'face))))
++            (should (memq 'emjupy-output (face-at "normal out")))
++            (should (memq 'emjupy-output-warning (face-at "a warning")))
++            (should (memq 'emjupy-output-image (face-at "<Figure>")))
++            (should (memq 'emjupy-output-error (face-at "ValueError")))
++            (should (memq 'emjupy-output-error (face-at "Traceback line"))))
++          ;; and the box overlay paints nothing, or it would override them all
++          (should-not (overlay-get (emjupy-cell-output-ov cell) 'face)))))))
++
++(ert-deftest emjupy-test-error-and-warning-tints-work-on-both-themes ()
++  "`auto\' error and warning colours tint toward red and yellow, and stay
++distinguishable from the ordinary output colour on light and dark alike."
++  (dolist (theme '(("#ffffff" . "#000000") ("#1c1c1c" . "#e5e5e5")))
++    (cl-letf (((symbol-function 'face-attribute)
++               (lambda (face attr &rest _)
++                 (if (eq face 'default)
++                     (cond ((eq attr :background) (car theme))
++                           ((eq attr :foreground) (cdr theme)))
++                   'unspecified))))
++      (let ((got (make-hash-table :test 'eq)))
++        (cl-letf (((symbol-function 'set-face-attribute)
++                   (lambda (face _f _a value) (puthash face value got))))
++          (emjupy--sync-theme-colors))
++        (let ((err (gethash 'emjupy-output-error got))
++              (warn (gethash 'emjupy-output-warning got))
++              (out (gethash 'emjupy-output got)))
++          (should (emjupy--color-rgb err))
++          (should (emjupy--color-rgb warn))
++          ;; each is its own colour, not all the same band
++          (should-not (equal err out))
++          (should-not (equal warn out))
++          (should-not (equal err warn))
++          ;; red tint: red channel dominates; yellow tint: blue is lowest
++          (let ((e (emjupy--color-rgb err)) (w (emjupy--color-rgb warn)))
++            (should (> (nth 0 e) (nth 2 e)))
++            (should (> (nth 0 w) (nth 2 w)))
++            (should (> (nth 1 w) (nth 2 w)))))))))
++
++(ert-deftest emjupy-test-output-colors-are-customizable ()
++  "Explicit colours are used verbatim; nil falls back to the ordinary
++output colour."
++  (cl-letf (((symbol-function 'face-attribute)
++             (lambda (face attr &rest _)
++               (if (eq face 'default)
++                   (cond ((eq attr :background) "#ffffff")
++                         ((eq attr :foreground) "#000000"))
++                 'unspecified))))
++    (let ((got (make-hash-table :test 'eq)))
++      (cl-letf (((symbol-function 'set-face-attribute)
++                 (lambda (face _f _a value) (puthash face value got))))
++        (let ((emjupy-output-error-color "#ff0000")
++              (emjupy-output-warning-color "#00ff00")
++              (emjupy-output-image-color "#123456")
++              (emjupy-output-color "#abcdef"))
++          (emjupy--sync-theme-colors)
++          (should (equal (gethash 'emjupy-output got) "#abcdef"))
++          (should (equal (gethash 'emjupy-output-error got) "#ff0000"))
++          (should (equal (gethash 'emjupy-output-warning got) "#00ff00"))
++          (should (equal (gethash 'emjupy-output-image got) "#123456")))
++        ;; nil means "same as ordinary output"
++        (let ((emjupy-output-color "#abcdef")
++              (emjupy-output-error-color nil)
++              (emjupy-output-image-color nil))
++          (emjupy--sync-theme-colors)
++          (should (equal (gethash 'emjupy-output-error got) "#abcdef"))
++          (should (equal (gethash 'emjupy-output-image got) "#abcdef")))))))
++
++(ert-deftest emjupy-test-box-width-leaves-a-right-margin ()
++  "Rules stop short of the right edge by `emjupy-box-right-margin\'.
++Emacs cannot always report exactly how many columns are usable, so the
++margin is the knob for setups where the rule still runs past the edge."
++  (let ((emjupy-box-width 'window)
++        (emjupy-box-min-width 10))
++    (cl-letf (((symbol-function 'emjupy--window-text-width) (lambda (&rest _) 100)))
++      (dolist (pair '((0 . 100) (2 . 98) (6 . 94)))
++        (let ((emjupy-box-right-margin (car pair)))
++          (should (= (emjupy--box-width) (cdr pair))))))))
++
++(ert-deftest emjupy-test-window-width-excludes-line-numbers ()
++  "The line-number column is drawn inside the text area, so
++`window-body-width\' counts it -- and a rule sized from that overshoots
++the right edge by the width of the numbers."
++  (let ((win (selected-window)))
++    (with-current-buffer (window-buffer win)
++      (cl-letf (((symbol-function 'window-max-chars-per-line) (lambda (&rest _) 200)))
++        (setq-local display-line-numbers nil)
++        (should (= (emjupy--window-text-width win) 200))
++        (setq-local display-line-numbers t)
++        (cl-letf (((symbol-function 'line-number-display-width) (lambda (&rest _) 6)))
++          (should (= (emjupy--window-text-width win) 194)))
++        (setq-local display-line-numbers nil)))))
++
+ (provide 'emjupy-test)
+ ;;; emjupy-test.el ends here
+-- 
+2.43.0
+
