@@ -1,6 +1,8 @@
 #+TITLE: Emjupy
 #+author: Mathieu Renzo w/ various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
 
+[[https://github.com/mathren/emjupy/actions/workflows/build-package.yml][https://github.com/mathren/emjupy/actions/workflows/build-package.yml/badge.svg]]
+
 #+CAPTION: Python Jupyter Notebook in Emacs.
 #+ATTR_HTML: :width 50%
 [[./images/emjupy-logo.png]]
