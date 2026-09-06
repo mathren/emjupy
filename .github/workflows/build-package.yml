@@ -1,0 +1,24 @@
+name: Build emjupy Emacs Package
+
+on:
+  push:
+    paths:
+      - '**/*.el'
+      - 'Makefile'
+  pull_request:
+    paths:
+      - '**/*.el'
+      - 'Makefile'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clean and Package
+        run: |
+          make clean
+          make check
+          make package
