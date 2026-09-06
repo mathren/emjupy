@@ -56,6 +56,14 @@ On a plain =emacs= installation, you should see something like:
 #+DOWNLOADED: screenshot @ 2026-09-06 11:03:14
 [[file:images/screenshot.png]]
 
+This is what the same notebook looks like with =wombat= theme in my
+setup:
+
+#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme. Screenshot may be out of date.
+#+DOWNLOADED: screenshot @ 2026-09-06 11:07:00
+[[file:images/screenshot_dark.png]]
+
+
 * Installation
 
 Add to load-path this repo and load it:
