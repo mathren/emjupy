@@ -85,6 +85,8 @@ Add to load-path this repo and load it:
 | =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                      |
 | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                      |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                          |
+| =C-c s=       | =emjupy-split-cell=                 | Split the cell at point in two                                    |
+| =C-c m=       | =emjupy-merge-cell-above=           | Merge this cell into the one above (clears both outputs)          |
 | =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                         |
 | =M-<up>=      | =emjupy-move-cell-up=               | Move the cell one position earlier                                |
 | =M-<down>=    | =emjupy-move-cell-down=             | Move the cell one position later                                  |

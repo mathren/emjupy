@@ -56,7 +56,7 @@ to survive into the WebSocket URL as well as the REST calls."
   (let ((p (emjupy--server-parts)))
     (cons (plist-get p :host) (plist-get p :port))))
 
-(defconst emjupy--xsrf-endpoints '("/tree" "/lab" "/")
+(defconst emjupy--xsrf-endpoints '("/login" "/tree" "/lab" "/")
   "Paths that hand out an `_xsrf' cookie, tried in order.
 
 Deliberately NOT \"/api\": the REST endpoints do not set the cookie at
@@ -67,7 +67,10 @@ POST came back
 
   [Jupyter HTTP 403] POST: {\"message\": \"'_xsrf' argument missing from POST\"}
 
-Only the HTML pages issue it.")
+Only the HTML pages issue it, and /login comes first because it is the
+one that always answers directly: on a server that wants credentials
+/tree merely redirects there, and the redirect itself carries no
+cookie.")
 
 (defun emjupy--harvest-xsrf (server)
   "Fetch an `_xsrf' cookie for SERVER and remember it.  Returns it, or nil.
@@ -84,6 +87,13 @@ Only the headers matter."
              do (ignore-errors
                   (let* ((url-request-method "GET")
                          (url-request-data nil)
+                         ;; Do not chase redirects: /tree answers 302 to
+                         ;; /login and the cookie is on neither the 302 nor,
+                         ;; reliably, whatever url.el leaves in the buffer
+                         ;; afterwards.  Each endpoint is asked on its own.
+                         (url-max-redirections 0)
+                         (url-cookie-storage nil)
+                         (url-cookie-secure-storage nil)
                          (url-request-extra-headers
                           (when (and token (not (string-empty-p token)))
                             `(("Authorization" . ,(format "token %s" token)))))
@@ -136,12 +146,22 @@ cookie."
                     `(("X-XSRFToken" . ,(emjupy-server-xsrf server))
                       ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server)))))))
          (base-url (emjupy-server-base-url server))
+         ;; Tornado's check reads an `_xsrf' ARGUMENT or the X-XSRFToken
+         ;; header -- "'_xsrf' argument missing from POST" is what it says
+         ;; when it finds neither.  Sending both costs nothing and makes that
+         ;; message impossible whenever we hold a cookie at all.
+         (xsrf-arg (if (and (not (string= method "GET"))
+                            (emjupy-server-xsrf server))
+                       (format "%s_xsrf=%s"
+                               (if (string-match-p "\\?" path) "&" "?")
+                               (url-hexify-string (emjupy-server-xsrf server)))
+                     ""))
          (cache-buster (if (string= method "GET")
                            (format (if (string-match-p "\\?" path) "&_t=%s" "?_t=%s")
                                    (float-time))
                          ""))
          (full-url (concat (if (string-prefix-p "http" base-url) "" "http://")
-                           base-url path cache-buster)))
+                           base-url path xsrf-arg cache-buster)))
 
     (if callback
         (url-retrieve full-url callback)

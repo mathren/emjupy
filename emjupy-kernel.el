@@ -190,7 +190,7 @@ kernels never cross-talk."
     (unless (emjupy--ws-live-p kernel)
       (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
 
-    (let* ((cell (get-text-property (point) 'emjupy-cell)))
+    (let* ((cell (emjupy--cell-at-point)))
       (unless cell
         (user-error "No cell found at point"))
 

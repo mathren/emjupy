@@ -1634,5 +1634,180 @@ session: a fresh `emacs -Q' has an empty jar and never hits it."
       (ignore-errors (emjupy--http-request "GET" server "/api/status")))
     (should (equal seen '(nil nil)))))
 
+(ert-deftest emjupy-test-split-cell-at-point ()
+  "Splitting divides the source at point: text before stays, text from
+point on moves to a new cell just below, and the rest keeps its order."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "a = 1\nb = 2\nc = 3"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "tail = 0"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (should (search-forward "b = 2" nil t))
+        (beginning-of-line)
+        (let ((new (emjupy-split-cell))
+              (cells (emjupy-notebook-cells nb)))
+          (should (= (length cells) 3))
+          (should (equal (emjupy-cell-source (aref cells 0)) "a = 1\n"))
+          (should (equal (emjupy-cell-source (aref cells 1)) "b = 2\nc = 3"))
+          (should (equal (emjupy-cell-source (aref cells 2)) "tail = 0"))
+          (should (= (point) (overlay-start (emjupy-cell-overlay new)))))))))
+
+(ert-deftest emjupy-test-split-cell-keeps-type-and-output ()
+  "The new half is the same kind of cell; output stays with the top half
+rather than being silently discarded."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                                :source "# one\n# two"
+                                :outputs [] :metadata (make-hash-table)))
+        (oh (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" oh)
+    (puthash "name" "stdout" oh)
+    (puthash "text" "kept\n" oh)
+    (setf (emjupy-cell-outputs cell) (vector oh))
+    (setf (emjupy-cell-exec-count cell) 7)
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (should (search-forward "# two" nil t))
+        (beginning-of-line)
+        (emjupy-split-cell)
+        (let ((cells (emjupy-notebook-cells nb)))
+          (should (eq (emjupy-cell-type (aref cells 1)) 'markdown))
+          (should (= (length (emjupy-cell-outputs (aref cells 0))) 1))
+          (should (= (emjupy-cell-exec-count (aref cells 0)) 7))
+          (should (= (length (emjupy-cell-outputs (aref cells 1))) 0)))))))
+
+(ert-deftest emjupy-test-merge-cell-above-joins-and-clears-output ()
+  "Merging joins the two sources with a newline and discards the output of
+BOTH cells: neither set was produced by the merged code, and keeping one
+would attribute results to source that never generated them."
+  (cl-flet ((with-out (cell text)
+              (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" "stream" o)
+                (puthash "name" "stdout" o)
+                (puthash "text" text o)
+                (setf (emjupy-cell-outputs cell) (vector o))
+                (setf (emjupy-cell-exec-count cell) 5)
+                cell)))
+    (let* ((c1 (with-out (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                           :source "a = 1" :outputs []
+                                           :metadata (make-hash-table))
+                         "out-a\n"))
+           (c2 (with-out (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                           :source "b = 2" :outputs []
+                                           :metadata (make-hash-table))
+                         "out-b\n"))
+           (c3 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "c = 3"
+                                 :outputs [] :metadata (make-hash-table))))
+      (emjupy-test--with-notebook (vector c1 c2 c3) buf nb
+        (with-current-buffer buf
+          (goto-char (overlay-start (emjupy-cell-overlay c2)))
+          (let ((merged (emjupy-merge-cell-above))
+                (cells (emjupy-notebook-cells nb)))
+            (should (eq merged c1))
+            (should (= (length cells) 2))
+            (should (equal (emjupy-cell-source (aref cells 0)) "a = 1\nb = 2"))
+            (should (equal (emjupy-cell-source (aref cells 1)) "c = 3"))
+            ;; both outputs gone, and the box with them
+            (should (= (length (emjupy-cell-outputs merged)) 0))
+            (should-not (emjupy-cell-exec-count merged))
+            (should-not (emjupy-cell-output-ov merged))
+            (should-not (string-match-p "out-a" (buffer-string)))
+            (should-not (string-match-p "out-b" (buffer-string)))
+            ;; point lands at the seam, where the merged-in cell began
+            (should (string-prefix-p "b = 2"
+                                     (buffer-substring-no-properties
+                                      (point) (min (point-max) (+ (point) 5)))))))))))
+
+(ert-deftest emjupy-test-merge-cell-above-guards ()
+  "Merging refuses where it would be meaningless or destructive: there is
+nothing above the first cell, and merging code into prose would silently
+reinterpret one of them."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown :source "# x"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "y = 1"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (should-error (emjupy-merge-cell-above) :type 'user-error)
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (should-error (emjupy-merge-cell-above) :type 'user-error)
+        ;; nothing was changed by either refusal
+        (should (= (length (emjupy-notebook-cells nb)) 2))))))
+
+(ert-deftest emjupy-test-split-and-merge-round-trip ()
+  "Splitting and merging back gives the original source."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "a = 1\nb = 2"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (should (search-forward "b = 2" nil t))
+        (beginning-of-line)
+        (emjupy-split-cell)
+        (should (= (length (emjupy-notebook-cells nb)) 2))
+        (emjupy-merge-cell-above)
+        (let ((cells (emjupy-notebook-cells nb)))
+          (should (= (length cells) 1))
+          (should (equal (emjupy-cell-source (aref cells 0)) "a = 1\nb = 2")))))))
+
+(ert-deftest emjupy-test-cell-lookup-survives-typing-at-a-boundary ()
+  "Text typed at the end of a cell's last line still belongs to that cell.
+
+The `emjupy-cell\' property is stamped at render time and plain `insert\'
+does not carry it onto new text, so a lookup by property missed anything
+typed at a boundary -- failing loudly in some commands and silently in
+others: `emjupy-insert-cell-below\' found no current cell and appended to
+the END of the notebook instead of inserting below."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "last = 1"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-end (emjupy-cell-overlay c1)))
+        (forward-line -1)
+        (end-of-line)
+        (insert "\ny = 2")
+        (goto-char (point-min))
+        (should (search-forward "y = 2" nil t))
+        (beginning-of-line)
+        (should (eq (emjupy--cell-at-point) c1))
+        (emjupy-insert-cell-below)
+        (let ((cells (emjupy-notebook-cells nb)))
+          (should (= (length cells) 3))
+          (should (eq (aref cells 0) c1))
+          (should (eq (aref cells 2) c2)))))))
+
+(ert-deftest emjupy-test-split-and-merge-are-bound ()
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c s")) 'emjupy-split-cell))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c m")) 'emjupy-merge-cell-above)))
+
+(ert-deftest emjupy-test-xsrf-harvest-tries-login-first ()
+  "/login comes first because it is the endpoint that always answers
+directly: on a server wanting credentials /tree merely redirects there,
+and the redirect itself carries no cookie -- which left emjupy with no
+cookie and every write answered 403 \"'_xsrf' argument missing\"."
+  (should (equal (car emjupy--xsrf-endpoints) "/login"))
+  (should-not (member "/api" emjupy--xsrf-endpoints)))
+
+(ert-deftest emjupy-test-xsrf-sent-as-argument-on-writes ()
+  "Tornado's check reads an `_xsrf\' argument or the X-XSRFToken header;
+sending both makes \"argument missing\" impossible whenever we hold a
+cookie.  A GET carries neither."
+  (let ((server (make-emjupy-server :base-url "localhost:9" :token "abc"))
+        (seen nil))
+    (setf (emjupy-server-xsrf server) "COOKIEVAL")
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (url &rest _) (setq seen url) nil)))
+      (ignore-errors (emjupy--http-request "POST" server "/api/kernels" "{}"))
+      (should (string-match-p "_xsrf=COOKIEVAL" seen))
+      (ignore-errors (emjupy--http-request "GET" server "/api/status"))
+      (should-not (string-match-p "_xsrf=" seen)))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

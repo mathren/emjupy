@@ -59,6 +59,8 @@
     (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
+    (define-key map (kbd "C-c s")   #'emjupy-split-cell)
+    (define-key map (kbd "C-c m")   #'emjupy-merge-cell-above)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
     (define-key map (kbd "M-<up>")   #'emjupy-move-cell-up)
     (define-key map (kbd "M-<down>") #'emjupy-move-cell-down)

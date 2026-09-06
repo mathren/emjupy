@@ -89,7 +89,7 @@ changed nothing -- the history is left intact."
   (interactive)
   (emjupy--sync-all-cells)
   (let* ((nb emjupy--buffer-notebook)
-         (curr-cell (get-text-property (point) 'emjupy-cell))
+         (curr-cell (emjupy--cell-at-point))
          (cells (append (emjupy-notebook-cells nb) nil))
          (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
          (idx (cl-position curr-cell cells)))
@@ -106,7 +106,7 @@ changed nothing -- the history is left intact."
   (interactive)
   (emjupy--sync-all-cells)
   (let* ((nb emjupy--buffer-notebook)
-         (curr-cell (get-text-property (point) 'emjupy-cell))
+         (curr-cell (emjupy--cell-at-point))
          (cells (append (emjupy-notebook-cells nb) nil))
          (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
          (idx (cl-position curr-cell cells)))
@@ -125,7 +125,7 @@ separate entity, the output always travels with its cell automatically."
   (interactive)
   (emjupy--sync-all-cells)
   (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
-         (cell (get-text-property (point) 'emjupy-cell))
+         (cell (emjupy--cell-at-point))
          (idx (cl-position cell cells)))
     (if (or (not idx) (= idx 0))
         (message "[emjupy] Cell is already at the top.")
@@ -139,7 +139,7 @@ separate entity, the output always travels with its cell automatically."
   (interactive)
   (emjupy--sync-all-cells)
   (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
-         (cell (get-text-property (point) 'emjupy-cell))
+         (cell (emjupy--cell-at-point))
          (idx (cl-position cell cells)))
     (if (or (not idx) (= idx (1- (length cells))))
         (message "[emjupy] Cell is already at the bottom.")
@@ -148,12 +148,117 @@ separate entity, the output always travels with its cell automatically."
         (aset cells idx below))
       (emjupy--rerender-notebook cell))))
 
+(defun emjupy--cell-at-point (&optional pos)
+  "Return the cell containing POS (default point), or nil.
+
+Looks at the cell overlays rather than the `emjupy-cell\' text property.
+The property is stamped once at render time and plain `insert\' does not
+carry it onto new text, so anything typed at a cell boundary -- the end
+of its last line, the obvious place to type -- was invisible to a lookup
+by property.  Overlays move with insertions, so they always know."
+  (let ((pos (or pos (point)))
+        (found nil))
+    (when emjupy--buffer-notebook
+      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               until found
+               do (let ((ov (emjupy-cell-overlay cell)))
+                    (when (and (overlayp ov)
+                               (>= pos (overlay-start ov))
+                               (<= pos (overlay-end ov)))
+                      (setq found cell)))))
+    (or found (get-text-property pos 'emjupy-cell))))
+
+(defun emjupy-split-cell ()
+  "Split the cell at point in two, at point.
+
+Text before point stays in this cell; text from point on moves to a new
+cell of the same type just below, and point follows it there.
+
+Any output stays with the top half, and its execution count with it.
+Neither half has been run as it now stands, so the output no longer
+matches the code above it -- but discarding results the user did not ask
+to discard is worse, and they are one \[emjupy-clear-cell-output] away."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let* ((nb (emjupy--notebook))
+         (cell (emjupy--cell-at-point)))
+    ;; Output text carries no cell property and lies outside the source
+    ;; overlay, so this also catches point sitting in an output box.
+    (unless cell
+      (user-error "Point is not in a cell"))
+    (let* ((ov (emjupy-cell-overlay cell))
+           (source (or (emjupy-cell-source cell) ""))
+           (offset (max 0 (min (- (point) (overlay-start ov)) (length source))))
+           (new-cell (make-emjupy-cell
+                      :id (emjupy--new-cell-id)
+                      :type (emjupy-cell-type cell)
+                      :source (substring source offset)
+                      :outputs []
+                      :metadata (make-hash-table :test 'equal)))
+           (cells (append (emjupy-notebook-cells nb) nil))
+           (idx (cl-position cell cells)))
+      (setf (emjupy-cell-source cell) (substring source 0 offset))
+      (setf (emjupy-notebook-cells nb)
+            (vconcat (append (cl-subseq cells 0 (1+ idx))
+                             (list new-cell)
+                             (cl-subseq cells (1+ idx)))))
+      (emjupy--rerender-notebook new-cell)
+      new-cell)))
+
+(defun emjupy-merge-cell-above ()
+  "Merge the cell at point into the one above it.
+
+The two sources are joined with a newline between them, the upper cell
+absorbs the lower, and point lands at the seam -- where the second cell
+used to begin.
+
+The output of BOTH cells is discarded, along with their execution
+counts.  Neither set was produced by the merged code, and keeping one
+would attribute results to source that never generated them.
+
+The cells must be of the same type; merging code into prose, or the
+reverse, would silently reinterpret one of them."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let* ((nb (emjupy--notebook))
+         (cell (emjupy--cell-at-point)))
+    (unless cell
+      (user-error "Point is not in a cell"))
+    (let* ((cells (append (emjupy-notebook-cells nb) nil))
+           (idx (cl-position cell cells)))
+      (when (zerop idx)
+        (user-error "No cell above this one"))
+      (let* ((above (nth (1- idx) cells)))
+        (unless (eq (emjupy-cell-type above) (emjupy-cell-type cell))
+          (user-error "Cannot merge a %s cell into a %s cell"
+                      (emjupy-cell-type cell) (emjupy-cell-type above)))
+        (let* ((upper (or (emjupy-cell-source above) ""))
+               (lower (or (emjupy-cell-source cell) ""))
+               (seam (length (if (string-suffix-p "\n" upper)
+                                 upper
+                               (concat upper "\n")))))
+          (setf (emjupy-cell-source above)
+                (concat (if (string-suffix-p "\n" upper) upper (concat upper "\n"))
+                        lower))
+          ;; Neither cell's results describe the merged source any more.
+          (setf (emjupy-cell-outputs above) [])
+          (setf (emjupy-cell-exec-count above) nil)
+          (setf (emjupy-notebook-cells nb)
+                (vconcat (append (cl-subseq cells 0 idx)
+                                 (cl-subseq cells (1+ idx)))))
+          (emjupy--rerender-notebook above)
+          ;; Leave point at the seam, where the merged-in cell begins.
+          (let ((ov (emjupy-cell-overlay above)))
+            (when (overlayp ov)
+              (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
+          above)))))
+
 (defun emjupy-delete-cell ()
   "Delete current cell at point."
   (interactive)
   (emjupy--sync-all-cells)
   (let* ((nb emjupy--buffer-notebook)
-         (curr-cell (get-text-property (point) 'emjupy-cell))
+         (curr-cell (emjupy--cell-at-point))
          (cells (append (emjupy-notebook-cells nb) nil)))
     (when curr-cell
       (setq cells (delete curr-cell cells))
@@ -164,7 +269,7 @@ separate entity, the output always travels with its cell automatically."
   "Cycle the cell at point between `code' and `markdown'."
   (interactive)
   (emjupy--sync-all-cells)
-  (let ((cell (get-text-property (point) 'emjupy-cell)))
+  (let ((cell (emjupy--cell-at-point)))
     (unless cell
       (user-error "No cell found at point"))
     (setf (emjupy-cell-type cell)
@@ -174,7 +279,7 @@ separate entity, the output always travels with its cell automatically."
 (defun emjupy-next-cell ()
   "Move point to the next cell."
   (interactive)
-  (let* ((cell (get-text-property (point) 'emjupy-cell))
+  (let* ((cell (emjupy--cell-at-point))
          (ov (and cell (emjupy-cell-overlay cell))))
     (if ov
         (let ((pos (overlay-end ov)))
@@ -185,7 +290,7 @@ separate entity, the output always travels with its cell automatically."
 (defun emjupy-previous-cell ()
   "Move point to the previous cell."
   (interactive)
-  (let* ((cell (get-text-property (point) 'emjupy-cell))
+  (let* ((cell (emjupy--cell-at-point))
          (ov (and cell (emjupy-cell-overlay cell))))
     (if ov
         (let ((pos (overlay-start ov)))

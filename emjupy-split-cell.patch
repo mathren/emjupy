@@ -1,0 +1,347 @@
+From f00f2ecba891b8a0a9d2cc2e4272193df57bd23a Mon Sep 17 00:00:00 2001
+From: emjupy <dev@example.com>
+Date: Sun, 6 Sep 2026 18:33:18 +0000
+Subject: [PATCH] Add emjupy-split-cell on C-c s, and fix cell lookup at a
+ boundary
+
+Splitting divides the source at point: text before stays, text from
+point on moves to a new cell of the same type below, and point follows
+it there. Output stays with the top half along with its execution count
+-- neither half has been run as it now stands, but discarding results
+the user did not ask to discard is worse, and C-c l clears them.
+
+Writing it surfaced a real bug underneath. Commands found the cell at
+point through the emjupy-cell text property, which is stamped once at
+render time; plain insert does not carry it onto new text, so anything
+typed at a cell boundary -- the end of its last line, the obvious place
+to type -- was invisible to the lookup. Split refused outright with
+'Point is not in a cell', and insert-cell-below failed SILENTLY: finding
+no current cell, it appended to the end of the notebook instead of
+inserting below.
+
+emjupy--cell-at-point now finds the cell from the overlays, which move
+with insertions by construction, falling back to the property. Every
+lookup site in emjupy-cells.el and emjupy-kernel.el uses it, so execute,
+delete, insert, move and cycle-type all stop losing track of freshly
+typed text.
+---
+ README.org       |   1 +
+ emjupy-cells.el  |  77 ++++++++++++++++++++++++++----
+ emjupy-kernel.el |   2 +-
+ emjupy-test.el   | 121 +++++++++++++++++++++++++++++++++++++++++++++++
+ emjupy.el        |   1 +
+ 5 files changed, 193 insertions(+), 9 deletions(-)
+
+diff --git a/README.org b/README.org
+index a84a42a..0925c19 100644
+--- a/README.org
++++ b/README.org
+@@ -85,6 +85,7 @@ Add to load-path this repo and load it:
+ | =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                      |
+ | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                      |
+ | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                          |
++| =C-c s=       | =emjupy-split-cell=                 | Split the cell at point in two                                    |
+ | =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                         |
+ | =M-<up>=      | =emjupy-move-cell-up=               | Move the cell one position earlier                                |
+ | =M-<down>=    | =emjupy-move-cell-down=             | Move the cell one position later                                  |
+diff --git a/emjupy-cells.el b/emjupy-cells.el
+index 09d1139..5ce2ae6 100644
+--- a/emjupy-cells.el
++++ b/emjupy-cells.el
+@@ -89,7 +89,7 @@ changed nothing -- the history is left intact."
+   (interactive)
+   (emjupy--sync-all-cells)
+   (let* ((nb emjupy--buffer-notebook)
+-         (curr-cell (get-text-property (point) 'emjupy-cell))
++         (curr-cell (emjupy--cell-at-point))
+          (cells (append (emjupy-notebook-cells nb) nil))
+          (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
+          (idx (cl-position curr-cell cells)))
+@@ -106,7 +106,7 @@ changed nothing -- the history is left intact."
+   (interactive)
+   (emjupy--sync-all-cells)
+   (let* ((nb emjupy--buffer-notebook)
+-         (curr-cell (get-text-property (point) 'emjupy-cell))
++         (curr-cell (emjupy--cell-at-point))
+          (cells (append (emjupy-notebook-cells nb) nil))
+          (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
+          (idx (cl-position curr-cell cells)))
+@@ -125,7 +125,7 @@ separate entity, the output always travels with its cell automatically."
+   (interactive)
+   (emjupy--sync-all-cells)
+   (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
+-         (cell (get-text-property (point) 'emjupy-cell))
++         (cell (emjupy--cell-at-point))
+          (idx (cl-position cell cells)))
+     (if (or (not idx) (= idx 0))
+         (message "[emjupy] Cell is already at the top.")
+@@ -139,7 +139,7 @@ separate entity, the output always travels with its cell automatically."
+   (interactive)
+   (emjupy--sync-all-cells)
+   (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
+-         (cell (get-text-property (point) 'emjupy-cell))
++         (cell (emjupy--cell-at-point))
+          (idx (cl-position cell cells)))
+     (if (or (not idx) (= idx (1- (length cells))))
+         (message "[emjupy] Cell is already at the bottom.")
+@@ -148,12 +148,73 @@ separate entity, the output always travels with its cell automatically."
+         (aset cells idx below))
+       (emjupy--rerender-notebook cell))))
+ 
++(defun emjupy--cell-at-point (&optional pos)
++  "Return the cell containing POS (default point), or nil.
++
++Looks at the cell overlays rather than the `emjupy-cell\' text property.
++The property is stamped once at render time and plain `insert\' does not
++carry it onto new text, so anything typed at a cell boundary -- the end
++of its last line, most obviously -- was invisible to every command that
++looked point up that way.  That failed loudly in some commands and
++silently in others: `emjupy-insert-cell-below\' found no current cell and
++appended to the end of the notebook instead of inserting below.
++
++Overlays move with insertions, so they always know."
++  (let ((pos (or pos (point)))
++        (found nil))
++    (when emjupy--buffer-notebook
++      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
++               until found
++               do (let ((ov (emjupy-cell-overlay cell)))
++                    (when (and (overlayp ov)
++                               (>= pos (overlay-start ov))
++                               (<= pos (overlay-end ov)))
++                      (setq found cell)))))
++    (or found (get-text-property pos 'emjupy-cell))))
++
++(defun emjupy-split-cell ()
++  "Split the cell at point in two, at point.
++
++Text before point stays in this cell; text from point on moves to a new
++cell of the same type just below, and point follows it there.
++
++Any output stays with the top half, and its execution count with it.
++Neither half has been run as it now stands, so the output no longer
++matches the code above it -- but discarding results the user did not ask
++to discard is worse, and \[emjupy-clear-cell-output] is one keystroke."
++  (interactive)
++  (emjupy--sync-all-cells)
++  (let* ((nb (emjupy--notebook))
++         (cell (emjupy--cell-at-point)))
++    ;; Output text carries no cell property, so this also catches point
++    ;; sitting in an output box rather than in the code.
++    (unless cell
++      (user-error "Point is not in a cell"))
++    (let* ((ov (emjupy-cell-overlay cell))
++           (source (or (emjupy-cell-source cell) ""))
++           (offset (max 0 (min (- (point) (overlay-start ov)) (length source))))
++           (new-cell (make-emjupy-cell
++                      :id (emjupy--new-cell-id)
++                      :type (emjupy-cell-type cell)
++                      :source (substring source offset)
++                      :outputs []
++                      :metadata (make-hash-table :test 'equal)))
++           (cells (append (emjupy-notebook-cells nb) nil))
++           (idx (cl-position cell cells)))
++      (setf (emjupy-cell-source cell) (substring source 0 offset))
++      (setf (emjupy-notebook-cells nb)
++            (vconcat (append (cl-subseq cells 0 (1+ idx))
++                             (list new-cell)
++                             (cl-subseq cells (1+ idx)))))
++      (emjupy--rerender-notebook new-cell)
++      new-cell)))
++
+ (defun emjupy-delete-cell ()
+   "Delete current cell at point."
+   (interactive)
+   (emjupy--sync-all-cells)
+   (let* ((nb emjupy--buffer-notebook)
+-         (curr-cell (get-text-property (point) 'emjupy-cell))
++         (curr-cell (emjupy--cell-at-point))
+          (cells (append (emjupy-notebook-cells nb) nil)))
+     (when curr-cell
+       (setq cells (delete curr-cell cells))
+@@ -164,7 +225,7 @@ separate entity, the output always travels with its cell automatically."
+   "Cycle the cell at point between `code' and `markdown'."
+   (interactive)
+   (emjupy--sync-all-cells)
+-  (let ((cell (get-text-property (point) 'emjupy-cell)))
++  (let ((cell (emjupy--cell-at-point)))
+     (unless cell
+       (user-error "No cell found at point"))
+     (setf (emjupy-cell-type cell)
+@@ -174,7 +235,7 @@ separate entity, the output always travels with its cell automatically."
+ (defun emjupy-next-cell ()
+   "Move point to the next cell."
+   (interactive)
+-  (let* ((cell (get-text-property (point) 'emjupy-cell))
++  (let* ((cell (emjupy--cell-at-point))
+          (ov (and cell (emjupy-cell-overlay cell))))
+     (if ov
+         (let ((pos (overlay-end ov)))
+@@ -185,7 +246,7 @@ separate entity, the output always travels with its cell automatically."
+ (defun emjupy-previous-cell ()
+   "Move point to the previous cell."
+   (interactive)
+-  (let* ((cell (get-text-property (point) 'emjupy-cell))
++  (let* ((cell (emjupy--cell-at-point))
+          (ov (and cell (emjupy-cell-overlay cell))))
+     (if ov
+         (let ((pos (overlay-start ov)))
+diff --git a/emjupy-kernel.el b/emjupy-kernel.el
+index 794d63c..81fa440 100644
+--- a/emjupy-kernel.el
++++ b/emjupy-kernel.el
+@@ -190,7 +190,7 @@ kernels never cross-talk."
+     (unless (emjupy--ws-live-p kernel)
+       (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
+ 
+-    (let* ((cell (get-text-property (point) 'emjupy-cell)))
++    (let* ((cell (emjupy--cell-at-point)))
+       (unless cell
+         (user-error "No cell found at point"))
+ 
+diff --git a/emjupy-test.el b/emjupy-test.el
+index b326a7b..fd1e9a6 100644
+--- a/emjupy-test.el
++++ b/emjupy-test.el
+@@ -1569,5 +1569,126 @@ the right edge by the width of the numbers."
+           (should (= (emjupy--window-text-width win) 194)))
+         (setq-local display-line-numbers nil)))))
+ 
++(ert-deftest emjupy-test-split-cell-at-point ()
++  "Splitting divides the source at point: text before stays, text from
++point on moves to a new cell just below, and the rest of the notebook
++keeps its order."
++  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
++                               :source "a = 1\nb = 2\nc = 3"
++                               :outputs [] :metadata (make-hash-table)))
++         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
++                               :source "tail = 0"
++                               :outputs [] :metadata (make-hash-table))))
++    (emjupy-test--with-notebook (vector c1 c2) buf nb
++      (with-current-buffer buf
++        (goto-char (overlay-start (emjupy-cell-overlay c1)))
++        (should (search-forward "b = 2" nil t))
++        (beginning-of-line)
++        (let ((new (emjupy-split-cell))
++              (cells (emjupy-notebook-cells nb)))
++          (should (= (length cells) 3))
++          (should (equal (emjupy-cell-source (aref cells 0)) "a = 1\n"))
++          (should (equal (emjupy-cell-source (aref cells 1)) "b = 2\nc = 3"))
++          ;; the cell that followed is still after both halves
++          (should (equal (emjupy-cell-source (aref cells 2)) "tail = 0"))
++          ;; point lands at the start of the new cell, ready to keep typing
++          (should (eq (get-text-property (point) 'emjupy-cell) new))
++          (should (= (point) (overlay-start (emjupy-cell-overlay new)))))))))
++
++(ert-deftest emjupy-test-split-cell-keeps-type-and-output ()
++  "The new half is the same kind of cell, and any output stays with the
++top half rather than being silently discarded."
++  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
++                                :source "# one\n# two"
++                                :outputs [] :metadata (make-hash-table)))
++        (oh (make-hash-table :test 'equal)))
++    (puthash "output_type" "stream" oh)
++    (puthash "name" "stdout" oh)
++    (puthash "text" "kept\n" oh)
++    (setf (emjupy-cell-outputs cell) (vector oh))
++    (setf (emjupy-cell-exec-count cell) 7)
++    (emjupy-test--with-notebook (vector cell) buf nb
++      (with-current-buffer buf
++        (goto-char (overlay-start (emjupy-cell-overlay cell)))
++        (should (search-forward "# two" nil t))
++        (beginning-of-line)
++        (emjupy-split-cell)
++        (let ((cells (emjupy-notebook-cells nb)))
++          (should (eq (emjupy-cell-type (aref cells 0)) 'markdown))
++          (should (eq (emjupy-cell-type (aref cells 1)) 'markdown))
++          (should (= (length (emjupy-cell-outputs (aref cells 0))) 1))
++          (should (= (emjupy-cell-exec-count (aref cells 0)) 7))
++          ;; the new half starts clean
++          (should (= (length (emjupy-cell-outputs (aref cells 1))) 0))
++          (should-not (emjupy-cell-exec-count (aref cells 1))))))))
++
++(ert-deftest emjupy-test-split-cell-picks-up-unsynced-typing ()
++  "Splitting syncs first, so text typed but not yet synced is divided
++too rather than being thrown away by the re-render."
++  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
++                                :source "x = 1"
++                                :outputs [] :metadata (make-hash-table))))
++    (emjupy-test--with-notebook (vector cell) buf nb
++      (with-current-buffer buf
++        (goto-char (overlay-end (emjupy-cell-overlay cell)))
++        (forward-line -1)
++        (end-of-line)
++        (insert "\ny = 2")
++        ;; split between the two lines, without syncing by hand
++        (goto-char (overlay-start (emjupy-cell-overlay cell)))
++        (should (search-forward "y = 2" nil t))
++        (beginning-of-line)
++        (emjupy-split-cell)
++        (let ((cells (emjupy-notebook-cells nb)))
++          (should (= (length cells) 2))
++          (should (equal (emjupy-cell-source (aref cells 0)) "x = 1\n"))
++          (should (equal (emjupy-cell-source (aref cells 1)) "y = 2")))))))
++
++(ert-deftest emjupy-test-split-cell-refuses-outside-a-cell ()
++  "Output text carries no cell property, so this also covers point
++sitting in an output box rather than in code."
++  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
++                                :outputs [] :metadata (make-hash-table))))
++    (emjupy-test--with-notebook (vector cell) buf nb
++      (with-current-buffer buf
++        (goto-char (point-max))
++        (should-error (emjupy-split-cell) :type 'user-error)))))
++
++(ert-deftest emjupy-test-cell-lookup-survives-typing-at-a-boundary ()
++  "Text typed at the end of a cell's last line still belongs to that cell.
++
++The `emjupy-cell' text property is stamped once at render time and plain
++`insert' does not carry it onto new text, so a lookup by property missed
++anything typed at a cell boundary.  That failed loudly in some commands
++and silently in others -- `emjupy-insert-cell-below' found no current
++cell and appended to the END of the notebook instead of inserting below."
++  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
++                               :outputs [] :metadata (make-hash-table)))
++         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "last = 1"
++                               :outputs [] :metadata (make-hash-table))))
++    (emjupy-test--with-notebook (vector c1 c2) buf nb
++      (with-current-buffer buf
++        (goto-char (overlay-end (emjupy-cell-overlay c1)))
++        (forward-line -1)
++        (end-of-line)
++        (insert "\ny = 2")
++        ;; the property alone does not find it ...
++        (goto-char (point-min))
++        (should (search-forward "y = 2" nil t))
++        (beginning-of-line)
++        ;; ... but the overlay does
++        (should (eq (emjupy--cell-at-point) c1))
++        ;; and a new cell lands right after it, not at the end of the notebook
++        (emjupy-insert-cell-below)
++        (let ((cells (emjupy-notebook-cells nb)))
++          (should (= (length cells) 3))
++          (should (eq (aref cells 0) c1))
++          (should (equal (emjupy-cell-source (aref cells 1)) ""))
++          (should (eq (aref cells 2) c2)))))))
++
++(ert-deftest emjupy-test-split-cell-is-bound ()
++  "`C-c s\' runs it."
++  (should (eq (lookup-key emjupy-mode-map (kbd "C-c s")) 'emjupy-split-cell)))
++
+ (provide 'emjupy-test)
+ ;;; emjupy-test.el ends here
+diff --git a/emjupy.el b/emjupy.el
+index f3adf20..59d890c 100644
+--- a/emjupy.el
++++ b/emjupy.el
+@@ -59,6 +59,7 @@
+     (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
+     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
+     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
++    (define-key map (kbd "C-c s")   #'emjupy-split-cell)
+     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
+     (define-key map (kbd "M-<up>")   #'emjupy-move-cell-up)
+     (define-key map (kbd "M-<down>") #'emjupy-move-cell-down)
+-- 
+2.43.0
+
