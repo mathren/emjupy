@@ -38,3 +38,12 @@ jobs:
       - name: Package
         run: |
           make package
+
+      # Uploads the .tar file so you can download it from GitHub
+      - name: Serve Package as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: emjupy
+          path: '*.tar'
+          # Optional: How long GitHub keeps the file before deleting it (max 90 days)
+          # retention-days: 14
