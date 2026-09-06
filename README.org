@@ -59,16 +59,16 @@ To test this in an isolated environment without touching your current config:
 
 3. Launch Emacs with:
    #+begin_src bash
-     emacs -Q -L . -l quicktry.el
+     emacs -Q -L . -l quicktry.el --eval '(emjupy-login)'
    #+end_src
    where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-4. Run =emjupy-login= and follow the prompt. The token, password is =abc=
-   provided in 1. The token is only asked for if the server actually
-   needs one. emjupy adopts the kernel already running behind that
-   port and shows you the notebook list; picking one drops you
-   straight into that live REPL.
+4. Follow the prompt in the minibuffer area. The token/password is =abc=
+   provided in 1.,only asked for if the server actually needs one.
+   emjupy adopts the kernel already running behind that port and shows
+   you the notebook list; picking one drops you straight into that
+   live REPL.
 
 * Installation
 
@@ -81,7 +81,7 @@ your =init.el= or similar:
 #+END_SRC
 
 Alternatively, use =install-package-file= giving it the tarball created
-by github actions.
+by gitHub actions.
 
 * Keybindings
 
