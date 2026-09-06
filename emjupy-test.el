@@ -361,22 +361,27 @@ directions: darker on a light theme, lighter on a dark one."
       (should (> (lum c) (lum "#1c1c1c"))))))
 
 (ert-deftest emjupy-test-output-color-explicit-and-disabled ()
-  "An explicit colour is used verbatim; nil disables the band."
-  (let ((captured 'none))
-    (cl-letf (((symbol-function 'face-attribute)
-               (lambda (face attr &rest _)
-                 (if (eq face 'default)
-                     (cond ((eq attr :background) "#ffffff")
-                           ((eq attr :foreground) "#000000"))
-                   'unspecified)))
-              ((symbol-function 'set-face-attribute)
-               (lambda (_face _frame _attr value) (setq captured value))))
-      (let ((emjupy-output-color "#f0f0f0"))
-        (should (emjupy--sync-theme-colors))
-        (should (equal captured "#f0f0f0")))
-      (let ((emjupy-output-color nil))
-        (should-not (emjupy--sync-theme-colors))
-        (should (eq captured 'unspecified))))))
+  "An explicit colour is used verbatim; nil disables the band entirely,
+leaving output on the buffer's normal background."
+  (cl-letf (((symbol-function 'face-attribute)
+             (lambda (face attr &rest _)
+               (if (eq face 'default)
+                   (cond ((eq attr :background) "#ffffff")
+                         ((eq attr :foreground) "#000000"))
+                 'unspecified))))
+    (let ((got (make-hash-table :test 'eq)))
+      (cl-letf (((symbol-function 'set-face-attribute)
+                 (lambda (face _f _a value) (puthash face value got))))
+        (let ((emjupy-output-color "#f0f0f0"))
+          (should (emjupy--sync-theme-colors))
+          (should (equal (gethash 'emjupy-output got) "#f0f0f0")))
+        (let ((emjupy-output-color nil)
+              (emjupy-output-error-color nil)
+              (emjupy-output-warning-color nil)
+              (emjupy-output-image-color nil))
+          (should-not (emjupy--sync-theme-colors))
+          (should (eq (gethash 'emjupy-output got) 'unspecified))
+          (should (eq (gethash 'emjupy-output-error got) 'unspecified)))))))
 
 (ert-deftest emjupy-test-nothing-but-output-is-recoloured ()
   "The buffer background is left completely alone, and a cell with no
@@ -412,7 +417,13 @@ and takes the band with it."
         (setf (emjupy-cell-outputs cell) (vector oh))
         (emjupy--rerender-notebook)
         (should (emjupy-cell-output-ov cell))
-        (should (eq (overlay-get (emjupy-cell-output-ov cell) 'face) 'emjupy-output))
+        ;; the band is painted on the output text itself now, not on the
+        ;; overlay, so several kinds of output can be coloured differently
+        ;; within one box
+        (goto-char (point-min))
+        (should (search-forward "hello" nil t))
+        (should (memq 'emjupy-output
+                      (get-text-property (match-beginning 0) 'face)))
         ;; and the band covers the output text, not the source
         (let ((ov (emjupy-cell-output-ov cell)))
           (should (string-match-p "hello"
@@ -1411,6 +1422,152 @@ alist keyed by server."
     (setq emjupy-list--path "")
     (let ((emjupy-remote-root nil))
       (should-error (emjupy-list-dired) :type 'user-error))))
+
+(ert-deftest emjupy-test-output-faces-are-background-only ()
+  "Every output face may set a background and `:extend\' and nothing else.
+They are applied over output text, so any colour attribute they carried
+would fight the faces on tracebacks and rich output."
+  (dolist (face '(emjupy-output emjupy-output-error
+                 emjupy-output-warning emjupy-output-image))
+    (should (eq (face-attribute face :inherit nil nil) 'unspecified))
+    (should (eq (face-attribute face :extend nil nil) t))
+    (dolist (attr '(:foreground :weight :slant :underline :box :inverse-video))
+      (should (eq (face-attribute face attr nil t) 'unspecified)))))
+
+(ert-deftest emjupy-test-output-classified-by-kind ()
+  "Errors, warnings, images and ordinary output each get their own face."
+  (cl-flet ((mk (type &optional name img)
+              (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" type o)
+                (when name (puthash "name" name o))
+                (when img
+                  (let ((d (make-hash-table :test 'equal)))
+                    (puthash "image/png" "iVBORw0KGgoAAAAA" d)
+                    (puthash "data" d o)))
+                o)))
+    (should (eq (emjupy--output-face (mk "error")) 'emjupy-output-error))
+    ;; stderr that is not a traceback is where warnings.warn and logging go
+    (should (eq (emjupy--output-face (mk "stream" "stderr")) 'emjupy-output-warning))
+    (should (eq (emjupy--output-face (mk "stream" "stdout")) 'emjupy-output))
+    (should (eq (emjupy--output-face (mk "display_data" nil t)) 'emjupy-output-image))
+    (should (eq (emjupy--output-face (mk "execute_result")) 'emjupy-output))))
+
+(ert-deftest emjupy-test-each-output-piece-painted-separately ()
+  "One cell can hold a figure, a warning and a traceback at once, and each
+must read as what it is -- so the faces go on the pieces, not on one
+overlay across the whole box."
+  (cl-flet ((mk (type &rest kv)
+              (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" type o)
+                (while kv (puthash (pop kv) (pop kv) o))
+                o)))
+    (let* ((img (let ((d (make-hash-table :test 'equal)))
+                  (puthash "image/png" "iVBORw0KGgoAAAAA" d)
+                  (puthash "text/plain" "<Figure>" d) d))
+           (cell (make-emjupy-cell
+                  :id (emjupy--new-cell-id) :type 'code :source "run()"
+                  :outputs (vector (mk "stream" "name" "stdout" "text" "normal out\n")
+                                   (mk "stream" "name" "stderr" "text" "a warning\n")
+                                   (mk "display_data" "data" img)
+                                   (mk "error" "ename" "ValueError" "evalue" "boom"
+                                       "traceback" ["Traceback line"]))
+                  :metadata (make-hash-table))))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (cl-flet ((face-at (probe)
+                      (goto-char (point-min))
+                      (and (search-forward probe nil t)
+                           (get-text-property (match-beginning 0) 'face))))
+            (should (memq 'emjupy-output (face-at "normal out")))
+            (should (memq 'emjupy-output-warning (face-at "a warning")))
+            (should (memq 'emjupy-output-image (face-at "<Figure>")))
+            (should (memq 'emjupy-output-error (face-at "ValueError")))
+            (should (memq 'emjupy-output-error (face-at "Traceback line"))))
+          ;; and the box overlay paints nothing, or it would override them all
+          (should-not (overlay-get (emjupy-cell-output-ov cell) 'face)))))))
+
+(ert-deftest emjupy-test-error-and-warning-tints-work-on-both-themes ()
+  "`auto\' error and warning colours tint toward red and yellow, and stay
+distinguishable from the ordinary output colour on light and dark alike."
+  (dolist (theme '(("#ffffff" . "#000000") ("#1c1c1c" . "#e5e5e5")))
+    (cl-letf (((symbol-function 'face-attribute)
+               (lambda (face attr &rest _)
+                 (if (eq face 'default)
+                     (cond ((eq attr :background) (car theme))
+                           ((eq attr :foreground) (cdr theme)))
+                   'unspecified))))
+      (let ((got (make-hash-table :test 'eq)))
+        (cl-letf (((symbol-function 'set-face-attribute)
+                   (lambda (face _f _a value) (puthash face value got))))
+          (emjupy--sync-theme-colors))
+        (let ((err (gethash 'emjupy-output-error got))
+              (warn (gethash 'emjupy-output-warning got))
+              (out (gethash 'emjupy-output got)))
+          (should (emjupy--color-rgb err))
+          (should (emjupy--color-rgb warn))
+          ;; each is its own colour, not all the same band
+          (should-not (equal err out))
+          (should-not (equal warn out))
+          (should-not (equal err warn))
+          ;; red tint: red channel dominates; yellow tint: blue is lowest
+          (let ((e (emjupy--color-rgb err)) (w (emjupy--color-rgb warn)))
+            (should (> (nth 0 e) (nth 2 e)))
+            (should (> (nth 0 w) (nth 2 w)))
+            (should (> (nth 1 w) (nth 2 w)))))))))
+
+(ert-deftest emjupy-test-output-colors-are-customizable ()
+  "Explicit colours are used verbatim; nil falls back to the ordinary
+output colour."
+  (cl-letf (((symbol-function 'face-attribute)
+             (lambda (face attr &rest _)
+               (if (eq face 'default)
+                   (cond ((eq attr :background) "#ffffff")
+                         ((eq attr :foreground) "#000000"))
+                 'unspecified))))
+    (let ((got (make-hash-table :test 'eq)))
+      (cl-letf (((symbol-function 'set-face-attribute)
+                 (lambda (face _f _a value) (puthash face value got))))
+        (let ((emjupy-output-error-color "#ff0000")
+              (emjupy-output-warning-color "#00ff00")
+              (emjupy-output-image-color "#123456")
+              (emjupy-output-color "#abcdef"))
+          (emjupy--sync-theme-colors)
+          (should (equal (gethash 'emjupy-output got) "#abcdef"))
+          (should (equal (gethash 'emjupy-output-error got) "#ff0000"))
+          (should (equal (gethash 'emjupy-output-warning got) "#00ff00"))
+          (should (equal (gethash 'emjupy-output-image got) "#123456")))
+        ;; nil means "same as ordinary output"
+        (let ((emjupy-output-color "#abcdef")
+              (emjupy-output-error-color nil)
+              (emjupy-output-image-color nil))
+          (emjupy--sync-theme-colors)
+          (should (equal (gethash 'emjupy-output-error got) "#abcdef"))
+          (should (equal (gethash 'emjupy-output-image got) "#abcdef")))))))
+
+(ert-deftest emjupy-test-box-width-leaves-a-right-margin ()
+  "Rules stop short of the right edge by `emjupy-box-right-margin\'.
+Emacs cannot always report exactly how many columns are usable, so the
+margin is the knob for setups where the rule still runs past the edge."
+  (let ((emjupy-box-width 'window)
+        (emjupy-box-min-width 10))
+    (cl-letf (((symbol-function 'emjupy--window-text-width) (lambda (&rest _) 100)))
+      (dolist (pair '((0 . 100) (2 . 98) (6 . 94)))
+        (let ((emjupy-box-right-margin (car pair)))
+          (should (= (emjupy--box-width) (cdr pair))))))))
+
+(ert-deftest emjupy-test-window-width-excludes-line-numbers ()
+  "The line-number column is drawn inside the text area, so
+`window-body-width\' counts it -- and a rule sized from that overshoots
+the right edge by the width of the numbers."
+  (let ((win (selected-window)))
+    (with-current-buffer (window-buffer win)
+      (cl-letf (((symbol-function 'window-max-chars-per-line) (lambda (&rest _) 200)))
+        (setq-local display-line-numbers nil)
+        (should (= (emjupy--window-text-width win) 200))
+        (setq-local display-line-numbers t)
+        (cl-letf (((symbol-function 'line-number-display-width) (lambda (&rest _) 6)))
+          (should (= (emjupy--window-text-width win) 194)))
+        (setq-local display-line-numbers nil)))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
