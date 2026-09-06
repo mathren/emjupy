@@ -1,4 +1,4 @@
-s#+TITLE: Emjupy
+#+TITLE: Emjupy
 #+author: Mathieu Renzo w/ various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
 
 #+CAPTION: Python Jupyter Notebook in Emacs.
@@ -11,6 +11,20 @@ Jupyter notebooks with remote kernel execution using emacs built-ins
 sharing with non-emacs users.
 
 * Features
+
+On a plain =emacs= installation, you should see something like:
+
+#+CAPTION: simple notebook rendering in a fresh emacs with no customization. Screenshot may be out of date.
+#+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
+[[file:images/screenshot-default-colored.png]]
+
+This is what the same notebook looks like with =wombat= theme in my
+setup:
+
+#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme. Screenshot may be out of date.
+#+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
+[[file:images/screenshot-dark-colored.png]]
+
 - persistent kernel session (to load large dataset once and re-use
   them)
 - in-line rendering of output including images
@@ -49,20 +63,6 @@ To test this in an isolated environment without touching your current config:
    the token is only asked for if the server actually needs one. emjupy
    adopts the kernel already running behind that port and shows you the
    notebook list; picking one drops you straight into that live REPL.
-
-On a plain =emacs= installation, you should see something like:
-
-#+CAPTION: simple notebook rendering in a fresh emacs with no customization. Screenshot may be out of date.
-#+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
-[[file:images/screenshot-default-colored.png]]
-
-This is what the same notebook looks like with =wombat= theme in my
-setup:
-
-#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme. Screenshot may be out of date.
-
-#+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
-[[file:images/screenshot-dark-colored.png]]
 
 * Installation
 
@@ -131,8 +131,6 @@ the shadow buffer, while =C-c C-c= and =C-c '= behave the same in both.
 Completion (=M-TAB=) and eldoc need no emjupy binding: they are wired into
 the standard hooks and reach the language server through the shadow buffer
 automatically.
-
-
 
 * Building & development
 
@@ -392,7 +390,7 @@ saying why there is no picture.
 Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
 =image/svg+xml=.
 
-** Duplicate figures
+*** Duplicate figures
 
 A cell whose last expression is a figure receives the same picture
 twice from the kernel: once as the =execute_result= repr and again as
