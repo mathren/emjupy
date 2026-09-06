@@ -19,10 +19,12 @@ jobs:
           version: '30.1'
 
       - name: Check
-        run: make check
+        run: |
+          make check
 
       - name: Package
-        run: make package
+        run: |
+          make package
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
