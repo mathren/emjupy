@@ -68,6 +68,8 @@
     (define-key map (kbd "C-c s")   #'emjupy-split-cell)
     (define-key map (kbd "C-c m")   #'emjupy-merge-cell-above)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
+    (define-key map (kbd "C-c <up>")   #'emjupy-beginning-of-cell)
+    (define-key map (kbd "C-c <down>") #'emjupy-end-of-cell)
     (define-key map (kbd "M-<up>")   #'emjupy-move-cell-up)
     (define-key map (kbd "M-<down>") #'emjupy-move-cell-down)
     (define-key map (kbd "C-c '")    #'emjupy-edit-cell-externally)
