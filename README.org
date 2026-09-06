@@ -242,6 +242,9 @@ none is found.
 | =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
+** TODO emjupy design
+describe shadow-buffer approach.
+
 ** Key insight: use the browser's transport, not ZMQ
 
 When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
@@ -310,9 +313,10 @@ interpreter state, which is occasionally what you want and usually not.
 dies the remote kernel keeps running, so only Emacs's socket needs
 re-establishing and your session state survives.
 
-* Rendering notes
+* Notes
+** Rendering notes
 
-** Cell appearance
+*** Cell appearance
 
 Cells are marked out by their horizontal rules alone -- the buffer keeps
 its normal background throughout.  The one exception is a cell's
@@ -339,7 +343,7 @@ character and short lines look ragged beside long ones.
 =M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
 faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
-** Undo
+*** Undo
 
 Re-rendering erases the buffer and rebuilds it from the cell structs, so
 it is kept out of the undo history entirely -- as a recorded change it
@@ -351,7 +355,7 @@ a rebuild actually changed the text.  Undo therefore stops at the last
 render instead of corrupting the notebook.  A re-render that produces
 identical text leaves the history alone.
 
-** Cell outlines
+*** Cell outlines
 
 The rule that outlines each cell is sized by =emjupy-box-width=. The
 default, ='window=, fits it to the window, so the outline spans a wide
@@ -367,7 +371,7 @@ are untouched. When the buffer is shown in two windows at once the
 *narrower* one wins, since a rule sized for the wide window would wrap
 in the narrow one.
 
-** Markdown highlighting
+*** Markdown highlighting
 
 Markdown cells are highlighted out of the box -- headings, emphasis,
 inline code and fences, links, list markers and blockquotes -- with no
@@ -375,8 +379,7 @@ external package. =markdown-mode= and =markdown-ts-mode= are MELPA
 packages emjupy does not depend on; when one of them IS installed it is
 used in preference to the built-in approximation.
 
-
-** Inline images need a graphical Emacs
+*** Inline images need a graphical Emacs
 
 Images are only drawn when the running Emacs can actually display them
 (=display-graphic-p= *and* =image-type-available-p=). On a terminal
@@ -390,7 +393,7 @@ saying why there is no picture.
 Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
 =image/svg+xml=.
 
-*** Duplicate figures
+**** Duplicate figures
 
 A cell whose last expression is a figure receives the same picture
 twice from the kernel: once as the =execute_result= repr and again as
@@ -400,7 +403,7 @@ the =.ipynb= written back, still contain exactly what the kernel sent,
 keeping the file faithful for other clients. Set
 =emjupy-deduplicate-image-outputs= to =nil= to draw both.
 
-* Eglot commands in a notebook
+** Eglot commands in a notebook
 
 Completion and eldoc reach the language server through a hidden shadow
 buffer holding the notebook's code.  Eglot's own commands did not: they
@@ -418,7 +421,7 @@ point was in.
 The advice does nothing outside =emjupy-mode=; =M-x
 emjupy-eglot-remove-advice= takes it off entirely.
 
-* Server dashboard
+** Server dashboard
 
 =M-x emjupy-server-dashboard= (also =emjupy-notebook-list=) opens one buffer
 per server showing what it has: the kernels running on it and the
@@ -449,7 +452,7 @@ they live:
         ("localhost:9999" . "/ssh:box:/srv/nb")))
 #+end_src
 
-* Jumping to definitions
+** Jumping to definitions
 
 =M-.= works inside a notebook.  Eglot installs its xref backend in the
 buffer it manages -- the hidden shadow buffer, not the notebook -- so
@@ -460,7 +463,7 @@ cells: =M-.= on a call in one cell lands on the definition in another.
 Locations pointing anywhere else, into a library say, are left alone,
 because the real file is the right destination there.
 
-* Known limitations
+** Known limitations
 
 Multi-cursor: Works fine editing within one cell while nothing else is
 happening. multiple-cursors.el places its fake-cursor overlays on real
@@ -483,18 +486,7 @@ multi-cursor is fully safe there. That's the actual reason I'd steered
 you toward it for heavier editing earlier, now with a concrete
 mechanism behind the claim rather than just a hunch.
 
-* TODO fixes needed
+* TODO list fixes needed
 
-- [X] =undo= scrambles everything if undoing something in another cell:
-  rendering issue? :rendering:
-- [X] fix highlighting/background :rendering:
-  - [X] syntax highlighting is at cell execution, not while typing
-  - [X] wrong background color
-- [X] fix remote server eglot error, from *Messages* buffer:
-  #+BEGIN_SRC
-  eglot--current-server-or-lose: jsonrpc-error: "No current JSON-RPC connection", (jsonrpc-error-code . -32603), (jsonrpc-error-message . "No current JSON-RPC connection")
-  #+END_SRC
-- [X] add =emjupy-kill-kernel= function
-- [X] add =emjupy-notebook-list=
 - [ ] latex rendering in =markdown= cells
 - [ ] widgets with external thing?
