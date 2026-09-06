@@ -1933,10 +1933,12 @@ past the outline and across the rest of the frame."
                 (while (< (point) (overlay-end ov))
                   (when (get-text-property (point) 'emjupy-pad)
                     (setq pads (1+ pads))
-                    ;; every pad stops at the border column
+                    ;; every pad reaches the rule exactly -- not one short,
+                    ;; which combined with a faced newline used to leave the
+                    ;; band sticking out past the border
                     (should (= (plist-get (cdr (get-text-property (point) 'display))
                                           :align-to)
-                               39)))
+                               40)))
                   (forward-char 1)))
               ;; one per output line, not one per character
               (should (> pads 0)))))))))
@@ -1967,15 +1969,11 @@ newly-drawn rules."
                                          :align-to)))
                             (forward-char 1)))
                         col)))
-            (let ((emjupy-box-width 40))
-              (emjupy--refresh-box-rules t)
-              (should (= (pad-col) 39)))
-            (let ((emjupy-box-width 90))
-              (emjupy--refresh-box-rules t)
-              (should (= (pad-col) 89)))
-            (let ((emjupy-box-width 60))
-              (emjupy--refresh-box-rules t)
-              (should (= (pad-col) 59)))))))))
+            (dolist (w '(40 90 60))
+              (let ((emjupy-box-width w))
+                (emjupy--refresh-box-rules t)
+                ;; the padding tracks the width, and lands on the rule
+                (should (= (pad-col) w))))))))))
 
 (ert-deftest emjupy-test-beginning-and-end-of-cell ()
   "`C-c <up>' and `C-c <down>' go to the start and the end of the cell's
@@ -2212,6 +2210,49 @@ the dashboard."
                do (should (eq (get-text-property 0 'face (aref (cadr r) 1))
                               (emjupy--list-face kind))))
       (should-not (eq (emjupy--list-face 'notebook) (emjupy--list-face 'kernel))))))
+
+(ert-deftest emjupy-test-output-band-is-flush-with-the-rule ()
+  "The output background must end exactly where the rule does.
+
+Two things pushed it past: the padding stopped one column short of the
+rule, and the newline closing each line still carried the face, painting
+a column of its own after the padding ended.  Between them the band
+poked out beyond the right-hand border."
+  (cl-flet ((mk (type &rest kv)
+              (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" type o)
+                (while kv (puthash (pop kv) (pop kv) o))
+                o)))
+    (let ((cell (make-emjupy-cell
+                 :id (emjupy--new-cell-id) :type 'code :source "run()"
+                 :outputs (vector (mk "stream" "name" "stdout" "text" "a\nbb\n")
+                                  (mk "stream" "name" "stderr" "text" "warn\n")
+                                  (mk "error" "ename" "E" "evalue" "v"
+                                      "traceback" ["tb"]))
+                 :metadata (make-hash-table))))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (dolist (w '(40 90 60))
+            (let ((emjupy-box-width w))
+              (emjupy--refresh-box-rules t)
+              (let* ((ov (emjupy-cell-output-ov cell))
+                     (rule (1- (length (overlay-get ov 'before-string))))
+                     (pads 0))
+                (should (= rule w))
+                (save-excursion
+                  (goto-char (overlay-start ov))
+                  (while (< (point) (overlay-end ov))
+                    (when (get-text-property (point) 'emjupy-pad)
+                      (setq pads (1+ pads))
+                      ;; the padding reaches the rule exactly
+                      (should (= (plist-get (cdr (get-text-property (point) 'display))
+                                            :align-to)
+                                 rule)))
+                    ;; and nothing paints past it
+                    (when (eq (char-after) ?\n)
+                      (should-not (get-text-property (point) 'face)))
+                    (forward-char 1)))
+                (should (> pads 0))))))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

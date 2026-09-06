@@ -714,7 +714,11 @@ face."
                            piece-start (point) 'face face)
                           ;; Fill out to the border, not to the window edge.
                           (goto-char (emjupy--pad-output-lines
-                                      piece-start (point) face))))))
+                                      piece-start (point) face))
+                          ;; A newline still carrying the face paints one more
+                          ;; column after the padding ends, so the band poked
+                          ;; out past the right-hand rule by a character.
+                          (emjupy--unface-newlines piece-start (point))))))
 
         (unless (string-suffix-p "\n" (buffer-substring-no-properties (max (point-min) (- (point) 1)) (point)))
           (insert "\n"))
@@ -780,10 +784,28 @@ and it costs nothing to re-align when the window changes width."
           (insert (propertize " "
                               'emjupy-pad t
                               'face face
-                              'display `(space :align-to ,(1- width))))
+                              ;; Ends exactly where the rule does: the rule is
+                              ;; WIDTH characters, occupying columns 0..WIDTH-1,
+                              ;; and a stretch to :align-to WIDTH paints the
+                              ;; same span.
+                              'display `(space :align-to ,width)))
           (setq end (+ end 1)))
         (forward-line 1)))
     end))
+
+(defun emjupy--unface-newlines (start end)
+  "Remove the output background from the newlines between START and END.
+
+A newline carrying a background face paints a column of its own at the
+end of the line, past where the padding stops -- so the band stuck out
+one character beyond the right-hand rule."
+  (save-excursion
+    (goto-char start)
+    (while (< (point) end)
+      (end-of-line)
+      (when (and (< (point) end) (eq (char-after) ?\n))
+        (remove-text-properties (point) (1+ (point)) '(face nil)))
+      (forward-line 1))))
 
 (defun emjupy--repad-output (cell)
   "Re-align CELL's output padding after the window width changed."
@@ -796,7 +818,7 @@ and it costs nothing to re-align when the window changes width."
           (if (get-text-property (point) 'emjupy-pad)
               (progn
                 (put-text-property (point) (1+ (point))
-                                   'display `(space :align-to ,(1- width)))
+                                   'display `(space :align-to ,width))
                 (forward-char 1))
             (forward-char 1)))))))
 
