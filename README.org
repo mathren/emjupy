@@ -12,18 +12,21 @@ sharing with non-emacs users.
 
 * Features
 
-On a plain =emacs= installation, you should see something like:
+On a plain emacs installation, you should see something like:
 
-#+CAPTION: simple notebook rendering in a fresh emacs with no customization. Screenshot may be out of date.
+#+CAPTION: [[./test_notebook/test.ipynb][Simple notebook]] rendering in a fresh emacs with no customization. Screenshot may be out of date.
 #+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
 [[file:images/screenshot-default-colored.png]]
 
 This is what the same notebook looks like with =wombat= theme in my
 setup:
 
-#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme. Screenshot may be out of date.
+#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme.
 #+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
 [[file:images/screenshot-dark-colored.png]]
+
+*N.B.:* Screenshot may be out of date, for instance colored lines do not
+exceed cell border anymore.
 
 - persistent kernel session (to load large dataset once and re-use
   them)
@@ -67,7 +70,8 @@ To test this in an isolated environment without touching your current config:
 
 * Installation
 
-Clone this repo, add to =load-path=, and load it:
+Clone this repo, add to =load-path=, and load it with these lines in
+your =init.el= or similar:
 
 #+BEGIN_SRC elisp
   (add-to-list 'load-path "/path/to/emjupy")
@@ -246,7 +250,7 @@ none is found.
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
 ** TODO emjupy design
-describe shadow-buffer approach.
+# describe shadow-buffer approach.
 
 ** Key insight: use the browser's transport, not ZMQ
 
