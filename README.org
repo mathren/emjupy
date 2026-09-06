@@ -497,7 +497,7 @@ mechanism behind the claim rather than just a hunch.
 
 * TODO list fixes needed
 
-- [ ] latex rendering in =markdown= cells
+- [ ] latex rendering in =markdown= cells (optional, if needed with dependencies)
 - [ ] cleanup commands
 - [ ] use font highlight and colors to distinguish kernels, notebooks
   and other things in =emjupy-notebook-list=, group and sort with
