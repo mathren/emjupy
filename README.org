@@ -499,3 +499,6 @@ mechanism behind the claim rather than just a hunch.
 
 - [ ] latex rendering in =markdown= cells
 - [ ] cleanup commands
+- [ ] use font highlight and colors to distinguish kernels, notebooks
+  and other things in =emjupy-notebook-list=, group and sort with
+  notebooks at top
