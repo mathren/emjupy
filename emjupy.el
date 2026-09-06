@@ -51,7 +51,13 @@
 (defvar emjupy-mode-map
   (let ((map (make-sparse-keymap)))
     ;; Execution
-    (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-at-point)
+    (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-and-goto-next)
+    ;; Shift-RET runs the cell and stays put, the way a notebook front-end
+    ;; does. Bound in both spellings: a terminal Emacs reports it as
+    ;; "S-<return>" only if the terminal distinguishes it at all.
+    (define-key map (kbd "S-<return>") #'emjupy-execute-cell-at-point)
+    (define-key map (kbd "<S-return>") #'emjupy-execute-cell-at-point)
+    (define-key map (kbd "C-c C-e")    #'emjupy-execute-cell-at-point)
     (define-key map (kbd "M-RET")   #'emjupy-execute-cell-and-goto-next)
     (define-key map (kbd "C-c C-r") #'emjupy-execute-cell-and-goto-next)
 

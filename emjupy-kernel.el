@@ -84,7 +84,7 @@
           ;; on a build without image support, say) would otherwise leave the
           ;; box silently blank with nothing logged anywhere.
           (condition-case err
-              (emjupy--rerender-notebook cell)
+              (emjupy--rerender-preserving-point)
             (error
              (message "[emjupy] Failed to render cell output: %s"
                       (error-message-string err)))))))))
@@ -178,7 +178,7 @@ kernels never cross-talk."
           (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p buf)
               (with-current-buffer buf
-                (emjupy--rerender-notebook cell))))
+                (emjupy--rerender-preserving-point))))
           (message "[emjupy] %s: cell execution complete. [In: %s]"
                    (if notebook (emjupy-notebook-path notebook) "notebook")
                    count)))))))
@@ -216,10 +216,26 @@ kernels never cross-talk."
 	))))
 
 (defun emjupy-execute-cell-and-goto-next ()
-  "Execute cell at point and advance to the next cell."
+  "Execute the cell at point, then move to the start of the next cell.
+
+If this is the last cell, a new empty one is made below and point goes
+there -- so running the last cell leaves you ready to write the next
+thing rather than stranded at the bottom.
+
+Point is taken from the cell list rather than by walking the buffer: the
+executed cell may still be re-rendering as its output arrives, and
+stepping over overlays mid-flight lands in the output box."
   (interactive)
-  (emjupy-execute-cell-at-point)
-  (emjupy-next-cell))
+  (let* ((cell (emjupy--cell-at-point)))
+    (unless cell (user-error "Point is not in a cell"))
+    (emjupy-execute-cell-at-point)
+    (let* ((nb (emjupy--notebook))
+           (cells (append (emjupy-notebook-cells nb) nil))
+           (idx (cl-position cell cells))
+           (next (and idx (nth (1+ idx) cells))))
+      (if (and next (overlayp (emjupy-cell-overlay next)))
+          (goto-char (overlay-start (emjupy-cell-overlay next)))
+        (emjupy-insert-cell-below)))))
 
 
 ;; --- Kernel transport seam -------------------------------------------------

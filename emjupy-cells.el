@@ -148,6 +148,26 @@ separate entity, the output always travels with its cell automatically."
         (aset cells idx below))
       (emjupy--rerender-notebook cell))))
 
+(defun emjupy--rerender-preserving-point ()
+  "Re-render the notebook without disturbing where the user is typing.
+
+`emjupy--rerender-notebook\' erases the buffer and rebuilds it, so point
+has to be put back deliberately.  Passing the cell as its TARGET-CELL
+argument is not that: it moves point to the START of that cell.  Doing
+so from the WebSocket handler meant every arriving line of output yanked
+the cursor to the top of the executing cell -- so the cell you had just
+run appeared to steal point back, and output landing while you edited
+elsewhere threw you across the buffer mid-keystroke."
+  (let* ((cell (emjupy--cell-at-point))
+         (ov (and cell (emjupy-cell-overlay cell)))
+         (offset (and ov (- (point) (overlay-start ov)))))
+    (emjupy--rerender-notebook)
+    (when-let* ((cell cell)
+                (ov (emjupy-cell-overlay cell)))
+      (when (overlayp ov)
+        (goto-char (min (overlay-end ov)
+                        (+ (overlay-start ov) (or offset 0))))))))
+
 (defun emjupy--cell-at-point (&optional pos)
   "Return the cell containing POS (default point), or nil.
 

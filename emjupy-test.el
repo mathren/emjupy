@@ -1809,5 +1809,91 @@ cookie.  A GET carries neither."
       (ignore-errors (emjupy--http-request "GET" server "/api/status"))
       (should-not (string-match-p "_xsrf=" seen)))))
 
+(ert-deftest emjupy-test-execute-and-goto-next-lands-on-the-next-cell ()
+  "Running a cell leaves point at the START of the FOLLOWING cell."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "one"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "two"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-and-goto-next)
+         ;; the cell ran ...
+         (should (string-match-p "one" (car emjupy-test--sent)))
+         ;; ... and point is at the top of the next one, not back on c1
+         (should (eq (emjupy--cell-at-point) c2))
+         (should (= (point) (overlay-start (emjupy-cell-overlay c2))))
+         ;; nothing was added
+         (should (= (length (emjupy-notebook-cells nb)) 2)))))))
+
+(ert-deftest emjupy-test-execute-and-goto-next-makes-a-cell-at-the-end ()
+  "Running the LAST cell opens a fresh one below and goes there, rather
+than leaving point stranded at the bottom."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "only"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay cell)))
+         (emjupy-execute-cell-and-goto-next)
+         (let ((cells (emjupy-notebook-cells emjupy--buffer-notebook)))
+           (should (= (length cells) 2))
+           (should (equal (emjupy-cell-source (aref cells 1)) ""))
+           (should (eq (emjupy--cell-at-point) (aref cells 1)))
+           (should (= (point) (overlay-start (emjupy-cell-overlay (aref cells 1)))))))))))
+
+(ert-deftest emjupy-test-arriving-output-does-not-move-point ()
+  "Output arriving must not drag the cursor.
+
+Re-rendering with the executing cell as TARGET-CELL moves point to the
+START of that cell, and the WebSocket handler did exactly that -- so
+every line of output yanked the cursor to the top of the running cell,
+and output landing while you edited elsewhere threw you across the
+buffer mid-keystroke."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "one"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "two = 2"
+                               :outputs [] :metadata (make-hash-table)))
+         (oh (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" oh)
+    (puthash "name" "stdout" oh)
+    (puthash "text" "streaming\n" oh)
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        ;; the user is typing three characters into cell 2
+        (goto-char (+ 3 (overlay-start (emjupy-cell-overlay c2))))
+        ;; output arrives for cell 1
+        (emjupy--append-output-to-cell c1 oh nb)
+        ;; still in cell 2, at the same place within it
+        (should (eq (emjupy--cell-at-point) c2))
+        (should (= (- (point) (overlay-start (emjupy-cell-overlay c2))) 3))
+        ;; and the output did land
+        (should (string-match-p "streaming" (buffer-string)))))))
+
+(ert-deftest emjupy-test-execute-bindings ()
+  "C-c C-c runs and advances; Shift-RET runs and stays put."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-c"))
+              'emjupy-execute-cell-and-goto-next))
+  (should (eq (lookup-key emjupy-mode-map (kbd "S-<return>"))
+              'emjupy-execute-cell-at-point))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-e"))
+              'emjupy-execute-cell-at-point)))
+
+(ert-deftest emjupy-test-execute-in-place-does-not-advance ()
+  "Shift-RET leaves point in the cell it ran."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "one"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "two"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-at-point)
+         (should (eq (emjupy--cell-at-point) c1))
+         (should (= (length (emjupy-notebook-cells nb)) 2)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

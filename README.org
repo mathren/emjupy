@@ -1,4 +1,4 @@
-#+TITLE: Emjupy
+s#+TITLE: Emjupy
 #+author: Mathieu Renzo w/ various LLMs (Claude Sonnet, Opus, Gemini, chatGPT)
 
 #+CAPTION: Python Jupyter Notebook in Emacs.
@@ -53,16 +53,16 @@ To test this in an isolated environment without touching your current config:
 On a plain =emacs= installation, you should see something like:
 
 #+CAPTION: simple notebook rendering in a fresh emacs with no customization. Screenshot may be out of date.
-#+DOWNLOADED: screenshot @ 2026-09-06 11:03:14
-[[file:images/screenshot.png]]
+#+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
+[[file:images/screenshot-default-colored.png]]
 
 This is what the same notebook looks like with =wombat= theme in my
 setup:
 
 #+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme. Screenshot may be out of date.
-#+DOWNLOADED: screenshot @ 2026-09-06 11:07:00
-[[file:images/screenshot_dark.png]]
 
+#+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
+[[file:images/screenshot-dark-colored.png]]
 
 * Installation
 
@@ -79,7 +79,9 @@ Add to load-path this repo and load it:
 
 | Key         | Command                           | Effect                                                            |
 |-------------+-----------------------------------+-------------------------------------------------------------------|
-| =C-c C-c=     | =emjupy-execute-cell-at-point=      | Execute the cell at point, leaving point where it is              |
+| =C-c C-c=     | =emjupy-execute-cell-and-goto-next= | Execute, then go to the next cell (making one if this is the last) |
+| =S-<return>=  | =emjupy-execute-cell-at-point=      | Execute, leaving point where it is                                |
+| =C-c C-e=     | =emjupy-execute-cell-at-point=      | Same as =S-<return>=                                                |
 | =M-RET=       | =emjupy-execute-cell-and-goto-next= | Execute the cell and move to the next one                         |
 | =C-c C-r=     | =emjupy-execute-cell-and-goto-next= | Same as =M-RET=                                                     |
 | =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                      |
