@@ -15,12 +15,13 @@ sharing with non-emacs users.
   them)
 - in-line rendering of output including images
 - automatic loading of kernel from port (either local port or remote
-  provided from ssh-tunnel), and python environment (including for
-  =eglot=), and lands to the notebook list, similar to
-  =ein:notebooklist-login=
+  provided from ssh-tunnel), python environment (including for
+  =eglot=)
 - resilient to connection drops (remote kernel keeps running,
   reconnect emacs)
 - =ein=-like workflow and key bindings
+- notebook (open and available) and kernel list with =emjupy-list-*=,
+  analogous to =ein:notebooklist=
 
 * Try it with =emacs -Q=
 To test this in an isolated environment without touching your current config:
@@ -52,7 +53,8 @@ To test this in an isolated environment without touching your current config:
 On a plain =emacs= installation, you should see something like:
 
 #+CAPTION: simple notebook rendering in a fresh emacs with no customization. Screenshot may be out of date.
-[[file:.org_notes_figures/Try_it_with_=emacs_-Q=/2026-07-26_10-19-19_screenshot.png]]
+#+DOWNLOADED: screenshot @ 2026-09-06 11:03:14
+[[file:images/screenshot.png]]
 
 * Installation
 
@@ -482,4 +484,5 @@ mechanism behind the claim rather than just a hunch.
   #+END_SRC
 - [X] add =emjupy-kill-kernel= function
 - [X] add =emjupy-notebook-list=
+- [ ] latex rendering in =markdown= cells
 - [ ] widgets with external thing?
