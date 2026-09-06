@@ -13,3 +13,5 @@
 *.tar
 
 *.patch
+patches/
+__pycache__/*

@@ -1622,18 +1622,11 @@ point on moves to a new cell just below, and the rest keeps its order."
           (should (equal (emjupy-cell-source (aref cells 2)) "tail = 0"))
           (should (= (point) (overlay-start (emjupy-cell-overlay new)))))))))
 
-(ert-deftest emjupy-test-split-cell-keeps-type-and-output ()
-  "The new half is the same kind of cell; output stays with the top half
-rather than being silently discarded."
+(ert-deftest emjupy-test-split-cell-keeps-type ()
+  "The new half is the same kind of cell as the one it came from."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
                                 :source "# one\n# two"
-                                :outputs [] :metadata (make-hash-table)))
-        (oh (make-hash-table :test 'equal)))
-    (puthash "output_type" "stream" oh)
-    (puthash "name" "stdout" oh)
-    (puthash "text" "kept\n" oh)
-    (setf (emjupy-cell-outputs cell) (vector oh))
-    (setf (emjupy-cell-exec-count cell) 7)
+                                :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
@@ -1641,10 +1634,10 @@ rather than being silently discarded."
         (beginning-of-line)
         (emjupy-split-cell)
         (let ((cells (emjupy-notebook-cells nb)))
+          (should (eq (emjupy-cell-type (aref cells 0)) 'markdown))
           (should (eq (emjupy-cell-type (aref cells 1)) 'markdown))
-          (should (= (length (emjupy-cell-outputs (aref cells 0))) 1))
-          (should (= (emjupy-cell-exec-count (aref cells 0)) 7))
-          (should (= (length (emjupy-cell-outputs (aref cells 1))) 0)))))))
+          (should (equal (emjupy-cell-source (aref cells 0)) "# one\n"))
+          (should (equal (emjupy-cell-source (aref cells 1)) "# two")))))))
 
 (ert-deftest emjupy-test-merge-cell-above-joins-and-clears-output ()
   "Merging joins the two sources with a newline and discards the output of
@@ -2001,9 +1994,224 @@ closing newline and would land point on the next line."
         ;; still inside the cell, not on the line after it
         (should (eq (emjupy--cell-at-point) cell))))))
 
-(ert-deftest emjupy-test-cell-navigation-bindings ()
-  (should (eq (lookup-key emjupy-mode-map (kbd "C-c <up>")) 'emjupy-beginning-of-cell))
-  (should (eq (lookup-key emjupy-mode-map (kbd "C-c <down>")) 'emjupy-end-of-cell)))
+(ert-deftest emjupy-test-split-clears-output-of-both-halves ()
+  "Splitting discards the output of BOTH halves.  Neither has been run as
+it now stands, so keeping the results would attribute them to source
+that never produced them."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "a = 1\nb = 2" :outputs []
+                                :metadata (make-hash-table)))
+        (oh (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" oh)
+    (puthash "name" "stdout" oh)
+    (puthash "text" "stale\n" oh)
+    (setf (emjupy-cell-outputs cell) (vector oh))
+    (setf (emjupy-cell-exec-count cell) 4)
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (should (search-forward "b = 2" nil t))
+        (beginning-of-line)
+        (emjupy-split-cell)
+        (let ((cells (emjupy-notebook-cells nb)))
+          (should (= (length cells) 2))
+          (dotimes (i 2)
+            (should (= (length (emjupy-cell-outputs (aref cells i))) 0))
+            (should-not (emjupy-cell-exec-count (aref cells i)))
+            (should-not (emjupy-cell-output-ov (aref cells i))))
+          (should-not (string-match-p "stale" (buffer-string))))))))
+
+(ert-deftest emjupy-test-copy-cell-strips-output ()
+  "Copying takes the type and the source only.  A cell\='s output belongs to
+the run that produced it."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                                :source "# heading" :outputs []
+                                :metadata (make-hash-table)))
+        (oh (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" oh)
+    (puthash "name" "stdout" oh)
+    (puthash "text" "not copied\n" oh)
+    (setf (emjupy-cell-outputs cell) (vector oh))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((emjupy--cell-clipboard nil))
+          (emjupy-copy-cell)
+          (should (equal (car emjupy--cell-clipboard) 'markdown))
+          (should (equal (cdr emjupy--cell-clipboard) "# heading"))
+          ;; and the source is on the kill ring for use elsewhere
+          (should (equal (current-kill 0) "# heading")))))))
+
+(ert-deftest emjupy-test-yank-cell-inserts-below-without-output ()
+  "Yanking puts the copy below the cell at point, unrun."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "first"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "second"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((emjupy--cell-clipboard '(markdown . "# pasted")))
+          (goto-char (overlay-start (emjupy-cell-overlay c1)))
+          (let ((new (emjupy-yank-cell))
+                (cells (emjupy-notebook-cells nb)))
+            (should (= (length cells) 3))
+            ;; inserted directly below the cell point was in
+            (should (eq (aref cells 0) c1))
+            (should (eq (aref cells 1) new))
+            (should (eq (aref cells 2) c2))
+            (should (eq (emjupy-cell-type new) 'markdown))
+            (should (equal (emjupy-cell-source new) "# pasted"))
+            (should (= (length (emjupy-cell-outputs new)) 0))
+            (should-not (emjupy-cell-exec-count new))))))))
+
+(ert-deftest emjupy-test-yank-without-a-copy-says-so ()
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((emjupy--cell-clipboard nil))
+          (should-error (emjupy-yank-cell) :type 'user-error))))))
+
+(ert-deftest emjupy-test-keybindings-have-no-duplicates ()
+  "Each command is reachable by one key, so `C-h m\' is not a wall of
+synonyms.  The prefix keys are the exception: they carry sub-bindings."
+  (let ((by-command (make-hash-table :test 'eq))
+        (dupes nil))
+    (map-keymap
+     (lambda (_event def)
+       (when (and (symbolp def) (fboundp def))
+         (puthash def (1+ (gethash def by-command 0)) by-command)))
+     emjupy-mode-map)
+    (maphash (lambda (cmd n)
+               ;; execute-at-point is bound to Shift-RET in two spellings on
+               ;; purpose: terminals disagree about which one they send.
+               (when (and (> n 1) (not (eq cmd 'emjupy-execute-cell-at-point)))
+                 (push (cons cmd n) dupes)))
+             by-command)
+    (should-not dupes)))
+
+(ert-deftest emjupy-test-cell-bindings ()
+  "The bindings this release settled on."
+  (dolist (pair '(("C-c <up>"    . emjupy-move-cell-up)
+                 ("C-c <down>"  . emjupy-move-cell-down)
+                 ("C-c <prior>" . emjupy-beginning-of-cell)
+                 ("C-c <next>"  . emjupy-end-of-cell)
+                 ("C-c w"       . emjupy-copy-cell)
+                 ("C-c y"       . emjupy-yank-cell)
+                 ("C-c s"       . emjupy-split-cell)
+                 ("C-c m"       . emjupy-merge-cell-above)))
+    (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair))))
+  ;; and the retired duplicates really are gone
+  (dolist (key '("M-RET" "C-c C-r" "M-<up>" "M-<down>" "M-n" "M-p" "C-c C-s"))
+    (should-not (lookup-key emjupy-mode-map (kbd key)))))
+
+(ert-deftest emjupy-test-latex-fragments-found ()
+  "All four delimiter styles are recognised, and `$$\' is matched before
+`$\' or a display block reads as two empty inline ones."
+  (with-temp-buffer
+    (insert "Inline $x^2$ then $$e^{i\\pi}+1=0$$ then \\(a+b\\) then \\[c=d\\] end")
+    (let ((frags (emjupy--latex-fragments (point-min) (point-max))))
+      (should (= (length frags) 4))
+      (should (equal (mapcar (lambda (f) (nth 2 f)) frags)
+                     '("x^2" "e^{i\\pi}+1=0" "a+b" "c=d")))
+      ;; the span covers the delimiters, so an overlay replaces the whole thing
+      (should (equal (buffer-substring-no-properties (nth 0 (car frags))
+                                                     (nth 1 (car frags)))
+                     "$x^2$")))))
+
+(ert-deftest emjupy-test-latex-preview-is-opt-in-and-markdown-only ()
+  "Previews are off unless asked for, and never touch code cells: a `$\'
+in a string is not a formula."
+  (should-not emjupy-render-latex)
+  (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () 'org))
+            ((symbol-function 'emjupy--latex-image)
+             (lambda (_b) (list 'image :type 'png))))
+    (let* ((md (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                                 :source "see $x^2$ here" :outputs []
+                                 :metadata (make-hash-table)))
+           (code (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                   :source "cost = 5 # $x$" :outputs []
+                                   :metadata (make-hash-table))))
+      (emjupy-test--with-notebook (vector md code) buf nb
+        (with-current-buffer buf
+          (cl-flet ((latex-overlays ()
+                      (seq-filter (lambda (o) (overlay-get o 'emjupy-latex))
+                                  (overlays-in (point-min) (point-max)))))
+            ;; off by default
+            (let ((emjupy-render-latex nil))
+              (emjupy--rerender-notebook)
+              (should (= (length (latex-overlays)) 0)))
+            ;; on: exactly one, over the markdown cell's formula
+            (let ((emjupy-render-latex t))
+              (emjupy--rerender-notebook)
+              (let ((ovs (latex-overlays)))
+                (should (= (length ovs) 1))
+                (should (equal (buffer-substring-no-properties
+                                (overlay-start (car ovs)) (overlay-end (car ovs)))
+                               "$x^2$"))
+                ;; the LaTeX is still the buffer text underneath
+                (should (string-match-p (regexp-quote "$x^2$") (buffer-string)))
+                (should (equal (overlay-get (car ovs) 'help-echo) "x^2"))))))))))
+
+(ert-deftest emjupy-test-latex-backend-detection ()
+  "`auto\' prefers org, which needs no Emacs package beyond what ships
+with Emacs; math-preview is the fallback."
+  (cl-letf (((symbol-function 'executable-find)
+             (lambda (p) (member p '("latex" "math-preview")))))
+    (let ((emjupy-latex-backend 'auto))
+      (should (eq (emjupy--latex-available-p) 'org))))
+  (cl-letf (((symbol-function 'executable-find)
+             (lambda (p) (equal p "math-preview"))))
+    (let ((emjupy-latex-backend 'auto))
+      (should (eq (emjupy--latex-available-p) 'math-preview))))
+  (cl-letf (((symbol-function 'executable-find) (lambda (_p) nil)))
+    (let ((emjupy-latex-backend 'auto))
+      (should-not (emjupy--latex-available-p)))))
+
+(ert-deftest emjupy-test-dashboard-groups-notebooks-above-kernels ()
+  "Rows are grouped, not interleaved: directories, notebooks, files, then
+kernels -- notebooks above kernels because opening one is the point of
+the dashboard."
+  (cl-letf (((symbol-function 'emjupy--http-request)
+             (lambda (_m _s path &rest _)
+               (if (string-match-p "kernels" path)
+                   (vector (let ((k (make-hash-table :test 'equal)))
+                             (puthash "id" "abcdef123456" k)
+                             (puthash "name" "python3" k)
+                             (puthash "connections" 1 k) k))
+                 (let ((c (make-hash-table :test 'equal)))
+                   (puthash "content"
+                            (vector (let ((i (make-hash-table :test 'equal)))
+                                      (puthash "type" "notebook" i)
+                                      (puthash "name" "zeta.ipynb" i)
+                                      (puthash "path" "zeta.ipynb" i) i)
+                                    (let ((i (make-hash-table :test 'equal)))
+                                      (puthash "type" "directory" i)
+                                      (puthash "name" "adir" i)
+                                      (puthash "path" "adir" i) i)
+                                    (let ((i (make-hash-table :test 'equal)))
+                                      (puthash "type" "notebook" i)
+                                      (puthash "name" "alpha.ipynb" i)
+                                      (puthash "path" "alpha.ipynb" i) i)
+                                    (let ((i (make-hash-table :test 'equal)))
+                                      (puthash "type" "file" i)
+                                      (puthash "name" "notes.txt" i)
+                                      (puthash "path" "notes.txt" i) i))
+                            c)
+                   c)))))
+    (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+           (rows (emjupy--list-entries server ""))
+           (kinds (mapcar (lambda (r) (plist-get (car r) :kind)) rows))
+           (names (mapcar (lambda (r) (substring-no-properties (aref (cadr r) 1))) rows)))
+      (should (equal kinds '(directory notebook notebook file kernel)))
+      ;; sorted within each group
+      (should (equal names '("adir" "alpha.ipynb" "zeta.ipynb" "notes.txt" "python3")))
+      ;; and each kind is faced distinctly
+      (cl-loop for r in rows
+               for kind in kinds
+               do (should (eq (get-text-property 0 'face (aref (cadr r) 1))
+                              (emjupy--list-face kind))))
+      (should-not (eq (emjupy--list-face 'notebook) (emjupy--list-face 'kernel))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

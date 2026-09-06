@@ -299,36 +299,90 @@ nil disables `d\'."
    ((consp emjupy-remote-root)
     (cdr (assoc (emjupy--server-label server) emjupy-remote-root)))))
 
+(defface emjupy-list-notebook
+  '((t :inherit font-lock-function-name-face :weight bold))
+  "Face for notebook rows in the server dashboard.
+Bold, because notebooks are what the dashboard is for -- everything else
+on it is context."
+  :group 'emjupy)
+
+(defface emjupy-list-directory
+  '((t :inherit font-lock-keyword-face))
+  "Face for directory rows in the server dashboard."
+  :group 'emjupy)
+
+(defface emjupy-list-kernel
+  '((t :inherit font-lock-warning-face :weight normal))
+  "Face for kernel rows in the server dashboard.
+Deliberately light: a kernel is a running process to keep an eye on, not
+something to open, and it should not compete with the notebooks above."
+  :group 'emjupy)
+
+(defface emjupy-list-file
+  '((t :inherit shadow))
+  "Face for non-notebook file rows in the server dashboard."
+  :group 'emjupy)
+
+(defun emjupy--list-face (kind)
+  "Return the face for a dashboard row of KIND."
+  (pcase kind
+    ('notebook 'emjupy-list-notebook)
+    ((or 'directory 'up) 'emjupy-list-directory)
+    ('kernel 'emjupy-list-kernel)
+    (_ 'emjupy-list-file)))
+
+(defun emjupy--list-row (kind label name info)
+  "Build a dashboard row of KIND, propertized so it reads at a glance."
+  (let ((face (emjupy--list-face kind)))
+    (vector (propertize label 'face face)
+            (propertize name 'face face)
+            (propertize info 'face (if (eq kind 'kernel)
+                                       'emjupy-list-kernel
+                                     'shadow)))))
+
 (defun emjupy--list-entries (server path)
-  "Return `tabulated-list-entries\' for PATH on SERVER."
+  "Return `tabulated-list-entries\' for PATH on SERVER.
+
+Grouped rather than interleaved, and sorted within each group:
+directories, then notebooks, then other files, then the kernels running
+on the server.  Notebooks sit above kernels because opening one is what
+the dashboard is for; the kernels are context."
   (let* ((contents (emjupy--http-request
                     "GET" server (concat "/api/contents/" path)))
          (items (and contents (gethash "content" contents)))
          (kernels (ignore-errors
                     (emjupy--http-request "GET" server "/api/kernels")))
-         (rows nil))
-    (cl-loop for k across (or kernels [])
-             do (push (list (list :kind 'kernel :id (gethash "id" k))
-                            (vector "kernel"
-                                    (or (gethash "name" k) "?")
-                                    (format "%s  (%s connection%s)"
-                                            (substring (or (gethash "id" k) "") 0 8)
-                                            (or (gethash "connections" k) 0)
-                                            (if (eql (gethash "connections" k) 1) "" "s"))))
-                      rows))
-    (unless (string-empty-p path)
-      (push (list (list :kind 'up)
-                  (vector "dir" ".." ""))
-            rows))
+         (dirs nil) (notebooks nil) (files nil) (kernel-rows nil))
     (cl-loop for item across (or items [])
              for type = (gethash "type" item)
              for name = (gethash "name" item)
              for ipath = (gethash "path" item)
-             do (push (list (list :kind (intern type) :path ipath)
-                            (vector type name
-                                    (or (gethash "last_modified" item) "")))
-                      rows))
-    (nreverse rows)))
+             for row = (list (list :kind (intern type) :path ipath)
+                             (emjupy--list-row (intern type) type name
+                                               (or (gethash "last_modified" item) "")))
+             do (pcase type
+                  ("directory" (push row dirs))
+                  ("notebook" (push row notebooks))
+                  (_ (push row files))))
+    (cl-loop for k across (or kernels [])
+             do (push (list (list :kind 'kernel :id (gethash "id" k))
+                            (emjupy--list-row
+                             'kernel "kernel" (or (gethash "name" k) "?")
+                             (format "%s  (%s connection%s)"
+                                     (substring (or (gethash "id" k) "") 0 8)
+                                     (or (gethash "connections" k) 0)
+                                     (if (eql (gethash "connections" k) 1) "" "s"))))
+                      kernel-rows))
+    (cl-flet ((by-name (rows)
+                (sort rows (lambda (a b)
+                             (string-lessp (aref (cadr a) 1) (aref (cadr b) 1))))))
+      (append
+       (unless (string-empty-p path)
+         (list (list (list :kind 'up) (emjupy--list-row 'up "dir" ".." ""))))
+       (by-name dirs)
+       (by-name notebooks)
+       (by-name files)
+       (by-name kernel-rows)))))
 
 (defun emjupy-list-refresh ()
   "Re-fetch this dashboard from the server."

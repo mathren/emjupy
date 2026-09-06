@@ -194,10 +194,9 @@ by property.  Overlays move with insertions, so they always know."
 Text before point stays in this cell; text from point on moves to a new
 cell of the same type just below, and point follows it there.
 
-Any output stays with the top half, and its execution count with it.
-Neither half has been run as it now stands, so the output no longer
-matches the code above it -- but discarding results the user did not ask
-to discard is worse, and they are one \[emjupy-clear-cell-output] away."
+The output of BOTH halves is discarded, along with the execution count.
+Neither half has been run as it now stands, so keeping the results would
+attribute them to source that never produced them."
   (interactive)
   (emjupy--sync-all-cells)
   (let* ((nb (emjupy--notebook))
@@ -218,6 +217,9 @@ to discard is worse, and they are one \[emjupy-clear-cell-output] away."
            (cells (append (emjupy-notebook-cells nb) nil))
            (idx (cl-position cell cells)))
       (setf (emjupy-cell-source cell) (substring source 0 offset))
+      ;; Neither half produced what is on screen any more.
+      (setf (emjupy-cell-outputs cell) [])
+      (setf (emjupy-cell-exec-count cell) nil)
       (setf (emjupy-notebook-cells nb)
             (vconcat (append (cl-subseq cells 0 (1+ idx))
                              (list new-cell)
@@ -295,6 +297,56 @@ reverse, would silently reinterpret one of them."
     (setf (emjupy-cell-type cell)
           (if (eq (emjupy-cell-type cell) 'code) 'markdown 'code))
     (emjupy--rerender-notebook cell)))
+
+(defvar emjupy--cell-clipboard nil
+  "The cell most recently copied, as a (TYPE . SOURCE) pair.
+
+Type and source only.  A cell's output belongs to the run that produced
+it, so carrying it to a copy would attribute results to code that never
+generated them.")
+
+(defun emjupy-copy-cell ()
+  "Copy the cell at point.  Its output is not copied.
+
+The source also goes to the kill ring, so it can be yanked as ordinary
+text anywhere else."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let ((cell (emjupy--cell-at-point)))
+    (unless cell (user-error "Point is not in a cell"))
+    (let ((source (or (emjupy-cell-source cell) "")))
+      (setq emjupy--cell-clipboard (cons (emjupy-cell-type cell) source))
+      (kill-new source)
+      (message "[emjupy] Copied %s cell (%d chars); output not copied."
+               (emjupy-cell-type cell) (length source))
+      emjupy--cell-clipboard)))
+
+(defun emjupy-yank-cell ()
+  "Insert the most recently copied cell below the cell at point.
+
+The new cell has no output and no execution count: it has not been run."
+  (interactive)
+  (unless emjupy--cell-clipboard
+    (user-error "No cell has been copied yet"))
+  (emjupy--sync-all-cells)
+  (let* ((nb (emjupy--notebook))
+         (cell (emjupy--cell-at-point))
+         (cells (append (emjupy-notebook-cells nb) nil))
+         (idx (and cell (cl-position cell cells)))
+         (new-cell (make-emjupy-cell
+                    :id (emjupy--new-cell-id)
+                    :type (car emjupy--cell-clipboard)
+                    :source (cdr emjupy--cell-clipboard)
+                    :outputs []
+                    :metadata (make-hash-table :test 'equal))))
+    (setf (emjupy-notebook-cells nb)
+          (vconcat (if idx
+                       (append (cl-subseq cells 0 (1+ idx))
+                               (list new-cell)
+                               (cl-subseq cells (1+ idx)))
+                     (append cells (list new-cell)))))
+    (emjupy--rerender-notebook new-cell)
+    new-cell))
 
 (defun emjupy-beginning-of-cell ()
   "Move point to the start of the cell at point."

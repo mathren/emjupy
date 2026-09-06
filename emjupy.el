@@ -58,8 +58,6 @@
     (define-key map (kbd "S-<return>") #'emjupy-execute-cell-at-point)
     (define-key map (kbd "<S-return>") #'emjupy-execute-cell-at-point)
     (define-key map (kbd "C-c C-e")    #'emjupy-execute-cell-at-point)
-    (define-key map (kbd "M-RET")   #'emjupy-execute-cell-and-goto-next)
-    (define-key map (kbd "C-c C-r") #'emjupy-execute-cell-and-goto-next)
 
     ;; Cell Operations (EIN style)
     (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
@@ -68,10 +66,10 @@
     (define-key map (kbd "C-c s")   #'emjupy-split-cell)
     (define-key map (kbd "C-c m")   #'emjupy-merge-cell-above)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
-    (define-key map (kbd "C-c <up>")   #'emjupy-beginning-of-cell)
-    (define-key map (kbd "C-c <down>") #'emjupy-end-of-cell)
-    (define-key map (kbd "M-<up>")   #'emjupy-move-cell-up)
-    (define-key map (kbd "M-<down>") #'emjupy-move-cell-down)
+    (define-key map (kbd "C-c w")   #'emjupy-copy-cell)
+    (define-key map (kbd "C-c y")   #'emjupy-yank-cell)
+    (define-key map (kbd "C-c <up>")   #'emjupy-move-cell-up)
+    (define-key map (kbd "C-c <down>") #'emjupy-move-cell-down)
     (define-key map (kbd "C-c '")    #'emjupy-edit-cell-externally)
 
     ;; Kernel
@@ -85,13 +83,12 @@
 
     ;; Navigation
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
-    (define-key map (kbd "M-n")     #'emjupy-next-cell)
     (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
-    (define-key map (kbd "M-p")     #'emjupy-previous-cell)
+    (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
+    (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
 
     ;; Persistence & Server/Kernel Connection
     (define-key map (kbd "C-x C-s") #'emjupy-save-notebook)
-    (define-key map (kbd "C-c C-s") #'emjupy-save-notebook)
     (define-key map (kbd "C-c C-z") #'emjupy-connect-kernel-interactive)
     map)
   "Keymap for `emjupy-mode'.")

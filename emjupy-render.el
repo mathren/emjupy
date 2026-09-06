@@ -396,6 +396,147 @@ instead of trailing off into a bare horizontal line."
     ("`[^`\n]+`" 0 font-lock-constant-face))
   "Regexp rules for `emjupy--markdown-fontify-fallback'.")
 
+
+;; --- LaTeX preview in markdown cells ---------------------------------------
+;; Off by default.  When on, math between the usual delimiters is replaced ON
+;; SCREEN by a rendered image: the overlay carries a `display' property, so the
+;; buffer text stays the LaTeX the user wrote and the cell saves unchanged.
+;;
+;; org ships with Emacs and already knows how to turn a formula into an image,
+;; so this needs a LaTeX install but NO extra Emacs package -- which is the
+;; whole reason not to reach for math-preview, which additionally wants nodejs
+;; and npm.  math-preview is still used if it is what you have.
+
+;; Compile-time only: nothing loads org until a preview is actually asked for.
+(eval-when-compile (require 'org))
+(declare-function org-create-formula-image "org")
+(defvar org-format-latex-options)
+(defvar org-format-latex-header)
+(defvar org-latex-default-packages-alist)
+(defvar org-latex-packages-alist)
+
+(defcustom emjupy-render-latex nil
+  "When non-nil, show math in markdown cells as rendered images.
+
+Needs a working LaTeX installation (`latex' plus `dvipng'), or
+`math-preview' on PATH.  Nothing else: the rendering itself is done by
+org, which comes with Emacs."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-latex-backend 'auto
+  "How a LaTeX fragment is turned into an image.
+
+`auto' prefers org's built-in preview, since it needs no Emacs package
+beyond what ships with Emacs, and falls back to `math-preview'."
+  :type '(choice (const :tag "Whatever is available" auto)
+                 (const :tag "org's built-in preview" org)
+                 (const :tag "math-preview" math-preview))
+  :group 'emjupy)
+
+(defcustom emjupy-latex-scale 1.0
+  "Scale factor for rendered math images."
+  :type 'float
+  :group 'emjupy)
+
+(defconst emjupy--latex-delimiters
+  '(("\\\\\\[" . "\\\\\\]")
+    ("\\$\\$"  . "\\$\\$")
+    ("\\\\("   . "\\\\)")
+    ("\\$"     . "\\$"))
+  "Opening/closing math delimiter regexps, longest first.
+`$$' has to be tried before `$', or a display block reads as two empty
+inline ones.")
+
+(defun emjupy--latex-fragments (start end)
+  "Return math fragments between START and END as (BEG END BODY) triples.
+BEG and END span the delimiters too, so an overlay across them replaces
+the whole fragment with its image."
+  (let ((found nil))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (let ((hit nil)
+              (here (point)))
+          (cl-loop for (open . close) in emjupy--latex-delimiters
+                   until hit
+                   do (when (looking-at open)
+                        (let ((body-start (match-end 0)))
+                          (save-excursion
+                            (goto-char body-start)
+                            (when (re-search-forward close end t)
+                              (setq hit (list here (point)
+                                              (buffer-substring-no-properties
+                                               body-start (match-beginning 0)))))))))
+          (if hit
+              (progn (push hit found) (goto-char (nth 1 hit)))
+            (forward-char 1)))))
+    (nreverse found)))
+
+(defun emjupy--latex-available-p ()
+  "Return the backend that can actually render math here, or nil."
+  (pcase emjupy-latex-backend
+    ('math-preview (and (executable-find "math-preview") 'math-preview))
+    ('org (and (executable-find "latex") 'org))
+    (_ (cond ((executable-find "latex") 'org)
+             ((executable-find "math-preview") 'math-preview)
+             (t nil)))))
+
+(defun emjupy--latex-image (body)
+  "Render BODY, a LaTeX math string, to an image spec, or nil."
+  (when (and (eq (emjupy--latex-available-p) 'org)
+             (require 'org nil 'noerror))
+    (let* ((dir (expand-file-name "emjupy-latex/" temporary-file-directory))
+           (file (expand-file-name
+                  (concat (md5 (format "%s-%s" body emjupy-latex-scale)) ".png") dir))
+           ;; Deliberately NOT org's full preamble.  That pulls in packages a
+           ;; minimal TeX install does not have -- ulem, for one -- and then
+           ;; every formula fails for want of something no formula needs.
+           (org-latex-default-packages-alist '(("" "amsmath" t) ("" "amssymb" t)))
+           (org-latex-packages-alist nil)
+           (org-format-latex-header
+            (concat "\\documentclass{article}\n"
+                    "\\usepackage[usenames]{color}\n"
+                    "[PACKAGES]\n[DEFAULT-PACKAGES]\n"
+                    "\\pagestyle{empty}"))
+           (opts (copy-sequence org-format-latex-options)))
+      (setq opts (plist-put opts :scale emjupy-latex-scale))
+      (make-directory dir t)
+      (condition-case err
+          (progn
+            ;; Cached by content hash: dragging a slider over a notebook full
+            ;; of formulae should not re-run LaTeX for each redraw.
+            (unless (file-exists-p file)
+              (org-create-formula-image body file opts nil 'dvipng))
+            (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
+              (create-image file 'png nil :ascent 'center)))
+        (error
+         (message "[emjupy] LaTeX preview failed: %s" (error-message-string err))
+         nil)))))
+
+(defun emjupy--preview-latex-in (start end)
+  "Lay rendered images over the math between START and END."
+  (when (and emjupy-render-latex (emjupy--latex-available-p))
+    (dolist (frag (emjupy--latex-fragments start end))
+      (pcase-let ((`(,beg ,fin ,body) frag))
+        (unless (string-empty-p (string-trim (or body "")))
+          (when-let ((image (emjupy--latex-image body)))
+            (let ((ov (make-overlay beg fin)))
+              (overlay-put ov 'display image)
+              (overlay-put ov 'emjupy-latex t)
+              (overlay-put ov 'evaporate t)
+              ;; The source is still there underneath; show it on hover.
+              (overlay-put ov 'help-echo body))))))))
+
+(defun emjupy-toggle-latex-preview ()
+  "Turn LaTeX previews in markdown cells on or off, and redraw."
+  (interactive)
+  (setq emjupy-render-latex (not emjupy-render-latex))
+  (when (and emjupy-render-latex (not (emjupy--latex-available-p)))
+    (message "[emjupy] No LaTeX renderer found: install latex and dvipng, or math-preview."))
+  (when emjupy--buffer-notebook (emjupy--rerender-notebook))
+  (message "[emjupy] LaTeX preview %s." (if emjupy-render-latex "on" "off")))
+
 (defun emjupy--markdown-fontify-fallback ()
   "Apply markdown faces to the current buffer without any external package.
 
@@ -519,6 +660,11 @@ face."
     (unless (string-suffix-p "\n" source) (insert "\n"))
 
     (put-text-property src-start (point) 'emjupy-cell cell)
+
+    ;; Markdown only: code cells have no math, and a stray `$' in a string
+    ;; should not turn into a formula.
+    (when (eq type 'markdown)
+      (emjupy--preview-latex-in src-start (point)))
 
     ;; 2. Source Box Overlay
     (let* ((ov (make-overlay src-start (point)))

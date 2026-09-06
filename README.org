@@ -80,42 +80,45 @@ your =init.el= or similar:
   (require 'emjupy)
 #+END_SRC
 
-Alternatively, use =install-package-file= giving it the tarball.
+Alternatively, use =install-package-file= giving it the tarball created
+by github actions.
 
 * Keybindings
 
-** TODO  =emjupy-mode= (notebook buffers)
+** =emjupy-mode= (notebook buffers)
 
 | Key         | Command                           | Effect                                                             |
 |-------------+-----------------------------------+--------------------------------------------------------------------|
 | =C-c C-c=     | =emjupy-execute-cell-and-goto-next= | Execute, then go to the next cell (making one if this is the last) |
 | =S-<return>=  | =emjupy-execute-cell-at-point=      | Execute, leaving point where it is                                 |
-| remove =C-c C-e= | =emjupy-execute-cell-at-point=      | Same as =S-<return>=                                                 |
-| =remove M-RET=      | =emjupy-execute-cell-and-goto-next= | Execute the cell and move to the next one                          |
-| remove =C-c C-r=    | =emjupy-execute-cell-and-goto-next= | Same as =M-RET=                                                      |
-|  =C-c C-a=    | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                       |
-|  =C-c C-b=    | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
+| =C-c C-e=     | =emjupy-execute-cell-at-point=      | Same as =S-<return>=, for terminals that cannot send it              |
+| =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                       |
+| =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                           |
-| =C-c s=       | =emjupy-split-cell=                 | Split the cell at point in two                                     |
+| =C-c s=       | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
 | =C-c m=       | =emjupy-merge-cell-above=           | Merge this cell into the one above (clears both outputs)           |
+| =C-c w=       | =emjupy-copy-cell=                  | Copy the cell, without its output                                  |
+| =C-c y=       | =emjupy-yank-cell=                  | Insert the copied cell below, unrun                                |
 | =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                          |
-| =C-c <up>=    | =emjupy-beginning-of-cell=          | Go to the start of this cell                                       |
-| =C-c <down>=  | =emjupy-end-of-cell=                | Go to the end of this cell's source                                |
-| =edit M-<up>= | =emjupy-move-cell-up=               | Move the cell one position earlier                                 |
-| edit =M-<down>= | =emjupy-move-cell-down=             | Move the cell one position later                                   |
-| =C-c '=       | =emjupy-edit-cell-externally=       | Edit the cell in the shadow buffer in a real major mode            |
+| =C-c <up>=    | =emjupy-move-cell-up=               | Move the cell, and its output, one position earlier                |
+| =C-c <down>=  | =emjupy-move-cell-down=             | Move the cell, and its output, one position later                  |
+| =C-c <prior>= | =emjupy-beginning-of-cell=          | Go to the start of this cell                                       |
+| =C-c <next>=  | =emjupy-end-of-cell=                | Go to the end of this cell's source                                |
 | =C-c C-n=     | =emjupy-next-cell=                  | Move point to the next cell                                        |
-| remove =M-n=  | =emjupy-next-cell=                  | Same as =C-c C-n=                                                    |
 | =C-c C-p=     | =emjupy-previous-cell=              | Move point to the previous cell                                    |
-| =remove M-p=  | =emjupy-previous-cell=              | Same as =C-c C-p=                                                    |
+| =C-c '=       | =emjupy-edit-cell-externally=       | Edit the cell in the shadow buffer in a real major mode            |
 | =C-x C-s=     | =emjupy-save-notebook=              | Write the notebook back to the server as nbformat v4               |
-| =remove C-c C-s= | =emjupy-save-notebook=              | Same as =C-x C-s=                                                    |
 | =C-c C-z=     | =emjupy-connect-kernel-interactive= | Pick a running kernel or spawn one, for this notebook only         |
 | =C-c C-x C-r= | =emjupy-restart-kernel=             | Restart this notebook's kernel; other notebooks are untouched      |
 | =C-c C-x C-c= | =emjupy-reconnect-kernel=           | Reopen the socket to the same kernel after a drop; state survives  |
 | =C-c C-x b=   | =emjupy-switch-notebook=            | Switch to another open notebook, labelled by server                |
 | =C-c C-x s=   | =emjupy-status=                     | List every open notebook with its server and kernel                |
 | =C-c C-x l=   | =emjupy-login=                      | Log in to another server (another ssh tunnel)                      |
+
+Each command has exactly one binding, so =C-h m= is a list of what emjupy
+does rather than a wall of synonyms.  The one exception is Shift-RET,
+registered in both spellings because terminals disagree about which they
+send.
 
 ** =emjupy-shadow-edit-mode= (the =C-c '= buffer)
 
@@ -251,8 +254,56 @@ none is found.
 | =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
-** TODO emjupy design
-# describe shadow-buffer approach.
+** emjupy design
+
+*** The shadow buffer
+
+A notebook is not valid Python, but rather a JSON containing blocks.
+There are *n* python fragments with prose between them, and a name
+defined in cell 3 is used in cell 7. A language server handed one cell
+at a time would see seven unrelated files and resolve nothing across
+them.
+
+So emjupy keeps a hidden *shadow buffer*: one ordinary Python file
+holding every code cell concatenated, each preceded by a marker comment
+naming its cell.  Eglot attaches to that file and sees exactly what it
+expects -- one module, in order, with all the definitions in it.
+
+Everything that needs the server is delegated there, at the matching
+position:
+
+- completion and eldoc, through
+  =completion-at-point-functions= and =eldoc-documentation-functions=;
+- =M-.= and friends, through an xref backend that forwards to Eglot's own
+  and maps the answers back onto cells;
+- =eglot-rename= and the other Eglot commands, advised to run in the
+  shadow buffer and pull their edits back.
+
+Because the shadow buffer holds every cell at once, this is not merely a
+workaround: a rename fixes references in *all* cells, and =M-.= on a call
+in one cell lands on the definition in another.
+
+
+The shadow file lives in a temporary directory by default.  When the
+kernel is on another machine, point =emjupy-shadow-directory= at it and
+Eglot starts the server there over TRAMP, so the completions come from
+the environment the code actually runs in.
+
+*** Mapping positions
+
+Point in a cell maps to a position in the shadow buffer by finding
+that cell's marker and adding the offset within the cell; results
+coming back map the other way. Everything the server returns is in
+shadow-file coordinates, so =xref= results are rewritten into buffer
+positions in the notebook - with locations pointing anywhere *else*,
+into a library say, left alone, because the real file is the right
+destination.
+
+*** Why a hidden buffer rather than =polymode=
+
+The shadow buffer is never displayed, it only exists so that a
+language server has a well-formed document to read. It can be open
+with =C-c '= for multi-cell editing.
 
 ** Key insight: use the browser's transport, not ZMQ
 
@@ -409,7 +460,38 @@ are untouched. When the buffer is shown in two windows at once the
 *narrower* one wins, since a rule sized for the wide window would wrap
 in the narrow one.
 
-*** Markdown highlighting
+*** LaTeX in markdown cells
+
+Off by default.  Turn it on with =M-x emjupy-toggle-latex-preview=, or:
+
+#+begin_src elisp
+(setq emjupy-render-latex t)
+#+end_src
+
+Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then replaced
+*on screen* by a rendered image.  The buffer text is untouched -- the
+image is an overlay -- so the cell still holds, and saves, the LaTeX you
+wrote, and hovering shows the source.
+
+The rendering is done by org, which ships with Emacs, so the only
+requirement is a LaTeX installation:
+
+#+begin_src bash
+sudo apt install texlive-latex-base dvipng
+#+end_src
+
+No extra Emacs package is needed.  =math-preview= is used instead if that
+is what you have installed -- it works well, but it wants nodejs and npm
+on top of everything else, which is why it is not the default.  Choose
+explicitly with =emjupy-latex-backend=; size the images with
+=emjupy-latex-scale=.
+
+Images are cached by content, so redrawing a notebook full of formulae
+does not re-run LaTeX.  emjupy uses a minimal preamble (amsmath and
+amssymb) rather than org's full default package list, which pulls in
+packages a small TeX install does not have.
+
+** Markdown highlighting
 
 Markdown cells are highlighted out of the box -- headings, emphasis,
 inline code and fences, links, list markers and blockquotes -- with no
@@ -474,31 +556,18 @@ they live:
 
 ** Known limitations
 
+*** Multicursor
 Multi-cursor: Works fine editing within one cell while nothing else is
-happening. multiple-cursors.el places its fake-cursor overlays on real
-buffer text (the box-drawing borders are display-only overlay strings,
-not actual characters, so they don't interfere), and a normal edit
-session applies correctly to all cursor positions. The catch:
-emjupy-mode rebuilds the entire buffer (erase-buffer + reinsert) any
-time a cell executes, gets inserted/deleted/moved, or — critically —
-any time another cell's output streams in. Fake-cursor overlays
-collapsed to buffer position 1, and the next multi-cursor edit
-produced genuinely garbled text (!! at the start of the buffer, a
-stray ! landing inside unrelated text).
+happening. =multiple-cursors.el= places its fake-cursor overlays on real
+buffer text and a normal edit session applies correctly to all cursor
+positions. The catch: emjupy-mode rebuilds the entire buffer
+(erase-buffer + reinsert) any time a cell executes, gets
+inserted/deleted/moved, or — critically — any time another cell's
+output streams in. Fake-cursor overlays collapsed to buffer position
+1, and the next multi-cursor edit produced genuinely garbled text (!!
+at the start of the buffer, a stray ! landing inside unrelated text).
 
-So: safe for a focused burst of multi-cursor edits in one cell. Unsafe
-if a background cell might finish or stream output while you're doing
-it — which is a real risk in a notebook, since that's the normal way a
-long-running cell behaves. In the shadow buffer (C-c '), none of this
-applies — it's a plain, ordinary buffer that never gets torn down, so
-multi-cursor is fully safe there. That's the actual reason I'd steered
-you toward it for heavier editing earlier, now with a concrete
-mechanism behind the claim rather than just a hunch.
+For multi-cell multicursor use the shadow buffer with =C-'=.
 
-* TODO list fixes needed
-
-- [ ] latex rendering in =markdown= cells (optional, if needed with dependencies)
-- [ ] cleanup commands
-- [ ] use font highlight and colors to distinguish kernels, notebooks
-  and other things in =emjupy-notebook-list=, group and sort with
-  notebooks at top
+*** Python only
+Other kernels (e.g., R or julia) have never been tested, but may work.
