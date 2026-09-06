@@ -1,4 +1,4 @@
-name: Build Emacs Package
+name: Build
 
 on:
   # Creates the "Run workflow" button in the GitHub Actions tab
