@@ -1,0 +1,261 @@
+#+TITLE: Interactive rendering with xwidgets -- design notes
+#+SUBTITLE: Nothing implemented yet.  Assumptions checked against a live kernel and the shipped Emacs sources.
+
+* What was measured
+
+** emjupy ignores =text/html= entirely
+
+The MIME dispatch handles =image/png=, =image/jpeg=, =image/gif=,
+=image/svg+xml= and =text/plain=.  There is no =text/html= branch, so a
+plotly or bokeh figure -- whose whole payload is HTML -- falls through to
+the =text/plain= fallback and shows as a one-line repr.  That, not any
+xwidget limitation, is why interactive plots currently do nothing.
+
+** An interactive figure is HTML, and its size depends entirely on how it is produced
+
+Running the same plotly figure three ways and measuring the payload that
+actually crosses the WebSocket:
+
+| How the figure is produced          | =text/html= size |
+|-------------------------------------+----------------|
+| =fig.show(renderer="notebook")=       | 4,293,540 chars |
+| =fig.show(renderer="notebook_connected")= | 8,465 chars |
+| =pio.to_html(fig, include_plotlyjs='cdn')= | 7,569 chars |
+| =pio.to_html(fig, include_plotlyjs=True)= | 4,300,699 chars |
+
+A factor of ~570.  The big ones inline the whole plotly.js bundle into
+every figure; the small ones reference it from a CDN.  This is the single
+most important number in this document: a design that inlines the bundle
+pays 4 MB per figure over the tunnel, per redraw, and writes 4 MB to
+disk each time.
+
+** xwidgets can run JavaScript AND talk back
+
+From the shipped =xwidget.el=:
+
+#+BEGIN_SRC elisp
+(declare-function xwidget-webkit-execute-script "xwidget.c"
+                  (xwidget script &optional callback))
+#+END_SRC
+
+The optional CALLBACK is what makes this more than a viewer: JS in the
+page can hand values back to Emacs.  A slider moved in the widget can
+therefore reach elisp, and from there the kernel over the existing
+WebSocket -- without the notebook front-end that ipywidgets normally
+needs.
+
+** xwidgets is absent far more often than not, and cannot be detected the obvious way
+
+This Emacs, a stock Ubuntu build, reports:
+
+#+BEGIN_SRC
+featurep xwidget-internal: nil
+xwidget-webkit-browse-url: available     <- autoload stub, NOT support
+#+END_SRC
+
+=xwidget-webkit-browse-url= is =fboundp= even where xwidgets does not
+work, because it is an autoload cookie in a file that is always shipped.
+Any check written as =(fboundp 'xwidget-webkit-browse-url)= will claim
+support on a build that has none and then fail at the point of use.
+Detection must be =(featurep 'xwidget-internal)=, and additionally
+=(display-graphic-p)=: xwidgets cannot draw on a terminal frame.
+
+xwidgets requires Emacs configured =--with-xwidgets= against WebKitGTK.
+That rules out: every terminal session, most distribution builds, and
+macOS in practice.  It has to be an enhancement, never a requirement.
+
+* What a real xwidgets build does (measured)
+
+The notes above were written on a build without xwidgets.  An Emacs 29.4
+was then configured =--with-xwidgets= against WebKitGTK and run under
+Xvfb, and the following was measured rather than assumed.
+
+** It works, offline, and quickly
+
+A plotly figure with its JavaScript bundle inlined -- 4.2 MB -- rendered
+in the xwidget with no network at all:
+
+#+BEGIN_SRC
+t= 2.4s readyState="complete" Plotly="object" plots=1
+#+END_SRC
+
+Through emjupy's own command, from a cell whose output is that figure:
+
+#+BEGIN_SRC
+placeholder: [emjupy: text/html output (4.1 MB) -- C-c C-v to open it]
+via emjupy-pop-out-output: Plotly="object" plots=1 after 1.8s
+#+END_SRC
+
+So the inline route is viable offline, and 4 MB is not as slow as its
+size suggests.  The CDN route could not be tested here -- the sandbox has
+no internet -- which is itself the point being made about it.
+
+** Every JavaScript type marshals back to elisp
+
+| JS expression              | value in elisp        |
+|----------------------------+-----------------------|
+| =window.N= (a number)        | =42=                    |
+| =window.S= (a string)        | ="text"=                |
+| =JSON.stringify(window.O)=   | ="{\"a\":1,\"b\":[2,3]}"= |
+| =true=                       | =t=                     |
+| =document.getElementById(..).textContent= | ="hello"= |
+
+JSON round-trips as a string, so structured data can come back from the
+page without inventing an encoding.  That is the channel step 4 needs.
+
+** The first script call after navigation returns nil
+
+This cost an hour of confusion and would cost anyone else the same:
+
+#+BEGIN_SRC
+call 1 (window.N): nil
+call 2 (window.N): 42
+call 3 (window.N): 42
+readyState:        "complete"
+#+END_SRC
+
+The first =xwidget-webkit-execute-script= after
+=xwidget-webkit-browse-url= comes back nil regardless of what it asks
+for -- it races the page load.  Two earlier runs read this as "numbers
+do not marshal" and then as "strings do not marshal", because whichever
+type happened to be asked first came back empty.  Anything built on this
+must issue a throwaway call, then poll =document.readyState= until
+="complete"=, before trusting a result.
+
+** Container notes
+
+Not emjupy's problem, but worth recording for anyone testing in CI:
+WebKitGTK needs a session bus (=dbus-run-session=) and, in a container,
+=WEBKIT_DISABLE_COMPOSITING_MODE=1= and
+=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1=.  Without them the xwidget
+is created but never paints, and Emacs simply hangs.
+
+* What this could give us
+
+Two distinct things, worth separating because they have different costs:
+
+1. *Interactive plots* -- plotly, bokeh, ipyleaflet: figures whose whole
+   point is the JavaScript.  These need a real browser engine.
+2. *A bigger view of an ordinary plot* -- a matplotlib PNG that is
+   unreadable at cell width.  This needs no JavaScript at all, and
+   therefore no xwidgets.
+
+Conflating them would make the cheap, always-available half depend on
+the expensive, rarely-available half.
+
+* Design
+
+*Steps 1 and 2 are now implemented on this branch; 3 and 4 are not.*
+
+** Step 1: handle =text/html= at all (no xwidgets) -- DONE
+
+Add a =text/html= branch to the MIME dispatch.  With no renderer
+available it should say what it is holding -- "[emjupy: text/html
+output, 7.5 KB -- press = C-c C-v= to open it]" -- rather than falling
+through to a repr, which is what happens today.  This alone turns a
+silent nothing into something actionable, and it is the plumbing every
+option below needs.
+
+** Step 2: an out-of-line viewer (no xwidgets required) -- DONE
+
+=emjupy-pop-out-output=: take the output at point and open it in a
+dedicated buffer.
+
+- =image/png= -> an ordinary image buffer, scaled to the window.  Works
+  in any graphical Emacs today, with no new machinery.
+- =text/html= -> an xwidget buffer if available, otherwise hand the file
+  to =browse-url=.
+
+This is the highest value for the least risk, and it answers the
+"visualizing plots not-in-line" half directly.  It also gives the
+interactive case a home: a figure gets its own window, sized properly,
+instead of being squeezed into a cell.
+
+** Step 3: xwidget rendering, inline or popped out
+
+Write the HTML to a temp file and point an xwidget at it.  A file rather
+than a =data:= URL: a 4 MB data URL is unreasonable, and a file gives the
+page a directory to resolve relative asset references against.
+
+Inline placement is possible -- an xwidget can live in an overlay's
+=display= property like an image -- but it should not be the default.
+An xwidget is a live OS-level widget, not a picture: it does not scroll
+with the buffer the way an image does, it cannot be shown twice, and
+emjupy re-renders the whole buffer on every output.  Popped out first,
+inline later if it proves stable.
+
+** Step 4: driving widgets from the page
+
+Only if steps 1--3 land.  With =xwidget-webkit-execute-script='s callback,
+a slider in the page could send its value to elisp, which sends a
+=comm_msg= to the kernel.  The measurements on the =widget_dev= branch
+show the kernel-side half of this already works without JavaScript, so
+this step is about the frontend half only.
+
+* The asset problem, and what to do about it
+
+The 570x measurement above forces a choice, and the obvious two options
+are both bad:
+
+- *Inline the bundle* (4.3 MB/figure): works offline, but every figure
+  crosses the tunnel and hits the disk at that size.
+- *Reference a CDN* (7.5 KB/figure): small, but the *rendering* machine
+  now needs internet -- which is exactly the machine that may be behind
+  the corporate firewall the ssh tunnel exists to cross.
+
+A third option avoids both: *cache the bundle locally once*, and rewrite
+the =<script src>= in incoming HTML to point at =file:///.../plotly.js=.
+Figures stay ~8 KB, nothing needs a CDN at render time, and the bundle is
+fetched once per version.  This needs a small amount of HTML rewriting
+and a cache directory, and it is the only option that is both small and
+offline.
+
+Worth checking before building it: whether =pio.to_html= output is
+regular enough for that rewrite to be reliable, and what bokeh and
+ipyleaflet emit.
+
+* Optional dependency policy
+
+Unchanged from the rest of emjupy: no new =Package-Requires=, nothing
+loaded until used.
+
+- =emjupy-html-renderer=: ='auto= (xwidget if genuinely available, else
+  =browse-url=), ='xwidget=, ='browser=, or nil to disable.
+- Detection at point of use via =(featurep 'xwidget-internal)= and
+  =(display-graphic-p)= -- never =fboundp=.
+- Every failure degrades to the placeholder from step 1 and says why.
+
+* The thing to decide before writing code
+
+*Rendering a notebook's HTML executes its JavaScript inside your Emacs.*
+
+An =.ipynb= is a file people share, and its outputs are attacker-controlled
+in exactly the way a web page is.  Today emjupy's worst case for a
+hostile notebook is a misleading picture.  With an embedded browser
+engine it becomes arbitrary JS running in a WebKit instance inside the
+editor, with whatever that engine can reach -- including =file://= URLs
+if the page is loaded from a file.
+
+This is not a reason to abandon the idea; JupyterLab has the same
+exposure and everyone accepts it there.  But emjupy would be adding it,
+so it should be deliberate:
+
+- render HTML only on explicit request (a keypress), never automatically
+  when output arrives;
+- consider a prompt on first render for a given notebook;
+- keep =emjupy-html-renderer= defaulting to something safe.
+
+Answer this before step 3, not after.
+
+* Open questions
+
+- Does an xwidget survive emjupy's re-render?  The buffer is erased and
+  rebuilt whenever output arrives; an image is just a display property,
+  but an xwidget is a live widget with an OS handle.  Needs testing on a
+  build that has xwidgets -- which the development sandbox does not.
+- What do bokeh and ipyleaflet emit, and are they CDN-able the way
+  plotly is?
+- Sizing: an xwidget does not reflow with the window.  Popped-out
+  buffers make this tractable; inline placement may not.
+- Does =xwidget-webkit-execute-script='s callback fire reliably enough to
+  build the step-4 loop on?
