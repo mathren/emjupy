@@ -16,11 +16,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Installs Emacs on the runner (Required if your Makefile uses the 'emacs' command)
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
           version: '30.1'
-          nix-extra-experimental-features: 'flakes'
 
       - name: Check tag matches the package version
         run: |
