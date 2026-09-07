@@ -8,21 +8,19 @@
 [[./images/emjupy-logo.png]]
 
 Jupyter notebooks with remote kernel execution using emacs built-ins
-(=eglot= and =tramp=, completion frameworks like =vertico= + =corfu= +
-=orderless=) while maintaining compatibility with standard =*.ipynb= for
-sharing with non-emacs users.
+(=eglot= and =tramp=, completion framework the way you like and
+configured, e.g., =vertico= + =corfu= + =orderless=) while maintaining
+compatibility with standard =*.ipynb= for sharing with non-emacs users.
 
-* Features
+* Screenshots
 
 On a plain emacs installation, you should see something like:
-
 #+CAPTION: [[./test_notebook/test.ipynb][Simple notebook]] rendering in a fresh emacs with no customization. Screenshot may be out of date.
 #+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
 [[file:images/screenshot-default-colored.png]]
 
 This is what the same notebook looks like with =wombat= theme in my
 setup:
-
 #+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme.
 #+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
 [[file:images/screenshot-dark-colored.png]]
@@ -30,12 +28,13 @@ setup:
 *N.B.:* Screenshot may be out of date, for instance colored lines do not
 exceed cell border anymore.
 
+* Features
 - persistent kernel session (to load large dataset once and re-use
   them)
+- remote or local kernel (just needs port and token)
 - in-line rendering of output including images
-- automatic loading of kernel from port (either local port or remote
-  provided from ssh-tunnel), python environment (including for
-  =eglot=)
+- automatic loading of kernel from port, python environment (including
+  for =eglot=)
 - resilient to connection drops (remote kernel keeps running,
   reconnect emacs)
 - =ein=-like workflow and key bindings
@@ -49,10 +48,10 @@ To test this in an isolated environment without touching your current config:
    #+begin_src bash
      jupyter-notebook --port=<PORT> --no-browser  --IdentityProvider.token=abc
    #+end_src
+   This can optionally be done on a remote machine.
 
-2. *Optional*: if the server is on a remote machine, if so, ssh into the
-   remote machine and create a tunnel to it running on your local
-   machine:
+2. *Optional*: if the server is on a remote machine, create a tunnel to
+   it running on your local machine:
    #+begin_src bash
      ssh -L <PORT>:localhost:<PORT> <remote machine>
    #+end_src
@@ -64,11 +63,11 @@ To test this in an isolated environment without touching your current config:
    where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-4. Follow the prompt in the minibuffer area. The token/password is =abc=
-   provided in 1.,only asked for if the server actually needs one.
-   emjupy adopts the kernel already running behind that port and shows
-   you the notebook list; picking one drops you straight into that
-   live REPL.
+4. Follow the prompt in the minibuffer (bottom) area. The
+   token/password is =abc= provided in 1., only asked if the server
+   actually needs one. emjupy adopts the kernel already running behind
+   that port and shows you the notebook list; picking one drops you
+   straight into the live REPL (see screenshots above).
 
 * Installation
 
@@ -78,6 +77,18 @@ your =init.el= or similar:
 #+BEGIN_SRC elisp
   (add-to-list 'load-path "/path/to/emjupy")
   (require 'emjupy)
+#+END_SRC
+
+Or with =use-package= (remove the =:rev :newest= line to use the latest
+release rather than the latest commit):
+
+#+BEGIN_SRC elisp
+  (use-package emjupy
+    :vc (:url "https://github.com/mathren/emjupy"
+         :rev :newest ;; latest commit, if commented, latest release
+         )
+    :config
+    (setq emjupy-render-latex t))
 #+END_SRC
 
 Alternatively, use =install-package-file= giving it the tarball created
@@ -245,7 +256,6 @@ The eglot tests additionally need a Python language server on =PATH=
 (=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
 none is found.
 
-
 * Landscape of other emacs/jupyter packages
 
 | Package       | Approach          | Limitations                                                                                           |
@@ -254,15 +264,21 @@ none is found.
 | =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
+=ein= was my working tool for more than a decade through my PhD and
+postdocs, but it is unmaintained, and the use of polymode breaks undo
+and makes it hard to use =eglot=. I need to share code with non-emacs
+users, so =ob-jupyter= isn't an option, and =emacs=jupyter= doesn't seem
+the right tool for me.
+
 ** emjupy design
 
 *** The shadow buffer
 
 A notebook is not valid Python, but rather a JSON containing blocks.
 There are *n* python fragments with prose between them, and a name
-defined in cell 3 is used in cell 7. A language server handed one cell
-at a time would see seven unrelated files and resolve nothing across
-them.
+defined in, say, cell 3 is used in cell 7. A language server handed
+one cell at a time would see seven unrelated files and resolve nothing
+across them.
 
 So emjupy keeps a hidden *shadow buffer*: one ordinary Python file
 holding every code cell concatenated, each preceded by a marker comment
