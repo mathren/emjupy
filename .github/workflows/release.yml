@@ -21,7 +21,6 @@ jobs:
         with:
           version: '30.1'
           nix-extra-experimental-features: 'flakes'
-          extra-experimental-features: 'flakes'
 
       - name: Check tag matches the package version
         run: |
