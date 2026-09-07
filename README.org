@@ -486,8 +486,14 @@ on top of everything else, which is why it is not the default.  Choose
 explicitly with =emjupy-latex-backend=; size the images with
 =emjupy-latex-scale=.
 
-Images are cached by content, so redrawing a notebook full of formulae
-does not re-run LaTeX.  emjupy uses a minimal preamble (amsmath and
+Formulae are drawn in the theme's foreground colour on a transparent
+background, so they are dark on a light theme and light on a dark one.
+Set =emjupy-latex-foreground= to a colour to override that, and
+=emjupy-latex-scale= to size them.
+
+Images are cached by content /and colour/, so redrawing a notebook full
+of formulae does not re-run LaTeX, and switching theme regenerates them
+rather than serving back black glyphs on a dark background.  emjupy uses a minimal preamble (amsmath and
 amssymb) rather than org's full default package list, which pulls in
 packages a small TeX install does not have.
 
@@ -574,3 +580,5 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] re-enforce git tag and emjupy version sync
+- [ ] add to *.el files =;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs=
+- [ ]

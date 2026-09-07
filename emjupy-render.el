@@ -434,6 +434,18 @@ beyond what ships with Emacs, and falls back to `math-preview'."
                  (const :tag "math-preview" math-preview))
   :group 'emjupy)
 
+(defcustom emjupy-latex-foreground 'auto
+  "Colour to draw rendered math in.
+
+`auto\' (the default) follows the theme, taking the foreground of the
+`default\' face -- so formulae are dark on a light theme and light on a
+dark one, instead of always black on a transparent background.
+
+A colour string is used verbatim."
+  :type '(choice (const :tag "Follow the theme" auto)
+                 (color :tag "Explicit colour"))
+  :group 'emjupy)
+
 (defcustom emjupy-latex-scale 1.0
   "Scale factor for rendered math images."
   :type 'float
@@ -487,8 +499,15 @@ the whole fragment with its image."
   (when (and (eq (emjupy--latex-available-p) 'org)
              (require 'org nil 'noerror))
     (let* ((dir (expand-file-name "emjupy-latex/" temporary-file-directory))
+           (fg (if (stringp emjupy-latex-foreground)
+                   emjupy-latex-foreground
+                 (face-attribute 'default :foreground nil t)))
+           ;; The colour is part of the cache key.  Without it a formula
+           ;; rendered under one theme would be served back unchanged after
+           ;; switching to another -- black glyphs on a dark background.
            (file (expand-file-name
-                  (concat (md5 (format "%s-%s" body emjupy-latex-scale)) ".png") dir))
+                  (concat (md5 (format "%s-%s-%s" body emjupy-latex-scale fg)) ".png")
+                  dir))
            ;; Deliberately NOT org's full preamble.  That pulls in packages a
            ;; minimal TeX install does not have -- ulem, for one -- and then
            ;; every formula fails for want of something no formula needs.
@@ -501,13 +520,26 @@ the whole fragment with its image."
                     "\\pagestyle{empty}"))
            (opts (copy-sequence org-format-latex-options)))
       (setq opts (plist-put opts :scale emjupy-latex-scale))
+      (when (and fg (stringp fg))
+        (setq opts (plist-put opts :foreground fg)))
+      ;; Keep the image transparent.  Passing a buffer makes org honour
+      ;; :background too, and its default -- `default\' -- bakes the theme's
+      ;; background into the PNG as a \\pagecolor.  That looks right until the
+      ;; formula sits on anything else, so ask for transparency explicitly and
+      ;; let the foreground alone carry the contrast.
+      (setq opts (plist-put opts :background "Transparent"))
       (make-directory dir t)
       (condition-case err
           (progn
             ;; Cached by content hash: dragging a slider over a notebook full
             ;; of formulae should not re-run LaTeX for each redraw.
             (unless (file-exists-p file)
-              (org-create-formula-image body file opts nil 'dvipng))
+              ;; The BUFFER argument is not optional in effect: with nil, org
+              ;; reads :html-foreground and :html-background instead of
+              ;; :foreground and :background -- defaulting to "Black" on
+              ;; "Transparent" whatever the theme says -- and takes :html-scale
+              ;; rather than :scale, so emjupy-latex-scale was ignored too.
+              (org-create-formula-image body file opts (current-buffer) 'dvipng))
             (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
               (create-image file 'png nil :ascent 'center)))
         (error

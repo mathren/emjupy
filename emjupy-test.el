@@ -2254,5 +2254,71 @@ poked out beyond the right-hand border."
                     (forward-char 1)))
                 (should (> pads 0))))))))))
 
+(ert-deftest emjupy-test-latex-follows-the-theme-foreground ()
+  "Rendered math takes its colour from the theme, and the image stays
+transparent.
+
+org picks which options it reads from the BUFFER argument:
+
+  (fg (or (plist-get options (if buffer :foreground :html-foreground)) \"Black\"))
+
+Passing nil there -- as emjupy did -- makes it read :html-foreground and
+:html-background, whose defaults are literally \"Black\" and
+\"Transparent\".  So every formula came out black on transparent whatever
+the theme said, and :scale was ignored for the same reason."
+  ;; Load org BEFORE stubbing: `emjupy--latex-image' requires it, and that
+  ;; require redefines `org-create-formula-image' -- clobbering the stub
+  ;; below whenever org was not already loaded.
+  (require 'org)
+  (let ((captured nil))
+    (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () 'org))
+              ((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) nil))
+              ((symbol-function 'org-create-formula-image)
+               (lambda (_body _file opts buffer &optional _type)
+                 (setq captured (list opts buffer))))
+              ((symbol-function 'face-attribute)
+               (lambda (face attr &rest _)
+                 (if (and (eq face 'default) (eq attr :foreground))
+                     "#e5e5e5"
+                   'unspecified))))
+      (let ((emjupy-latex-foreground 'auto)
+            (emjupy-latex-scale 1.5))
+        (emjupy--latex-image "x^2")
+        (pcase-let ((`(,opts ,buffer) captured))
+          ;; a real buffer, or org reads the html-* options instead
+          (should (bufferp buffer))
+          ;; colour follows the theme
+          (should (equal (plist-get opts :foreground) "#e5e5e5"))
+          ;; and stays transparent rather than baking in a page colour
+          (should (equal (plist-get opts :background) "Transparent"))
+          ;; :scale is only honoured when a buffer is passed
+          (should (= (plist-get opts :scale) 1.5))))
+      ;; an explicit colour wins over the theme
+      (setq captured nil)
+      (let ((emjupy-latex-foreground "#ff0000"))
+        (emjupy--latex-image "x^2")
+        (should (equal (plist-get (car captured) :foreground) "#ff0000"))))))
+
+(ert-deftest emjupy-test-latex-cache-is-keyed-on-colour ()
+  "The cache key includes the colour.  Without it, a formula rendered
+under one theme is served back unchanged after switching to another --
+black glyphs on a dark background."
+  ;; Load org BEFORE stubbing: `emjupy--latex-image' requires it, and that
+  ;; require redefines `org-create-formula-image' -- clobbering the stub
+  ;; below whenever org was not already loaded.
+  (require 'org)
+  (let ((files nil)
+        ;; A fresh cache dir: a previous render of the same formula would
+        ;; short-circuit the call this test is counting.
+        (temporary-file-directory (make-temp-file "emjupy-latex-test" t)))
+    (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () 'org))
+              ((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) nil))
+              ((symbol-function 'org-create-formula-image)
+               (lambda (_b file &rest _) (push file files))))
+      (let ((emjupy-latex-foreground "#000000")) (emjupy--latex-image "x^2"))
+      (let ((emjupy-latex-foreground "#ffffff")) (emjupy--latex-image "x^2"))
+      (should (= (length files) 2))
+      (should-not (equal (nth 0 files) (nth 1 files))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
