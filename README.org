@@ -580,3 +580,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] re-enforce git tag and emjupy version sync
+- [ ] implement =C-c C-l= for clean current cell output (from anywhere
+  in the input or output area of the cell) and =C-c C-u C-l= for clean
+  all cells outputs. Check if compatible with MELPA guidelines first.
