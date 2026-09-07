@@ -275,6 +275,54 @@ reverse, would silently reinterpret one of them."
               (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
           above)))))
 
+(defun emjupy-clear-cell-output ()
+  "Discard the output of the cell at point.
+
+The output box goes with it, so the cell shrinks back to just its
+source, and the execution count is cleared too: nothing has been run
+since, so leaving [In: 4] beside no output would claim otherwise.
+
+Only the buffer is touched.  The notebook on the server keeps its
+outputs until you save."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let ((cell (emjupy--cell-at-point)))
+    (unless cell (user-error "Point is not in a cell"))
+    (if (zerop (length (or (emjupy-cell-outputs cell) [])))
+        (message "[emjupy] This cell has no output.")
+      (setf (emjupy-cell-outputs cell) [])
+      (setf (emjupy-cell-exec-count cell) nil)
+      (emjupy--rerender-notebook cell)
+      (message "[emjupy] Cleared this cell's output."))))
+
+(defun emjupy-clear-all-outputs ()
+  "Discard the output of every cell in the notebook.
+
+Asks first: this throws away results that may have taken a while to
+produce, and re-running them is not always cheap.
+
+Only the buffer is touched.  The notebook on the server keeps its
+outputs until you save."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let* ((cells (emjupy-notebook-cells (emjupy--notebook)))
+         (with-output (cl-count-if (lambda (c)
+                                     (> (length (or (emjupy-cell-outputs c) [])) 0))
+                                   cells)))
+    (cond
+     ((zerop with-output)
+      (message "[emjupy] No cell has any output."))
+     ((not (yes-or-no-p (format "Clear the output of %d cell%s? "
+                                with-output (if (= with-output 1) "" "s"))))
+      (message "[emjupy] Left them alone."))
+     (t
+      (cl-loop for cell across cells
+               do (setf (emjupy-cell-outputs cell) [])
+                  (setf (emjupy-cell-exec-count cell) nil))
+      (emjupy--rerender-notebook)
+      (message "[emjupy] Cleared the output of %d cell%s."
+               with-output (if (= with-output 1) "" "s"))))))
+
 (defun emjupy-delete-cell ()
   "Delete current cell at point."
   (interactive)
@@ -299,7 +347,10 @@ reverse, would silently reinterpret one of them."
     (emjupy--rerender-notebook cell)))
 
 (defvar emjupy--cell-clipboard nil
-  "The cell most recently copied, as a (TYPE . SOURCE) pair. Output not copied")
+  "The cell most recently copied, as a (TYPE . SOURCE) pair.
+The output is deliberately not copied: it belongs to the run that
+produced it, and carrying it to a copy would attribute results to code
+that never generated them.")
 
 (defun emjupy-copy-cell ()
   "Copy the cell at point.  Its output is not copied.

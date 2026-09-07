@@ -106,8 +106,10 @@ by gitHub actions.
 | =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                       |
 | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                           |
+| =C-c C-l=     | =emjupy-clear-cell-output=          | Discard this cell's output                                         |
+| =C-c C-u C-l= | =emjupy-clear-all-outputs=          | Discard every cell's output (asks first)                           |
 | =C-c C-s=     | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
-| =C-c C-j=     | =emjupy-join-cell-above=           | Merge this cell into the one above (clears both outputs)           |
+| =C-c C-j=     | =emjupy-join-cell-above=            | Merge this cell into the one above (clears both outputs)           |
 | =C-c C-w=     | =emjupy-copy-cell=                  | Copy the cell, without its output                                  |
 | =C-c C-y=     | =emjupy-yank-cell=                  | Insert the copied cell below, unrun                                |
 | =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                          |
@@ -504,10 +506,11 @@ Set =emjupy-latex-foreground= to a colour to override that, and
 =emjupy-latex-scale= to size them.
 
 Images are cached by content /and colour/, so redrawing a notebook full
-of formulae does not re-run LaTeX, and switching theme regenerates them
-rather than serving back black glyphs on a dark background.  =emjupy= uses a minimal preamble (amsmath and
-amssymb) rather than org's full default package list, which pulls in
-packages a small TeX install does not have.
+of formulae does not re-run LaTeX, and switching theme regenerates
+them rather than serving back black glyphs on a dark background.
+=emjupy= uses a minimal preamble (amsmath and amssymb) rather than org's
+full default package list, which pulls in packages a small TeX install
+does not have.
 
 ** Markdown highlighting
 
@@ -572,6 +575,20 @@ they live:
         ("localhost:9999" . "/ssh:box:/srv/nb")))
 #+end_src
 
+** Clearing output
+
+=C-c C-l= discards the output of the cell at point; =C-c C-u C-l= does it
+for the whole notebook, asking first, since re-running everything is not
+always cheap.
+
+Both clear the execution count along with the output -- leaving =[In: 4]=
+beside an empty box would claim something had been run since -- and both
+touch only the buffer.  The notebook on the server keeps its outputs
+until you save, so clearing is not a way to lose results by accident.
+
+Clearing everything before committing is the usual reason to want this:
+it strips the outputs that make =.ipynb= diffs unreadable.
+
 ** Known limitations
 
 *** Multicursor
@@ -592,6 +609,4 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] re-enforce git tag and =emjupy= version sync
-- [ ] implement =C-c C-l= for clean current cell output (from anywhere
-  in the input or output area of the cell) and =C-c C-u C-l= for clean
-  all cells outputs. Check if compatible with MELPA guidelines first.
+- [ ] on =xwidget= branch address GitHub issue #1

@@ -2344,5 +2344,111 @@ which MELPA requires to be clean.  Leave that space alone."
         (push (format "C-c %c" letter) taken)))
     (should-not taken)))
 
+(ert-deftest emjupy-test-clear-cell-output ()
+  "`C-c C-l\' discards this cell's output and its execution count, and
+takes the output box with it -- leaving [In: 4] beside no output would
+claim something had been run since."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b"
+                              :outputs [] :metadata (make-hash-table))))
+    (dolist (pair (list (cons c1 "out-a\n") (cons c2 "out-b\n")))
+      (let ((o (make-hash-table :test 'equal)))
+        (puthash "output_type" "stream" o)
+        (puthash "name" "stdout" o)
+        (puthash "text" (cdr pair) o)
+        (setf (emjupy-cell-outputs (car pair)) (vector o))
+        (setf (emjupy-cell-exec-count (car pair)) 4)))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (emjupy-clear-cell-output)
+        (should (= (length (emjupy-cell-outputs c1)) 0))
+        (should-not (emjupy-cell-exec-count c1))
+        (should-not (emjupy-cell-output-ov c1))
+        (should-not (string-match-p "out-a" (buffer-string)))
+        ;; the other cell is untouched
+        (should (= (length (emjupy-cell-outputs c2)) 1))
+        (should (string-match-p "out-b" (buffer-string)))))))
+
+(ert-deftest emjupy-test-clear-cell-output-with-nothing-to-clear ()
+  "A cell with no output says so rather than silently re-rendering."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((msg nil))
+          (cl-letf (((symbol-function 'message)
+                     (lambda (f &rest args) (setq msg (apply #'format f args)))))
+            (emjupy-clear-cell-output))
+          (should (string-match-p "no output" msg)))))))
+
+(ert-deftest emjupy-test-clear-all-outputs-asks-first ()
+  "Clearing everything throws away results that may have been slow to
+produce, so it asks -- and declining changes nothing."
+  (let ((cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
+                                         :outputs [] :metadata (make-hash-table))
+                       (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b"
+                                         :outputs [] :metadata (make-hash-table)))))
+    (cl-loop for c across cells
+             do (let ((o (make-hash-table :test 'equal)))
+                  (puthash "output_type" "stream" o)
+                  (puthash "name" "stdout" o)
+                  (puthash "text" "out\n" o)
+                  (setf (emjupy-cell-outputs c) (vector o))
+                  (setf (emjupy-cell-exec-count c) 2)))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        ;; declined
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+          (emjupy-clear-all-outputs))
+        (should (= (cl-loop for c across cells sum (length (emjupy-cell-outputs c))) 2))
+        (should (string-match-p "out" (buffer-string)))
+        ;; accepted
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (emjupy-clear-all-outputs))
+        (should (= (cl-loop for c across cells sum (length (emjupy-cell-outputs c))) 0))
+        (cl-loop for c across cells
+                 do (should-not (emjupy-cell-exec-count c))
+                    (should-not (emjupy-cell-output-ov c)))
+        (should-not (string-match-p "out\n" (buffer-string)))))))
+
+(ert-deftest emjupy-test-clear-cell-output-from-the-output-area ()
+  "Clearing works with point in the OUTPUT box, not just in the source.
+
+That is where you are when you look at a result and decide to be rid of
+it, so requiring point to be up in the code would be the wrong way
+round."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                                :outputs [] :metadata (make-hash-table)))
+        (o (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" o)
+    (puthash "name" "stdout" o)
+    (puthash "text" "RESULT\n" o)
+    (setf (emjupy-cell-outputs cell) (vector o))
+    (setf (emjupy-cell-exec-count cell) 4)
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (should (search-forward "RESULT" nil t))
+        (goto-char (match-beginning 0))
+        ;; point is in the output box, and the cell is still found
+        (should (eq (emjupy--cell-at-point) cell))
+        (emjupy-clear-cell-output)
+        (should (= (length (emjupy-cell-outputs cell)) 0))
+        (should-not (string-match-p "RESULT" (buffer-string)))))))
+
+(ert-deftest emjupy-test-clear-output-bindings ()
+  "The keys, and that they stay out of the space reserved for users.
+
+`C-c\' followed by a plain letter belongs to the user, and package-lint
+-- which MELPA requires to be clean -- reports any such binding as an
+error.  `C-c C-l\' and `C-c C-u C-l\' are all control characters."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-l")) 'emjupy-clear-cell-output))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-u C-l")) 'emjupy-clear-all-outputs))
+  (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
+    (should-not (commandp (lookup-key emjupy-mode-map (kbd (format "C-c %c" letter)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
