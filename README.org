@@ -65,7 +65,7 @@ To test this in an isolated environment without touching your current config:
 
 4. Follow the prompt in the minibuffer (bottom) area. The
    token/password is =abc= provided in 1., only asked if the server
-   actually needs one. emjupy adopts the kernel already running behind
+   actually needs one. =emjupy= adopts the kernel already running behind
    that port and shows you the notebook list; picking one drops you
    straight into the live REPL (see screenshots above).
 
@@ -151,7 +151,7 @@ the shadow buffer, while =C-c C-c= and =C-c '= behave the same in both.
 | =emjupy-create-notebook=    | Create a new blank notebook on the server        |
 | =emjupy-refresh-appearance= | Re-derive page colours from the theme and redraw |
 
-Completion (=M-TAB=) and eldoc need no emjupy binding: they are wired into
+Completion (=M-TAB=) and eldoc need no =emjupy= binding: they are wired into
 the standard hooks and reach the language server through the shadow buffer
 automatically.
 
@@ -264,28 +264,29 @@ none is found.
 | =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
-=ein= was my working tool for more than a decade through my PhD and
-postdocs, but it is unmaintained, and the use of polymode breaks undo
-and makes it hard to use =eglot=. I need to share code with non-emacs
-users, so =ob-jupyter= isn't an option, and =emacs=jupyter= doesn't seem
-the right tool for me.
+=ein= was my working tool for more than a decade, but it is
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= breaks undo and makes it hard to
+use =eglot=. I need to share code with non-emacs users, so =ob-jupyter=
+isn't an option, and =emacs-jupyter= doesn't seem the right tool for me.
 
-** emjupy design
+** =emjupy= design
 
 *** The shadow buffer
 
-A notebook is not valid Python, but rather a JSON containing blocks.
+A notebook is not valid python, but rather a JSON containing blocks.
 There are *n* python fragments with prose between them, and a name
 defined in, say, cell 3 is used in cell 7. A language server handed
-one cell at a time would see seven unrelated files and resolve nothing
-across them.
+one cell at a time would see seven unrelated files. So instead, =emjupy=
+keeps a hidden *shadow buffer*: one ordinary python file holding every
+code cell concatenated, each preceded by a marker comment naming its
+cell. =eglot= attaches to that file and sees exactly what it expects --
+one module, in order, with all the definitions in it.
 
-So emjupy keeps a hidden *shadow buffer*: one ordinary Python file
-holding every code cell concatenated, each preceded by a marker comment
-naming its cell.  Eglot attaches to that file and sees exactly what it
-expects -- one module, in order, with all the definitions in it.
+The shadow buffer is never displayed, it only exists so that a
+language server has a well-formed document to read. It can be open
+with =C-c '= for multi-cell editing.
 
-Everything that needs the server is delegated there, at the matching
+Everything that needs the server is delegated there at the matching
 position:
 
 - completion and eldoc, through
@@ -299,10 +300,9 @@ Because the shadow buffer holds every cell at once, this is not merely a
 workaround: a rename fixes references in *all* cells, and =M-.= on a call
 in one cell lands on the definition in another.
 
-
-The shadow file lives in a temporary directory by default.  When the
+The shadow file lives in a temporary directory by default. When the
 kernel is on another machine, point =emjupy-shadow-directory= at it and
-Eglot starts the server there over TRAMP, so the completions come from
+=eglot= starts the server there over =tramp=, so the completions come from
 the environment the code actually runs in.
 
 *** Mapping positions
@@ -315,13 +315,7 @@ positions in the notebook - with locations pointing anywhere *else*,
 into a library say, left alone, because the real file is the right
 destination.
 
-*** Why a hidden buffer rather than =polymode=
-
-The shadow buffer is never displayed, it only exists so that a
-language server has a well-formed document to read. It can be open
-with =C-c '= for multi-cell editing.
-
-** Key insight: use the browser's transport, not ZMQ
+*** Use the browser's transport, not ZMQ
 
 When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
 
@@ -335,31 +329,31 @@ When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
 - =WS   /api/kernels/<id>/channels= \rightarrow Jupyter wire protocol over WebSocket
 
 This is exactly what every browser-based client (JupyterLab, Classic Notebook)
-uses. It works transparently through an SSH tunnel, survives reconnects, and
-requires only =url.el= (built-in) and =websocket.el= (GNU ELPA, zero C deps).
+uses. It works transparently through an =ssh= tunnel, survives reconnects, and
+requires only =url.el= (built-in) and =websocket.el= (GNU ELPA).
 
-** Multiple notebooks and multiple servers
+** Multiple notebooks & multiple servers
 
-One port = one kernel. Each server owns its token and its XSRF cookie; a notebook owns its
+Each server owns its token and its XSRF cookie; a notebook owns its
 kernel; a kernel owns its WebSocket and its table of in-flight
 requests. So you can keep several notebooks open at once, from several
-servers at once -- typically several ssh tunnels on different local
+servers at once -- typically several =ssh= tunnels on different local
 ports.
 
 Run =emjupy-login= once per tunnel:
 
 #+begin_src
-M-x emjupy-login RET 18888 RET     ;; tunnel to machine A
-M-x emjupy-login RET 19999 RET     ;; tunnel to machine B
+M-x emjupy-login RET 8888 RET     ;; tunnel to machine A
+M-x emjupy-login RET 9999 RET     ;; tunnel to machine B
 #+end_src
 
 The typical workflow this is built around:
 
 1. On the remote host, start a notebook kernel on port X.
-2. Locally, =ssh -L X:127.0.0.1:X user@remote=.
+2. Locally, =ssh -L X:localhost:X user@remote=.
 3. =M-x emjupy-login RET X RET=.
 
-emjupy adopts the kernel already running behind that port rather than
+=emjupy= adopts the kernel already running behind that port rather than
 spawning a second one next to it, so opening a notebook puts you in the
 REPL you started. A port with nothing running gets a fresh kernel; a
 port with several asks which one.
@@ -370,24 +364,26 @@ kernel. Logging in again to a server you already know updates its token
 and keeps the same object, so notebooks already pointing at it stay
 valid.
 
-The token is resolved without bothering you where possible: an explicit
-argument, else the token already registered for that server, else no
-token at all (common for tunnelled servers started with
-=--IdentityProvider.token=), and only then a prompt. =C-u M-x emjupy-login=
-always prompts.
+=C-c C-z= marks kernels already driving another open notebook as =[in
+use]=: attaching two notebooks to one kernel makes them share
+interpreter state, which is occasionally what you want and usually not.
 
 Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
 path can exist on two servers and one buffer cannot stand for both. The
 Eglot shadow file is qualified the same way, so two servers hosting
 =analysis.ipynb= don't clobber each other's code.
 
-=C-c C-z= marks kernels already driving another open notebook as =[in
-use]=: attaching two notebooks to one kernel makes them share
-interpreter state, which is occasionally what you want and usually not.
 
-=emjupy-reconnect-kernel= is the connection-drop path: when a tunnel
-dies the remote kernel keeps running, so only Emacs's socket needs
-re-establishing and your session state survives.
+If a tunnel drops and the remote kernel keeps running,
+use =emjupy-reconnect-kernel= to re-establish emacs's
+socket and your session state survives.
+
+** Access tokens
+The token is resolved without bothering you where possible: an explicit
+argument, else the token already registered for that server, else no
+token at all (common for tunnelled servers started with
+=--IdentityProvider.token=), and only then a prompt. =C-u M-x emjupy-login=
+always prompts.
 
 * Notes
 ** Eglot commands in a notebook
@@ -509,7 +505,7 @@ Set =emjupy-latex-foreground= to a colour to override that, and
 
 Images are cached by content /and colour/, so redrawing a notebook full
 of formulae does not re-run LaTeX, and switching theme regenerates them
-rather than serving back black glyphs on a dark background.  emjupy uses a minimal preamble (amsmath and
+rather than serving back black glyphs on a dark background.  =emjupy= uses a minimal preamble (amsmath and
 amssymb) rather than org's full default package list, which pulls in
 packages a small TeX install does not have.
 
@@ -518,7 +514,7 @@ packages a small TeX install does not have.
 Markdown cells are highlighted out of the box -- headings, emphasis,
 inline code and fences, links, list markers and blockquotes -- with no
 external package. =markdown-mode= and =markdown-ts-mode= are MELPA
-packages emjupy does not depend on; when one of them IS installed it is
+packages =emjupy= does not depend on; when one of them IS installed it is
 used in preference to the built-in approximation.
 
 *** Inline images need a graphical Emacs
@@ -528,7 +524,7 @@ Images are only drawn when the running Emacs can actually display them
 frame or an image-less build (=emacs-nox= is the common case),
 =create-image= *signals* rather than degrading, and because rendering
 happens inside the WebSocket callback -- where =websocket.el= swallows
-errors -- the old behaviour was a silently blank output box. emjupy now
+errors -- the old behaviour was a silently blank output box. =emjupy= now
 falls back to the bundle's own =text/plain= repr plus a short note
 saying why there is no picture.
 
@@ -565,7 +561,7 @@ It is built on =tabulated-list-mode=, so sorting and navigation are
 Emacs's own.  It is deliberately *not* a file manager: =d= hands the
 directory to Dired, over TRAMP when the server is remote.  The Contents
 API says what notebooks exist but not how to reach them as files -- and a
-tunnelled server looks like localhost from here -- so tell emjupy where
+tunnelled server looks like localhost from here -- so tell =emjupy= where
 they live:
 
 #+begin_src elisp
@@ -595,7 +591,7 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] re-enforce git tag and emjupy version sync
+- [ ] re-enforce git tag and =emjupy= version sync
 - [ ] implement =C-c C-l= for clean current cell output (from anywhere
   in the input or output area of the cell) and =C-c C-u C-l= for clean
   all cells outputs. Check if compatible with MELPA guidelines first.
