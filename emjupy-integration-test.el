@@ -1,5 +1,8 @@
 ;;; emjupy-integration-test.el --- Live-server tests for emjupy -*- lexical-binding: t; -*-
 
+;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
+
 ;; These tests talk to a REAL Jupyter server over a REAL connection and run
 ;; REAL Python in a REAL kernel. They are opt-in: without the environment
 ;; variables below they all `ert-skip', so `emjupy-run-tests.el' stays fast

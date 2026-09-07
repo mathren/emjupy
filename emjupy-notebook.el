@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -54,7 +55,7 @@ credential ends up on screen and in the minibuffer history."
   (read-passwd prompt))
 
 (defun emjupy--normalize-url (url)
-  "Return URL as a host:port base-url. A bare port means localhost."
+  "Return URL as a host:port base-url.  A bare port means localhost."
   (if (string-match-p "\\`[0-9]+\\'" url)
       (concat "localhost:" url)
     url))
@@ -70,7 +71,7 @@ credential ends up on screen and in the minibuffer history."
 
 Order: EXPLICIT, then the token already registered for this server,
 then no token at all (many tunnelled servers are started with
-`--IdentityProvider.token='), and only then ask. Asking every time is
+`--IdentityProvider.token='), and only then ask.  Asking every time is
 what made logging into a second tunnel tedious."
   (or explicit
       (let ((known (gethash base-url emjupy--servers)))
@@ -93,9 +94,9 @@ what made logging into a second tunnel tedious."
 (defun emjupy--bind-server-kernel (server)
   "Pick the kernel this SERVER's port should be bound to, and remember it.
 
-One port = one kernel. The usual case is a single kernel already
+One port = one kernel.  The usual case is a single kernel already
 running behind the tunnel, which is adopted silently -- no prompt, and
-no second kernel process spawned next to the one you started. Only a
+no second kernel process spawned next to the one you started.  Only a
 server with nothing running gets a fresh kernel."
   (let* ((kernels (emjupy--server-kernels server))
          (id (cond
@@ -117,6 +118,7 @@ server with nothing running gets a fresh kernel."
 ;;;###autoload
 (defun emjupy-login (url &optional token)
   "Connect to the Jupyter server at URL and open one of its notebooks.
+TOKEN, when given, is used instead of prompting.
 
 URL may be a bare port (\"8888\"), a host:port pair, or a full http(s)
 URL. A bare port means localhost -- the usual case when the server is
@@ -151,7 +153,7 @@ different kernel. With a prefix argument, always prompt for the token."
 
 (defun emjupy-list-notebooks (&optional server)
   "Fetch SERVER's root contents and prompt to open or create a notebook.
-Returns the notebook buffer. SERVER defaults to this buffer's server,
+Returns the notebook buffer.  SERVER defaults to this buffer's server,
 or the last one logged into."
   (interactive)
   (let* ((server (or server (emjupy--server)))
@@ -179,7 +181,7 @@ different servers, and one buffer cannot represent both."
   (format "*emjupy: %s [%s]*" path (emjupy--server-label server)))
 
 (defun emjupy-open-notebook (path &optional server)
-  "Fetch notebook JSON from SERVER, parse it, and render it in `emjupy-mode'.
+  "Fetch PATH from SERVER, parse it, and render it in `emjupy-mode'.
 Returns the notebook buffer."
   (let* ((server (or server (emjupy--server))))
     (message "Fetching notebook: %s..." path)
@@ -300,10 +302,12 @@ nil disables `d\'."
     (cdr (assoc (emjupy--server-label server) emjupy-remote-root)))))
 
 (defface emjupy-list-notebook
-  '((t :inherit font-lock-function-name-face :weight bold))
-  "Face for notebook rows in the server dashboard.
-Bold, because notebooks are what the dashboard is for -- everything else
-on it is context."
+  ;; Inherit only.  MELPA's guidelines ask packages not to inherit a face
+  ;; AND override its attributes -- adding :weight bold here can look wrong
+  ;; against a user's customisation of the inherited face.  Customise
+  ;; `emjupy-list-notebook' if you want notebooks bolder.
+  '((t :inherit font-lock-function-name-face))
+  "Face for notebook rows in the server dashboard."
   :group 'emjupy)
 
 (defface emjupy-list-directory
@@ -312,10 +316,9 @@ on it is context."
   :group 'emjupy)
 
 (defface emjupy-list-kernel
-  '((t :inherit font-lock-warning-face :weight normal))
+  '((t :inherit font-lock-warning-face))
   "Face for kernel rows in the server dashboard.
-Deliberately light: a kernel is a running process to keep an eye on, not
-something to open, and it should not compete with the notebooks above."
+A kernel is a running process to keep an eye on, not something to open."
   :group 'emjupy)
 
 (defface emjupy-list-file
@@ -332,7 +335,8 @@ something to open, and it should not compete with the notebooks above."
     (_ 'emjupy-list-file)))
 
 (defun emjupy--list-row (kind label name info)
-  "Build a dashboard row of KIND, propertized so it reads at a glance."
+  "Build a dashboard row of KIND showing LABEL, NAME and INFO.
+Propertized by kind so the row is identifiable at a glance."
   (let ((face (emjupy--list-face kind)))
     (vector (propertize label 'face face)
             (propertize name 'face face)

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -88,6 +89,7 @@ instead; this is only the fallback for things like `emjupy-login'.")
 
 (defun emjupy--intern-server (base-url token)
   "Return the registered `emjupy-server' for BASE-URL, creating it if new.
+TOKEN is stored on the server and replaces any token already held.
 Re-logging into a server already open updates its token and keeps the
 same object, so notebooks already pointing at it stay valid."
   (let ((server (gethash base-url emjupy--servers)))

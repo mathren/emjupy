@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -29,7 +30,7 @@
 (defun emjupy--server-parts (&optional server)
   "Return a plist describing SERVER's base-url.
 
-Keys are :scheme, :ws-scheme, :host, :port and :path. Accepts a bare
+Keys are :scheme, :ws-scheme, :host, :port and :path.  Accepts a bare
 port (\"8888\"), a host:port pair, a full http(s) URL, and an optional
 trailing base path -- the last of which matters for servers reached
 through an SSH tunnel into a proxied setup (e.g. a JupyterHub
@@ -73,7 +74,7 @@ one that always answers directly: on a server that wants credentials
 cookie.")
 
 (defun emjupy--harvest-xsrf (server)
-  "Fetch an `_xsrf' cookie for SERVER and remember it.  Returns it, or nil.
+  "Fetch an `_xsrf' cookie for SERVER and remember it.  Return it, or nil.
 
 Deliberately raw rather than going through `emjupy--http-request': these
 endpoints answer with HTML, which the JSON parse there would reject.

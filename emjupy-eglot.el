@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -95,7 +96,8 @@
   "Keymap active in the transient markdown-cell edit buffer.")
 
 (define-minor-mode emjupy-cell-edit-mode
-  "Minor mode for the transient markdown-cell buffer opened by
+  "Minor mode for the transient markdown-cell edit buffer.
+Opened by
 `emjupy-edit-cell-externally'."
   :lighter " emjupy-edit"
   :keymap emjupy-cell-edit-mode-map)
@@ -131,7 +133,7 @@
     (message "[emjupy] Cell updated.")))
 
 (defun emjupy-abort-cell-edit ()
-  "Discard this markdown-cell-edit buffer's changes without committing them."
+  "Abandon this markdown-cell-edit buffer without committing."
   (interactive)
   (when (y-or-n-p "Discard changes to this cell? ")
     (kill-buffer)))
@@ -150,8 +152,9 @@
   "Keymap active in the shared multi-cell code shadow-buffer.")
 
 (define-minor-mode emjupy-shadow-edit-mode
-  "Minor mode for the persistent shared-code buffer opened by
-`emjupy-edit-cell-externally' for code cells. Eglot manages this
+  "Minor mode for the persistent shared-code shadow buffer.
+Opened by
+`emjupy-edit-cell-externally' for code cells.  Eglot manages this
 buffer like any ordinary Python file."
   :lighter " emjupy-shadow")
 
@@ -230,12 +233,12 @@ server reached through `ssh -L\' looks like localhost from here."
 (defconst emjupy--shadow-coding 'utf-8-unix
   "Coding system used for the Eglot shadow file, in both directions.
 
-Pinned rather than negotiated. Left to itself `write-region' calls
+Pinned rather than negotiated.  Left to itself `write-region' calls
 `select-safe-coding-system', which for anything it cannot encode
 cleanly -- a stray undecodable byte in a cell, say -- stops and ASKS,
-defaulting to `raw-text'. Answering that turns the shadow file into raw
+defaulting to `raw-text'.  Answering that turns the shadow file into raw
 bytes, so the next visit reads mojibake back (a lone #x97 shows up as
-`\\227') and Emacs then chokes trying to save it. LSP mandates UTF-8
+`\\227') and Emacs then chokes trying to save it.  LSP mandates UTF-8
 anyway, so there is nothing to negotiate.")
 
 (defun emjupy--eglot-live-server (&optional buffer)
@@ -272,7 +275,8 @@ The server is folded into the name: two servers can both host
     (expand-file-name (concat safe-name ".py") dir)))
 
 (defun emjupy--ensure-shadow-buffer (nb)
-  "Get-or-create NB's persistent code shadow-buffer, refresh its content to
+  "Return NB's persistent code shadow buffer, creating it if needed.
+Its content is refreshed to
 match the current cells, and make sure Eglot is (or becomes) attached --
 automatically, with nothing for the user to run."
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
@@ -435,33 +439,38 @@ right destination there."
        items))))
 
 (cl-defmethod xref-backend-identifier-at-point ((_backend (eql emjupy)))
+  "Return the identifier at point, as Eglot sees it in the shadow buffer."
   (or (emjupy--xref-in-shadow #'xref-backend-identifier-at-point)
       (thing-at-point 'symbol t)))
 
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (eql emjupy)))
+  "Return the completion table Eglot provides for identifiers."
   (emjupy--xref-in-shadow #'xref-backend-identifier-completion-table))
 
 (cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
+  "Return definitions of IDENTIFIER, mapped back onto notebook cells."
   (let ((nb emjupy--buffer-notebook))
     (emjupy--xref-remap
      nb (emjupy--xref-in-shadow
          (lambda (b) (xref-backend-definitions b identifier))))))
 
 (cl-defmethod xref-backend-references ((_backend (eql emjupy)) identifier)
+  "Return references to IDENTIFIER, mapped back onto notebook cells."
   (let ((nb emjupy--buffer-notebook))
     (emjupy--xref-remap
      nb (emjupy--xref-in-shadow
          (lambda (b) (xref-backend-references b identifier))))))
 
 (cl-defmethod xref-backend-apropos ((_backend (eql emjupy)) pattern)
+  "Return matches for PATTERN, mapped back onto notebook cells."
   (let ((nb emjupy--buffer-notebook))
     (emjupy--xref-remap
      nb (emjupy--xref-in-shadow
          (lambda (b) (xref-backend-apropos b pattern))))))
 
 (defun emjupy--pull-shadow-into-cells (nb)
-  "Write NB\='s shadow sections back into its cells, re-rendering if any
-changed.  Returns the number of cells updated."
+  "Write NB\='s shadow sections back into its cells.
+The notebook is re-rendered if any  Returns the number of cells updated."
   (let ((buf (emjupy-notebook-shadow-buffer nb))
         (updated 0))
     (when (buffer-live-p buf)
@@ -480,8 +489,8 @@ changed.  Returns the number of cells updated."
     updated))
 
 (defun emjupy-eglot-delegate (fn)
-  "Run FN in this notebook\='s shadow buffer, at the position matching
-point, then pull anything it changed back into the cells.
+  "Run FN in this notebook\='s shadow buffer, at the matching position.
+Anything FN changes is then pulled back into the cells.
 
 This is what makes Eglot\='s own commands usable from a notebook.  They
 call `eglot--current-server-or-lose\', and the notebook buffer is not the
@@ -543,8 +552,9 @@ real cursor rather than whatever is under point in the shadow buffer."
 (emjupy-eglot-install-advice)
 
 (defun emjupy-commit-shadow-edit ()
-  "Write each `# %% [emjupy:ID]' section in this buffer back into its cell
-and refresh the notebook. Sections for cells you didn't touch are written
+  "Commit this shadow buffer back into the notebook.
+Each `# %% [emjupy:ID]\=' section is written into its cell.
+Sections for cells you didn\='t touch are written
 back unchanged; the shadow buffer and its Eglot connection stay alive for
 next time."
   (interactive)
@@ -566,8 +576,9 @@ next time."
     (message "[emjupy] %d cell%s updated." updated (if (= updated 1) "" "s"))))
 
 (defun emjupy-abort-shadow-edit ()
-  "Discard uncommitted edits in the shared code buffer (reverting it to
-match the cells' last-committed state) and switch back to the notebook.
+  "Discard uncommitted edits in the shared code buffer.
+It is reverted to the cells\=' last-committed state, then the notebook is
+switched back to.
 The buffer and its Eglot connection are kept alive, not killed."
   (interactive)
   (when (y-or-n-p "Discard uncommitted edits in the shared code view? ")
@@ -588,8 +599,9 @@ Code cells open a persistent, shared Python buffer containing ALL of
 the notebook's code cells (marked `# %% [emjupy:ID]'), with Eglot
 started automatically -- so completions, diagnostics, and go-to-def
 are aware of definitions from every cell, not just this one, and
-there's nothing extra for you to run. `C-c C-c' commits every section
-you touched back into its cell; `C-c C-k' discards uncommitted edits.
+there's nothing extra for you to run.  \\[emjupy-commit-shadow-edit] commits every section
+you touched back into its cell; \\[emjupy-abort-shadow-edit] discards
+uncommitted edits.
 The buffer and its Eglot connection persist, so only the first use
 per session pays the language-server startup cost.
 
@@ -624,10 +636,11 @@ LSP awareness doesn't apply to prose."
   (with-current-buffer buf (point)))
 
 (defun emjupy--cell-shadow-delegate (fn)
-  "If point is in a code cell, sync + warm the shadow buffer, move an
-indirect cursor there to the equivalent position, and call FN with
+  "Delegate to the shadow buffer when point is in a code cell.
+The buffer is synced and warmed, an indirect cursor moved there to the
+equivalent position, and FN called with
 CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
-`(point)' there (already positioned) to do its work. Returns FN's
+`(point)' there (already positioned) to do its work.  Returns FN's
 value, or nil if point isn't in a code cell."
   (let ((cell (get-text-property (point) 'emjupy-cell))
         (nb emjupy--buffer-notebook))
@@ -647,7 +660,8 @@ value, or nil if point isn't in a code cell."
           (funcall fn cell-start shadow-start buf))))))
 
 (defun emjupy--cell-completion-at-point ()
-  "`completion-at-point-functions' entry: delegate to Eglot via the
+  "Return completions for the cell at point.
+This is a `completion-at-point-functions\=' entry; it delegates to Eglot via the
 shared code shadow buffer, so completions see definitions from every
 cell in the notebook, automatically."
   (emjupy--cell-shadow-delegate
@@ -692,14 +706,16 @@ on newer Emacs."
    (t nil)))
 
 (defun emjupy--cell-eldoc-function (callback)
-  "`eldoc-documentation-functions' entry: request hover info from Eglot
+  "Report hover documentation for the cell at point to CALLBACK.
+This is an `eldoc-documentation-functions\=' entry; it requests hover
+info from Eglot
 directly via the shared code shadow buffer.
 
 Deliberately does NOT delegate to `eldoc-documentation-functions' the
 way completion does: Eglot's own `eglot-hover-eldoc-function' only
 calls back when its buffer is visibly displayed in a window, which is
 never true for this shadow buffer -- staying hidden in the background
-is the whole point. `jsonrpc-request' (blocking) bypasses that gate."
+is the whole point.  `jsonrpc-request' (blocking) bypasses that gate."
   (emjupy--cell-shadow-delegate
    (lambda (_cell-start _shadow-start _buf)
      (when (and (emjupy--eglot-live-server)

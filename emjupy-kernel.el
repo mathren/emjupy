@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -44,7 +45,8 @@
   "Unique identifier for the current Emacs session.")
 
 (defun emjupy--make-execute-request (code)
-  "Construct a Jupyter protocol `execute_request` message payload."
+  "Return a Jupyter `execute_request' payload for CODE.
+The value is a cons of the message id and the serialized message."
   (let* ((msg-id (emjupy--uuid))
          (header (make-hash-table :test 'equal))
          (content (make-hash-table :test 'equal))
@@ -259,7 +261,8 @@ stepping over overlays mid-flight lands in the output box."
 
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
-Returns the `emjupy-kernel'. Each notebook keeps its own kernel, so
+KERNEL-NAME, when given, is the kernelspec name to record.
+Returns the `emjupy-kernel'.  Each notebook keeps its own kernel, so
 several notebooks -- from several servers -- stay live at once."
   (let* ((server (emjupy-notebook-server notebook))
          (parts (emjupy--server-parts server))

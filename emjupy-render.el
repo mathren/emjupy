@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -58,8 +59,9 @@ Nothing outside a cell's output is ever recoloured."
   :group 'emjupy)
 
 (defcustom emjupy-output-error-color 'auto
-  "Background behind an error output -- a traceback, or anything on stderr
-that reads as a failure.  `auto' tints the buffer background toward red.
+  "Background behind an error output.
+This covers a traceback, or anything on stderr that reads as a failure.
+`auto' tints the buffer background toward red.
 See `emjupy-output-color' for the accepted values."
   :type '(choice (const :tag "Derive from theme" auto)
                  (color :tag "Explicit colour")
@@ -67,8 +69,9 @@ See `emjupy-output-color' for the accepted values."
   :group 'emjupy)
 
 (defcustom emjupy-output-warning-color 'auto
-  "Background behind a warning -- anything the kernel sent to stderr that
-is not a traceback.  `auto' tints the buffer background toward yellow."
+  "Background behind a warning output.
+This covers anything the kernel sent to stderr that is not a traceback.
+`auto' tints the buffer background toward yellow."
   :type '(choice (const :tag "Derive from theme" auto)
                  (color :tag "Explicit colour")
                  (const :tag "Use the ordinary output colour" nil))
@@ -93,8 +96,8 @@ your figures have a different background."
   :group 'emjupy)
 
 (defcustom emjupy-output-tint-blend 0.16
-  "How far to blend toward red or yellow for `auto' error and warning
-colours.  Larger is louder."
+  "How far to blend toward red or yellow for `auto' tints.
+This applies to the error and warning  Larger is louder."
   :type 'float
   :group 'emjupy)
 
@@ -225,7 +228,7 @@ Emacs too old for `enable-theme-functions'."
 (defcustom emjupy-box-width 'window
   "Width of the box-drawing rules that outline each cell.
 
-An integer is used verbatim. The symbol `window' -- the default --
+An integer is used verbatim.  The symbol `window' -- the default --
 sizes the rule to the window the notebook is displayed in, so the
 outline spans the buffer instead of stopping short at a fixed 80
 columns on a wide frame."
@@ -260,7 +263,7 @@ the numbers are widest and the overshoot wraps a whole line."
   "Columns left free at the right edge when fitting rules to the window.
 
 Emacs cannot always be asked exactly how many columns are usable: a
-right margin, a fill-column indicator, a scroll bar the toolkit reports
+right margin, a `fill-column' indicator, a scroll bar the toolkit reports
 oddly, or a line-number width that is off by the separator can each eat
 one or two.  Rather than guess, leave a couple spare.  Raise it if the
 rules still run past the edge in your setup, lower it to 0 if they stop
@@ -301,7 +304,8 @@ and a wrapped rule is far uglier than a short one."
     (format "[Out: %s]" (if (numberp exec) (number-to-string exec) " "))))
 
 (defun emjupy--rule (label &optional corner)
-  "Return a propertized box rule line, or a footer when LABEL is nil."
+  "Return a propertized box rule line showing LABEL.
+CORNER is the left corner glyph; with LABEL nil a footer is returned."
   (propertize (if label (emjupy--box-header label corner) (emjupy--box-footer))
               'face 'emjupy-box-line))
 
@@ -312,6 +316,7 @@ and a wrapped rule is far uglier than a short one."
 
 (defun emjupy--refresh-box-rules (&optional force)
   "Redraw cell outlines at the current window width, if it changed.
+With FORCE non-nil, redraw even when the width is unchanged.
 
 The rules live in overlay before/after-strings, which are built once at
 render time -- so without this a rule sized for a full-screen frame
@@ -600,7 +605,7 @@ back to the classic `markdown-mode' (MELPA), then nil -- in which case
 
 (defun emjupy--fontify-as (text cell-type)
   "Return TEXT with font-lock faces applied appropriate for CELL-TYPE.
-Code cells use `python-mode', which ships with Emacs core. Markdown
+Code cells use `python-mode', which ships with Emacs core.  Markdown
 cells use whatever `emjupy--markdown-mode-fn' resolves to, and fall
 back to emjupy's own highlighting when no markdown package is
 installed."
@@ -800,6 +805,7 @@ without the relevant library (very common for `emacs-nox') will make
 
 (defun emjupy--pad-output-lines (start end face)
   "Fill every line between START and END out to the cell's right border.
+FACE is the background the filler carries.
 
 Not `:extend\', which runs the background to the WINDOW edge and so
 spilled the tint past the outline and across the rest of the frame.  A
@@ -877,7 +883,7 @@ puts `warnings.warn\', logging, and progress bars."
 
 Prefers an inline image when this Emacs can genuinely display one, and
 otherwise falls back to the bundle's own `text/plain' representation
-plus a short note. Without that fallback a figure renders as a
+plus a short note.  Without that fallback a figure renders as a
 silently empty output box on a terminal or no-image Emacs: rendering
 happens inside the WebSocket callback, where websocket.el swallows the
 `Invalid image type' error `create-image' raises."
@@ -915,7 +921,7 @@ happens inside the WebSocket callback, where websocket.el swallows the
 
 A cell whose last expression is a figure gets the SAME picture twice
 from the kernel: once as the `execute_result' repr and again as the
-inline backend's `display_data'. That is kernel-side behaviour, so the
+inline backend's `display_data'.  That is kernel-side behaviour, so the
 duplicate is dropped only at render time -- the cell's `outputs' vector
 still holds exactly what the kernel sent, and is saved back to the
 .ipynb unchanged, so the file stays byte-faithful for other clients."

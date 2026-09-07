@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
@@ -227,7 +228,7 @@ attribute them to source that never produced them."
       (emjupy--rerender-notebook new-cell)
       new-cell)))
 
-(defun emjupy-merge-cell-above ()
+(defun emjupy-join-cell-above ()
   "Merge the cell at point into the one above it.
 
 The two sources are joined with a newline between them, the upper cell
@@ -235,8 +236,7 @@ absorbs the lower, and point lands at the seam -- where the second cell
 used to begin.
 
 The output of BOTH cells is discarded, along with their execution
-counts.  Neither set was produced by the merged code, and keeping one
-would attribute results to source that never generated them.
+counts.
 
 The cells must be of the same type; merging code into prose, or the
 reverse, would silently reinterpret one of them."
@@ -299,11 +299,7 @@ reverse, would silently reinterpret one of them."
     (emjupy--rerender-notebook cell)))
 
 (defvar emjupy--cell-clipboard nil
-  "The cell most recently copied, as a (TYPE . SOURCE) pair.
-
-Type and source only.  A cell's output belongs to the run that produced
-it, so carrying it to a copy would attribute results to code that never
-generated them.")
+  "The cell most recently copied, as a (TYPE . SOURCE) pair. Output not copied")
 
 (defun emjupy-copy-cell ()
   "Copy the cell at point.  Its output is not copied.
@@ -324,7 +320,7 @@ text anywhere else."
 (defun emjupy-yank-cell ()
   "Insert the most recently copied cell below the cell at point.
 
-The new cell has no output and no execution count: it has not been run."
+The new cell has no output and no execution count."
   (interactive)
   (unless emjupy--cell-clipboard
     (user-error "No cell has been copied yet"))

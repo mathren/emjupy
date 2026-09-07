@@ -1,5 +1,8 @@
 ;;; emjupy-test.el --- Tests for emjupy.el -*- lexical-binding: t; -*-
 
+;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
+
 ;; Kept separate from emjupy.el on purpose: implementation and tests are
 ;; different files, this one requires the other.
 ;;
@@ -1664,7 +1667,7 @@ would attribute results to source that never generated them."
       (emjupy-test--with-notebook (vector c1 c2 c3) buf nb
         (with-current-buffer buf
           (goto-char (overlay-start (emjupy-cell-overlay c2)))
-          (let ((merged (emjupy-merge-cell-above))
+          (let ((merged (emjupy-join-cell-above))
                 (cells (emjupy-notebook-cells nb)))
             (should (eq merged c1))
             (should (= (length cells) 2))
@@ -1692,9 +1695,9 @@ reinterpret one of them."
     (emjupy-test--with-notebook (vector c1 c2) buf nb
       (with-current-buffer buf
         (goto-char (overlay-start (emjupy-cell-overlay c1)))
-        (should-error (emjupy-merge-cell-above) :type 'user-error)
+        (should-error (emjupy-join-cell-above) :type 'user-error)
         (goto-char (overlay-start (emjupy-cell-overlay c2)))
-        (should-error (emjupy-merge-cell-above) :type 'user-error)
+        (should-error (emjupy-join-cell-above) :type 'user-error)
         ;; nothing was changed by either refusal
         (should (= (length (emjupy-notebook-cells nb)) 2))))))
 
@@ -1710,7 +1713,7 @@ reinterpret one of them."
         (beginning-of-line)
         (emjupy-split-cell)
         (should (= (length (emjupy-notebook-cells nb)) 2))
-        (emjupy-merge-cell-above)
+        (emjupy-join-cell-above)
         (let ((cells (emjupy-notebook-cells nb)))
           (should (= (length cells) 1))
           (should (equal (emjupy-cell-source (aref cells 0)) "a = 1\nb = 2")))))))
@@ -1744,8 +1747,8 @@ the END of the notebook instead of inserting below."
           (should (eq (aref cells 2) c2)))))))
 
 (ert-deftest emjupy-test-split-and-merge-are-bound ()
-  (should (eq (lookup-key emjupy-mode-map (kbd "C-c s")) 'emjupy-split-cell))
-  (should (eq (lookup-key emjupy-mode-map (kbd "C-c m")) 'emjupy-merge-cell-above)))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-s")) 'emjupy-split-cell))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-j")) 'emjupy-join-cell-above)))
 
 (ert-deftest emjupy-test-xsrf-harvest-tries-login-first ()
   "/login comes first because it is the endpoint that always answers
@@ -1883,23 +1886,33 @@ the secret back on screen, and into savehist for anyone who persists it."
 
 (ert-deftest emjupy-test-prompt-histories-are-separate ()
   "Ports, notebooks and kernels each keep their own history, so a port
-does not turn up while completing a notebook name."
+does not turn up while completing a notebook name.
+
+Asserted by driving the prompts rather than reading `interactive-form\':
+once the package is byte-compiled -- which is what any archive does --
+that form is a byte-code object and nothing can be read out of it."
   (should (boundp 'emjupy--port-history))
   (should (boundp 'emjupy--notebook-history))
   (should (boundp 'emjupy--kernel-history))
-  ;; the port prompt reaches for the port history, and not the notebook one
-  (let ((login (flatten-tree (cadr (interactive-form 'emjupy-login)))))
-    (should (memq 'emjupy--port-history login))
-    (should-not (memq 'emjupy--notebook-history login)))
-  ;; and the notebook picker reaches for the notebook history
+  (let ((hist 'unset))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (_p &optional _i h &rest _) (setq hist h) "8888"))
+              ((symbol-function 'emjupy--resolve-token) (lambda (&rest _) ""))
+              ((symbol-function 'emjupy--intern-server)
+               (lambda (&rest _) (make-emjupy-server :base-url "localhost:8888")))
+              ((symbol-function 'emjupy--http-request) (lambda (&rest _) nil))
+              ((symbol-function 'emjupy--harvest-xsrf) (lambda (&rest _) nil))
+              ((symbol-function 'emjupy--bind-server-kernel) (lambda (&rest _) "k"))
+              ((symbol-function 'emjupy-list-notebooks) (lambda (&rest _) nil)))
+      (ignore-errors (call-interactively 'emjupy-login))
+      (should (eq hist 'emjupy--port-history))))
   (let ((hist 'unset)
         (server (make-emjupy-server :base-url "localhost:8888" :token "t")))
     (cl-letf (((symbol-function 'emjupy--http-request)
                (lambda (&rest _) (make-hash-table :test 'equal)))
               ((symbol-function 'completing-read)
                (lambda (_p _c &optional _pr _rm _ii h &rest _)
-                 (setq hist h)
-                 "[Create New Notebook]"))
+                 (setq hist h) "[Create New Notebook]"))
               ((symbol-function 'emjupy-create-notebook) (lambda (&rest _) nil))
               ((symbol-function 'emjupy-new-notebook) (lambda (&rest _) nil)))
       (ignore-errors (emjupy-list-notebooks server))
@@ -2094,13 +2107,14 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
                  ("C-c <down>"  . emjupy-move-cell-down)
                  ("C-c <prior>" . emjupy-beginning-of-cell)
                  ("C-c <next>"  . emjupy-end-of-cell)
-                 ("C-c w"       . emjupy-copy-cell)
-                 ("C-c y"       . emjupy-yank-cell)
-                 ("C-c s"       . emjupy-split-cell)
-                 ("C-c m"       . emjupy-merge-cell-above)))
+                 ("C-c C-w"     . emjupy-copy-cell)
+                 ("C-c C-y"     . emjupy-yank-cell)
+                 ("C-c C-s"     . emjupy-split-cell)
+                 ("C-c C-j"     . emjupy-join-cell-above)))
     (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair))))
   ;; and the retired duplicates really are gone
-  (dolist (key '("M-RET" "C-c C-r" "M-<up>" "M-<down>" "M-n" "M-p" "C-c C-s"))
+  ;; C-c C-s is not listed: it was a save duplicate and is now split-cell.
+  (dolist (key '("M-RET" "C-c C-r" "M-<up>" "M-<down>" "M-n" "M-p"))
     (should-not (lookup-key emjupy-mode-map (kbd key)))))
 
 (ert-deftest emjupy-test-latex-fragments-found ()
@@ -2319,6 +2333,16 @@ black glyphs on a dark background."
       (let ((emjupy-latex-foreground "#ffffff")) (emjupy--latex-image "x^2"))
       (should (= (length files) 2))
       (should-not (equal (nth 0 files) (nth 1 files))))))
+
+(ert-deftest emjupy-test-no-user-reserved-keys ()
+  "`C-c\=' followed by a plain letter is reserved for USERS by the Emacs
+Lisp manual, and package-lint reports any such binding as an error --
+which MELPA requires to be clean.  Leave that space alone."
+  (let ((taken nil))
+    (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
+      (when (commandp (lookup-key emjupy-mode-map (kbd (format "C-c %c" letter))))
+        (push (format "C-c %c" letter) taken)))
+    (should-not taken)))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -1,8 +1,9 @@
-;;; emjupy.el --- Interactive Jupyter notebooks in Emacs  -*- lexical-binding: t; -*-
+;;; emjupy.el --- Interactive Jupyter notebooks over HTTP and WebSocket  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 
 ;; Author: Mathieu Renzo <mathren90@gmail.com>
+;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Maintainer: Mathieu Renzo <mathren90@gmail.com>
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1") (websocket "1.15"))
@@ -48,6 +49,10 @@
 (require 'emjupy-notebook)
 (require 'emjupy-eglot)
 
+;; `C-c\' followed by a plain letter is reserved for USERS by the Emacs Lisp
+;; manual (Key Binding Conventions), so a package may not take `C-c s\' or
+;; `C-c w\'; package-lint reports it as an error.  Those keys are left free
+;; for you -- see the README for a snippet that puts the cell commands there.
 (defvar emjupy-mode-map
   (let ((map (make-sparse-keymap)))
     ;; Execution
@@ -63,11 +68,11 @@
     (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
-    (define-key map (kbd "C-c s")   #'emjupy-split-cell)
-    (define-key map (kbd "C-c m")   #'emjupy-merge-cell-above)
+    (define-key map (kbd "C-c C-s") #'emjupy-split-cell)
+    (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
-    (define-key map (kbd "C-c w")   #'emjupy-copy-cell)
-    (define-key map (kbd "C-c y")   #'emjupy-yank-cell)
+    (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
+    (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)
     (define-key map (kbd "C-c <up>")   #'emjupy-move-cell-up)
     (define-key map (kbd "C-c <down>") #'emjupy-move-cell-down)
     (define-key map (kbd "C-c '")    #'emjupy-edit-cell-externally)

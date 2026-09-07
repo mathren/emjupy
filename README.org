@@ -95,10 +95,10 @@ by gitHub actions.
 | =C-c C-a=     | =emjupy-insert-cell-above=          | Insert a new code cell above the current one                       |
 | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                           |
-| =C-c s=       | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
-| =C-c m=       | =emjupy-merge-cell-above=           | Merge this cell into the one above (clears both outputs)           |
-| =C-c w=       | =emjupy-copy-cell=                  | Copy the cell, without its output                                  |
-| =C-c y=       | =emjupy-yank-cell=                  | Insert the copied cell below, unrun                                |
+| =C-c C-s=     | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
+| =C-c C-j=     | =emjupy-join-cell-above=           | Merge this cell into the one above (clears both outputs)           |
+| =C-c C-w=     | =emjupy-copy-cell=                  | Copy the cell, without its output                                  |
+| =C-c C-y=     | =emjupy-yank-cell=                  | Insert the copied cell below, unrun                                |
 | =C-c C-t=     | =emjupy-cycle-cell-type=            | Toggle the cell between code and markdown                          |
 | =C-c <up>=    | =emjupy-move-cell-up=               | Move the cell, and its output, one position earlier                |
 | =C-c <down>=  | =emjupy-move-cell-down=             | Move the cell, and its output, one position later                  |
@@ -580,5 +580,3 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] re-enforce git tag and emjupy version sync
-- [ ] add to *.el files =;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs=
-- [ ]
