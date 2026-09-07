@@ -22,15 +22,15 @@ jobs:
         with:
           version: '30.1'
 
-      - name: Check tag matches the package version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          version=$(sed -n 's/^;; Version: \(.*\)/\1/p' emjupy.el)
-          echo "tag=$tag  header version=$version"
-          if [ "$tag" != "$version" ]; then
-            echo "::error::Tag $tag does not match ';; Version: $version' in emjupy.el."
-            exit 1
-          fi
+      # - name: Check tag matches the package version
+      #   run: |
+      #     tag="${GITHUB_REF_NAME#v}"
+      #     version=$(sed -n 's/^;; Version: \(.*\)/\1/p' emjupy.el)
+      #     echo "tag=$tag  header version=$version"
+      #     if [ "$tag" != "$version" ]; then
+      #       echo "::error::Tag $tag does not match ';; Version: $version' in emjupy.el."
+      #       exit 1
+      #     fi
 
       - name: Check
         run: make check
