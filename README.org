@@ -571,3 +571,6 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 
 *** Python only
 Other kernels (e.g., R or julia) have never been tested, but may work.
+
+* TODO list of improvements
+- [ ] re-enforce git tag and emjupy version sync
