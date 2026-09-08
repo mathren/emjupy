@@ -612,3 +612,7 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [ ] on =xwidget= branch address GitHub issue #1
 - [ ] use =*= or =\ | / -= loop for "executing" status of a cell between
   running it and output showing up for long cells.
+- [ ] suppress "can't find python offset" message in every cell
+- [ ] upon large output of a notebook (large figure), whole notebook
+  can get scrambled. shadow buffer seems ok. Why? Maybe add function
+  `emjupy-re-render`?
