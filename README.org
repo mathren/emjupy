@@ -664,8 +664,9 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-
-- [ ] scrambling of the notebook still happens, check and fix all possible issues
+- [ ] scrambling of the notebook still happens, check and fix all
+  possible issues. cell boundaries piled at the top also exceed right
+  boundary of buffer.
 - [ ] change keybindings =C-c C-z= should stop the execution of the notebook
   and =C-c M-z= for kernel selection
 - [ ] =C-c C-k= still jumps at the end of the buffer
