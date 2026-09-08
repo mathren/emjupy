@@ -638,6 +638,13 @@ where the idea came from: the shadow buffer's markers carry emjupy's
 internal cell ids, which mean nothing outside emjupy, and it holds code
 cells only -- so exporting it directly would silently drop your prose.
 
+** ANSI colour in output
+
+Output from =termcolor=, =rich= or =colorama= arrives with ANSI escapes in
+it.  These are applied as real colours rather than shown as
+=\\033[33m=; set =emjupy-render-ansi-colors= to nil to strip them
+instead.
+
 ** Known limitations
 
 *** Multicursor
@@ -657,32 +664,17 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] first cell of the notebook occasionally gets polluted: the
-  entire notebook (input and output) gets copied at the top. This
-  should never happen. re-drawing keeps the spurious content.
-- [ ] upon opening remote port, first try gives 403 without asking for
-  a token, second try goes through correctly asking the token. Why?
-  Fix this
-- [ ] =C-c C-b= and =C-c C-a= should add a cell below above current cell.
-  Right now =C-c C-b= puts a cell at the end.
 - [ ] when doing =M-.= on a custom function in a notebook that is imported from
   a local =*.py= file, I would like that to go to the function in the library.
 - [ ] like =C-$= in =ein= opens the full traceback in a separate buffer
   (with syntax highlight), we want the same functionality in =emjupy=
 - [ ] this may be an emacs limitation, but smooth scrolling for large
   inline images would be desirable.
-- [ ] the background line of the line separating input and output of
-  the cell still overflows on the right by 1 column
-- [ ] when using the library =termcolor= to print say in yellow, the
-  output shows =[33m= and =[0m= instead of coloring
 - [ ] make the lines in between cells not writable/non-existent (they
   don't get a line number but I can write in them)
-- [ ] should not be possible to write in the output area, instead if
-  point is in output area, allow to run corresponding cell
 - [ ] =Tab= should cycle through available python indent levels like in
   a python file
 - [ ] output (say from a long-running cell) should not move the
   point/view when it comes out
-- [ ] =C-c C-x C-r= should ask for confirmation
-- [ ] re-enforce git tag and =emjupy= version sync
+- [X] re-enforce git tag and =emjupy= version sync
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

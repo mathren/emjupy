@@ -61,9 +61,16 @@ credential ends up on screen and in the minibuffer history."
     url))
 
 (defun emjupy--server-reachable-p (server)
-  "Return non-nil if SERVER answers /api/status with SERVER's credentials."
+  "Return non-nil if SERVER accepts SERVER's credentials.
+
+Probes /api/contents, not /api/status.  Status is a health endpoint and
+several jupyter_server versions answer it without authentication at all,
+so a tokenless probe came back 200 and emjupy concluded no token was
+needed -- then every write was refused with 403 and the token was never
+asked for.  Contents is both genuinely protected and the thing emjupy
+actually needs."
   (condition-case nil
-      (and (emjupy--http-request "GET" server "/api/status") t)
+      (and (emjupy--http-request "GET" server "/api/contents") t)
     (error nil)))
 
 (defun emjupy--resolve-token (base-url explicit)

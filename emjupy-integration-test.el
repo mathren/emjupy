@@ -652,7 +652,8 @@ kernel -- and its interpreter state -- untouched."
           (emjupy-int--run-in a "KEEP_A = 1")
           (emjupy-int--run-in b "KEEP_B = 2")
           (with-current-buffer b
-            (emjupy-restart-kernel)
+            (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+              (emjupy-restart-kernel))
             (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))
           ;; B lost its state (it restarted) ...
           (let ((cell (emjupy-int--run-in b "print('KEEP_B' in dir())")))

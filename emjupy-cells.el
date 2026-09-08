@@ -38,7 +38,34 @@
     (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
              do (emjupy--sync-cell-source-from-buffer cell))))
 
+(defvar emjupy--rendering-buffers nil
+  "Buffers currently being re-rendered.
+
+Global rather than buffer-local on purpose: a re-entrant call arrives
+while some OTHER buffer is current -- a WebSocket callback, a
+fontification temp buffer -- and a buffer-local flag is invisible from
+there.")
+
 (defun emjupy--rerender-notebook (&optional target-cell)
+  "Re-render this notebook, leaving point at TARGET-CELL if given.
+
+Does nothing if a render is already in progress.
+
+Rendering erases the buffer and rebuilds it from the cell structs.
+Anything that re-enters midway -- output arriving over the WebSocket
+during a redraw -- restarts the rebuild on a half-built buffer and
+leaves the notebook duplicated on top of itself.  The next sync then
+copies that whole mess into the first cell\='s source, which is why
+redrawing does not clear it: by then the junk IS the notebook.
+
+The re-entrant call is dropped rather than queued.  It has nothing to
+add: the render already running rebuilds from the same structs, which
+the caller has by then already updated."
+  (unless (memq (current-buffer) emjupy--rendering-buffers)
+    (let ((emjupy--rendering-buffers (cons (current-buffer) emjupy--rendering-buffers)))
+      (emjupy--rerender-notebook-1 target-cell))))
+
+(defun emjupy--rerender-notebook-1 (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
 If TARGET-CELL is given, leave point at that cell afterwards.
 
@@ -205,7 +232,28 @@ by property.  Overlays move with insertions, so they always know."
                                (>= pos (overlay-start ov))
                                (<= pos (overlay-end ov)))
                       (setq found cell)))))
-    (or found (get-text-property pos 'emjupy-cell))))
+    (or found
+        (get-text-property pos 'emjupy-cell)
+        ;; Past the end of the last cell -- point-max, or a gutter line --
+        ;; no overlay covers the position and no property was stamped there.
+        ;; Fall back to the nearest cell rather than nothing: returning nil
+        ;; made `emjupy-insert-cell-below' think there was no current cell,
+        ;; so it appended to the END of the notebook instead of inserting
+        ;; below the one you were looking at.
+        (emjupy--nearest-cell pos))))
+
+(defun emjupy--nearest-cell (pos)
+  "Return the cell whose overlay is closest to POS, or nil."
+  (when emjupy--buffer-notebook
+    (let ((best nil) (best-d most-positive-fixnum))
+      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               do (let ((ov (emjupy-cell-overlay cell)))
+                    (when (overlayp ov)
+                      (let ((d (cond ((< pos (overlay-start ov)) (- (overlay-start ov) pos))
+                                     ((> pos (overlay-end ov)) (- pos (overlay-end ov)))
+                                     (t 0))))
+                        (when (< d best-d) (setq best-d d best cell))))))
+      best)))
 
 (defun emjupy-split-cell ()
   "Split the cell at point in two, at point.

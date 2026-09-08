@@ -985,7 +985,8 @@ pending requests."
                    (lambda (notebook kernel-id &optional name)
                      (setq reconnected-with (list notebook kernel-id name))))
                   ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) nil)))
-          (emjupy-restart-kernel))
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+            (emjupy-restart-kernel)))
         (should (string-match-p "kernel-abc" restart-path))
         (should (equal (nth 1 reconnected-with) "kernel-abc"))
         (should (eq (nth 0 reconnected-with) nb))
@@ -2692,6 +2693,119 @@ makes it work for a remote kernel with no TRAMP and no configuration."
 
 (ert-deftest emjupy-test-export-py-is-bound ()
   (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-x C-e")) 'emjupy-export-py)))
+
+(ert-deftest emjupy-test-restart-kernel-asks-first ()
+  "A restart throws away every variable in the session and there is no
+undo, so it asks -- and declining leaves the kernel alone."
+  (let ((posted nil))
+    (emjupy-test--with-notebook
+     (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                               :outputs [] :metadata (make-hash-table)))
+     buf nb
+     (with-current-buffer buf
+       (setf (emjupy-notebook-kernel emjupy--buffer-notebook)
+             (make-emjupy-kernel :id "k1" :name "python3"))
+       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                 ((symbol-function 'emjupy--http-request)
+                  (lambda (&rest _) (setq posted t))))
+         (should-error (emjupy-restart-kernel) :type 'user-error))
+       (should-not posted)))))
+
+(ert-deftest emjupy-test-render-is-not-re-entrant ()
+  "A render that re-enters must be dropped, not run.
+
+Rendering erases the buffer and rebuilds it.  Output arriving over the
+WebSocket midway restarted the rebuild on a half-built buffer and left
+the notebook duplicated on top of itself -- and the next sync copied
+that into the first cell\='s source, so redrawing kept it."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((fired nil)
+              (target buf))
+          (advice-add 'emjupy--fontify-as :before
+                      (lambda (&rest _)
+                        (unless fired
+                          (setq fired t)
+                          (with-current-buffer target (emjupy--rerender-notebook)))))
+          (unwind-protect
+              (emjupy--rerender-notebook)
+            (advice-mapc (lambda (f _p) (advice-remove 'emjupy--fontify-as f))
+                         'emjupy--fontify-as)))
+        ;; one copy of each cell, not two
+        (should (= (cl-count "a = 1" (split-string (buffer-string) "\n") :test #'equal) 1))
+        (emjupy--sync-all-cells)
+        (should (equal (emjupy-cell-source c1) "a = 1"))
+        (should (equal (emjupy-cell-source c2) "b = 2"))))))
+
+(ert-deftest emjupy-test-cell-at-point-past-the-last-cell ()
+  "Point past the last cell still resolves to a cell.
+
+Returning nil made `emjupy-insert-cell-below\' think there was no
+current cell, so it appended to the END of the notebook instead of
+inserting below the one being looked at."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (point-max))
+        (should (eq (emjupy--cell-at-point) c2))
+        ;; and a new cell lands after it rather than being appended blindly
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (emjupy-insert-cell-below)
+        (let ((cells (emjupy-notebook-cells nb)))
+          (should (= (length cells) 3))
+          (should (eq (aref cells 0) c1))
+          (should (eq (aref cells 2) c2)))))))
+
+(ert-deftest emjupy-test-ansi-colours-rendered ()
+  "Escapes from termcolor and friends become colours, not literal text."
+  (let ((o (make-hash-table :test 'equal))
+        (cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "p()"
+                                :outputs [] :metadata (make-hash-table))))
+    (puthash "output_type" "stream" o)
+    (puthash "name" "stdout" o)
+    (puthash "text" "\033[33myellow\033[0m plain\n" o)
+    (setf (emjupy-cell-outputs cell) (vector o))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (point-min))
+        ;; no raw escapes on screen
+        (should-not (save-excursion (search-forward "33m" nil t)))
+        (should (search-forward "yellow" nil t))
+        ;; and the word actually carries a colour, as a `face\' property --
+        ;; ansi-color marks its output with `font-lock-face\', which is only
+        ;; honoured where font-lock runs, and emjupy leaves it off
+        (let ((face (get-text-property (- (point) 3) 'face)))
+          (should (cl-some (lambda (f) (and (consp f) (plist-get f :foreground)))
+                           (if (listp face) face (list face)))))))))
+
+(ert-deftest emjupy-test-rule-does-not-face-its-newline ()
+  "A newline carrying a background paints a column of its own past the
+last box character, so the rule stuck out one column to the right."
+  (let ((s (emjupy--rule "[Out: 1]" "├")))
+    (should (eq (get-text-property 0 'face s) 'emjupy-box-line))
+    (should (string-suffix-p "\n" s))
+    (should-not (get-text-property (1- (length s)) 'face s))))
+
+(ert-deftest emjupy-test-reachability-probes-a-protected-endpoint ()
+  "Reachability must be judged from an endpoint that needs credentials.
+
+/api/status is a health endpoint and several jupyter_server versions
+answer it without authentication, so a tokenless probe returned 200,
+emjupy concluded no token was needed, and every write was then refused
+with 403 -- without ever asking for the token."
+  (let ((probed nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (_m _s path &rest _) (setq probed path) t)))
+      (emjupy--server-reachable-p (make-emjupy-server :base-url "localhost:8888"))
+      (should-not (equal probed "/api/status"))
+      (should (equal probed "/api/contents")))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

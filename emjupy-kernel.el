@@ -383,6 +383,13 @@ Other open notebooks, and their kernels, are untouched."
          (kernel (emjupy-notebook-kernel nb)))
     (unless (and kernel (emjupy-kernel-id kernel))
       (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
+    ;; Ask first: a restart throws away every variable in the session, and
+    ;; there is no undo for that.  C-c C-x C-r is one slip from C-c C-x C-c,
+    ;; which merely reconnects.
+    (unless (yes-or-no-p
+             (format "Restart the kernel for %s -- all variables will be lost?"
+                     (emjupy-notebook-path nb)))
+      (user-error "Kernel left running"))
     (let ((kernel-id (emjupy-kernel-id kernel))
           (server (emjupy-notebook-server nb))
           (name (emjupy-kernel-name kernel)))

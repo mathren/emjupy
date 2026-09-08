@@ -405,8 +405,14 @@ and does not enter the undo history."
 (defun emjupy--rule (label &optional corner)
   "Return a propertized box rule line showing LABEL.
 CORNER is the left corner glyph; with LABEL nil a footer is returned."
-  (propertize (if label (emjupy--box-header label corner) (emjupy--box-footer))
-              'face 'emjupy-box-line))
+  (let* ((text (if label (emjupy--box-header label corner) (emjupy--box-footer)))
+         (end (if (string-suffix-p "\n" text) (1- (length text)) (length text))))
+    ;; Face the glyphs but NOT the closing newline.  A newline carrying a
+    ;; background paints a column of its own past the last box character, so
+    ;; on any theme where the inherited face has a background the rule
+    ;; separating input from output stuck out one column to the right.
+    (put-text-property 0 end 'face 'emjupy-box-line text)
+    text))
 
 ;; --- Keeping the rules the right width ------------------------------------
 
@@ -512,8 +518,9 @@ instead of trailing off into a bare horizontal line."
 ;; and npm.  math-preview is still used if it is what you have.
 
 ;; Compile-time only: nothing loads org until a preview is actually asked for.
-(eval-when-compile (require 'org))
+(eval-when-compile (require 'org) (require 'ansi-color))
 (declare-function org-create-formula-image "org")
+(declare-function ansi-color-apply "ansi-color" (string))
 (defvar org-format-latex-options)
 (defvar org-format-latex-header)
 (defvar org-latex-default-packages-alist)
@@ -829,7 +836,8 @@ face."
                           (piece-start (point)))
                       (cond
                        ((string= out-type "stream")
-                        (insert (emjupy--mime-text (gethash "text" out))))
+                        (insert (emjupy--ansi-render
+                                 (emjupy--mime-text (gethash "text" out)))))
                        ((or (string= out-type "execute_result")
                             (string= out-type "display_data"))
                         (emjupy--insert-rich-output (gethash "data" out)))
@@ -840,8 +848,7 @@ face."
                           (insert (format "Error (%s): %s\n" ename evalue))
                           (when (or (vectorp traceback) (listp traceback))
                             (cl-loop for line in (append traceback nil)
-                                     do (insert (replace-regexp-in-string
-                                                 "\033\\[[0-9;]*m" ""
+                                     do (insert (emjupy--ansi-render
                                                  (emjupy--mime-text line))
                                                 "\n"))))))
                       ;; Paint this piece, not the whole box: one cell can
@@ -963,6 +970,38 @@ one character beyond the right-hand rule."
                                    'display `(space :align-to ,width))
                 (forward-char 1))
             (forward-char 1)))))))
+
+(defcustom emjupy-render-ansi-colors t
+  "When non-nil, turn ANSI colour escapes in output into real colours.
+
+Libraries like termcolor, rich and colorama emit them, and a kernel
+happily passes them through -- so without this the output reads
+\"\\033[33mwarning\\033[0m\" instead of a yellow word."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--ansi-render (text)
+  "Return TEXT with ANSI escapes applied as faces, or stripped.
+
+`ansi-color-apply' ships with Emacs and converts the escapes into text
+properties.  Tracebacks used to have them stripped and streams showed
+them raw; both now go through here."
+  (let ((s (or text "")))
+    (if (not emjupy-render-ansi-colors)
+        (replace-regexp-in-string "\033\\[[0-9;]*m" "" s)
+      (require 'ansi-color)
+      (let ((coloured (ansi-color-apply s)))
+        ;; `ansi-color-apply' marks its output with `font-lock-face', which
+        ;; is only honoured where font-lock is running.  emjupy paints cells
+        ;; with plain `face' properties and leaves font-lock off, so without
+        ;; this the escapes vanish and the colour goes with them.
+        (let ((pos 0) (len (length coloured)))
+          (while (< pos len)
+            (let ((next (or (next-single-property-change pos 'font-lock-face coloured) len))
+                  (val (get-text-property pos 'font-lock-face coloured)))
+              (when val (put-text-property pos next 'face val coloured))
+              (setq pos next))))
+        coloured))))
 
 (defun emjupy--output-face (out)
   "Return the background face for output OUT, or nil to leave it bare.
