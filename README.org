@@ -610,3 +610,5 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - [ ] re-enforce git tag and =emjupy= version sync
 - [ ] on =xwidget= branch address GitHub issue #1
+- [ ] use =*= or =\ | / -= loop for "executing" status of a cell between
+  running it and output showing up for long cells.
