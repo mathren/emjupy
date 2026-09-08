@@ -664,9 +664,6 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] scrambling issue on re-drawing still present, can corrupt
-  notebooks. This needs fixing: corrupting notebooks is never ok.
-- [ ] =C-c C-k= always jump at end of notebook, should move point to nearest cell below.
 - [ ] when doing =M-.= on a custom function in a notebook that is imported from
   a local =*.py= file, I would like that to go to the function in the
   library. Right now I get =No definition found for: LSP identifier at point=

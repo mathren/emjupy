@@ -2807,5 +2807,48 @@ with 403 -- without ever asking for the token."
       (should-not (equal probed "/api/status"))
       (should (equal probed "/api/contents")))))
 
+(ert-deftest emjupy-test-sync-refuses-when-overlays-are-out-of-step ()
+  "Syncing must never write garbage into the cells.
+
+It reads whatever an overlay spans straight into a cell\='s source, so one
+stale or overlapping overlay is enough for a cell to swallow the whole
+notebook -- and since the structs are what gets saved and re-rendered,
+that corruption survives every redraw.  Refusing keeps the notebook."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (should (emjupy--overlays-sane-p))
+        (should (emjupy--sync-all-cells))
+        ;; let the first cell's overlay swallow everything
+        (move-overlay (emjupy-cell-overlay c1) (point-min) (point-max))
+        (should-not (emjupy--overlays-sane-p))
+        (should-not (emjupy--sync-all-cells))
+        ;; the cells are untouched, so a redraw restores the notebook
+        (should (equal (emjupy-cell-source c1) "a = 1"))
+        (should (equal (emjupy-cell-source c2) "b = 2"))))))
+
+(ert-deftest emjupy-test-delete-cell-lands-on-the-next-cell ()
+  "Deleting leaves point on the cell that slid up into its place, not at
+the end of the notebook."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b"
+                              :outputs [] :metadata (make-hash-table)))
+        (c3 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "c"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2 c3) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (emjupy-delete-cell)
+        (should (= (length (emjupy-notebook-cells nb)) 2))
+        (should (eq (emjupy--cell-at-point) c3))
+        ;; deleting the last cell leaves point on the new last one
+        (emjupy-delete-cell)
+        (should (= (length (emjupy-notebook-cells nb)) 1))
+        (should (eq (emjupy--cell-at-point) c1))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

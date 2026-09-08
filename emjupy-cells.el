@@ -32,11 +32,52 @@
       (let ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
         (setf (emjupy-cell-source cell) (string-trim-right text "\n"))))))
 
+(defun emjupy--overlays-sane-p ()
+  "Return non-nil if this buffer's cell overlays still describe the cells.
+
+Every cell must have a live overlay inside the buffer, and the overlays
+must run in cell order without overlapping.  Anything else means the
+buffer and the structs have come apart -- a render interrupted partway,
+or something outside emjupy having rewritten the text."
+  (let ((cells (append (or (emjupy-notebook-cells emjupy--buffer-notebook) []) nil))
+        (prev-end 0)
+        (ok t))
+    (dolist (cell cells)
+      (let ((ov (emjupy-cell-overlay cell)))
+        (cond
+         ((not (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer))))
+          (setq ok nil))
+         ((or (< (overlay-start ov) prev-end)
+              (> (overlay-end ov) (point-max))
+              (> (overlay-start ov) (overlay-end ov)))
+          (setq ok nil))
+         (t (setq prev-end (overlay-end ov))))))
+    ok))
+
+(defvar-local emjupy--sync-refused nil
+  "Non-nil once a sync has been refused, so the warning is said once.")
+
 (defun emjupy--sync-all-cells ()
-  "Sync buffer text for all cells in current buffer."
+  "Sync buffer text for all cells in current buffer.
+
+Refuses when the overlays no longer describe the cells.  Syncing reads
+whatever an overlay spans straight into a cell\='s source, so one stale or
+overlapping overlay is enough for a cell to swallow the whole notebook
+-- and because the structs are what gets saved and re-rendered, that
+corruption then survives every redraw.  Better to leave the structs
+alone and say so: \[emjupy-re-render] rebuilds the display from them."
   (when emjupy--buffer-notebook
-    (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
-             do (emjupy--sync-cell-source-from-buffer cell))))
+    (if (not (emjupy--overlays-sane-p))
+        (progn
+          (unless emjupy--sync-refused
+            (setq emjupy--sync-refused t)
+            (message "[emjupy] Buffer and cells are out of step; not syncing.  %s"
+                     (substitute-command-keys "Press \\[emjupy-re-render] to redraw.")))
+          nil)
+      (setq emjupy--sync-refused nil)
+      (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
+               do (emjupy--sync-cell-source-from-buffer cell))
+      t)))
 
 (defvar emjupy--rendering-buffers nil
   "Buffers currently being re-rendered.
@@ -397,9 +438,14 @@ outputs until you save."
          (curr-cell (emjupy--cell-at-point))
          (cells (append (emjupy-notebook-cells nb) nil)))
     (when curr-cell
-      (setq cells (delete curr-cell cells))
-      (setf (emjupy-notebook-cells nb) (vconcat cells))
-      (emjupy--rerender-notebook))))
+      (let* ((idx (cl-position curr-cell cells))
+             (rest (progn (setq cells (delete curr-cell cells)) cells))
+             ;; The cell that slides up into the deleted one's place, or the
+             ;; last one if it was at the end.  Leaving point at the end of
+             ;; the notebook, as it used to, loses your place entirely.
+             (next (and rest (nth (min idx (1- (length rest))) rest))))
+        (setf (emjupy-notebook-cells nb) (vconcat cells))
+        (emjupy--rerender-notebook next)))))
 
 (defun emjupy-cycle-cell-type ()
   "Cycle the cell at point between `code' and `markdown'."
