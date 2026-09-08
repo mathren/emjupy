@@ -664,10 +664,12 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- =C-c C-k= still jumps at the end of the buffer
-- spurious cells can get added to the top of the notebook
+- [ ] change keybindings =C-c C-z= should stop the execution of the notebook
+  and =C-c M-z= for kernel selection
+- [ ] =C-c C-k= still jumps at the end of the buffer
 - [ ] =Tab= should cycle through available python indent levels like in
   a python file
+- spurious cells can get added to the top of the notebook
 - [ ] like =C-$= in =ein= opens the full traceback in a separate buffer
   (with syntax highlight), we want the same functionality in =emjupy=
 - [ ] when doing =M-.= on a custom function in a notebook that is imported from
