@@ -664,15 +664,17 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
+- =C-c C-k= still jumps at the end of the buffer
+- spurious cells can get added to the top of the notebook
+- [ ] =Tab= should cycle through available python indent levels like in
+  a python file
+- [ ] like =C-$= in =ein= opens the full traceback in a separate buffer
+  (with syntax highlight), we want the same functionality in =emjupy=
 - [ ] when doing =M-.= on a custom function in a notebook that is imported from
   a local =*.py= file, I would like that to go to the function in the
   library. Right now I get =No definition found for: LSP identifier at point=
-- [ ] like =C-$= in =ein= opens the full traceback in a separate buffer
-  (with syntax highlight), we want the same functionality in =emjupy=
 - [ ] make the lines in between cells not writable/non-existent (they
   don't get a line number but I can write in them)
-- [ ] =Tab= should cycle through available python indent levels like in
-  a python file
 - [ ] output (say from a long-running cell) should not move the
   point/view when it comes out
 - [X] re-enforce git tag and =emjupy= version sync
