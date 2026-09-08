@@ -634,3 +634,5 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - [ ] re-enforce git tag and =emjupy= version sync
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
+- [ ] add =emjupy-export-py= to export to plain python file (save the shadow buffer to a file). should prompt for location starting from the folder of the notebook (possibly remote)
+
