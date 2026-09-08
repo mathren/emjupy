@@ -131,6 +131,7 @@ by gitHub actions.
 | =C-c C-x b=   | =emjupy-switch-notebook=            | Switch to another open notebook, labelled by server                |
 | =C-c C-x s=   | =emjupy-status=                     | List every open notebook with its server and kernel                |
 | =C-c C-x l=   | =emjupy-login=                      | Log in to another server (another ssh tunnel)                      |
+| =C-c C-x C-e= | =emjupy-export-py=                  | Export the notebook as a plain .py file                            |
 | =C-c C-x C-l= | =emjupy-re-render=                  | Redraw the notebook from the cells                                 |
 
 Each command has exactly one binding, so =C-h m= is a list of what emjupy
@@ -613,6 +614,30 @@ If the display ever does look wrong, =C-c C-x C-l= (=emjupy-re-render=)
 rebuilds it from the cells.  It keeps pending edits, and never touches
 the notebook on the server.
 
+** Exporting to a plain .py
+
+=C-c C-x C-e= (=emjupy-export-py=) writes the notebook out as Python in
+percent format: =# %%= before each code cell, and markdown cells carried
+across as commented =# %% [markdown]= blocks.  That is the format
+Jupytext, VS Code and Spyder already read, so the result opens as a
+notebook again elsewhere rather than being a one-way dump.
+
+The default destination is beside the notebook itself, *on the server it
+came from*.  The file is written through the same Contents API the
+notebook is read through, so this works for a remote kernel with no
+TRAMP and no configuration -- the =.py= lands next to the =.ipynb= on that
+machine.  With a prefix argument it writes to a local file instead, and
+a TRAMP file name works there if you want it somewhere else again.
+
+The buffer is synced first, so unsaved edits are included, and an
+existing file is never overwritten without asking.  Set
+=emjupy-export-markdown-cells= to nil to export code only.
+
+Note this is not the shadow buffer dumped to disk, although that is
+where the idea came from: the shadow buffer's markers carry emjupy's
+internal cell ids, which mean nothing outside emjupy, and it holds code
+cells only -- so exporting it directly would silently drop your prose.
+
 ** Known limitations
 
 *** Multicursor
@@ -634,5 +659,3 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - [ ] re-enforce git tag and =emjupy= version sync
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
-- [ ] add =emjupy-export-py= to export to plain python file (save the shadow buffer to a file). should prompt for location starting from the folder of the notebook (possibly remote)
-

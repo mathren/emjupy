@@ -2580,5 +2580,118 @@ once per code cell, filling the echo area on every redraw."
       (emjupy--fontify-as "if True:\n  x = 1" 'code))
     (should-not (cl-some (lambda (m) (string-match-p "python-indent-offset" m)) seen))))
 
+(ert-deftest emjupy-test-percent-export-format ()
+  "The export is percent format: `# %%\=' per code cell, markdown carried
+across as a commented `# %% [markdown]\=' block.
+
+Deliberately not the shadow buffer verbatim, though that is where the
+idea comes from: its markers carry emjupy's internal cell ids, which
+mean nothing outside emjupy, and it holds code cells only -- so
+exporting it would silently drop every markdown cell."
+  (cl-flet ((mk (type src)
+              (make-emjupy-cell :id (emjupy--new-cell-id) :type type :source src
+                                :outputs [] :metadata (make-hash-table))))
+    (let ((nb (make-emjupy-notebook
+               :cells (vector (mk 'markdown "# Title\n\nSome prose.")
+                              (mk 'code "import numpy as np")
+                              (mk 'code "x = 1"))
+               :path "subdir/analysis.ipynb")))
+      (let ((out (emjupy--percent-export nb)))
+        ;; no internal ids leak out
+        (should-not (string-match-p "emjupy:" out))
+        (should (string-match-p "^# %% \\[markdown\\]$" out))
+        ;; every prose line is commented, blank lines included
+        (should (string-match-p "^# # Title$" out))
+        (should (string-match-p "^#$" out))
+        (should (string-match-p "^# Some prose\\.$" out))
+        ;; a code cell is a bare marker followed by its source
+        (should (string-match-p (regexp-quote "# %%\nimport numpy as np") out))
+        (should (string-match-p (regexp-quote "# %%\nx = 1") out))
+        ;; one bare marker per code cell; "# %% [markdown]" is not counted
+        (should (= (cl-count "# %%" (split-string out "\n") :test #'equal) 2))
+        (should (string-suffix-p "\n" out)))
+      ;; markdown can be left out
+      (let* ((emjupy-export-markdown-cells nil)
+             (out (emjupy--percent-export nb)))
+        (should-not (string-match-p "markdown" out))
+        (should-not (string-match-p "Title" out)))
+      ;; the default destination sits beside the notebook
+      (should (equal (emjupy--export-default-name nb) "subdir/analysis.py")))))
+
+(ert-deftest emjupy-test-export-py-writes-through-the-contents-api ()
+  "The default export goes to the server the notebook came from, through
+the same Contents API the notebook is read through -- which is what
+makes it work for a remote kernel with no TRAMP and no configuration."
+  (cl-flet ((mk (type src)
+              (make-emjupy-cell :id (emjupy--new-cell-id) :type type :source src
+                                :outputs [] :metadata (make-hash-table))))
+    (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+           (nb (make-emjupy-notebook :cells (vector (mk 'code "x = 1"))
+                                     :path "subdir/nb.ipynb" :server server))
+           (sent nil))
+      (emjupy-test--with-notebook (emjupy-notebook-cells nb) buf nb2
+        (with-current-buffer buf
+          (setf (emjupy-notebook-path emjupy--buffer-notebook) "subdir/nb.ipynb")
+          (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
+          (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                    ((symbol-function 'emjupy--path-exists-p) (lambda (&rest _) nil))
+                    ((symbol-function 'emjupy--http-request)
+                     (lambda (method _s path &optional body &rest _)
+                       (setq sent (list method path body))
+                       t)))
+            (should (equal (emjupy-export-py) "subdir/nb.py")))
+          (pcase-let ((`(,method ,path ,body) sent))
+            (should (equal method "PUT"))
+            (should (equal path "/api/contents/subdir/nb.py"))
+            (let ((parsed (json-parse-string body :object-type 'hash-table)))
+              ;; a plain file, not a notebook
+              (should (equal (gethash "type" parsed) "file"))
+              (should (equal (gethash "format" parsed) "text"))
+              (should (string-match-p "x = 1" (gethash "content" parsed))))))))))
+
+(ert-deftest emjupy-test-export-py-refuses-to-clobber ()
+  "An existing file is not overwritten without asking."
+  (cl-flet ((mk (type src)
+              (make-emjupy-cell :id (emjupy--new-cell-id) :type type :source src
+                                :outputs [] :metadata (make-hash-table))))
+    (let ((server (make-emjupy-server :base-url "localhost:8888" :token "t")))
+      (emjupy-test--with-notebook (vector (mk 'code "x = 1")) buf nb
+        (with-current-buffer buf
+          (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+          (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
+          (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                    ((symbol-function 'emjupy--path-exists-p) (lambda (&rest _) t))
+                    ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                    ((symbol-function 'emjupy--http-request)
+                     (lambda (&rest _) (error "should not have written"))))
+            (should-error (emjupy-export-py) :type 'user-error)))))))
+
+(ert-deftest emjupy-test-export-py-picks-up-unsaved-edits ()
+  "Exporting syncs the buffer first, so what you see is what is written."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table)))
+        (written nil))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "localhost:8888" :token "t"))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (end-of-line)
+        (insert " + 41")
+        (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                  ((symbol-function 'emjupy--path-exists-p) (lambda (&rest _) nil))
+                  ((symbol-function 'emjupy--http-request)
+                   (lambda (_m _s _p &optional body &rest _)
+                     (setq written (gethash "content"
+                                            (json-parse-string body
+                                                               :object-type 'hash-table)))
+                     t)))
+          (emjupy-export-py))
+        (should (string-match-p (regexp-quote "x = 1 + 41") written))))))
+
+(ert-deftest emjupy-test-export-py-is-bound ()
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-x C-e")) 'emjupy-export-py)))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
