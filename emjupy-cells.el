@@ -106,6 +106,44 @@ the caller has by then already updated."
     (let ((emjupy--rendering-buffers (cons (current-buffer) emjupy--rendering-buffers)))
       (emjupy--rerender-notebook-1 target-cell))))
 
+(defcustom emjupy-protect-non-cell-regions t
+  "When non-nil, make everything outside a cell\='s source read-only.
+
+The rules, the gutters between cells and the output boxes belong to no
+cell.  Text typed there is stored nowhere and disappears at the next
+redraw, so it is better refused than silently lost."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--protect-non-cell-regions ()
+  "Mark every region that is not a cell\='s source read-only."
+  (when emjupy-protect-non-cell-regions
+    (let ((inhibit-read-only t)
+          (spans nil))
+      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               do (let ((ov (emjupy-cell-overlay cell)))
+                    (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer)))
+                      (push (cons (overlay-start ov) (overlay-end ov)) spans))))
+      (setq spans (sort spans #'car-less-than-car))
+      (let ((pos (point-min)))
+        (dolist (span spans)
+          (when (< pos (car span))
+            (emjupy--make-read-only pos (car span)))
+          (setq pos (max pos (cdr span))))
+        (when (< pos (point-max))
+          (emjupy--make-read-only pos (point-max)))))))
+
+(defun emjupy--make-read-only (start end)
+  "Refuse edits between START and END, without walling off the cells.
+
+`rear-nonsticky\' matters: without it, text inserted immediately AFTER a
+protected region inherits the property, so typing at the very start of a
+cell would be refused along with the gutter above it."
+  (add-text-properties start end
+                       '(read-only emjupy
+                         front-sticky (read-only)
+                         rear-nonsticky (read-only))))
+
 (defun emjupy--rerender-notebook-1 (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
 If TARGET-CELL is given, leave point at that cell afterwards.
@@ -149,7 +187,13 @@ changed nothing -- the history is left intact."
                         (when (eq cell target-cell)
                           (setq target-start start))))
           (when target-start
-            (goto-char target-start))))
+            (goto-char target-start))
+          ;; Everything that is not a cell's source is now made read-only.
+          ;; Those regions -- the rules, the gutters between cells, the
+          ;; output boxes -- belong to no cell, so anything typed into them
+          ;; is written nowhere and vanishes at the next redraw.  Worse, it
+          ;; sits in the buffer looking like content until then.
+          (emjupy--protect-non-cell-regions)))
       (unless (equal before (buffer-substring-no-properties (point-min) (point-max)))
         (setq buffer-undo-list nil)))))
 

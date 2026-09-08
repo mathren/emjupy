@@ -108,7 +108,10 @@
 
     ;; Persistence & Server/Kernel Connection
     (define-key map (kbd "C-x C-s") #'emjupy-save-notebook)
-    (define-key map (kbd "C-c C-z") #'emjupy-connect-kernel-interactive)
+    ;; C-c C-z stops what is running, like C-c in a terminal; picking a
+    ;; kernel is the rarer act and moves one modifier away.
+    (define-key map (kbd "C-c C-z") #'emjupy-interrupt-kernel)
+    (define-key map (kbd "C-c M-z") #'emjupy-connect-kernel-interactive)
     map)
   "Keymap for `emjupy-mode'.")
 

@@ -2850,5 +2850,71 @@ the end of the notebook."
         (should (= (length (emjupy-notebook-cells nb)) 1))
         (should (eq (emjupy--cell-at-point) c1))))))
 
+(ert-deftest emjupy-test-non-cell-regions-are-read-only ()
+  "Text can only be typed into a cell\='s source.
+
+The gutters, rules and output boxes belong to no cell, so anything typed
+there is stored nowhere and vanishes at the next redraw -- better
+refused than silently lost.  The boundaries matter as much as the
+middle: typing at the end of a cell\='s last line must still work."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (cl-flet ((editable-p (pos)
+                    (goto-char pos)
+                    (condition-case nil
+                        (progn (insert "X") (delete-char -1) t)
+                      (error nil))))
+          ;; inside a cell, and at the end of its last line
+          (should (editable-p (+ 2 (overlay-start (emjupy-cell-overlay c1)))))
+          (goto-char (overlay-start (emjupy-cell-overlay c1)))
+          (end-of-line)
+          (should (editable-p (point)))
+          ;; the start of the next cell is still reachable
+          (should (editable-p (overlay-start (emjupy-cell-overlay c2))))
+          ;; but the gutter between them is not
+          (should-not (editable-p (overlay-end (emjupy-cell-overlay c1)))))
+        ;; and ordinary editing still reaches the struct
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (end-of-line)
+        (insert " + 9")
+        (should (emjupy--sync-all-cells))
+        (should (equal (emjupy-cell-source c1) "a = 1 + 9"))))))
+
+(ert-deftest emjupy-test-protection-can-be-turned-off ()
+  "`emjupy-protect-non-cell-regions\=' nil leaves the buffer fully editable."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((emjupy-protect-non-cell-regions nil))
+          (emjupy--rerender-notebook)
+          (goto-char (overlay-end (emjupy-cell-overlay cell)))
+          (should (condition-case nil (progn (insert "X") t) (error nil))))))))
+
+(ert-deftest emjupy-test-kernel-bindings-separate-stop-from-select ()
+  "C-c C-z stops what is running; picking a kernel moves to C-c M-z."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-z")) 'emjupy-interrupt-kernel))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c M-z"))
+              'emjupy-connect-kernel-interactive)))
+
+(ert-deftest emjupy-test-interrupt-posts-to-the-interrupt-endpoint ()
+  "Interrupting leaves the session alone -- it is not a restart."
+  (let ((sent nil))
+    (emjupy-test--with-notebook
+     (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                               :outputs [] :metadata (make-hash-table)))
+     buf nb
+     (with-current-buffer buf
+       (setf (emjupy-notebook-kernel emjupy--buffer-notebook)
+             (make-emjupy-kernel :id "k1" :name "python3"))
+       (cl-letf (((symbol-function 'emjupy--http-request)
+                  (lambda (method _s path &rest _) (setq sent (list method path)))))
+         (emjupy-interrupt-kernel))
+       (should (equal sent '("POST" "/api/kernels/k1/interrupt")))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

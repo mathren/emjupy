@@ -375,6 +375,23 @@ attaching two notebooks to one kernel makes them share state."
       (clrhash (emjupy-kernel-pending kernel)))
     (setf (emjupy-kernel-ws kernel) nil)))
 
+(defun emjupy-interrupt-kernel ()
+  "Interrupt whatever this notebook\='s kernel is running.
+
+The equivalent of an interrupt signal in a terminal: the running cell
+stops with a
+KeyboardInterrupt and the session -- variables, imports, everything --
+is left alone.  Use \\[emjupy-restart-kernel] when you want the session
+itself thrown away."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (kernel (emjupy-notebook-kernel nb)))
+    (unless (and kernel (emjupy-kernel-id kernel))
+      (user-error "This notebook has no kernel"))
+    (emjupy--http-request "POST" (emjupy-notebook-server nb)
+                          (format "/api/kernels/%s/interrupt" (emjupy-kernel-id kernel)))
+    (message "[emjupy] Interrupt sent to kernel %s." (emjupy-kernel-id kernel))))
+
 (defun emjupy-restart-kernel ()
   "Restart THIS notebook's kernel and reconnect its websocket.
 Other open notebooks, and their kernels, are untouched."

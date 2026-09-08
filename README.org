@@ -645,6 +645,17 @@ it.  These are applied as real colours rather than shown as
 =\\033[33m=; set =emjupy-render-ansi-colors= to nil to strip them
 instead.
 
+** Only cells are editable
+
+Everything that is not a cell\='s source -- the rules, the gutters between
+cells, the output boxes -- is read-only.  Text typed there belongs to no
+cell, so it is stored nowhere and disappears at the next redraw; refusing
+it is better than losing it silently.  Set
+=emjupy-protect-non-cell-regions= to nil to allow it anyway.
+
+Editing at the edges still works: the end of a cell\='s last line and the
+start of the next cell are both inside cells.
+
 ** Known limitations
 
 *** Multicursor
@@ -664,12 +675,6 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] scrambling of the notebook still happens, check and fix all
-  possible issues. cell boundaries piled at the top also exceed right
-  boundary of buffer.
-- [ ] change keybindings =C-c C-z= should stop the execution of the notebook
-  and =C-c M-z= for kernel selection
-- [ ] =C-c C-k= still jumps at the end of the buffer
 - [ ] =Tab= should cycle through available python indent levels like in
   a python file
 - spurious cells can get added to the top of the notebook
@@ -678,8 +683,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [ ] when doing =M-.= on a custom function in a notebook that is imported from
   a local =*.py= file, I would like that to go to the function in the
   library. Right now I get =No definition found for: LSP identifier at point=
-- [ ] make the lines in between cells not writable/non-existent (they
-  don't get a line number but I can write in them)
 - [ ] output (say from a long-running cell) should not move the
   point/view when it comes out
 - [X] re-enforce git tag and =emjupy= version sync
