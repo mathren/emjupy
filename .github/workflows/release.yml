@@ -22,15 +22,12 @@ jobs:
         with:
           version: '30.1'
 
-      # - name: Check tag matches the package version
-      #   run: |
-      #     tag="${GITHUB_REF_NAME#v}"
-      #     version=$(sed -n 's/^;; Version: \(.*\)/\1/p' emjupy.el)
-      #     echo "tag=$tag  header version=$version"
-      #     if [ "$tag" != "$version" ]; then
-      #       echo "::error::Tag $tag does not match ';; Version: $version' in emjupy.el."
-      #       exit 1
-      #     fi
+      # The tar is named from the "Version:" header, not from the tag, and
+      # package.el installs whatever the file says. Tagging 0.1.1 while the
+      # header still reads 0.1.0 would publish emjupy-0.1.0.tar under a 0.1.1
+      # release, and users would get 0.1.0 with nothing to indicate it.
+      - name: Check tag matches the package version
+        run: make check-version TAG="${GITHUB_REF_NAME}"
 
       - name: Check
         run: make check
