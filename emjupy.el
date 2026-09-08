@@ -91,6 +91,7 @@
     (define-key map (kbd "C-c C-x b") #'emjupy-switch-notebook)
     (define-key map (kbd "C-c C-x s") #'emjupy-status)
     (define-key map (kbd "C-c C-x l") #'emjupy-login)
+    (define-key map (kbd "C-c C-x C-e") #'emjupy-export-py)
 
     ;; Navigation
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)

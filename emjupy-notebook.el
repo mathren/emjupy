@@ -524,6 +524,104 @@ buffer per server, so several tunnels can be inspected side by side."
 (defalias 'emjupy-notebook-list #'emjupy-server-dashboard
   "Alias for `emjupy-server-dashboard\'.")
 
+(defun emjupy--path-exists-p (server path)
+  "Return non-nil if PATH already exists on SERVER."
+  (condition-case nil
+      (and (emjupy--http-request "GET" server (concat "/api/contents/" path)) t)
+    (error nil)))
+
+(defvar emjupy--export-history nil
+  "Minibuffer history for export destinations.")
+
+(defcustom emjupy-export-markdown-cells t
+  "When non-nil, carry markdown cells into an exported .py as comments.
+
+They are written as a `# %% [markdown]' block with each line commented,
+which is the same percent format Jupytext, VS Code and Spyder read -- so
+the prose survives the round trip instead of being dropped."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--percent-export (nb)
+  "Return NB's cells as a plain Python file in percent format.
+
+Not the shadow buffer verbatim, though that is where the idea comes
+from.  The shadow buffer's `# %% [emjupy:12]' markers carry emjupy's
+internal cell ids, which mean nothing outside emjupy, and it holds code
+cells only -- exporting it would silently drop every markdown cell.
+Plain `# %%' is the convention Jupytext, VS Code and Spyder already
+read."
+  (let ((chunks nil))
+    (cl-loop for cell across (or (emjupy-notebook-cells nb) [])
+             do (let ((source (or (emjupy-cell-source cell) "")))
+                  (pcase (emjupy-cell-type cell)
+                    ('code (push (concat "# %%\n" source) chunks))
+                    ('markdown
+                     (when emjupy-export-markdown-cells
+                       (push (concat "# %% [markdown]\n"
+                                     (mapconcat (lambda (line)
+                                                  (if (string-empty-p line)
+                                                      "#"
+                                                    (concat "# " line)))
+                                                (split-string source "\n")
+                                                "\n"))
+                             chunks)))
+                    (_ nil))))
+    (let ((body (mapconcat #'identity (nreverse chunks) "\n\n")))
+      (if (string-suffix-p "\n" body) body (concat body "\n")))))
+
+(defun emjupy--export-default-name (nb)
+  "Return the default .py path for NB, beside the notebook itself."
+  (let ((path (or (emjupy-notebook-path nb) "notebook.ipynb")))
+    (concat (file-name-sans-extension path) ".py")))
+
+;;;###autoload
+(defun emjupy-export-py (&optional local)
+  "Export this notebook as a plain Python file in percent format.
+
+The default destination is beside the notebook itself, on the server it
+came from -- which is what makes this work for a remote kernel with no
+TRAMP and no extra configuration: the file is written through the same
+Contents API the notebook is read through, so it lands next to the
+.ipynb on that machine.
+
+With a prefix argument, LOCAL, write to a local file instead.  A TRAMP
+file name works there, if you would rather push it somewhere else."
+  (interactive "P")
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (content (emjupy--percent-export (progn (emjupy--sync-all-cells) nb))))
+    (if local
+        (let ((file (read-file-name "Export to file: " nil nil nil
+                                    (file-name-nondirectory
+                                     (emjupy--export-default-name nb)))))
+          (when (or (not (file-exists-p file))
+                    (yes-or-no-p (format "%s exists.  Overwrite it? " file)))
+            (let ((coding-system-for-write 'utf-8-unix))
+              (write-region content nil file))
+            (message "[emjupy] Exported to %s" file)
+            file))
+      (let* ((default (emjupy--export-default-name nb))
+             (path (read-string (format "Export to (on %s): "
+                                        (emjupy--server-label server))
+                                default 'emjupy--export-history))
+             (body (make-hash-table :test 'equal)))
+        (when (string-empty-p (string-trim path))
+          (user-error "No destination given"))
+        (when (and (emjupy--path-exists-p server path)
+                   (not (yes-or-no-p (format "%s exists on %s.  Overwrite it? "
+                                             path (emjupy--server-label server)))))
+          (user-error "Not overwriting %s" path))
+        (puthash "type" "file" body)
+        (puthash "format" "text" body)
+        (puthash "content" content body)
+        (unless (emjupy--http-request "PUT" server (concat "/api/contents/" path)
+                                      (json-serialize body))
+          (error "Server refused to write %s" path))
+        (message "[emjupy] Exported to %s on %s"
+                 path (emjupy--server-label server))
+        path))))
+
 (defun emjupy--parse-ipynb (json-string)
   "Parse strict nbformat v4 JSON-STRING into an `emjupy-notebook' struct."
   (let* ((data (json-parse-string json-string :object-type 'hash-table :array-type 'array))
