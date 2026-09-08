@@ -291,11 +291,110 @@ and a wrapped rule is far uglier than a short one."
            ;; Leave a margin so the rule cannot run past the right edge.
            (- (apply #'min widths) (max 0 emjupy-box-right-margin))))))
 
+(defcustom emjupy-running-indicator ["|" "/" "-" "\\"]
+  "Frames cycled in a cell's header while it is executing.
+
+A single-element vector such as [\"*\"] gives Jupyter's static marker
+instead of an animation."
+  :type '(vector string)
+  :group 'emjupy)
+
+(defcustom emjupy-running-indicator-interval 0.2
+  "Seconds between frames of the running indicator."
+  :type 'number
+  :group 'emjupy)
+
+(defvar-local emjupy--running-cells nil
+  "Ids of cells currently executing in this buffer.")
+
+(defvar-local emjupy--spinner-timer nil
+  "Timer animating the running indicator, or nil.")
+
+(defvar-local emjupy--spinner-frame 0
+  "Index into `emjupy-running-indicator'.")
+
+(defun emjupy--cell-running-p (cell)
+  "Return non-nil if CELL is currently executing."
+  (and cell (memq (emjupy-cell-id cell) emjupy--running-cells)))
+
+(defun emjupy--spinner-tick ()
+  "Advance the indicator and redraw the headers of running cells.
+
+Only the header strings are touched -- they are overlay `before-string'
+properties, not buffer text -- so this cannot disturb what is being
+typed, and does not enter the undo history."
+  (let ((buf (current-buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (if (not emjupy--running-cells)
+            (emjupy--stop-spinner)
+          (setq emjupy--spinner-frame
+                (mod (1+ emjupy--spinner-frame) (length emjupy-running-indicator)))
+          (when emjupy--buffer-notebook
+            (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
+                     when (emjupy--cell-running-p cell)
+                     do (emjupy--refresh-cell-header cell))))))))
+
+(defun emjupy--start-spinner ()
+  "Start animating the running indicator in this buffer."
+  (unless (or emjupy--spinner-timer (< (length emjupy-running-indicator) 2))
+    (setq emjupy--spinner-timer
+          (run-with-timer emjupy-running-indicator-interval
+                          emjupy-running-indicator-interval
+                          #'emjupy--spinner-tick-in (current-buffer)))))
+
+(defun emjupy--spinner-tick-in (buffer)
+  "Run `emjupy--spinner-tick' inside BUFFER if it is still alive."
+  (if (buffer-live-p buffer)
+      (with-current-buffer buffer (emjupy--spinner-tick))
+    (emjupy--stop-spinner)))
+
+(defun emjupy--stop-spinner ()
+  "Stop the running indicator in this buffer."
+  (when emjupy--spinner-timer
+    (cancel-timer emjupy--spinner-timer)
+    (setq emjupy--spinner-timer nil)))
+
+(defun emjupy--refresh-cell-header (cell)
+  "Redraw CELL's header rule in place.
+The header is an overlay `before-string', so this changes no buffer text
+and does not enter the undo history."
+  (let ((ov (emjupy-cell-overlay cell)))
+    (when (overlayp ov)
+      (overlay-put ov 'before-string
+                   (emjupy--rule (emjupy--cell-label cell) "┌")))))
+
+(defun emjupy--mark-running (cell &optional buffer)
+  "Mark CELL as executing in BUFFER, and start the indicator."
+  (with-current-buffer (or buffer (current-buffer))
+    (cl-pushnew (emjupy-cell-id cell) emjupy--running-cells)
+    ;; Draw it at once rather than on the next tick, so pressing the key
+    ;; visibly does something even for a cell that finishes quickly.
+    (emjupy--refresh-cell-header cell)
+    (emjupy--start-spinner)))
+
+(defun emjupy--mark-done (cell &optional buffer)
+  "Mark CELL as no longer executing in BUFFER."
+  (with-current-buffer (or buffer (current-buffer))
+    (setq emjupy--running-cells
+          (delq (emjupy-cell-id cell) emjupy--running-cells))
+    (emjupy--refresh-cell-header cell)
+    (unless emjupy--running-cells (emjupy--stop-spinner))))
+
+(defvar python-indent-guess-indent-offset-verbose)
+
 (defun emjupy--cell-label (cell)
   "Return the header label for CELL's input box."
   (let ((exec (emjupy-cell-exec-count cell)))
     (format "[In: %s] %s"
-            (if (numberp exec) (number-to-string exec) " ")
+            (cond
+             ;; Jupyter's convention: a running cell shows a marker where its
+             ;; execution count will go.
+             ((emjupy--cell-running-p cell)
+              (aref emjupy-running-indicator
+                    (mod emjupy--spinner-frame (length emjupy-running-indicator))))
+             ((numberp exec) (number-to-string exec))
+             (t " "))
             (if (eq (emjupy-cell-type cell) 'code) "python" "markdown"))))
 
 (defun emjupy--cell-out-label (cell)
@@ -616,7 +715,12 @@ installed."
     ;; org-mode uses to fontify source blocks.
     (cond
      ((eq cell-type 'code)
-      (delay-mode-hooks (python-mode))
+      ;; python-mode guesses `python-indent-offset' on entry and says so
+      ;; when it cannot.  A cell is a fragment, so it usually cannot -- and
+      ;; this runs once per code cell, filling the echo area with
+      ;; "Can't guess python-indent-offset" on every redraw.
+      (let ((python-indent-guess-indent-offset-verbose nil))
+        (delay-mode-hooks (python-mode)))
       (font-lock-ensure))
      ((eq cell-type 'markdown)
       (let ((mode-fn (emjupy--markdown-mode-fn)))

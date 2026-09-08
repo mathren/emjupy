@@ -2112,9 +2112,11 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
                  ("C-c C-s"     . emjupy-split-cell)
                  ("C-c C-j"     . emjupy-join-cell-above)))
     (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair))))
-  ;; and the retired duplicates really are gone
-  ;; C-c C-s is not listed: it was a save duplicate and is now split-cell.
-  (dolist (key '("M-RET" "C-c C-r" "M-<up>" "M-<down>" "M-n" "M-p"))
+  ;; and the retired duplicates really are gone.  Two keys are not listed:
+  ;; C-c C-s was a save duplicate and is now split-cell, and M-<up>/M-<down>
+  ;; were duplicates of the cell-move keys and now move to a NEIGHBOURING
+  ;; cell, which is a different job.
+  (dolist (key '("M-RET" "C-c C-r" "M-n" "M-p"))
     (should-not (lookup-key emjupy-mode-map (kbd key)))))
 
 (ert-deftest emjupy-test-latex-fragments-found ()
@@ -2449,6 +2451,134 @@ error.  `C-c C-l\' and `C-c C-u C-l\' are all control characters."
   (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-u C-l")) 'emjupy-clear-all-outputs))
   (dolist (letter (append (number-sequence ?a ?z) (number-sequence ?A ?Z)))
     (should-not (commandp (lookup-key emjupy-mode-map (kbd (format "C-c %c" letter)))))))
+
+(ert-deftest emjupy-test-editing-survives-arriving-output ()
+  "Output arriving must not throw away what has been typed since.
+
+The re-render rebuilds the buffer from the cell structs, so without
+folding the buffer back in first, everything typed while a slow cell ran
+was silently reverted -- which is what \"the notebook gets scrambled\"
+looked like from the outside."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "slow()"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                               :outputs [] :metadata (make-hash-table)))
+         (oh (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" oh)
+    (puthash "name" "stdout" oh)
+    (puthash "text" "RESULT\n" oh)
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        ;; type into the second cell while the first is still running
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (end-of-line)
+        (insert " + 99")
+        ;; the first cell now produces output
+        (emjupy--append-output-to-cell c1 oh nb)
+        ;; the edit is still there, in the buffer and in the struct
+        (should (string-match-p (regexp-quote "+ 99") (buffer-string)))
+        (should (equal (emjupy-cell-source c2) "x = 1 + 99"))
+        ;; and the output landed
+        (should (string-match-p "RESULT" (buffer-string)))))))
+
+(ert-deftest emjupy-test-re-render-command ()
+  "`emjupy-re-render\' rebuilds the display and keeps pending edits."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (end-of-line)
+        (insert " + 2")
+        (emjupy-re-render)
+        (should (equal (emjupy-cell-source cell) "a = 1 + 2"))
+        (should (string-match-p (regexp-quote "a = 1 + 2") (buffer-string)))))))
+
+(ert-deftest emjupy-test-running-indicator ()
+  "A running cell shows a marker where its execution count will go, and
+only that cell does."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "slow()"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (should (string-match-p "In:  " (emjupy--cell-label c1)))
+        (emjupy--mark-running c1)
+        (should (emjupy--cell-running-p c1))
+        (should-not (emjupy--cell-running-p c2))
+        ;; the marker is in the label and in the drawn header
+        (should (string-match-p "In: |" (emjupy--cell-label c1)))
+        (should (string-match-p "In: |"
+                                (overlay-get (emjupy-cell-overlay c1) 'before-string)))
+        (should (string-match-p "In:  " (emjupy--cell-label c2)))
+        ;; the animation advances
+        (setq emjupy--spinner-frame 1)
+        (should (string-match-p "In: /" (emjupy--cell-label c1)))
+        ;; and finishing replaces it with the execution count
+        (setf (emjupy-cell-exec-count c1) 7)
+        (emjupy--mark-done c1)
+        (should-not (emjupy--cell-running-p c1))
+        (should (string-match-p "In: 7" (emjupy--cell-label c1)))
+        (should-not emjupy--spinner-timer)))))
+
+(ert-deftest emjupy-test-running-indicator-touches-no-buffer-text ()
+  "The indicator animates through overlay strings only.  Were it buffer
+text, every frame would land in the undo history and fight whatever is
+being typed."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "slow()"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (emjupy--mark-running cell)
+        (let ((before (buffer-string)))
+          (dotimes (_ 4) (emjupy--spinner-tick))
+          (should (equal (buffer-string) before)))))))
+
+(ert-deftest emjupy-test-neighbouring-cell-navigation ()
+  "M-<prior>/M-<next> reach the previous cell, M-<up>/M-<down> the next."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "one"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "two"
+                              :outputs [] :metadata (make-hash-table)))
+        (c3 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "three"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2 c3) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (emjupy-beginning-of-previous-cell)
+        (should (eq (emjupy--cell-at-point) c1))
+        (should (= (point) (overlay-start (emjupy-cell-overlay c1))))
+        (emjupy-end-of-next-cell)
+        (should (eq (emjupy--cell-at-point) c2))
+        ;; end of the SOURCE, so still inside the cell
+        (should (equal (buffer-substring-no-properties (- (point) 3) (point)) "two"))
+        (emjupy-beginning-of-next-cell)
+        (should (eq (emjupy--cell-at-point) c3))
+        ;; nothing beyond the last cell, or before the first
+        (should-error (emjupy-beginning-of-next-cell) :type 'user-error)
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (should-error (emjupy-beginning-of-previous-cell) :type 'user-error)))))
+
+(ert-deftest emjupy-test-navigation-bindings ()
+  (dolist (pair '(("M-<prior>" . emjupy-beginning-of-previous-cell)
+                 ("M-<next>"  . emjupy-end-of-previous-cell)
+                 ("M-<up>"    . emjupy-beginning-of-next-cell)
+                 ("M-<down>"  . emjupy-end-of-next-cell)
+                 ("C-c C-x C-l" . emjupy-re-render)))
+    (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair)))))
+
+(ert-deftest emjupy-test-python-indent-warning-silenced ()
+  "python-mode says \"Can\='t guess python-indent-offset\" when it cannot work
+one out.  A cell is a fragment, so it usually cannot -- and this runs
+once per code cell, filling the echo area on every redraw."
+  (let ((seen nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (f &rest args)
+                 (when f (push (apply #'format f args) seen))
+                 nil)))
+      (emjupy--fontify-as "if True:\n  x = 1" 'code))
+    (should-not (cl-some (lambda (m) (string-match-p "python-indent-offset" m)) seen))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

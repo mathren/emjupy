@@ -116,6 +116,10 @@ by gitHub actions.
 | =C-c <up>=    | =emjupy-move-cell-up=               | Move the cell, and its output, one position earlier                |
 | =C-c <down>=  | =emjupy-move-cell-down=             | Move the cell, and its output, one position later                  |
 | =C-c <prior>= | =emjupy-beginning-of-cell=          | Go to the start of this cell                                       |
+| =M-<prior>=   | =emjupy-beginning-of-previous-cell= | Go to the start of the previous cell                               |
+| =M-<next>=    | =emjupy-end-of-previous-cell=       | Go to the end of the previous cell                                 |
+| =M-<up>=      | =emjupy-beginning-of-next-cell=     | Go to the start of the next cell                                   |
+| =M-<down>=    | =emjupy-end-of-next-cell=           | Go to the end of the next cell                                     |
 | =C-c <next>=  | =emjupy-end-of-cell=                | Go to the end of this cell's source                                |
 | =C-c C-n=     | =emjupy-next-cell=                  | Move point to the next cell                                        |
 | =C-c C-p=     | =emjupy-previous-cell=              | Move point to the previous cell                                    |
@@ -127,6 +131,7 @@ by gitHub actions.
 | =C-c C-x b=   | =emjupy-switch-notebook=            | Switch to another open notebook, labelled by server                |
 | =C-c C-x s=   | =emjupy-status=                     | List every open notebook with its server and kernel                |
 | =C-c C-x l=   | =emjupy-login=                      | Log in to another server (another ssh tunnel)                      |
+| =C-c C-x C-l= | =emjupy-re-render=                  | Redraw the notebook from the cells                                 |
 
 Each command has exactly one binding, so =C-h m= is a list of what emjupy
 does rather than a wall of synonyms.  The one exception is Shift-RET,
@@ -589,6 +594,25 @@ until you save, so clearing is not a way to lose results by accident.
 Clearing everything before committing is the usual reason to want this:
 it strips the outputs that make =.ipynb= diffs unreadable.
 
+** Editing while a cell runs
+
+A slow cell shows a marker where its execution count will go -- =[In: |]=,
+cycling -- so a cell that is running looks different from one that was
+never run.  =emjupy-running-indicator= sets the frames; a single-element
+vector like =["*"]= gives Jupyter's static marker instead.  The animation
+moves only overlay strings, never buffer text, so it cannot disturb what
+you are typing or land in the undo history.
+
+You can edit anywhere in the notebook while a cell runs.  Output
+arriving folds the buffer back into the cells before redrawing, so
+nothing typed in the meantime is lost -- earlier this silently reverted
+edits made while a long cell was working, which looked like the notebook
+scrambling itself.
+
+If the display ever does look wrong, =C-c C-x C-l= (=emjupy-re-render=)
+rebuilds it from the cells.  It keeps pending edits, and never touches
+the notebook on the server.
+
 ** Known limitations
 
 *** Multicursor
@@ -610,12 +634,3 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - [ ] re-enforce git tag and =emjupy= version sync
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
-- [ ] use =*= or =\ | / -= loop for "executing" status of a cell between
-  running it and output showing up for long cells.
-- [ ] suppress "can't find python offset" message in every cell
-- [ ] upon large output of a notebook (large figure), whole notebook
-  can get scrambled. shadow buffer seems ok. Why? Maybe add function
-  `emjupy-re-render`?
-- [ ] implement =M-<pgup>=/=<pgdown>= for go to the beginning/end of
-  previous cell and =M-<up>=/=<down>= for go to the beginning/end of
-  next cell

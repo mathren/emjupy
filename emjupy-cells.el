@@ -159,6 +159,12 @@ so from the WebSocket handler meant every arriving line of output yanked
 the cursor to the top of the executing cell -- so the cell you had just
 run appeared to steal point back, and output landing while you edited
 elsewhere threw you across the buffer mid-keystroke."
+  ;; Fold what is on screen back into the structs FIRST.  The re-render
+  ;; rebuilds the buffer from the structs, so anything typed since the last
+  ;; sync -- which, while a slow cell runs, is everything the user has done
+  ;; -- would simply be overwritten and lost.  That is the "scrambling":
+  ;; output arrives, and your edits silently revert.
+  (emjupy--sync-all-cells)
   (let* ((cell (emjupy--cell-at-point))
          (ov (and cell (emjupy-cell-overlay cell)))
          (offset (and ov (- (point) (overlay-start ov)))))
@@ -168,6 +174,18 @@ elsewhere threw you across the buffer mid-keystroke."
       (when (overlayp ov)
         (goto-char (min (overlay-end ov)
                         (+ (overlay-start ov) (or offset 0))))))))
+
+(defun emjupy-re-render ()
+  "Rebuild the notebook display from the cells.
+
+Everything on screen is drawn from the cell structs, so if the buffer
+ever looks wrong -- overlays out of place after an unusual edit, say --
+this puts it back without touching the notebook itself.  Edits in the
+buffer are folded in first, so nothing you have typed is lost."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (emjupy--rerender-preserving-point)
+  (message "[emjupy] Redrew the notebook."))
 
 (defun emjupy--cell-at-point (&optional pos)
   "Return the cell containing POS (default point), or nil.
@@ -418,6 +436,51 @@ next line, outside the code."
     (goto-char (max (overlay-start ov)
                     (+ (overlay-start ov)
                        (length (or (emjupy-cell-source cell) "")))))))
+
+(defun emjupy--sibling-cell (direction)
+  "Return the cell DIRECTION (-1 or 1) away from the one at point, or nil."
+  (let* ((nb (emjupy--notebook))
+         (cells (append (emjupy-notebook-cells nb) nil))
+         (cell (emjupy--cell-at-point))
+         (idx (and cell (cl-position cell cells))))
+    (when idx
+      (let ((n (+ idx direction)))
+        (when (and (>= n 0) (< n (length cells)))
+          (nth n cells))))))
+
+(defun emjupy--goto-cell (cell where)
+  "Put point at the start or end of CELL's source, per WHERE."
+  (let ((ov (and cell (emjupy-cell-overlay cell))))
+    (unless (overlayp ov)
+      (user-error "No cell there"))
+    (goto-char (if (eq where 'beginning)
+                   (overlay-start ov)
+                 ;; The end of the SOURCE, not of the overlay: the overlay
+                 ;; takes in the newline that closes the cell, so landing
+                 ;; after it would put point on the next line, outside.
+                 (min (overlay-end ov)
+                      (+ (overlay-start ov)
+                         (length (or (emjupy-cell-source cell) ""))))))))
+
+(defun emjupy-beginning-of-previous-cell ()
+  "Move point to the start of the previous cell."
+  (interactive)
+  (emjupy--goto-cell (emjupy--sibling-cell -1) 'beginning))
+
+(defun emjupy-end-of-previous-cell ()
+  "Move point to the end of the previous cell's source."
+  (interactive)
+  (emjupy--goto-cell (emjupy--sibling-cell -1) 'end))
+
+(defun emjupy-beginning-of-next-cell ()
+  "Move point to the start of the next cell."
+  (interactive)
+  (emjupy--goto-cell (emjupy--sibling-cell 1) 'beginning))
+
+(defun emjupy-end-of-next-cell ()
+  "Move point to the end of the next cell's source."
+  (interactive)
+  (emjupy--goto-cell (emjupy--sibling-cell 1) 'end))
 
 (defun emjupy-next-cell ()
   "Move point to the next cell."

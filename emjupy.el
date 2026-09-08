@@ -96,6 +96,13 @@
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
     (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
     (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
+    ;; Same axis one level out: C-c moves within this cell, M- moves to a
+    ;; neighbouring one.
+    (define-key map (kbd "M-<prior>") #'emjupy-beginning-of-previous-cell)
+    (define-key map (kbd "M-<next>")  #'emjupy-end-of-previous-cell)
+    (define-key map (kbd "M-<up>")    #'emjupy-beginning-of-next-cell)
+    (define-key map (kbd "M-<down>")  #'emjupy-end-of-next-cell)
+    (define-key map (kbd "C-c C-x C-l") #'emjupy-re-render)
     (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
 
     ;; Persistence & Server/Kernel Connection

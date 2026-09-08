@@ -177,6 +177,8 @@ kernels never cross-talk."
                (count (gethash "execution_count" content)))
           (setf (emjupy-cell-exec-count cell) count)
           (remhash parent-id pending)
+          (when-let ((b (and notebook (emjupy-notebook-buffer notebook))))
+            (when (buffer-live-p b) (emjupy--mark-done cell b)))
           (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p buf)
               (with-current-buffer buf
@@ -215,6 +217,9 @@ kernels never cross-talk."
 
         (puthash msg-id cell (emjupy-kernel-pending kernel))
         (emjupy--ws-send json-payload kernel)
+        ;; Show that it is running.  Long cells otherwise look identical to
+        ;; cells that were never run: an empty box and no execution count.
+        (emjupy--mark-running cell)
         ;; (message "[emjupy] Executing cell (%s)..." msg-id)
 	))))
 

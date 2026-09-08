@@ -27,6 +27,8 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 (require 'emjupy-cells)
+
+(defvar python-indent-guess-indent-offset-verbose)
 (require 'xref)
 
 ;; Eglot ships with Emacs (29.1+, which this package requires) but is pulled in
@@ -310,7 +312,9 @@ automatically, with nothing for the user to run."
         ;; down both Eglot's buffer-local state and the two variables set
         ;; just below.
         (unless (derived-mode-p 'python-mode 'python-ts-mode)
-          (python-mode))
+          ;; Quietly: see the note in `emjupy--fontify-as'.
+          (let ((python-indent-guess-indent-offset-verbose nil))
+            (python-mode)))
         ;; Saving must never stop to ask either.
         (set-buffer-file-coding-system emjupy--shadow-coding t)
         (emjupy-shadow-edit-mode 1)
