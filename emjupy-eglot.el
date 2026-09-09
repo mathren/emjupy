@@ -391,6 +391,21 @@ automatically, with nothing for the user to run."
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (content (emjupy--build-shadow-content nb))
          (path (emjupy--shadow-file-path nb)))
+    ;; The path can change after the buffer was made.  The kernel reports its
+    ;; working directory asynchronously, a moment after it connects, so the
+    ;; first shadow buffer of a session is created before that answer arrives
+    ;; and lands in the fallback temp directory.  Reusing it thereafter meant
+    ;; the language server kept reading a local scratch file and never saw
+    ;; the notebook's real directory -- so imports of the user's own modules
+    ;; stayed unresolvable no matter what `emjupy-shadow-host' said.
+    (when (and (buffer-live-p buf)
+               (buffer-local-value 'buffer-file-name buf)
+               (not (equal (expand-file-name (buffer-local-value 'buffer-file-name buf))
+                           (expand-file-name path))))
+      (let ((kill-buffer-query-functions nil))
+        (ignore-errors (kill-buffer buf)))
+      (setq buf nil)
+      (setf (emjupy-notebook-shadow-buffer nb) nil))
     (unless (buffer-live-p buf)
       ;; Creating the directory is remote I/O, so it belongs here, in the
       ;; branch that is about to do remote I/O anyway -- not on every call.

@@ -3178,5 +3178,93 @@ guards against a second editor that cannot exist for a generated file."
               (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook)))
             (should (> writes 0))))))))
 
+(ert-deftest emjupy-test-no-stray-overlays-after-reparse ()
+  "Overlays whose cell has gone must be deleted, not left at position 1.
+
+Re-rendering deleted the overlays reachable from the current cells, so
+an overlay belonging to a cell that had been removed -- deleted, merged,
+or dropped when the notebook was re-parsed into fresh structs -- was
+never deleted.  `erase-buffer\' collapses it to position 1, where it goes
+on displaying its before-string and after-string: a stack of stray
+\"[In: 8]\" and \"[Out: 15]\" rules piling up above the first cell."
+  (cl-flet ((mk (s) (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source s
+                                      :outputs [] :metadata (make-hash-table))))
+    (let ((nb (make-emjupy-notebook :cells (vector (mk "a = 1") (mk "b = 2"))))
+          (buf (generate-new-buffer "*stray*")))
+      (unwind-protect
+          (with-current-buffer buf
+            (emjupy-mode)
+            (setq emjupy--buffer-notebook nb)
+            (setf (emjupy-notebook-buffer nb) buf)
+            (emjupy--rerender-notebook)
+            (cl-flet ((emjupy-overlays ()
+                        (seq-filter (lambda (o) (overlay-get o 'emjupy-overlay))
+                                    (overlays-in (point-min) (point-max)))))
+              (should (= (length (emjupy-overlays)) 2))
+              ;; re-parse three times: fresh structs, old ones abandoned
+              (dotimes (_ 3)
+                (setf (emjupy-notebook-cells nb) (vector (mk "a = 1") (mk "b = 2")))
+                (emjupy--rerender-notebook))
+              (should (= (length (emjupy-overlays)) 2))
+              ;; nothing collapsed at the top
+              (should-not (cl-some (lambda (o) (= (overlay-start o) (overlay-end o)))
+                                   (emjupy-overlays)))))
+        (let ((kill-buffer-query-functions nil)) (kill-buffer buf))))))
+
+(ert-deftest emjupy-test-shadow-buffer-follows-a-changed-path ()
+  "The shadow buffer moves when its path changes.
+
+The kernel reports its working directory a moment AFTER it connects, so
+the first shadow buffer of a session is created before that answer
+arrives and lands in the fallback temp directory.  Reusing it thereafter
+left the language server reading a local scratch file, and imports of
+the user\='s own modules stayed unresolvable however
+`emjupy-shadow-host\' was set."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                 :outputs [] :metadata (make-hash-table)))
+         (nb (make-emjupy-notebook :cells (vector cell) :path "nb.ipynb"))
+         (buf (generate-new-buffer "*move*"))
+         (later (expand-file-name "emjupy-cwd-test" temporary-file-directory)))
+    (make-directory later t)
+    (unwind-protect
+        (with-current-buffer buf
+          (emjupy-mode)
+          (setq emjupy--buffer-notebook nb)
+          (setf (emjupy-notebook-buffer nb) buf)
+          (emjupy--rerender-notebook)
+          (let ((emjupy-shadow-directory nil) (emjupy-remote-root nil))
+            (ignore-errors (emjupy--ensure-shadow-buffer nb))
+            (let ((first (buffer-local-value 'buffer-file-name
+                                             (emjupy-notebook-shadow-buffer nb))))
+              ;; the kernel now answers
+              (setf (emjupy-notebook-kernel-cwd nb) later)
+              (ignore-errors (emjupy--ensure-shadow-buffer nb))
+              (let ((second (buffer-local-value 'buffer-file-name
+                                                (emjupy-notebook-shadow-buffer nb))))
+                (should-not (equal first second))
+                (should (string-prefix-p (file-name-as-directory later) second))))))
+      (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+
+(ert-deftest emjupy-test-version-reports-where-it-loaded-from ()
+  "`emjupy-version\' names the version and the directory, so \"am I running
+the fix?\" can be answered without recalling how it was installed."
+  (let ((report (emjupy-version)))
+    (should (string-match-p (regexp-quote emjupy-version) report))
+    (should (string-match-p "loaded from" report))))
+
+(ert-deftest emjupy-test-version-constant-matches-header ()
+  "`emjupy-version\' must equal the Version: header, or it reports a lie."
+  (let ((header
+         (with-temp-buffer
+           (insert-file-contents
+            (expand-file-name "emjupy.el"
+                              (file-name-directory
+                               (or (locate-library "emjupy") default-directory))))
+           (goto-char (point-min))
+           (when (re-search-forward "^;; Version: \\(.*\\)$" nil t)
+             (string-trim (match-string 1))))))
+    (should header)
+    (should (equal header emjupy-version))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

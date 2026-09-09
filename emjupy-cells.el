@@ -168,14 +168,20 @@ changed nothing -- the history is left intact."
       (save-restriction
         (widen)
         (let ((buffer-undo-list t))
-          ;; Delete old overlays
+          ;; Delete EVERY emjupy overlay in the buffer, not only those the
+          ;; current cells point at.  An overlay whose cell has gone -- the
+          ;; cell was deleted or merged, or the notebook was re-parsed and
+          ;; got a fresh set of structs -- is unreachable from `cells', so it
+          ;; was never deleted.  `erase-buffer' then collapses it to position
+          ;; 1, where it goes on displaying its before-string and
+          ;; after-string: a stack of stray "[In: 8]" and "[Out: 15]" rules
+          ;; piling up at the top of the notebook, one per abandoned cell.
+          (dolist (ov (overlays-in (point-min) (point-max)))
+            (when (overlay-get ov 'emjupy-overlay)
+              (delete-overlay ov)))
           (cl-loop for cell across cells
-                   do (when (emjupy-cell-overlay cell)
-                        (delete-overlay (emjupy-cell-overlay cell))
-                        (setf (emjupy-cell-overlay cell) nil))
-                   (when (emjupy-cell-output-ov cell)
-                     (delete-overlay (emjupy-cell-output-ov cell))
-                     (setf (emjupy-cell-output-ov cell) nil)))
+                   do (setf (emjupy-cell-overlay cell) nil)
+                      (setf (emjupy-cell-output-ov cell) nil))
           (erase-buffer)
           ;; Render every cell first; only move point afterward. Jumping point
           ;; back to target-cell mid-loop would make later `insert' calls land

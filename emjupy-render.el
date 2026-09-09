@@ -823,6 +823,7 @@ face."
            ;; When output follows, its header line doubles as this box's
            ;; closing edge -- no separate footer, no gap between the two.
            (footer (if has-outputs "" (emjupy--rule nil))))
+      (overlay-put ov 'emjupy-overlay 'cell)
       (overlay-put ov 'before-string header)
       (overlay-put ov 'after-string footer)
       ;; No face: source cells keep the buffer's normal background, and are
@@ -877,6 +878,7 @@ face."
                ;; edge, continuing straight into the output box's top edge.
                (header (emjupy--rule (emjupy--cell-out-label cell) "├"))
                (footer (emjupy--rule nil)))
+          (overlay-put ov 'emjupy-overlay 'output)
           (overlay-put ov 'before-string header)
           (overlay-put ov 'after-string footer)
           ;; No face on the overlay: each output piece paints itself, so a

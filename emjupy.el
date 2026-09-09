@@ -41,6 +41,64 @@
 
 ;;; Code:
 
+(defvar emjupy--buffer-notebook)
+
+(defconst emjupy-version "0.1.0"
+  "Version of emjupy, kept in step with the Version: header above.")
+
+(defun emjupy--source-directory ()
+  "Return the directory emjupy was loaded from, or nil."
+  (let ((file (or (locate-library "emjupy-cells") (locate-library "emjupy"))))
+    (and file (file-name-directory file))))
+
+(defun emjupy--git-revision (dir)
+  "Return a short description of the git revision in DIR, or nil."
+  (when (and dir (file-directory-p (expand-file-name ".git" dir))
+             (executable-find "git"))
+    (let* ((default-directory dir)
+           (rev (string-trim (shell-command-to-string
+                              "git rev-parse --short HEAD 2>/dev/null")))
+           (date (string-trim (shell-command-to-string
+                               "git log -1 --format=%cs 2>/dev/null")))
+           (dirty (not (string-empty-p
+                        (string-trim (shell-command-to-string
+                                      "git status --porcelain 2>/dev/null"))))))
+      (unless (string-empty-p rev)
+        (format "%s (%s)%s" rev date (if dirty ", with local changes" ""))))))
+
+;;;###autoload
+(defun emjupy-version (&optional insert)
+  "Report which emjupy is running, and from where.
+
+Says the version, the directory the code was loaded from and, when that
+is a git checkout, the revision -- so \"am I running the fix?\" has an
+answer that does not depend on remembering how it was installed.
+
+In a notebook buffer it also says where the shadow file is, which is
+what decides whether the language server can see your own modules.
+
+With a prefix argument, INSERT, put the report in the buffer instead of
+the echo area, for pasting into a bug report."
+  (interactive "P")
+  (let* ((dir (emjupy--source-directory))
+         (rev (emjupy--git-revision dir))
+         (nb (and (derived-mode-p 'emjupy-mode) emjupy--buffer-notebook))
+         (shadow (and nb (emjupy-notebook-shadow-buffer nb)))
+         (shadow-file (and (buffer-live-p shadow)
+                           (buffer-local-value 'buffer-file-name shadow)))
+         (report (concat
+                  (format "emjupy %s" emjupy-version)
+                  (if rev (format ", git %s" rev) "")
+                  (if dir (format ", loaded from %s" dir) "")
+                  (if nb
+                      (format "; kernel cwd %s; shadow %s"
+                              (or (emjupy-notebook-kernel-cwd nb) "unknown")
+                              (or shadow-file "not created yet"))
+                    ""))))
+    (if insert (insert report) (message "%s" report))
+    report))
+
+
 (require 'emjupy-core)
 (require 'emjupy-http)
 (require 'emjupy-render)
