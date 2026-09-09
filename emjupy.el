@@ -77,6 +77,8 @@
     (define-key map (kbd "C-c C-s") #'emjupy-split-cell)
     (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
+    (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
+    (define-key map (kbd "C-$")     #'emjupy-show-traceback)
     (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
     (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)
     (define-key map (kbd "C-c <up>")   #'emjupy-move-cell-up)
@@ -140,6 +142,7 @@
   ;; M-. and friends: Eglot's xref backend lives in the shadow buffer, so the
   ;; notebook needs a backend of its own that forwards there.
   (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t)
+  (add-hook 'pre-command-hook #'emjupy--clear-indent-cycling nil t)
   (eldoc-mode 1))
 
 (provide 'emjupy)

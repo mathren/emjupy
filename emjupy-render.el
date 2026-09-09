@@ -32,6 +32,7 @@
 ;; runtime (from the interactive `emjupy-refresh-appearance'), so the
 ;; cycle never bites at load time.
 (declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
+(declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
 
 ;; --- Page colours ----------------------------------------------------------
 ;; Cells are marked out by their horizontal rules alone -- the buffer keeps
@@ -1002,6 +1003,65 @@ them raw; both now go through here."
               (when val (put-text-property pos next 'face val coloured))
               (setq pos next))))
         coloured))))
+
+(defun emjupy--cell-traceback (cell)
+  "Return CELL\='s traceback as a string, or nil if it has no error output."
+  (let (found)
+    (cl-loop for out across (or (emjupy-cell-outputs cell) [])
+             until found
+             do (when (and (hash-table-p out)
+                           (equal (gethash "output_type" out) "error"))
+                  (let ((tb (gethash "traceback" out)))
+                    (setq found
+                          (cond
+                           ((stringp tb) tb)
+                           ((or (vectorp tb) (listp tb))
+                            (mapconcat #'emjupy--mime-text (append tb nil) "\n"))
+                           (t (format "%s: %s"
+                                      (gethash "ename" out)
+                                      (gethash "evalue" out))))))))
+    found))
+
+;;;###autoload
+(defun emjupy-show-traceback ()
+  "Show the full traceback of the cell at point in a buffer of its own.
+
+The output box shows the traceback squeezed into the notebook, where a
+deep stack is unreadable.  This puts it somewhere with room, with the
+ANSI colouring the kernel sent and Python syntax highlighting, so the
+frames and the offending lines are legible."
+  (interactive)
+  (let ((cell (emjupy--cell-at-point)))
+    (unless cell (user-error "Point is not in a cell"))
+    (let ((tb (emjupy--cell-traceback cell)))
+      (unless tb (user-error "This cell has no traceback"))
+      (let ((buf (get-buffer-create "*emjupy traceback*")))
+        (with-current-buffer buf
+          (let* ((inhibit-read-only t)
+                 (coloured (emjupy--ansi-render tb)))
+            (erase-buffer)
+            (insert coloured)
+            (let ((python-indent-guess-indent-offset-verbose nil))
+              (delay-mode-hooks (python-mode)))
+            ;; Syntax highlighting first, then the kernel's own colours back
+            ;; on top.  Both live in the `face' property, and font-lock
+            ;; rewrites it wholesale -- so applied the other way round the
+            ;; colours that mark the failing frame are painted over, which is
+            ;; the half of a traceback worth having.
+            (ignore-errors (font-lock-ensure))
+            (let ((pos 0) (len (length coloured)))
+              (while (< pos len)
+                (let ((next (or (next-single-property-change pos 'face coloured) len))
+                      (val (get-text-property pos 'face coloured)))
+                  (when val
+                    (font-lock-prepend-text-property
+                     (+ (point-min) pos) (+ (point-min) next) 'face val))
+                  (setq pos next))))
+            (goto-char (point-min)))
+          (setq buffer-read-only t)
+          (local-set-key (kbd "q") #'quit-window))
+        (pop-to-buffer buf)
+        buf))))
 
 (defun emjupy--output-face (out)
   "Return the background face for output OUT, or nil to leave it bare.

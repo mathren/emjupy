@@ -30,6 +30,7 @@
 (require 'json)
 (require 'websocket)
 (require 'emjupy-core)
+(declare-function emjupy--refresh-kernel-cwd "emjupy-eglot" (nb))
 (require 'emjupy-http)
 (require 'emjupy-cells)
 
@@ -98,6 +99,24 @@ callback) or a plain JSON string, so recorded kernel traffic can be
 replayed straight through the handler."
   (if (websocket-frame-p frame) (websocket-frame-payload frame) frame))
 
+(defvar emjupy--internal-requests (make-hash-table :test 'equal)
+  "Message ids of emjupy's own requests, mapped to their callbacks.
+
+Kept apart from a kernel's pending table, which maps ids to cells: these
+requests belong to no cell and their output must not be rendered as if
+it did.")
+
+(defun emjupy--kernel-eval (kernel code callback)
+  "Run CODE on KERNEL and pass its printed output to CALLBACK.
+
+For emjupy\='s own questions -- \"where are you?\" -- not for user code."
+  (when (emjupy--ws-live-p kernel)
+    (let* ((req (emjupy--make-execute-request code))
+           (msg-id (car req)))
+      (puthash msg-id callback emjupy--internal-requests)
+      (emjupy--ws-send (cdr req) kernel)
+      msg-id)))
+
 (defun emjupy--handle-ws-message (kernel frame)
   "Handle an incoming WebSocket FRAME belonging to KERNEL.
 KERNEL carries both the pending-request table and the backlink to the
@@ -111,7 +130,18 @@ kernels never cross-talk."
          (parent-id (when parent-header (gethash "msg_id" parent-header)))
          (pending (and kernel (emjupy-kernel-pending kernel)))
          (notebook (and kernel (emjupy-kernel-notebook kernel)))
-         (cell (when (and parent-id pending) (gethash parent-id pending))))
+         (cell (when (and parent-id pending) (gethash parent-id pending)))
+         (internal (when parent-id (gethash parent-id emjupy--internal-requests))))
+
+    ;; One of emjupy's own questions: hand the answer to its callback and
+    ;; keep it out of the notebook entirely.
+    (when internal
+      (when (string= msg-type "stream")
+        (let ((text (gethash "text" (gethash "content" data))))
+          (remhash parent-id emjupy--internal-requests)
+          (funcall internal (string-trim (or text "")))))
+      (when (string= msg-type "execute_reply")
+        (remhash parent-id emjupy--internal-requests)))
 
     (when cell
       (cond
@@ -310,14 +340,48 @@ several notebooks -- from several servers -- stay live at once."
            :on-error (lambda (_ws type err)
                        (message "[emjupy] %s WebSocket error (%s): %s" label type err))))
     (setf (emjupy-notebook-kernel notebook) kernel)
+    ;; Ask where it is running, so the shadow file can sit beside the
+    ;; notebook and imports of your own modules resolve.  Asynchronous: the
+    ;; answer arrives on the socket and is used by the next shadow refresh.
+    (run-with-timer 0.5 nil (lambda () (ignore-errors (emjupy--refresh-kernel-cwd notebook))))
     kernel))
 
+(defun emjupy--start-kernel-session (notebook)
+  "Create a session for NOTEBOOK and return its kernel description, or nil.
+
+Returns nil rather than signalling if the server will not make one, so
+the caller can fall back to a bare kernel."
+  (let ((server (emjupy-notebook-server notebook))
+        (path (emjupy-notebook-path notebook))
+        (body (make-hash-table :test 'equal))
+        (kspec (make-hash-table :test 'equal)))
+    (when path
+      (puthash "name" "python3" kspec)
+      (puthash "path" path body)
+      (puthash "type" "notebook" body)
+      (puthash "name" (file-name-nondirectory path) body)
+      (puthash "kernel" kspec body)
+      (condition-case nil
+          (let ((res (emjupy--http-request "POST" server "/api/sessions"
+                                           (json-serialize body))))
+            (and (hash-table-p res) (gethash "kernel" res)))
+        (error nil)))))
+
 (defun emjupy--spawn-and-connect-kernel (notebook)
-  "Start a fresh Python 3 kernel on NOTEBOOK's server and attach it."
-  (let ((payload (make-hash-table :test 'equal))
-        (server (emjupy-notebook-server notebook)))
-    (puthash "name" "python3" payload)
-    (let* ((res (emjupy--http-request "POST" server "/api/kernels" (json-serialize payload)))
+  "Start a fresh Python 3 kernel on NOTEBOOK's server and attach it.
+
+Started through a SESSION bound to the notebook\='s path, not by posting
+to /api/kernels directly.  Jupyter starts a session\='s kernel in the
+notebook\='s own directory, so `open(\"data.csv\")\=' in a cell means what it
+means in Jupyter -- beside the notebook -- rather than resolving against
+the server root.  It also makes the kernel discoverable as that
+notebook\='s kernel by other front-ends."
+  (let ((server (emjupy-notebook-server notebook)))
+    (let* ((res (or (emjupy--start-kernel-session notebook)
+                    (let ((payload (make-hash-table :test 'equal)))
+                      (puthash "name" "python3" payload)
+                      (emjupy--http-request "POST" server "/api/kernels"
+                                            (json-serialize payload)))))
            (new-id (gethash "id" res)))
       (message "Started Python 3 kernel (%s) for %s. Connecting..."
                new-id (emjupy-notebook-path notebook))

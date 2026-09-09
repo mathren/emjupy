@@ -656,6 +656,71 @@ it is better than losing it silently.  Set
 Editing at the edges still works: the end of a cell\='s last line and the
 start of the next cell are both inside cells.
 
+** Indentation, tracebacks, and finding your own code
+
+=TAB= indents as =python-mode= would, and offers the alternatives on
+repeat: after =def f():= the next line might be the body or back at the
+outer level, so pressing it again cycles.  emjupy asks python-mode
+rather than guessing, using the cell as the context.
+
+=C-$= opens the cell\='s full traceback in its own buffer, with Python
+highlighting and the colours the kernel sent -- the output box squeezes
+a deep stack into a few lines, which is where tracebacks become
+unreadable.
+
+=M-.= on a function from one of your own modules needs the shadow file to
+sit beside that module: a language server resolves =import mylib=
+relative to the directory of the file it is reading.
+
+emjupy puts it there by asking the kernel.  Kernels are started through
+a Jupyter /session/ bound to the notebook, which starts them in the
+notebook\='s own directory, so the kernel simply knows -- and for a kernel
+on this machine there is nothing to configure.
+
+** Notebooks on another machine
+
+The kernel answers with an absolute path on *its* filesystem, say
+=/srv/nb/analysis=.  That path means nothing on yours: Emacs would read
+it as a local one and write the shadow file into whatever =/srv/nb/analysis=
+happens to be on your own disk.  So emjupy uses a kernel-reported
+directory only when it can actually address it.
+
+Tell it how to reach that machine once:
+
+#+begin_src elisp
+(setq emjupy-shadow-host "/ssh:box:")
+#+end_src
+
+The directory still comes from the kernel, so this is a host, not a
+path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  Eglot then
+starts the language server on =box=, which has a second benefit worth
+knowing -- it sees the environment the kernel actually runs in, so
+completions and signatures describe the packages your code will really
+import, not the ones that happen to be installed locally.
+
+Leave it unset and a remote kernel falls back to a local temp directory:
+=M-.= will not find your own modules, but nothing is written to a path
+that means something else here.  That is the deliberate trade -- emjupy
+would rather lose a feature than write to the wrong file.
+
+| Kernel runs      | =emjupy-shadow-host= | Shadow file            | =M-.= into your modules |
+|------------------+--------------------+------------------------+-----------------------|
+| this machine     | unset              | beside the notebook    | works                 |
+| another machine  | set                | beside it, over TRAMP  | works                 |
+| another machine  | unset              | local temp directory   | no                    |
+
+=emjupy-shadow-directory= still overrides everything, and
+=emjupy-shadow-beside-notebook= turns the behaviour off.
+
+** Relative paths in cells
+
+Because kernels are now started through a session, a cell\='s working
+directory is the notebook\='s own folder, as it is in Jupyter, so
+=open("data.csv")= finds the file next to the notebook.  Previously the
+kernel started in the server root, so the same code needed the path
+spelled out from there.  If a notebook has been written to expect the
+old behaviour, its relative paths will need adjusting.
+
 ** Known limitations
 
 *** Multicursor
@@ -675,14 +740,7 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] =Tab= should cycle through available python indent levels like in
-  a python file
 - spurious cells can get added to the top of the notebook
-- [ ] like =C-$= in =ein= opens the full traceback in a separate buffer
-  (with syntax highlight), we want the same functionality in =emjupy=
-- [ ] when doing =M-.= on a custom function in a notebook that is imported from
-  a local =*.py= file, I would like that to go to the function in the
-  library. Right now I get =No definition found for: LSP identifier at point=
 - [ ] output (say from a long-running cell) should not move the
   point/view when it comes out
 - [X] re-enforce git tag and =emjupy= version sync

@@ -83,7 +83,11 @@ instead; this is only the fallback for things like `emjupy-login'.")
   id type exec-count source outputs metadata overlay output-ov nb-id)
 
 (cl-defstruct emjupy-notebook
-  path server kernel cells metadata buffer shadow-buffer)
+  path server kernel cells metadata buffer shadow-buffer
+  ;; Where the kernel says it is running.  Absolute, on the kernel's own
+  ;; filesystem, so only meaningful here when the kernel is local or
+  ;; `emjupy-shadow-host' says how to reach it.
+  kernel-cwd)
 
 ;; --- Lookups ---------------------------------------------------------------
 

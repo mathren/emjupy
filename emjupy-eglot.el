@@ -27,6 +27,8 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 (require 'emjupy-cells)
+(declare-function emjupy--kernel-eval "emjupy-kernel" (kernel code callback))
+(declare-function emjupy--ws-live-p "emjupy-kernel" (&optional kernel))
 
 (defvar python-indent-guess-indent-offset-verbose)
 (require 'xref)
@@ -258,13 +260,103 @@ it surfaces to the user as a raw jsonrpc-error."
                     (ignore-errors (jsonrpc-running-p server)))
                 server)))))
 
+(defcustom emjupy-shadow-host nil
+  "TRAMP prefix for reaching the machine the kernel runs on, or nil.
+
+Only needed when the kernel is NOT on this machine.  emjupy asks the
+kernel where the notebook lives and gets back an absolute path on ITS
+filesystem -- =/srv/nb/sub= say.  That path means nothing here: Emacs
+would read it as a local one and write the shadow file into whatever
+=/srv/nb/sub= happens to be on your own disk.  So a kernel-reported
+directory is used only when emjupy can actually address it:
+
+  (setq emjupy-shadow-host \"/ssh:box:\")
+
+giving =/ssh:box:/srv/nb/sub=, where Eglot starts the language server on
+=box= and sees the environment the kernel really runs in.
+
+Unset, with a remote kernel, emjupy falls back to a local temp directory
+rather than guess: `xref-find-definitions\' will not find your own
+modules, but nothing is written to a wrong path."
+  :type '(choice (const :tag "Kernel runs on this machine" nil)
+                 (string :tag "TRAMP prefix, e.g. /ssh:box:"))
+  :group 'emjupy)
+
+(defcustom emjupy-shadow-beside-notebook t
+  "When non-nil, keep the shadow file in the notebook\='s own directory.
+
+This is what makes \\[xref-find-definitions] work on your own modules.
+A language server resolves `import mylib\=' relative to the directory of
+the file it is reading, so a shadow file parked in a temp directory
+cannot see the .py sitting next to the notebook, and every such lookup
+answers \"No definition found\".
+
+The directory is worked out from `emjupy-remote-root\', which maps a
+server to where its files actually live.  Without that mapping there is
+nothing to derive -- a tunnelled server looks like localhost -- so the
+temp directory is used and this quietly has no effect."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--shadow-directory-for (nb)
+  "Return the directory NB\='s shadow file belongs in."
+  (let* ((explicit (and emjupy-shadow-directory
+                        (file-name-as-directory emjupy-shadow-directory)))
+         (beside (and (not explicit)
+                      emjupy-shadow-beside-notebook
+                      (emjupy--notebook-directory nb))))
+    (or explicit beside
+        (file-name-as-directory
+         (expand-file-name "emjupy-shadow" temporary-file-directory)))))
+
+(defun emjupy--notebook-directory (nb)
+  "Return the directory NB lives in as a file name Emacs can use, or nil.
+
+The kernel is asked first: it is started in the notebook\='s own
+directory, so it knows, and its answer needs no configuration at all.
+`emjupy-remote-root\' is the fallback for when there is no kernel yet.
+
+For a remote kernel the answer is an absolute path on ITS filesystem and
+means nothing here, so it is used only when `emjupy-shadow-host\' says
+how to reach that machine."
+  (or (emjupy--notebook-directory-from-kernel nb)
+      (let* ((server (emjupy-notebook-server nb))
+             (root (and server (fboundp 'emjupy--remote-root-for)
+                        (emjupy--remote-root-for server)))
+             (path (emjupy-notebook-path nb)))
+        (when (and root path)
+          (let ((dir (file-name-directory
+                      (expand-file-name path (file-name-as-directory root)))))
+            (and dir (file-name-as-directory dir)))))))
+
+(defun emjupy--notebook-directory-from-kernel (nb)
+  "Return NB\='s directory as its kernel reports it, or nil."
+  (let ((cwd (emjupy-notebook-kernel-cwd nb)))
+    (when (and cwd (not (string-empty-p cwd)))
+      (cond
+       ((and emjupy-shadow-host (not (string-empty-p emjupy-shadow-host)))
+        (file-name-as-directory (concat emjupy-shadow-host cwd)))
+       ;; No prefix: trust the path only if it exists here, which it does
+       ;; when the kernel is on this machine.  Treating a remote absolute
+       ;; path as a local one is how an unrelated file gets clobbered.
+       ((file-directory-p cwd) (file-name-as-directory cwd))
+       (t nil)))))
+
+(defun emjupy--refresh-kernel-cwd (nb)
+  "Ask NB\='s kernel which directory it is running in, and remember it."
+  (let ((kernel (emjupy-notebook-kernel nb)))
+    (when (and kernel (emjupy--ws-live-p kernel))
+      (emjupy--kernel-eval
+       kernel "import os as _o; print(_o.getcwd())"
+       (lambda (out)
+         (when (and out (not (string-empty-p out)))
+           (setf (emjupy-notebook-kernel-cwd nb) (string-trim out))))))))
+
 (defun emjupy--shadow-file-path (nb)
   "Return a stable on-disk path for NB's shadow Python file.
 The server is folded into the name: two servers can both host
 `analysis.ipynb', and one shadow file cannot stand for both."
-  (let* ((dir (if emjupy-shadow-directory
-                  (file-name-as-directory emjupy-shadow-directory)
-                (expand-file-name "emjupy-shadow" temporary-file-directory)))
+  (let* ((dir (emjupy--shadow-directory-for nb))
          (server (emjupy-notebook-server nb))
          (tag (if server (emjupy--server-label server) "local"))
          (safe-name (replace-regexp-in-string

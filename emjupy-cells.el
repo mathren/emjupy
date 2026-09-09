@@ -551,6 +551,64 @@ The new cell has no output and no execution count."
     (emjupy--rerender-notebook new-cell)
     new-cell))
 
+(defvar-local emjupy--indent-cycling nil
+  "Non-nil when the last command was also an indent, so TAB cycles.")
+
+(defvar python-indent-guess-indent-offset-verbose)
+
+(defun emjupy-indent-or-cycle ()
+  "Indent the current line the way `python-mode\=' would, cycling on repeat.
+
+Python indentation is a guess -- after `if x:\=' the next line could be a
+body, a continuation, or back at the outer level -- so `python-mode\='
+offers the alternatives in turn when TAB is pressed again.  Reproducing
+that here means asking `python-mode\=' itself: the cell\='s source is put in a
+real Python buffer, indented there, and the answer copied back.  A cell
+is not a file, so the line\='s context is the cell, which is what a
+notebook user means by it.
+
+In a markdown cell, and outside any cell, TAB simply inserts."
+  (interactive)
+  (let ((cell (emjupy--cell-at-point)))
+    (if (not (and cell (eq (emjupy-cell-type cell) 'code)))
+        (insert-tab)
+      (emjupy--sync-all-cells)
+      (let* ((ov (emjupy-cell-overlay cell))
+             (start (overlay-start ov))
+             (offset (- (point) start))
+             (source (or (emjupy-cell-source cell) ""))
+             ;; Read in the notebook buffer: it is buffer-local there, and
+             ;; the temp buffer below would only ever see the default.
+             (cycling emjupy--indent-cycling)
+             (result
+              (with-temp-buffer
+                (let ((python-indent-guess-indent-offset-verbose nil))
+                  (delay-mode-hooks (python-mode)))
+                (insert source)
+                (goto-char (min (point-max) (+ (point-min) offset)))
+                ;; python-mode cycles only when it believes TAB was pressed
+                ;; again, which it reads from `last-command'.
+                (let ((this-command 'indent-for-tab-command)
+                      (last-command (if cycling
+                                        'indent-for-tab-command
+                                      last-command)))
+                  (ignore-errors (indent-for-tab-command)))
+                (cons (buffer-substring-no-properties (point-min) (point-max))
+                      (- (point) (point-min))))))
+        (unless (equal (car result) source)
+          (let ((inhibit-read-only t))
+            (setf (emjupy-cell-source cell) (car result))
+            (emjupy--rerender-notebook cell)))
+        (let ((ov (emjupy-cell-overlay cell)))
+          (when (overlayp ov)
+            (goto-char (min (overlay-end ov) (+ (overlay-start ov) (cdr result))))))
+        (setq emjupy--indent-cycling t)))))
+
+(defun emjupy--clear-indent-cycling ()
+  "Forget that the previous command indented, unless it did."
+  (unless (eq this-command 'emjupy-indent-or-cycle)
+    (setq emjupy--indent-cycling nil)))
+
 (defun emjupy-beginning-of-cell ()
   "Move point to the start of the cell at point."
   (interactive)

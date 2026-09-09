@@ -2916,5 +2916,205 @@ middle: typing at the end of a cell\='s last line must still work."
          (emjupy-interrupt-kernel))
        (should (equal sent '("POST" "/api/kernels/k1/interrupt")))))))
 
+(ert-deftest emjupy-test-tab-indents-and-cycles ()
+  "TAB indents the line as python-mode would, and offers the
+alternatives on repeat.  After `def f():\=' the next line could be the
+body or back at the outer level, and python-mode cycles between them --
+so emjupy asks python-mode rather than guessing."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "def f():\nreturn 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (forward-line 1)
+        (cl-flet ((second-line ()
+                    (nth 1 (split-string (emjupy-cell-source cell) "\n"))))
+          (emjupy-indent-or-cycle)
+          (should (equal (second-line) "    return 1"))
+          ;; pressed again, the other candidate
+          (emjupy-indent-or-cycle)
+          (should (equal (second-line) "return 1"))
+          (emjupy-indent-or-cycle)
+          (should (equal (second-line) "    return 1")))))))
+
+(ert-deftest emjupy-test-tab-outside-a-code-cell ()
+  "In a markdown cell TAB just inserts, rather than running Python
+indentation over prose."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                                :source "# heading" :outputs []
+                                :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (emjupy-indent-or-cycle)
+        (emjupy--sync-all-cells)
+        (should (string-match-p "heading" (emjupy-cell-source cell)))))))
+
+(ert-deftest emjupy-test-traceback-buffer ()
+  "C-$ opens the full traceback with room to read it, keeping the
+kernel\='s colours on top of Python highlighting."
+  (let ((o (make-hash-table :test 'equal))
+        (cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "boom()"
+                                :outputs [] :metadata (make-hash-table))))
+    (puthash "output_type" "error" o)
+    (puthash "ename" "ValueError" o)
+    (puthash "evalue" "bad" o)
+    (puthash "traceback" (vector "\033[31mTraceback (most recent call last)\033[0m"
+                                 "  File \"<ipython>\", line 1, in <module>"
+                                 "    boom()"
+                                 "ValueError: bad")
+             o)
+    (setf (emjupy-cell-outputs cell) (vector o))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((tbuf (emjupy-show-traceback)))
+          (unwind-protect
+              (with-current-buffer tbuf
+                (should (eq major-mode 'python-mode))
+                (should buffer-read-only)
+                ;; every frame is there, not just the summary line
+                (should (= (count-lines (point-min) (point-max)) 4))
+                (should (string-match-p "in <module>" (buffer-string)))
+                ;; escapes gone, colour kept
+                (goto-char (point-min))
+                (should-not (save-excursion (search-forward "31m" nil t)))
+                (should (search-forward "Traceback" nil t))
+                (let ((face (get-text-property (- (point) 3) 'face)))
+                  (should (cl-some (lambda (f) (and (consp f) (plist-get f :foreground)))
+                                   (if (listp face) face (list face))))))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer tbuf))))))))
+
+(ert-deftest emjupy-test-traceback-without-an-error ()
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (should-error (emjupy-show-traceback) :type 'user-error)))))
+
+(ert-deftest emjupy-test-shadow-sits-beside-the-notebook ()
+  "The shadow file goes in the notebook\='s own directory when one can be
+worked out.
+
+A language server resolves `import mylib\=' relative to the directory of
+the file it is reading, so a shadow file in a temp directory cannot see
+the .py next to the notebook -- which is why looking up your own
+functions answered \"No definition found\"."
+  (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+         (nb (make-emjupy-notebook :cells [] :path "sub/nb.ipynb" :server server)))
+    ;; with a mapping, beside the notebook
+    (let ((emjupy-remote-root "/tmp/proj")
+          (emjupy-shadow-directory nil)
+          (emjupy-shadow-beside-notebook t))
+      (should (equal (emjupy--shadow-directory-for nb) "/tmp/proj/sub/")))
+    ;; without one there is nothing to derive, so the temp dir
+    (let ((emjupy-remote-root nil)
+          (emjupy-shadow-directory nil)
+          (emjupy-shadow-beside-notebook t))
+      (should (string-match-p "emjupy-shadow" (emjupy--shadow-directory-for nb))))
+    ;; an explicit setting always wins
+    (let ((emjupy-remote-root "/tmp/proj")
+          (emjupy-shadow-directory "/tmp/explicit"))
+      (should (equal (emjupy--shadow-directory-for nb) "/tmp/explicit/")))))
+
+(ert-deftest emjupy-test-new-bindings ()
+  (should (eq (lookup-key emjupy-mode-map (kbd "TAB")) 'emjupy-indent-or-cycle))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-$")) 'emjupy-show-traceback)))
+
+(ert-deftest emjupy-test-kernel-started-through-a-session ()
+  "Kernels are started via a session bound to the notebook.
+
+Jupyter starts a session\='s kernel in the notebook\='s own directory, so
+`open(\"data.csv\")\=' in a cell means what it means in Jupyter.  Posting
+to /api/kernels directly, as emjupy used to, leaves the kernel in the
+server root."
+  (let ((calls nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (method _s path &optional body &rest _)
+                 (push (list method path body) calls)
+                 (let ((h (make-hash-table :test 'equal))
+                       (k (make-hash-table :test 'equal)))
+                   (puthash "id" "k1" k)
+                   (puthash "kernel" k h)
+                   (puthash "id" "k1" h)
+                   h)))
+              ((symbol-function 'emjupy-connect-kernel) (lambda (&rest _) nil)))
+      (emjupy--spawn-and-connect-kernel
+       (make-emjupy-notebook :path "sub/nb.ipynb" :cells []
+                             :server (make-emjupy-server :base-url "h" :token "t")))
+      (let ((session (cl-find "/api/sessions" calls :key #'cadr :test #'equal)))
+        (should session)
+        (let ((body (json-parse-string (nth 2 session) :object-type 'hash-table)))
+          (should (equal (gethash "path" body) "sub/nb.ipynb"))
+          (should (equal (gethash "type" body) "notebook")))))))
+
+(ert-deftest emjupy-test-shadow-directory-from-the-kernel ()
+  "The kernel is asked where it is, so no configuration is needed when it
+runs on this machine -- and a remote path is refused rather than read as
+a local one."
+  (let ((nb (make-emjupy-notebook :path "sub/nb.ipynb" :cells []
+                                  :server (make-emjupy-server :base-url "h" :token "t"))))
+    ;; a directory that exists here: the kernel is local, use it
+    (setf (emjupy-notebook-kernel-cwd nb) temporary-file-directory)
+    (let ((emjupy-shadow-host nil))
+      (should (equal (emjupy--notebook-directory-from-kernel nb)
+                     (file-name-as-directory temporary-file-directory))))
+    ;; a path that does not exist here is a remote one.  Using it would
+    ;; write into whatever that path happens to be on this disk.
+    (setf (emjupy-notebook-kernel-cwd nb) "/srv/definitely/not/here")
+    (let ((emjupy-shadow-host nil))
+      (should-not (emjupy--notebook-directory-from-kernel nb)))
+    ;; with a prefix it becomes addressable
+    (let ((emjupy-shadow-host "/ssh:box:"))
+      (should (equal (emjupy--notebook-directory-from-kernel nb)
+                     "/ssh:box:/srv/definitely/not/here/")))))
+
+(ert-deftest emjupy-test-remote-kernel-without-a-host-falls-back ()
+  "With a remote kernel and no `emjupy-shadow-host\', the shadow file goes
+to a temp directory -- xref will not find your modules, but nothing is
+written to a wrong path."
+  (let ((nb (make-emjupy-notebook :path "sub/nb.ipynb" :cells []
+                                  :server (make-emjupy-server :base-url "h" :token "t"))))
+    (setf (emjupy-notebook-kernel-cwd nb) "/srv/definitely/not/here")
+    (let ((emjupy-shadow-host nil)
+          (emjupy-shadow-directory nil)
+          (emjupy-remote-root nil))
+      (should (string-match-p "emjupy-shadow" (emjupy--shadow-directory-for nb))))))
+
+(ert-deftest emjupy-test-internal-requests-do-not-reach-cells ()
+  "emjupy\='s own questions to the kernel must not print into the notebook."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x"
+                                 :outputs [] :metadata (make-hash-table)))
+         (got nil))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let* ((kernel (make-emjupy-kernel :id "k" :name "python3"
+                                           :pending (make-hash-table :test 'equal)
+                                           :notebook emjupy--buffer-notebook)))
+          (clrhash emjupy--internal-requests)
+          (puthash "mid" (lambda (out) (setq got out)) emjupy--internal-requests)
+          (emjupy--handle-ws-message
+           kernel
+           (json-serialize
+            (let ((m (make-hash-table :test 'equal))
+                  (h (make-hash-table :test 'equal))
+                  (p (make-hash-table :test 'equal))
+                  (c (make-hash-table :test 'equal)))
+              (puthash "msg_type" "stream" h)
+              (puthash "msg_id" "mid" p)
+              (puthash "text" "/home/me/nb\n" c)
+              (puthash "name" "stdout" c)
+              (puthash "header" h m)
+              (puthash "parent_header" p m)
+              (puthash "content" c m)
+              m)))
+          ;; the callback saw it ...
+          (should (equal got "/home/me/nb"))
+          ;; ... and the cell did not
+          (should (= (length (emjupy-cell-outputs cell)) 0))
+          (should-not (string-match-p "/home/me/nb" (buffer-string))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
