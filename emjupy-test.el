@@ -3371,5 +3371,63 @@ would prompt every time the path changed."
                 (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook)))
               (should-not asked))))))))
 
+(ert-deftest emjupy-test-lsp-needs-a-server-and-a-cwd ()
+  "No session without somewhere to connect and a URI the server can
+resolve.  Both arrive while a notebook is opened, so nil here means
+\"not yet\", and the shadow-file path is still available meanwhile."
+  (should-not (emjupy--lsp-session nil))
+  (should-not (emjupy--lsp-session (make-emjupy-notebook :cells [] :path "n.ipynb")))
+  (should-not (emjupy--lsp-session
+               (make-emjupy-notebook :cells [] :path "n.ipynb"
+                                     :server (make-emjupy-server :base-url "h" :token "t")))))
+
+(ert-deftest emjupy-test-lsp-document-uri-is-on-the-server ()
+  "The document URI names a path on the SERVER, built from the kernel\='s
+working directory, so `import mylib\=' resolves against the code beside
+the notebook.  Nothing here ever opens it."
+  (let ((nb (make-emjupy-notebook :cells [] :path "sub/analysis.ipynb"
+                                  :kernel-cwd "/srv/project")))
+    (should (equal (emjupy--lsp-document-uri nb)
+                   "file:///srv/project/analysis.emjupy.py"))))
+
+(ert-deftest emjupy-test-lsp-url-carries-the-token ()
+  "The WebSocket URL is the Jupyter server\='s own, with its token."
+  (let ((server (make-emjupy-server :base-url "localhost:9999" :token "sekrit")))
+    (let ((url (emjupy--lsp-url server)))
+      (should (string-prefix-p "ws://localhost:9999/lsp/ws/pylsp" url))
+      (should (string-match-p "token=sekrit" url)))))
+
+(ert-deftest emjupy-test-lsp-requests-do-not-nest ()
+  "A request that arrives while another is waiting is refused.
+
+Waiting uses `accept-process-output\', which runs timers -- so eldoc can
+fire inside a request.  Letting that nest is what made the file-based
+client recurse until Emacs ran out of stack."
+  (let ((session (make-emjupy-lsp :pending (make-hash-table :test 'equal))))
+    (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t))
+              ((symbol-function 'emjupy--lsp-send) (lambda (&rest _) nil)))
+      (let ((emjupy--lsp-in-request t))
+        (should-not (emjupy--lsp-request session "textDocument/hover" nil 0.01))))))
+
+(ert-deftest emjupy-test-shadow-file-skipped-while-lsp-is-live ()
+  "With the Jupyter-server transport working, the shadow FILE is not
+built at all -- otherwise the TRAMP round trips it costs would be back
+on the completion path, having just been removed."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t)))
+          (let ((emjupy-lsp-enabled t))
+            (should (emjupy--lsp-in-charge-p))
+            (let ((built nil))
+              (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                         (lambda (&rest _) (setq built t) nil)))
+                (emjupy--cell-shadow-delegate (lambda (&rest _) t))
+                (should-not built)))))
+        ;; disabled, the old path is still there
+        (let ((emjupy-lsp-enabled nil))
+          (should-not (emjupy--lsp-in-charge-p)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

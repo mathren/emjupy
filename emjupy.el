@@ -105,6 +105,7 @@ the echo area, for pasting into a bug report."
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
 (require 'emjupy-notebook)
+(require 'emjupy-lsp)
 (require 'emjupy-eglot)
 
 ;; `C-c\' followed by a plain letter is reserved for USERS by the Emacs Lisp
@@ -195,7 +196,12 @@ the echo area, for pasting into a bug report."
   ;; Completion/eldoc for code cells are delegated to the shared code
   ;; shadow buffer (see section 8) automatically -- no action needed
   ;; from the user beyond normal editing and the usual M-TAB/eldoc UI.
+  ;; The Jupyter-server transport first: no file, no TRAMP, and the server
+  ;; sits next to the kernel.  The shadow-file path stays as the fallback for
+  ;; a server without `jupyter-lsp'.
+  (add-hook 'completion-at-point-functions #'emjupy-lsp-completion-at-point nil t)
   (add-hook 'completion-at-point-functions #'emjupy--cell-completion-at-point nil t)
+  (add-hook 'eldoc-documentation-functions #'emjupy-lsp-eldoc nil t)
   (add-hook 'eldoc-documentation-functions #'emjupy--cell-eldoc-function nil t)
   ;; M-. and friends: Eglot's xref backend lives in the shadow buffer, so the
   ;; notebook needs a backend of its own that forwards there.

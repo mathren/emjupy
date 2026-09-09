@@ -84,6 +84,8 @@ instead; this is only the fallback for things like `emjupy-login'.")
 
 (cl-defstruct emjupy-notebook
   path server kernel cells metadata buffer shadow-buffer
+  ;; Live LSP session against the server `jupyter-lsp' runs, if any.
+  lsp
   ;; Where the kernel says it is running.  Absolute, on the kernel's own
   ;; filesystem, so only meaningful here when the kernel is local or
   ;; `emjupy-shadow-host' says how to reach it.

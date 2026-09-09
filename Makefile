@@ -23,7 +23,7 @@ LOADPATH  := -L . $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
 SOURCES = emjupy-core.el emjupy-http.el emjupy-render.el emjupy-cells.el \
-          emjupy-kernel.el emjupy-eglot.el emjupy-notebook.el emjupy.el
+          emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el emjupy-notebook.el emjupy.el
 PKGFILES = $(SOURCES) emjupy-pkg.el README.org
 
 .PHONY: all compile test check package install clean timestamps

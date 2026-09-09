@@ -744,46 +744,56 @@ the one that otherwise repeats after every command when the host has no
 buffer, so they keep working: only completion, eldoc and =M-.= are lost
 until the host answers again.
 
-** Speed over TRAMP
+** Language support: the server next to the kernel
 
-A remote shadow file used to make Emacs crawl, because refreshing it ran
-on the completion, eldoc and xref paths -- once per keystroke -- and
-each refresh did remote I/O.  Measured against ssh on *localhost*, so
-with no network latency at all:
+emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
+Jupyter server*, over that server's own WebSocket -- the same transport
+the notebook already uses, and the arrangement JupyterLab's
+=jupyterlab-lsp= uses.
 
-| Operation                      | Cost   |
-|--------------------------------+--------|
-| =write-region= to a remote file  | 214 ms |
-| lock file per buffer change    | ~100 ms |
-| =make-directory= (TRAMP-cached)  | 0.8 ms |
+The consequences are worth stating plainly:
 
-Over a real link, add the round-trip time to each.  And because TRAMP
-blocks Emacs while it waits, the WebSocket callbacks carrying cell
-output could not run either -- which is why a finished cell would sit
-there looking like it was still executing until something interrupted
-the wait.
+- *No file.* The code is sent in-band with =didChange=, which is what LSP
+  is for.  Nothing is written to disk, locally or remotely.
+- *No second connection.* No TRAMP, no ssh, no directory probing.
+  Measured: completion, hover and =M-.= over this transport cost *zero*
+  filesystem operations, against 36 remote round trips to create the
+  old shadow file.
+- *The right environment.* The server runs beside the kernel, so
+  completions describe the packages the code will actually import, and
+  =M-.= finds your own modules because the server resolves them against
+  the notebook's own directory.
 
-Three changes, taking a shadow refresh from 277 ms to 19 ms:
+*** Requirements
 
-- The file is no longer rewritten on every edit.  Eglot sends changes to
-  the language server in-band as =didChange= notifications, which is how
-  LSP is designed to work; the file on disk only ever needed to exist so
-  there was something to attach to.  Set =emjupy-shadow-sync-to-disk= to
-  ='always= if something outside Emacs reads it.
-- Lock files are off in the shadow buffer.  Emacs writes a =.#name= lock
-  beside a visited file on every modification, and a lock protects
-  against a second editor that cannot exist for a generated file.
-- =make-directory= runs when the file is created, not on every request.
+=jupyter-lsp= and a language server on the machine running Jupyter:
 
-This is roughly how JupyterLab manages it: =jupyterlab-lsp= runs the
-language server next to the kernel and syncs the document over the
-protocol, never by writing files.
+#+begin_src bash
+pip install jupyter-lsp 'python-lsp-server[all]'
+#+end_src
 
-If it is still too slow, leave =emjupy-shadow-host= unset.  The shadow
-file then stays local: completions come from your local Python
-environment rather than the kernel's, and =M-.= will not find modules
-that live only on the remote, but nothing crosses the network on the
-completion path.
+Check it is there with =GET /lsp/status= on your server, or just open a
+notebook -- =emjupy-lsp-server= (default ="pylsp"=) names which of the
+servers listed there to ask for.
+
+Set =emjupy-lsp-enabled= to nil to fall back to the older Eglot
+shadow-file arrangement, which needs no server-side support but pays
+the costs described below.
+
+*** Timeouts
+
+Requests wait =emjupy-lsp-timeout= seconds (1) -- short, because
+completion and eldoc run after ordinary commands and a late answer is
+worth less than a responsive editor.  The first request after connecting
+gets =emjupy-lsp-first-timeout= (10), since =jupyter-lsp= starts the
+language server lazily and the first question waits for a process
+launch: measured cold, a completion that answers in milliseconds
+afterwards took seconds the first time.
+
+A request arriving while another is waiting is refused rather than
+nested.  Waiting uses =accept-process-output=, which runs Emacs's timers,
+so eldoc can fire inside a request -- and allowing that to nest is what
+made the file-based client recurse until Emacs ran out of stack.
 
 ** Relative paths in cells
 

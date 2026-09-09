@@ -27,6 +27,7 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 (require 'emjupy-cells)
+(require 'emjupy-lsp)
 (declare-function emjupy--kernel-eval "emjupy-kernel" (kernel code callback))
 (declare-function emjupy--ws-live-p "emjupy-kernel" (&optional kernel))
 
@@ -674,12 +675,69 @@ right destination there."
   "Return the completion table Eglot provides for identifiers."
   (emjupy--xref-in-shadow #'xref-backend-identifier-completion-table))
 
+(defun emjupy--lsp-xrefs ()
+  "Return xrefs for point from the Jupyter-server language server, or nil.
+
+The locations name paths on the SERVER's filesystem.  A definition
+inside the notebook's own code comes back as the synthetic document and
+is mapped onto the cell it came from; anything else is left as a file
+name, which is right when the server and the kernel share a machine and
+honest when they do not."
+  (when (and (bound-and-true-p emjupy-lsp-enabled)
+             (bound-and-true-p emjupy--buffer-notebook)
+             (fboundp 'emjupy--lsp-definitions))
+    (let ((nb emjupy--buffer-notebook))
+      (delq nil
+            (mapcar
+             (lambda (loc)
+               (pcase-let ((`(,uri ,line ,col) loc))
+                 (let ((file (if (string-prefix-p "file://" uri)
+                                 (substring uri (length "file://"))
+                               uri)))
+                   (if (string-suffix-p ".emjupy.py" file)
+                       ;; inside the notebook: map back to the cell
+                       (when-let ((mapped (emjupy--lsp-line-to-cell nb line col)))
+                         (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
+                                    (xref-make-buffer-location
+                                     (emjupy-notebook-buffer nb) mapped)))
+                     (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
+                                (xref-make-file-location file (1+ line) (or col 0)))))))
+             (ignore-errors (emjupy--lsp-definitions)))))))
+
+(defun emjupy--lsp-line-to-cell (nb line col)
+  "Map LINE and COL in NB's synthetic document to a notebook position."
+  (let* ((text (emjupy--build-shadow-content nb))
+         (lines (split-string text "\n"))
+         (abs (+ (apply #'+ (mapcar (lambda (l) (1+ (length l)))
+                                    (seq-take lines (max 0 line))))
+                 (or col 0))))
+    (car (last (emjupy--shadow-offset-to-cell nb abs)))))
+
+(defun emjupy--shadow-offset-to-cell (nb offset)
+  "Return (CELL . POSITION) for OFFSET in NB's synthetic document."
+  (let ((text (emjupy--build-shadow-content nb))
+        (found nil))
+    (cl-loop for cell across (emjupy-notebook-cells nb)
+             until found
+             when (eq (emjupy-cell-type cell) 'code)
+             do (let* ((marker (emjupy--shadow-cell-marker (emjupy-cell-id cell)))
+                       (idx (string-search marker text)))
+                  (when idx
+                    (let* ((body (+ idx (length marker) 1))
+                           (len (length (or (emjupy-cell-source cell) "")))
+                           (ov (emjupy-cell-overlay cell)))
+                      (when (and (overlayp ov) (>= offset body) (<= offset (+ body len)))
+                        (setq found (list cell (+ (overlay-start ov)
+                                                  (- offset body)))))))))
+    found))
+
 (cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
   "Return definitions of IDENTIFIER, mapped back onto notebook cells."
-  (let ((nb emjupy--buffer-notebook))
-    (emjupy--xref-remap
-     nb (emjupy--xref-in-shadow
-         (lambda (b) (xref-backend-definitions b identifier))))))
+  (or (emjupy--lsp-xrefs)
+      (let ((nb emjupy--buffer-notebook))
+        (emjupy--xref-remap
+         nb (emjupy--xref-in-shadow
+             (lambda (b) (xref-backend-definitions b identifier)))))))
 
 (cl-defmethod xref-backend-references ((_backend (eql emjupy)) identifier)
   "Return references to IDENTIFIER, mapped back onto notebook cells."
@@ -862,6 +920,18 @@ LSP awareness doesn't apply to prose."
   (emjupy--goto-shadow-section buf cell-id)
   (with-current-buffer buf (point)))
 
+(defun emjupy--lsp-in-charge-p ()
+  "Return non-nil when the Jupyter-server language server is handling this.
+
+While it is, the shadow FILE must not be built at all: that is the whole
+point of the other transport.  Building it anyway would put the TRAMP
+round trips -- and the timer re-entrancy they cause -- back on the
+completion path, having just removed them."
+  (and (bound-and-true-p emjupy-lsp-enabled)
+       (bound-and-true-p emjupy--buffer-notebook)
+       (fboundp 'emjupy--lsp-live-p)
+       (emjupy--lsp-live-p (emjupy-notebook-lsp emjupy--buffer-notebook))))
+
 (defun emjupy--cell-shadow-delegate (fn)
   "Delegate to the shadow buffer when point is in a code cell.
 The buffer is synced and warmed, an indirect cursor moved there to the
@@ -869,6 +939,7 @@ equivalent position, and FN called with
 CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
 `(point)' there (already positioned) to do its work.  Returns FN's
 value, or nil if point isn't in a code cell."
+  (unless (emjupy--lsp-in-charge-p)
   (let ((cell (get-text-property (point) 'emjupy-cell))
         (nb emjupy--buffer-notebook))
     (when (and cell nb (eq (emjupy-cell-type cell) 'code) (emjupy-cell-overlay cell))
@@ -884,7 +955,7 @@ value, or nil if point isn't in a code cell."
           (goto-char (max (point-min)
                           (min (point-max)
                                (+ shadow-start (- main-point cell-start)))))
-          (funcall fn cell-start shadow-start buf))))))
+          (funcall fn cell-start shadow-start buf)))))))
 
 (defun emjupy--cell-completion-at-point ()
   "Return completions for the cell at point.
