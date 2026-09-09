@@ -781,7 +781,8 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- spurious cells can get added to the top of the notebook
+- [ ] remote notebook LSP slowing too much
+- [ ] spurious cells can get added to the top of the notebook
 - [ ] output (say from a long-running cell) should not move the
   point/view when it comes out
 - [X] re-enforce git tag and =emjupy= version sync
