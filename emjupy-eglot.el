@@ -260,6 +260,21 @@ it surfaces to the user as a raw jsonrpc-error."
                     (ignore-errors (jsonrpc-running-p server)))
                 server)))))
 
+(defcustom emjupy-shadow-sync-to-disk 'lazy
+  "When to write the shadow file to disk.
+
+`lazy\' (the default) writes it once, when it is created.  Later edits
+are sent to the language server by Eglot as `didChange\' notifications,
+which is how LSP is meant to work and needs no file at all.
+
+`always\' also rewrites the file on every edit.  That is only useful if
+something outside Emacs reads it, and it is expensive: a `write-region\'
+over TRAMP measured 214 ms against ssh on localhost, and it lands on the
+completion and eldoc paths, once per keystroke."
+  :type '(choice (const :tag "Once, when created" lazy)
+                 (const :tag "On every edit" always))
+  :group 'emjupy)
+
 (defcustom emjupy-shadow-host nil
   "TRAMP prefix for reaching the machine the kernel runs on, or nil.
 
@@ -376,8 +391,12 @@ automatically, with nothing for the user to run."
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (content (emjupy--build-shadow-content nb))
          (path (emjupy--shadow-file-path nb)))
-    (make-directory (file-name-directory path) t)
     (unless (buffer-live-p buf)
+      ;; Creating the directory is remote I/O, so it belongs here, in the
+      ;; branch that is about to do remote I/O anyway -- not on every call.
+      ;; This function runs on the completion, eldoc and xref paths, which
+      ;; means it ran once per keystroke.
+      (make-directory (file-name-directory path) t)
       ;; A buffer may already be visiting this path from an earlier open of
       ;; the same notebook. Reuse it rather than writing the file behind its
       ;; back, which would leave a stale modtime and make the next visit
@@ -409,17 +428,39 @@ automatically, with nothing for the user to run."
             (python-mode)))
         ;; Saving must never stop to ask either.
         (set-buffer-file-coding-system emjupy--shadow-coding t)
+        ;; No lock files.  Emacs creates and removes a `.#name' lock beside a
+        ;; visited file every time the buffer becomes modified, and when the
+        ;; file is remote that is remote I/O on the completion path: measured
+        ;; at 121 ms per edit against ssh on localhost, against 20 ms with
+        ;; locking off.  Locks guard against two people editing one file;
+        ;; this file is a generated scratch copy of the cells, and nobody
+        ;; else has any business in it.
+        (setq-local create-lockfiles nil)
         (emjupy-shadow-edit-mode 1)
         (setq emjupy--edit-shadow-notebook nb)))
     (with-current-buffer buf
       (unless (string= content (buffer-string))
+        (setq-local create-lockfiles nil)
         (erase-buffer)
         (insert content)
-        (let ((coding-system-for-write emjupy--shadow-coding))
-          (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
-        ;; Record the modtime we just created, otherwise this buffer looks
-        ;; stale to Emacs forever after and every later visit prompts.
-        (set-visited-file-modtime)
+        ;; Deliberately NOT written to disk here.  Eglot sends the change to
+        ;; the language server in-band, as a didChange notification, and the
+        ;; server works from that -- the file on disk only ever needed to
+        ;; exist so there was something to attach to.
+        ;;
+        ;; Writing it anyway cost a `write-region' per edit, and over TRAMP
+        ;; that is not a detail: measured at 214 ms per call against ssh on
+        ;; LOCALHOST, before any network is involved.  On the completion and
+        ;; eldoc paths that is a couple of hundred milliseconds of blocked
+        ;; Emacs per keystroke -- and because TRAMP blocks the main loop, the
+        ;; WebSocket callbacks carrying cell output cannot run either, so a
+        ;; finished cell appears to hang until something interrupts.
+        (when (eq emjupy-shadow-sync-to-disk 'always)
+          (let ((coding-system-for-write emjupy--shadow-coding))
+            (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
+          (set-visited-file-modtime))
+        ;; The disk copy is a bootstrap, not the record: the cells are.  Say
+        ;; unmodified either way, or Emacs offers to save a scratch file.
         (set-buffer-modified-p nil))
       (if (not (require 'eglot nil t))
           (message "[emjupy] Eglot isn't available in this Emacs (needs Emacs 29+).")

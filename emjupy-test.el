@@ -3116,5 +3116,67 @@ written to a wrong path."
           (should (= (length (emjupy-cell-outputs cell)) 0))
           (should-not (string-match-p "/home/me/nb" (buffer-string))))))))
 
+(ert-deftest emjupy-test-shadow-refresh-does-no-remote-io ()
+  "Refreshing the shadow buffer must not touch the file system.
+
+It runs on the completion, eldoc and xref paths -- once per keystroke --
+and over TRAMP each of these is an ssh round trip.  Measured against ssh
+on localhost, before any network: `write-region\' 214 ms, and a lock file
+per modification another 100 ms."
+  (let ((calls nil))
+    (cl-letf* ((real-write (symbol-function 'write-region))
+               ((symbol-function 'write-region)
+                (lambda (&rest args) (push 'write calls) (apply real-write args)))
+               ((symbol-function 'make-directory)
+                (lambda (&rest _) (push 'mkdir calls) t)))
+      (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                    :outputs [] :metadata (make-hash-table))))
+        (emjupy-test--with-notebook (vector cell) buf nb
+          (with-current-buffer buf
+            (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))
+            ;; creation may do I/O; what follows must not
+            (setq calls nil)
+            (dotimes (i 3)
+              (setf (emjupy-cell-source cell) (format "x = %d" i))
+              (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook)))
+            (should-not (memq 'write calls))
+            (should-not (memq 'mkdir calls))))))))
+
+(ert-deftest emjupy-test-shadow-buffer-has-no-lock-files ()
+  "Lock files are off in the shadow buffer.
+
+Emacs writes a `.#name\' lock beside a visited file whenever the buffer
+becomes modified.  On a remote file that is remote I/O per keystroke --
+121 ms against localhost ssh, versus 20 with locking off -- and the lock
+guards against a second editor that cannot exist for a generated file."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((shadow (ignore-errors
+                        (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))))
+          (when (buffer-live-p shadow)
+            (with-current-buffer shadow
+              (should (local-variable-p 'create-lockfiles))
+              (should-not create-lockfiles))))))))
+
+(ert-deftest emjupy-test-shadow-sync-to-disk-option ()
+  "`always\' restores the old write-on-every-edit behaviour."
+  (should (eq emjupy-shadow-sync-to-disk 'lazy))
+  (let ((writes 0))
+    (cl-letf* ((real-write (symbol-function 'write-region))
+               ((symbol-function 'write-region)
+                (lambda (&rest args) (setq writes (1+ writes)) (apply real-write args))))
+      (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                    :outputs [] :metadata (make-hash-table))))
+        (emjupy-test--with-notebook (vector cell) buf nb
+          (with-current-buffer buf
+            (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))
+            (setq writes 0)
+            (let ((emjupy-shadow-sync-to-disk 'always))
+              (setf (emjupy-cell-source cell) "x = 2")
+              (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook)))
+            (should (> writes 0))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

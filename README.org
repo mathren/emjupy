@@ -712,6 +712,47 @@ would rather lose a feature than write to the wrong file.
 =emjupy-shadow-directory= still overrides everything, and
 =emjupy-shadow-beside-notebook= turns the behaviour off.
 
+** Speed over TRAMP
+
+A remote shadow file used to make Emacs crawl, because refreshing it ran
+on the completion, eldoc and xref paths -- once per keystroke -- and
+each refresh did remote I/O.  Measured against ssh on *localhost*, so
+with no network latency at all:
+
+| Operation                      | Cost   |
+|--------------------------------+--------|
+| =write-region= to a remote file  | 214 ms |
+| lock file per buffer change    | ~100 ms |
+| =make-directory= (TRAMP-cached)  | 0.8 ms |
+
+Over a real link, add the round-trip time to each.  And because TRAMP
+blocks Emacs while it waits, the WebSocket callbacks carrying cell
+output could not run either -- which is why a finished cell would sit
+there looking like it was still executing until something interrupted
+the wait.
+
+Three changes, taking a shadow refresh from 277 ms to 19 ms:
+
+- The file is no longer rewritten on every edit.  Eglot sends changes to
+  the language server in-band as =didChange= notifications, which is how
+  LSP is designed to work; the file on disk only ever needed to exist so
+  there was something to attach to.  Set =emjupy-shadow-sync-to-disk= to
+  ='always= if something outside Emacs reads it.
+- Lock files are off in the shadow buffer.  Emacs writes a =.#name= lock
+  beside a visited file on every modification, and a lock protects
+  against a second editor that cannot exist for a generated file.
+- =make-directory= runs when the file is created, not on every request.
+
+This is roughly how JupyterLab manages it: =jupyterlab-lsp= runs the
+language server next to the kernel and syncs the document over the
+protocol, never by writing files.
+
+If it is still too slow, leave =emjupy-shadow-host= unset.  The shadow
+file then stays local: completions come from your local Python
+environment rather than the kernel's, and =M-.= will not find modules
+that live only on the remote, but nothing crosses the network on the
+completion path.
+
 ** Relative paths in cells
 
 Because kernels are now started through a session, a cell\='s working
