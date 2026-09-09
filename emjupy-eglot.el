@@ -383,11 +383,50 @@ The server is folded into the name: two servers can both host
     ;; `emjupy--ensure-shadow-buffer', which is already about to do remote I/O.
     (expand-file-name (concat safe-name ".py") dir)))
 
-(defun emjupy--ensure-shadow-buffer (nb)
+(defcustom emjupy-shadow-retry-interval 30
+  "Seconds to wait before retrying a shadow buffer that failed to set up.
+
+Completion and eldoc ask for the shadow buffer after every command.  If
+building it fails -- an unreachable host, a directory that cannot be
+created -- retrying each time turns one slow failure into a hang, since
+each attempt blocks Emacs while TRAMP waits."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-shadow-timeout 2
+  "Seconds to let shadow-buffer setup block Emacs before giving up.
+
+Reached from eldoc and completion, so this is time the user spends
+waiting after an ordinary command.  Language-server support is worth a
+short pause and no more; editing and running cells do not depend on it."
+  :type 'number
+  :group 'emjupy)
+
+(defvar-local emjupy--shadow-blocked-until nil
+  "Time before which this buffer will not try to build a shadow buffer.")
+
+(defun emjupy--shadow-blocked-p ()
+  "Return non-nil while shadow setup is in its back-off window."
+  (and emjupy--shadow-blocked-until
+       (time-less-p (current-time) emjupy--shadow-blocked-until)))
+
+(defun emjupy--shadow-block (reason)
+  "Stop trying to build a shadow buffer for a while, reporting REASON."
+  (setq emjupy--shadow-blocked-until
+        (time-add (current-time) emjupy-shadow-retry-interval))
+  (message "[emjupy] Language-server setup failed (%s); pausing %ds.  %s"
+           reason emjupy-shadow-retry-interval
+           "Notebook editing and execution are unaffected."))
+
+(cl-defun emjupy--ensure-shadow-buffer (nb)
   "Return NB's persistent code shadow buffer, creating it if needed.
 Its content is refreshed to
 match the current cells, and make sure Eglot is (or becomes) attached --
 automatically, with nothing for the user to run."
+  (when (emjupy--shadow-blocked-p)
+    (cl-return-from emjupy--ensure-shadow-buffer
+      (and (buffer-live-p (emjupy-notebook-shadow-buffer nb))
+           (emjupy-notebook-shadow-buffer nb))))
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (content (emjupy--build-shadow-content nb))
          (path (emjupy--shadow-file-path nb)))
@@ -406,12 +445,20 @@ automatically, with nothing for the user to run."
         (ignore-errors (kill-buffer buf)))
       (setq buf nil)
       (setf (emjupy-notebook-shadow-buffer nb) nil))
+    ;; Building the buffer is remote I/O when the notebook is remote, and
+    ;; this function is reached from eldoc and completion -- after every
+    ;; command.  One unreachable host would otherwise mean a blocking TRAMP
+    ;; attempt per keystroke, which is indistinguishable from a hang.
     (unless (buffer-live-p buf)
-      ;; Creating the directory is remote I/O, so it belongs here, in the
-      ;; branch that is about to do remote I/O anyway -- not on every call.
-      ;; This function runs on the completion, eldoc and xref paths, which
-      ;; means it ran once per keystroke.
-      (make-directory (file-name-directory path) t)
+      (condition-case err
+          (with-timeout (emjupy-shadow-timeout
+                         (emjupy--shadow-block "timed out")
+                         (cl-return-from emjupy--ensure-shadow-buffer nil))
+            (make-directory (file-name-directory path) t))
+        (error
+         (emjupy--shadow-block (error-message-string err))
+         (cl-return-from emjupy--ensure-shadow-buffer nil))))
+    (unless (buffer-live-p buf)
       ;; A buffer may already be visiting this path from an earlier open of
       ;; the same notebook. Reuse it rather than writing the file behind its
       ;; back, which would leave a stale modtime and make the next visit

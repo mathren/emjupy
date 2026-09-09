@@ -3266,5 +3266,53 @@ the fix?\" can be answered without recalling how it was installed."
     (should header)
     (should (equal header emjupy-version))))
 
+(ert-deftest emjupy-test-shadow-setup-backs-off-after-failure ()
+  "A shadow buffer that cannot be built is not retried after every command.
+
+Completion and eldoc ask for it once per command.  When the notebook is
+remote and the host is unreachable, each attempt blocks Emacs while
+TRAMP waits, so retrying every time turns one slow failure into what
+looks exactly like a hang."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                 :outputs [] :metadata (make-hash-table)))
+         (attempts 0))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/")
+              (emjupy-shadow-retry-interval 60))
+          (cl-letf (((symbol-function 'make-directory)
+                     (lambda (&rest _) (setq attempts (1+ attempts))
+                       (error "host unreachable"))))
+            (dotimes (_ 5)
+              (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))))
+          ;; tried once, then left alone
+          (should (= attempts 1))
+          (should (emjupy--shadow-blocked-p))
+          ;; and once the window passes it is willing again
+          (setq emjupy--shadow-blocked-until nil)
+          (should-not (emjupy--shadow-blocked-p)))))))
+
+(ert-deftest emjupy-test-shadow-failure-does-not-break-the-notebook ()
+  "Editing and running keep working when the language server cannot be set
+up: the shadow buffer is a convenience, not the notebook."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/"))
+          (cl-letf (((symbol-function 'make-directory)
+                     (lambda (&rest _) (error "host unreachable"))))
+            (should-not (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))))
+        ;; the notebook itself is untouched
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (end-of-line)
+        (insert " + 1")
+        (should (emjupy--sync-all-cells))
+        (should (equal (emjupy-cell-source cell) "x = 1 + 1"))
+        (emjupy-clear-cell-output)
+        (should (= (length (emjupy-cell-outputs cell)) 0))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

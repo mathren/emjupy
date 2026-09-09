@@ -728,6 +728,19 @@ If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
 server is reading a local scratch file and =M-.= will not find your
 modules.
 
+** When the language server cannot be reached
+
+Completion and eldoc ask for the shadow buffer after every command.  If
+the notebook is remote and the host is slow or unreachable, each attempt
+blocks Emacs while TRAMP waits -- so one failure repeated per keystroke
+is indistinguishable from a hang.
+
+emjupy gives setup =emjupy-shadow-timeout= seconds (2 by default) and, if
+it fails, stops trying for =emjupy-shadow-retry-interval= seconds (30),
+saying so once.  Editing and running cells never depend on the shadow
+buffer, so they keep working: only completion, eldoc and =M-.= are lost
+until the host answers again.
+
 ** Speed over TRAMP
 
 A remote shadow file used to make Emacs crawl, because refreshing it ran
@@ -803,5 +816,7 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
   point/view when it comes out
 - [X] re-enforce git tag and =emjupy= version sync
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
-- [ ] integrate better with =tqdm=, which right now shows lines like: =  0%|                                                                                           | 0/3 [00:00<?, ?it/s] =
+- [ ] integrate better with =tqdm=, which right now shows lines like: =
+  0%|                                                                                           | 0/3 [00:00<?, ?it/s]
+=
   specifically, clear the ^M character and make that line update.
