@@ -410,10 +410,17 @@ short pause and no more; editing and running cells do not depend on it."
   (and emjupy--shadow-blocked-until
        (time-less-p (current-time) emjupy--shadow-blocked-until)))
 
-(defun emjupy--shadow-block (reason)
-  "Stop trying to build a shadow buffer for a while, reporting REASON."
-  (setq emjupy--shadow-blocked-until
-        (time-add (current-time) emjupy-shadow-retry-interval))
+(defun emjupy--shadow-block (reason &optional buffer)
+  "Stop trying to build a shadow buffer for a while, reporting REASON.
+
+BUFFER is where the pause is recorded, defaulting to the current one.
+It has to be the NOTEBOOK buffer: the flag is buffer-local and the next
+request comes from there, so recording it in the shadow buffer -- which
+is current while Eglot is being started -- would be invisible and the
+attempt would repeat after every command anyway."
+  (with-current-buffer (or buffer (current-buffer))
+    (setq emjupy--shadow-blocked-until
+          (time-add (current-time) emjupy-shadow-retry-interval)))
   (message "[emjupy] Language-server setup failed (%s); pausing %ds.  %s"
            reason emjupy-shadow-retry-interval
            "Notebook editing and execution are unaffected."))
@@ -428,6 +435,7 @@ automatically, with nothing for the user to run."
       (and (buffer-live-p (emjupy-notebook-shadow-buffer nb))
            (emjupy-notebook-shadow-buffer nb))))
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
+         (nb-buffer (or (emjupy-notebook-buffer nb) (current-buffer)))
          (content (emjupy--build-shadow-content nb))
          (path (emjupy--shadow-file-path nb)))
     ;; The path can change after the buffer was made.  The kernel reports its
@@ -441,7 +449,15 @@ automatically, with nothing for the user to run."
                (buffer-local-value 'buffer-file-name buf)
                (not (equal (expand-file-name (buffer-local-value 'buffer-file-name buf))
                            (expand-file-name path))))
-      (let ((kill-buffer-query-functions nil))
+      ;; Never ask.  The shadow buffer visits a file but is a regenerated
+      ;; copy of the cells, so "modified" only means it has drifted from a
+      ;; disk copy nobody reads -- and since edits are no longer written
+      ;; through, it is always modified.  Killing it silently is right;
+      ;; stopping to ask is not.
+      (with-current-buffer buf
+        (set-buffer-modified-p nil))
+      (let ((kill-buffer-query-functions nil)
+            (kill-buffer-hook nil))
         (ignore-errors (kill-buffer buf)))
       (setq buf nil)
       (setf (emjupy-notebook-shadow-buffer nb) nil))
@@ -545,9 +561,21 @@ automatically, with nothing for the user to run."
             ;; we deliberately never call `eglot-ensure' itself, relying on
             ;; `fboundp' would leave those internals void the first time a
             ;; notebook is opened in a session that never ran Eglot before.
+            ;; Connecting is the expensive half, and it is retried whenever
+            ;; the server is not attached -- which, if the server cannot be
+            ;; started at all, is after every command.  Over TRAMP that means
+            ;; guessing the contact and launching a remote process each time,
+            ;; so a host without pylsp, or one that is merely slow, brings
+            ;; Emacs to a crawl at exactly the moment the user is running
+            ;; cells.  Same treatment as the file: a short leash, then leave
+            ;; it alone for a while.
             (unless (and (boundp 'eglot--managed-mode) eglot--managed-mode)
-              (apply #'eglot--connect (eglot--guess-contact)))
-          (error (message "[emjupy] Eglot couldn't start automatically: %s" err)))))
+              (with-timeout (emjupy-shadow-timeout
+                             (emjupy--shadow-block "language server did not start"
+                                                   nb-buffer))
+                (apply #'eglot--connect (eglot--guess-contact))))
+          (error
+           (emjupy--shadow-block (error-message-string err) nb-buffer)))))
     buf))
 
 (defun emjupy--goto-shadow-section (buf cell-id)

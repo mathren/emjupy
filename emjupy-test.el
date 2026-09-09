@@ -3314,5 +3314,62 @@ up: the shadow buffer is a convenience, not the notebook."
         (emjupy-clear-cell-output)
         (should (= (length (emjupy-cell-outputs cell)) 0))))))
 
+(ert-deftest emjupy-test-failed-eglot-connect-backs-off ()
+  "A language server that will not start is tried once, not per command.
+
+Connecting is the expensive half and was retried whenever the server was
+not attached -- which, if it cannot start at all, is after every
+command.  Over TRAMP that is a remote process launch each time, landing
+squarely on the user while they are running cells."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                 :outputs [] :metadata (make-hash-table)))
+         (connects 0))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (let ((emjupy-shadow-directory
+               (expand-file-name "emjupy-connect-test" temporary-file-directory))
+              (emjupy-shadow-retry-interval 60))
+          (cl-letf (((symbol-function 'eglot--guess-contact)
+                     (lambda (&rest _) (list nil nil nil nil)))
+                    ((symbol-function 'eglot--connect)
+                     (lambda (&rest _) (setq connects (1+ connects))
+                       (error "no server there"))))
+            (dotimes (_ 6)
+              (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))))
+          (should (= connects 1))
+          ;; recorded in the NOTEBOOK buffer, where the next request comes
+          ;; from -- the connect itself runs in the shadow buffer, and a flag
+          ;; left there would be invisible and the attempt would repeat
+          (should (emjupy--shadow-blocked-p)))))))
+
+(ert-deftest emjupy-test-shadow-buffer-killed-without-asking ()
+  "Relocating the shadow buffer must not stop to ask.
+
+It visits a file but is a regenerated copy of the cells, and since edits
+are no longer written through it is always \"modified\" -- so `kill-buffer\'
+would prompt every time the path changed."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                 :outputs [] :metadata (make-hash-table)))
+         (asked nil)
+         (later (expand-file-name "emjupy-kill-test" temporary-file-directory)))
+    (make-directory later t)
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (let ((emjupy-shadow-directory nil) (emjupy-remote-root nil))
+          (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))
+          (let ((shadow (emjupy-notebook-shadow-buffer emjupy--buffer-notebook)))
+            (when (buffer-live-p shadow)
+              ;; make it dirty, as ordinary use does
+              (with-current-buffer shadow (insert "\n# edited"))
+              (cl-letf (((symbol-function 'yes-or-no-p)
+                         (lambda (&rest _) (setq asked t) t))
+                        ((symbol-function 'y-or-n-p)
+                         (lambda (&rest _) (setq asked t) t)))
+                (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) later)
+                (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook)))
+              (should-not asked))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -737,7 +737,10 @@ is indistinguishable from a hang.
 
 emjupy gives setup =emjupy-shadow-timeout= seconds (2 by default) and, if
 it fails, stops trying for =emjupy-shadow-retry-interval= seconds (30),
-saying so once.  Editing and running cells never depend on the shadow
+saying so once.  That covers both halves: creating the file, and
+starting the language server -- the second being the expensive one, and
+the one that otherwise repeats after every command when the host has no
+=pylsp=.  Editing and running cells never depend on the shadow
 buffer, so they keep working: only completion, eldoc and =M-.= are lost
 until the host answers again.
 
