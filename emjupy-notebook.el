@@ -69,9 +69,11 @@ so a tokenless probe came back 200 and emjupy concluded no token was
 needed -- then every write was refused with 403 and the token was never
 asked for.  Contents is both genuinely protected and the thing emjupy
 actually needs."
-  (condition-case nil
-      (and (emjupy--http-request "GET" server "/api/contents") t)
-    (error nil)))
+  (let ((inhibit-message t)
+        (message-log-max nil))
+    (condition-case nil
+        (and (emjupy--http-request "GET" server "/api/contents") t)
+      (error nil))))
 
 (defun emjupy--resolve-token (base-url explicit)
   "Work out the token for BASE-URL, prompting only when unavoidable.
@@ -81,12 +83,18 @@ then no token at all (many tunnelled servers are started with
 `--IdentityProvider.token='), and only then ask.  Asking every time is
 what made logging into a second tunnel tedious."
   (or explicit
+      ;; A token already registered for this server is used as it stands.
+      ;; It was accepted once; re-probing only to confirm costs a request
+      ;; whose failure is then reported as an error the user did not cause.
       (let ((known (gethash base-url emjupy--servers)))
         (and known
              (let ((tok (emjupy-server-token known)))
-               (and tok (not (string-empty-p tok))
-                    (emjupy--server-reachable-p known)
-                    tok))))
+               (and tok (not (string-empty-p tok)) tok))))
+      ;; Only now is a probe worth making: is this one of the tunnelled
+      ;; servers started with `--IdentityProvider.token='?  Quietly -- a 403
+      ;; here is the expected answer for a server that does want a token,
+      ;; not a failure, and reporting it made every login look like it had
+      ;; gone wrong once before succeeding.
       (and (emjupy--server-reachable-p
             (make-emjupy-server :base-url base-url :token ""))
            "")
