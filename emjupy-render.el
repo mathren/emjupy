@@ -964,15 +964,20 @@ one character beyond the right-hand rule."
   (let ((ov (emjupy-cell-output-ov cell))
         (width (emjupy--box-width)))
     (when (overlayp ov)
-      (save-excursion
-        (goto-char (overlay-start ov))
-        (while (< (point) (overlay-end ov))
-          (if (get-text-property (point) 'emjupy-pad)
+      ;; Walk the pad markers, not the characters.  There is one pad per
+      ;; output LINE and there can be tens of thousands of characters -- an
+      ;; inline figure is a single output of some 18,000 -- so stepping
+      ;; through them one at a time made re-aligning proportional to the size
+      ;; of the output rather than to the number of lines in it.
+      (let ((pos (overlay-start ov))
+            (end (overlay-end ov)))
+        (while (and pos (< pos end))
+          (if (get-text-property pos 'emjupy-pad)
               (progn
-                (put-text-property (point) (1+ (point))
-                                   'display `(space :align-to ,width))
-                (forward-char 1))
-            (forward-char 1)))))))
+                (put-text-property pos (1+ pos) 'display
+                                   `(space :align-to ,width))
+                (setq pos (1+ pos)))
+            (setq pos (next-single-property-change pos 'emjupy-pad nil end))))))))
 
 (defcustom emjupy-render-ansi-colors t
   "When non-nil, turn ANSI colour escapes in output into real colours.

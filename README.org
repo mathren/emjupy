@@ -728,6 +728,27 @@ If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
 server is reading a local scratch file and =M-.= will not find your
 modules.
 
+** If it is still slow: profile it
+
+emjupy's own per-command work is small -- a cursor move costs well under
+a millisecond, and re-aligning the output boxes on a window change went
+from 10 ms to 0.7 ms.  What remains, on a notebook full of figures, is
+usually Emacs redisplay of large inline images rather than emjupy code.
+
+The way to tell is to measure rather than guess:
+
+#+begin_src
+M-x profiler-start RET cpu RET
+  ... move the point around until it feels slow ...
+M-x profiler-report
+#+end_src
+
+The top entries name the culprit.  If they are emjupy functions that is
+a bug worth reporting with the report attached; if they are
+=redisplay_internal= or image scaling, the notebook is asking Emacs to
+draw more than it comfortably can, and clearing some output
+(=emjupy-clear-all-outputs=) will confirm it in seconds.
+
 ** When the language server cannot be reached
 
 Completion and eldoc ask for the shadow buffer after every command.  If
