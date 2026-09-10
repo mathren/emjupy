@@ -92,7 +92,7 @@ looked like a server that did not work."
   :type 'number
   :group 'emjupy)
 
-(defcustom emjupy-lsp-timeout 1.0
+(defcustom emjupy-lsp-timeout 0.3
   "Seconds to wait for a language-server reply before giving up.
 
 Deliberately short.  Completion and eldoc run after ordinary commands,
@@ -107,6 +107,7 @@ than a responsive editor."
   server      ; the `emjupy-server' it belongs to
   (next-id 0) ; JSON-RPC request counter
   pending     ; id -> result, filled by the on-message handler
+  callbacks   ; id -> function, for replies nobody waits for
   uri         ; document URI, on the SERVER's filesystem
   (version 0) ; didChange version counter
   ready       ; non-nil once `initialize' has been answered
@@ -142,7 +143,31 @@ stripped the Content-Length framing LSP uses over a pipe."
         ;; them, and pretending otherwise would mean maintaining state the
         ;; notebook never reads.
         (when (and id (or (gethash "result" msg) (gethash "error" msg)))
-          (puthash id msg (emjupy-lsp-pending session)))))))
+          (let ((callback (and (emjupy-lsp-callbacks session)
+                               (gethash id (emjupy-lsp-callbacks session)))))
+            (if callback
+                (progn
+                  (remhash id (emjupy-lsp-callbacks session))
+                  (setf (emjupy-lsp-warmed session) t)
+                  (ignore-errors
+                    (funcall callback (and (not (gethash "error" msg))
+                                           (gethash "result" msg)))))
+              (puthash id msg (emjupy-lsp-pending session)))))))))
+
+(defun emjupy--lsp-async (session method params callback)
+  "Send METHOD with PARAMS over SESSION; call CALLBACK with the result.
+
+Nothing waits.  A blocking wait here is what made every cursor movement
+cost the full request timeout when the server was slow to answer or
+never answered at all -- and since eldoc runs after every command, that
+was the whole editor."
+  (when (emjupy--lsp-live-p session)
+    (let ((id (cl-incf (emjupy-lsp-next-id session))))
+      (unless (emjupy-lsp-callbacks session)
+        (setf (emjupy-lsp-callbacks session) (make-hash-table :test 'equal)))
+      (puthash id callback (emjupy-lsp-callbacks session))
+      (emjupy--lsp-send session method params id)
+      id)))
 
 (defun emjupy--lsp-send (session method params &optional id)
   "Send METHOD with PARAMS over SESSION, as request ID or a notification."
@@ -222,6 +247,14 @@ and the answer collected on the first request that needs it."
                 (emjupy--server-label server) (error-message-string err))
        nil))))
 
+(defvar-local emjupy--lsp-blocked-until nil
+  "Time before which no further attempt is made to set up a session.")
+
+(defcustom emjupy-lsp-retry-interval 30
+  "Seconds to wait before trying the language server again after a failure."
+  :type 'number
+  :group 'emjupy)
+
 (defun emjupy--lsp-initialize (nb session)
   "Run the LSP handshake for NB on SESSION.  Return non-nil on success."
   (let* ((root (concat "file://" (or (emjupy-notebook-kernel-cwd nb) "/")))
@@ -231,9 +264,17 @@ and the answer collected on the first request that needs it."
     (puthash "rootUri" root params)
     (puthash "capabilities" caps params)
     (puthash "workspaceFolders" :null params)
-    (when (emjupy--lsp-request session "initialize" params 10)
-      (emjupy--lsp-send session "initialized" (make-hash-table :test 'equal))
-      (setf (emjupy-lsp-ready session) t))))
+    ;; Asynchronous.  The handshake can take seconds -- `jupyter-lsp' starts
+    ;; the language server lazily -- and waiting for it on the path eldoc
+    ;; uses means waiting for it after every command.
+    (emjupy--lsp-async
+     session "initialize" params
+     (lambda (result)
+       (when result
+         (emjupy--lsp-send session "initialized" (make-hash-table :test 'equal))
+         (setf (emjupy-lsp-ready session) t)
+         (emjupy--lsp-sync nb session))))
+    t))
 
 (defun emjupy--lsp-sync (nb session)
   "Send NB's code to SESSION, opening the document or changing it."
@@ -271,15 +312,28 @@ the nil here means \"not yet\", not \"never\"."
   (unless (and nb (emjupy-notebook-server nb) (emjupy-notebook-kernel-cwd nb))
     (cl-return-from emjupy--lsp-session nil))
   (let ((session (emjupy-notebook-lsp nb)))
-    (unless (emjupy--lsp-live-p session)
-      (setq session (emjupy--lsp-connect nb))
-      (setf (emjupy-notebook-lsp nb) session))
-    (when session
-      (unless (emjupy-lsp-ready session)
-        (emjupy--lsp-initialize nb session))
-      (when (emjupy-lsp-ready session)
-        (emjupy--lsp-sync nb session)
-        session))))
+    ;; Connecting and handshaking are started here but never waited for.
+    ;; Until the session reports ready this returns nil, and the caller does
+    ;; nothing -- which is the correct behaviour for eldoc and completion:
+    ;; better no answer than a frozen editor.
+    (cond
+     ((and session (emjupy-lsp-ready session) (emjupy--lsp-live-p session))
+      (emjupy--lsp-sync nb session)
+      session)
+     ((and emjupy--lsp-blocked-until
+           (time-less-p (current-time) emjupy--lsp-blocked-until))
+      nil)
+     (t
+      (unless (emjupy--lsp-live-p session)
+        (setq session (emjupy--lsp-connect nb))
+        (setf (emjupy-notebook-lsp nb) session)
+        (if session
+            (emjupy--lsp-initialize nb session)
+          ;; Could not even open the socket: usually `jupyter-lsp' is not
+          ;; installed on that server.  Stop asking for a while.
+          (setq emjupy--lsp-blocked-until
+                (time-add (current-time) emjupy-lsp-retry-interval))))
+      nil))))
 
 (defun emjupy-lsp-shutdown (&optional nb)
   "Close NB's language-server session."
@@ -323,42 +377,77 @@ the nil here means \"not yet\", not \"never\"."
     (puthash "position" position params)
     params))
 
+(defun emjupy--lsp-ask-async (method callback)
+  "Ask the language server METHOD about point; call CALLBACK with the result."
+  (when-let* ((nb (and (bound-and-true-p emjupy--buffer-notebook)
+                       emjupy--buffer-notebook))
+              (position (emjupy--lsp-position nb))
+              (session (emjupy--lsp-session nb)))
+    (emjupy--lsp-async session method
+                       (emjupy--lsp-text-document-params session position)
+                       callback)))
+
 (defun emjupy--lsp-ask (method)
   "Ask the language server METHOD about point, and return the result."
   (when-let* ((nb (and (bound-and-true-p emjupy--buffer-notebook)
                        emjupy--buffer-notebook))
               (position (emjupy--lsp-position nb))
               (session (emjupy--lsp-session nb)))
-    (let ((result (emjupy--lsp-request
-                   session method
-                   (emjupy--lsp-text-document-params session position)
-                   (if (emjupy-lsp-warmed session)
-                       emjupy-lsp-timeout
-                     emjupy-lsp-first-timeout))))
-      (when result (setf (emjupy-lsp-warmed session) t))
-      result)))
+    ;; Only a server that has already answered something is worth waiting
+    ;; for, and then only briefly.  Before that, return nothing rather than
+    ;; hold the editor while a language server starts up.
+    (when (emjupy-lsp-warmed session)
+      (emjupy--lsp-request session method
+                           (emjupy--lsp-text-document-params session position)
+                           emjupy-lsp-timeout))))
 
 ;; --- what the notebook asks for ---------------------------------------------
 
+(defvar-local emjupy--lsp-completion-cache nil
+  "Last completion answer, as (KEY . CANDIDATES).")
+
 (defun emjupy-lsp-completion-at-point ()
-  "`completion-at-point-functions\=' entry backed by the Jupyter server."
+  "`completion-at-point-functions\=' entry backed by the Jupyter server.
+
+Answers from the last reply and asks for the next one in the
+background.  Nothing waits: with an eager completion UI this runs on
+every keystroke, so a wait here is a wait on every keystroke -- and the
+answer for the position one character back is worth more than a frozen
+editor."
   (when emjupy-lsp-enabled
-    (let ((result (emjupy--lsp-ask "textDocument/completion")))
-      (when result
-        (let* ((items (if (hash-table-p result) (gethash "items" result) result))
-               (cands (mapcar (lambda (it) (gethash "label" it)) (append items nil)))
-               (bounds (bounds-of-thing-at-point 'symbol)))
-          (when cands
-            (list (or (car bounds) (point)) (or (cdr bounds) (point))
-                  cands :exclusive 'no)))))))
+    (let* ((key (list (point) (buffer-chars-modified-tick)))
+           (cached (and emjupy--lsp-completion-cache
+                        (equal (car emjupy--lsp-completion-cache) key)
+                        (cdr emjupy--lsp-completion-cache)))
+           (buffer (current-buffer)))
+      (unless cached
+        (emjupy--lsp-ask-async
+         "textDocument/completion"
+         (lambda (result)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (let* ((items (if (hash-table-p result)
+                                 (gethash "items" result)
+                               result))
+                      (cands (delq nil (mapcar (lambda (it)
+                                                 (and (hash-table-p it)
+                                                      (gethash "label" it)))
+                                               (append items nil)))))
+                 (setq emjupy--lsp-completion-cache (cons key cands))))))))
+      (when cached
+        (let ((bounds (bounds-of-thing-at-point 'symbol)))
+          (list (or (car bounds) (point)) (or (cdr bounds) (point))
+                cached :exclusive 'no))))))
 
 (defun emjupy-lsp-eldoc (callback &rest _)
   "Report hover documentation for point to CALLBACK.
 An `eldoc-documentation-functions\=' entry, backed by the language server
 the Jupyter host is running."
   (when emjupy-lsp-enabled
-    (let ((result (emjupy--lsp-ask "textDocument/hover")))
-      (when result
+    (emjupy--lsp-ask-async
+     "textDocument/hover"
+     (lambda (result)
+       (when result
         (let* ((contents (gethash "contents" result))
                (text (cond
                       ((stringp contents) contents)
@@ -369,8 +458,9 @@ the Jupyter host is running."
                                                 (format "%s" c)))
                                   (append contents nil) "\n")))))
           (when (and text (not (string-empty-p (string-trim text))))
-            (funcall callback (string-trim text))
-            t))))))
+            (funcall callback (string-trim text)))))))
+    ;; Answering later is allowed: this is what the callback is for.
+    t))
 
 (defun emjupy--lsp-definitions ()
   "Return definition locations for point as a list of (FILE LINE COL)."

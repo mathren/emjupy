@@ -3487,5 +3487,82 @@ SIZE of the output instead of the number of lines in it."
           ;; a handful of lines, not twenty thousand characters
           (should (< looks 100)))))))
 
+(ert-deftest emjupy-test-eldoc-never-blocks ()
+  "Asking the language server must not hold the editor.
+
+eldoc runs after EVERY command.  A blocking wait there costs the full
+request timeout per cursor movement whenever the server is slow or
+silent -- measured at ten seconds a move before this was made
+asynchronous, which is indistinguishable from a hang."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "os.pa"
+                                 :outputs [] :metadata (make-hash-table)))
+         (session (make-emjupy-lsp :pending (make-hash-table :test 'equal)
+                                   :callbacks (make-hash-table :test 'equal)
+                                   :uri "file:///srv/p/n.emjupy.py"
+                                   :ready t :warmed t)))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/p")
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "h" :token "t"))
+        (setf (emjupy-notebook-lsp emjupy--buffer-notebook) session)
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t))
+                  ;; a server that never answers
+                  ((symbol-function 'emjupy--lsp-send) (lambda (&rest _) nil)))
+          (let ((start (float-time)))
+            (dotimes (_ 5) (ignore-errors (emjupy-lsp-eldoc #'ignore)))
+            ;; five ticks, well under a second in total
+            (should (< (- (float-time) start) 1.0))))))))
+
+(ert-deftest emjupy-test-no-shadow-when-it-would-describe-this-machine ()
+  "No language server is started on a temp-directory shadow when the
+kernel is somewhere unreachable.
+
+It would read THIS machine -- the wrong interpreter, the wrong packages,
+none of the user\='s modules -- so its answers would look plausible and
+be wrong, and it costs a server to produce them."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((emjupy-shadow-host nil))
+          ;; a kernel directory that does not exist here
+          (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/nowhere")
+          (should (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
+          (let ((built nil))
+            (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                       (lambda (&rest _) (setq built t) nil)))
+              (emjupy--cell-shadow-delegate (lambda (&rest _) t))
+              (should-not built))))
+        ;; reachable, or addressable, and it goes ahead
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) temporary-file-directory)
+        (should-not (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
+        (let ((emjupy-shadow-host "/ssh:box:"))
+          (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/nowhere")
+          (should-not (emjupy--shadow-would-mislead-p emjupy--buffer-notebook)))))))
+
+(ert-deftest emjupy-test-login-recovers-from-a-refused-token ()
+  "A refused token is asked for once and the login continues.
+
+Before, the 403 ended the command, so logging in took two goes: the
+first reported the refusal and stopped, the second asked and worked."
+  (let ((asked 0) (attempts 0))
+    (cl-letf (((symbol-function 'emjupy--normalize-url) (lambda (u) u))
+              ((symbol-function 'emjupy--resolve-token) (lambda (&rest _) "wrong"))
+              ((symbol-function 'emjupy--harvest-xsrf) (lambda (&rest _) nil))
+              ((symbol-function 'emjupy--read-token)
+               (lambda (&rest _) (setq asked (1+ asked)) "right"))
+              ((symbol-function 'emjupy-list-notebooks) (lambda (&rest _) 'done))
+              ((symbol-function 'emjupy--bind-server-kernel)
+               (lambda (server)
+                 (setq attempts (1+ attempts))
+                 (if (equal (emjupy-server-token server) "right")
+                     "kernel-1"
+                   (error "[Jupyter HTTP 403] GET: Forbidden")))))
+      (should (eq (emjupy-login "localhost:9999" nil) 'done))
+      (should (= asked 1))
+      (should (= attempts 2)))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -162,7 +162,23 @@ different kernel. With a prefix argument, always prompt for the token."
     ;; hand one out; only the HTML pages do.
     (ignore-errors (emjupy--harvest-xsrf server))
 
-    (let ((kernel-id (emjupy--bind-server-kernel server)))
+    ;; If the credentials turn out to be wrong, ask once and carry on rather
+    ;; than failing the command.  A 403 here means the token guessed above
+    ;; was not accepted -- which is what made logging in take two attempts:
+    ;; the first reported the 403 and stopped, and only the second, having
+    ;; asked for a token, worked.
+    (let ((kernel-id
+           (condition-case err
+               (emjupy--bind-server-kernel server)
+             (error
+              (if (not (string-match-p "403" (error-message-string err)))
+                  (signal (car err) (cdr err))
+                (setf (emjupy-server-token server)
+                      (emjupy--read-token
+                       (format "Token for %s (the server refused the last one): "
+                               base-url)))
+                (ignore-errors (emjupy--harvest-xsrf server))
+                (emjupy--bind-server-kernel server))))))
       (message "Connected to %s, kernel %s." base-url kernel-id))
     (emjupy-list-notebooks server)))
 

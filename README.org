@@ -728,6 +728,48 @@ If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
 server is reading a local scratch file and =M-.= will not find your
 modules.
 
+** Nothing waits for the language server
+
+Measured on a 12-cell notebook with inline figures, per cursor
+movement:
+
+| Configuration                          | Steady state |
+|----------------------------------------+--------------|
+| No language server at all               | 0.01 ms      |
+| Server on the Jupyter host (the default)| 0.01 ms      |
+| Eglot on a local shadow file            | 0.59 ms      |
+| Remote kernel emjupy cannot address     | 0.01 ms      |
+
+Every request is asynchronous.  eldoc runs after *every* command, so a
+blocking wait there costs the request timeout per keystroke -- measured
+at ten seconds a move against a server that never answered, which is a
+hang in every way that matters.  Completion answers from the previous
+reply and asks for the next in the background: with an eager completion
+UI it also runs on every keystroke, and an answer one character stale
+beats a frozen editor.
+
+The handshake is asynchronous too.  =jupyter-lsp= starts the language
+server lazily, so connecting can take seconds; until it reports ready,
+emjupy simply has no answers, which is the correct behaviour rather than
+something to wait for.  If the socket cannot be opened at all -- usually
+=jupyter-lsp= is not installed on that server -- it is not retried for
+=emjupy-lsp-retry-interval= seconds.
+
+*** When a shadow file would describe the wrong machine
+
+If the kernel runs somewhere this Emacs cannot reach, and
+=emjupy-shadow-host= does not say how to get there, no language server is
+started on a shadow file at all.  One started there reads *this*
+machine: the wrong interpreter, the wrong packages, and none of your own
+modules.  Its answers would look plausible and be wrong, which is worse
+than no answers, and it costs a server to produce them.
+
+That is also why the shadow path shows up under =/tmp= in
+=M-x emjupy-version= for a remote kernel: it is the only place emjupy can
+safely write when it cannot address the kernel's own filesystem.  Set
+=emjupy-shadow-host=, or install =jupyter-lsp= on the server and let the
+default transport handle it.
+
 ** If it is still slow: profile it
 
 emjupy's own per-command work is small -- a cursor move costs well under

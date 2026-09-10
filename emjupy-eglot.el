@@ -920,6 +920,23 @@ LSP awareness doesn't apply to prose."
   (emjupy--goto-shadow-section buf cell-id)
   (with-current-buffer buf (point)))
 
+(defun emjupy--shadow-would-mislead-p (nb)
+  "Return non-nil when a shadow FILE here would describe the wrong machine.
+
+The kernel is somewhere this Emacs cannot reach -- its working directory
+does not exist locally and `emjupy-shadow-host\' does not say how to get
+there -- so the shadow file lands in a temp directory and any server
+started on it reads THIS machine: the wrong interpreter, the wrong
+packages, and none of the user\='s own modules.  Answers from it would
+look plausible and be wrong, which is worse than no answers, and it
+costs a language server to produce them."
+  (let ((cwd (emjupy-notebook-kernel-cwd nb)))
+    (and cwd
+         (not (file-directory-p cwd))
+         (not (and (boundp 'emjupy-shadow-host)
+                   emjupy-shadow-host
+                   (not (string-empty-p emjupy-shadow-host)))))))
+
 (defun emjupy--lsp-in-charge-p ()
   "Return non-nil when the Jupyter-server language server is handling this.
 
@@ -939,7 +956,9 @@ equivalent position, and FN called with
 CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
 `(point)' there (already positioned) to do its work.  Returns FN's
 value, or nil if point isn't in a code cell."
-  (unless (emjupy--lsp-in-charge-p)
+  (unless (or (emjupy--lsp-in-charge-p)
+              (and emjupy--buffer-notebook
+                   (emjupy--shadow-would-mislead-p emjupy--buffer-notebook)))
   (let ((cell (get-text-property (point) 'emjupy-cell))
         (nb emjupy--buffer-notebook))
     (when (and cell nb (eq (emjupy-cell-type cell) 'code) (emjupy-cell-overlay cell))
