@@ -41,6 +41,58 @@
 
 ;;; Code:
 
+(defcustom emjupy-language-support t
+  "When non-nil, offer completion, eldoc and \\[xref-find-definitions].
+
+A single switch over every path that talks to a language server, on
+either transport.  Set it to nil to find out whether a slowdown comes
+from language support or from somewhere else: the notebook keeps
+working -- cells run, output arrives, everything renders -- and nothing
+runs after each command except emjupy\='s own bookkeeping."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-report-slow-hooks nil
+  "Report anything emjupy runs after a command that takes too long.
+
+When a number, any per-command work taking more than that many seconds
+is logged with the name of the function responsible.  0.05 is a good
+starting point.  This exists because a hang is hard to attribute from
+the outside: it says which of emjupy\='s hooks is the slow one, or --
+just as usefully -- that none of them is, and the time is going
+somewhere else entirely."
+  :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
+  :group 'emjupy)
+
+(defun emjupy--timed (name fn &rest args)
+  "Call FN with ARGS, reporting if it takes longer than allowed.
+NAME is what gets reported."
+  (if (not (numberp emjupy-report-slow-hooks))
+      (apply fn args)
+    (let* ((start (float-time))
+           (value (apply fn args))
+           (elapsed (- (float-time) start)))
+      (when (> elapsed emjupy-report-slow-hooks)
+        (message "[emjupy] %s took %.0f ms" name (* 1000 elapsed)))
+      value)))
+
+(defun emjupy--capf ()
+  "Completion for the cell at point, on whichever transport is available."
+  (when emjupy-language-support
+    (or (emjupy--timed "lsp completion" #'emjupy-lsp-completion-at-point)
+        (emjupy--timed "shadow completion" #'emjupy--cell-completion-at-point))))
+
+(defun emjupy--eldoc (callback &rest args)
+  "Report documentation for the cell at point to CALLBACK, passing ARGS on."
+  (when emjupy-language-support
+    (or (apply #'emjupy--timed "lsp eldoc" #'emjupy-lsp-eldoc callback args)
+        (apply #'emjupy--timed "shadow eldoc" #'emjupy--cell-eldoc-function
+               callback args))))
+
+(defun emjupy--refresh-rules-timed (&rest args)
+  "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
+  (apply #'emjupy--timed "rule refresh" #'emjupy--refresh-box-rules args))
+
 (defvar emjupy--buffer-notebook)
 
 (defconst emjupy-version "0.1.0"
@@ -191,7 +243,7 @@ the echo area, for pasting into a bug report."
   ;; whole-frame resizes (full-screen toggles), which do not always change the
   ;; window configuration.
   (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t)
-  (add-hook 'window-configuration-change-hook #'emjupy--refresh-box-rules nil t)
+  (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed nil t)
   (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
   ;; Completion/eldoc for code cells are delegated to the shared code
   ;; shadow buffer (see section 8) automatically -- no action needed
@@ -199,10 +251,8 @@ the echo area, for pasting into a bug report."
   ;; The Jupyter-server transport first: no file, no TRAMP, and the server
   ;; sits next to the kernel.  The shadow-file path stays as the fallback for
   ;; a server without `jupyter-lsp'.
-  (add-hook 'completion-at-point-functions #'emjupy-lsp-completion-at-point nil t)
-  (add-hook 'completion-at-point-functions #'emjupy--cell-completion-at-point nil t)
-  (add-hook 'eldoc-documentation-functions #'emjupy-lsp-eldoc nil t)
-  (add-hook 'eldoc-documentation-functions #'emjupy--cell-eldoc-function nil t)
+  (add-hook 'completion-at-point-functions #'emjupy--capf nil t)
+  (add-hook 'eldoc-documentation-functions #'emjupy--eldoc nil t)
   ;; M-. and friends: Eglot's xref backend lives in the shadow buffer, so the
   ;; notebook needs a backend of its own that forwards there.
   (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t)

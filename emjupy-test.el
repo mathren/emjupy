@@ -646,7 +646,7 @@ every later cell must still render after it, in order."
          (should (string-match-p (regexp-quote "1+1") (car emjupy-test--sent))))
         (let ((oh (make-hash-table :test 'equal)))
           (puthash "output_type" "stream" oh) (puthash "name" "stdout" oh) (puthash "text" "2\n" oh)
-          (emjupy--append-output-to-cell c1 oh nb))
+          (emjupy-test--append-and-flush c1 oh nb))
         (should (< (overlay-start (emjupy-cell-output-ov c1)) (overlay-start (emjupy-cell-overlay c2))))
         (should (< (overlay-start (emjupy-cell-overlay c2)) (overlay-start (emjupy-cell-overlay c3))))))))
 
@@ -1047,7 +1047,9 @@ wrote A's output into B."
               (puthash "text" "belongs-to-A\n" content)
               (puthash "header" hdr msg) (puthash "parent_header" ph msg)
               (puthash "content" content msg)
-              (emjupy--handle-ws-message k-a (json-serialize msg))))
+              (emjupy--handle-ws-message k-a (json-serialize msg)))
+            ;; output is coalesced behind a timer; force the redraw
+            (emjupy-flush-output buf-a))
           (should (= (length (emjupy-cell-outputs cell-a)) 1))
           (should (= (length (emjupy-cell-outputs cell-b)) 0))
           (with-current-buffer buf-a
@@ -1829,7 +1831,7 @@ buffer mid-keystroke."
         ;; the user is typing three characters into cell 2
         (goto-char (+ 3 (overlay-start (emjupy-cell-overlay c2))))
         ;; output arrives for cell 1
-        (emjupy--append-output-to-cell c1 oh nb)
+        (emjupy-test--append-and-flush c1 oh nb)
         ;; still in cell 2, at the same place within it
         (should (eq (emjupy--cell-at-point) c2))
         (should (= (- (point) (overlay-start (emjupy-cell-overlay c2))) 3))
@@ -2475,7 +2477,7 @@ looked like from the outside."
         (end-of-line)
         (insert " + 99")
         ;; the first cell now produces output
-        (emjupy--append-output-to-cell c1 oh nb)
+        (emjupy-test--append-and-flush c1 oh nb)
         ;; the edit is still there, in the buffer and in the struct
         (should (string-match-p (regexp-quote "+ 99") (buffer-string)))
         (should (equal (emjupy-cell-source c2) "x = 1 + 99"))
@@ -3515,32 +3517,64 @@ asynchronous, which is indistinguishable from a hang."
             ;; five ticks, well under a second in total
             (should (< (- (float-time) start) 1.0))))))))
 
-(ert-deftest emjupy-test-no-shadow-when-it-would-describe-this-machine ()
-  "No language server is started on a temp-directory shadow when the
-kernel is somewhere unreachable.
+(ert-deftest emjupy-test-shadow-fallback-is-a-choice ()
+  "When the kernel is elsewhere, a local shadow is used unless refused.
 
-It would read THIS machine -- the wrong interpreter, the wrong packages,
-none of the user\='s modules -- so its answers would look plausible and
-be wrong, and it costs a server to produce them."
+The server then describes THIS machine -- its interpreter, its packages,
+none of the modules beside the notebook -- which for ordinary Python is
+mostly right and worth having, and for anything environment-dependent is
+confidently wrong.  So it is offered by default and
+`emjupy-shadow-when-kernel-unreachable\' nil declines it."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         (let ((emjupy-shadow-host nil))
-          ;; a kernel directory that does not exist here
           (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/nowhere")
-          (should (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
-          (let ((built nil))
-            (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
-                       (lambda (&rest _) (setq built t) nil)))
-              (emjupy--cell-shadow-delegate (lambda (&rest _) t))
-              (should-not built))))
-        ;; reachable, or addressable, and it goes ahead
+          ;; default: build it
+          (let ((emjupy-shadow-when-kernel-unreachable t))
+            (should-not (emjupy--shadow-would-mislead-p emjupy--buffer-notebook)))
+          ;; declined: do not
+          (let ((emjupy-shadow-when-kernel-unreachable nil))
+            (should (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
+            (let ((built nil))
+              (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                         (lambda (&rest _) (setq built t) nil)))
+                (emjupy--cell-shadow-delegate (lambda (&rest _) t))
+                (should-not built)))))
+        ;; a kernel we can reach is never in question
         (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) temporary-file-directory)
-        (should-not (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
-        (let ((emjupy-shadow-host "/ssh:box:"))
-          (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/nowhere")
+        (let ((emjupy-shadow-when-kernel-unreachable nil))
           (should-not (emjupy--shadow-would-mislead-p emjupy--buffer-notebook)))))))
+
+(ert-deftest emjupy-test-new-notebook-starts-with-a-cell ()
+  "A new notebook has one empty code cell.
+
+A notebook with no cells offers nowhere to type, so the first act would
+always be to add one."
+  (let ((cell (emjupy--blank-code-cell-json)))
+    (should (equal (gethash "cell_type" cell) "code"))
+    (should (equal (gethash "source" cell) ""))
+    (should (equal (gethash "outputs" cell) []))
+    (should (gethash "id" cell)))
+  ;; and it survives the round trip through the parser, which takes the
+  ;; notebook itself rather than the Contents API envelope around it
+  (let ((nb (make-hash-table :test 'equal)))
+    (puthash "cells" (vector (emjupy--blank-code-cell-json)) nb)
+    (puthash "metadata" (make-hash-table :test 'equal) nb)
+    (puthash "nbformat" 4 nb)
+    (puthash "nbformat_minor" 5 nb)
+    (let ((parsed (emjupy--parse-ipynb (json-serialize nb))))
+      (should (= (length (emjupy-notebook-cells parsed)) 1))
+      (should (eq (emjupy-cell-type (aref (emjupy-notebook-cells parsed) 0)) 'code)))))
+
+(ert-deftest emjupy-test-create-new-notebook-renamed ()
+  "The command is `emjupy-create-new-notebook\', with the old name kept
+working so anyone who bound it is not broken."
+  (should (fboundp 'emjupy-create-new-notebook))
+  (should (commandp 'emjupy-create-new-notebook))
+  (should (eq (lookup-key emjupy-list-mode-map (kbd "n")) 'emjupy-create-new-notebook))
+  (should (fboundp 'emjupy-list-new-notebook)))
 
 (ert-deftest emjupy-test-login-recovers-from-a-refused-token ()
   "A refused token is asked for once and the login continues.
@@ -3563,6 +3597,246 @@ first reported the refusal and stopped, the second asked and worked."
       (should (eq (emjupy-login "localhost:9999" nil) 'done))
       (should (= asked 1))
       (should (= attempts 2)))))
+
+(ert-deftest emjupy-test-output-redraws-are-coalesced ()
+  "A burst of output costs one redraw, not one per message.
+
+A redraw rebuilds the whole notebook.  Doing that per arriving message
+is the difference between a progress bar and a frozen Emacs: `tqdm\'
+sends one message per iteration, and each redraw of a notebook with
+figures costs tens of milliseconds."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "loop()"
+                                :outputs [] :metadata (make-hash-table)))
+        (renders 0))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-letf* ((real (symbol-function 'emjupy--rerender-preserving-point))
+                   ((symbol-function 'emjupy--rerender-preserving-point)
+                    (lambda (&rest args) (setq renders (1+ renders)) (apply real args))))
+          (dotimes (i 50)
+            (let ((o (make-hash-table :test 'equal)))
+              (puthash "output_type" "stream" o)
+              (puthash "name" "stdout" o)
+              (puthash "text" (format "step %d\n" i) o)
+              (emjupy--append-output-to-cell cell o nb)))
+          ;; nothing has been drawn yet; one redraw is pending
+          (should (= renders 0))
+          (emjupy-flush-output buf)
+          (should (= renders 1)))))))
+
+(ert-deftest emjupy-test-progress-bar-collapses-to-one-output ()
+  "Consecutive stream output on one channel is one stream, as in Jupyter.
+
+Keeping each message is what let a `tqdm\' bar leave thousands of entries
+behind -- every one walked on every redraw, so the notebook stayed slow
+for the rest of the session.  Carriage returns collapse too, which is
+what makes a progress bar a bar rather than a thousand lines."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "loop()"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (dotimes (i 50)
+          (let ((o (make-hash-table :test 'equal)))
+            (puthash "output_type" "stream" o)
+            (puthash "name" "stderr" o)
+            (puthash "text" (format "\r%d%%|#####| %d/50" i i) o)
+            (emjupy--append-output-to-cell cell o nb)))
+        (emjupy-flush-output buf)
+        (should (= (length (emjupy-cell-outputs cell)) 1))
+        ;; only the last state of the bar survives
+        (let ((text (emjupy--mime-text
+                     (gethash "text" (aref (emjupy-cell-outputs cell) 0)))))
+          (should (string-match-p "49/50" text))
+          (should-not (string-match-p "0/50" text)))
+        ;; a different channel is still its own output
+        (let ((o (make-hash-table :test 'equal)))
+          (puthash "output_type" "stream" o)
+          (puthash "name" "stdout" o)
+          (puthash "text" "done\n" o)
+          (emjupy--append-output-to-cell cell o nb))
+        (should (= (length (emjupy-cell-outputs cell)) 2))))))
+
+(ert-deftest emjupy-test-open-puts-point-at-the-top ()
+  "A freshly opened notebook starts at the top; one already open keeps
+where you were."
+  (should (string-match-p "already-open"
+                          (with-temp-buffer
+                            (insert-file-contents
+                             (expand-file-name "emjupy-notebook.el"
+                                               (file-name-directory
+                                                (or (locate-library "emjupy-notebook")
+                                                    default-directory))))
+                            (buffer-string)))))
+
+(defun emjupy-test--append-and-flush (cell output &optional nb)
+  "Append OUTPUT to CELL and redraw at once.
+Output is coalesced behind a short timer in normal use; a test wants the
+buffer to match the cells before it looks at it."
+  (emjupy--append-output-to-cell cell output nb)
+  (when (and nb (emjupy-notebook-buffer nb))
+    (emjupy-flush-output (emjupy-notebook-buffer nb))))
+
+(ert-deftest emjupy-test-language-support-switch ()
+  "`emjupy-language-support\=' nil silences every per-command language path.
+
+One switch, so a slowdown can be attributed in a single setq: with it
+off nothing runs after a command except emjupy\='s own bookkeeping, and
+the notebook still works."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "import os"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((emjupy-language-support nil)
+              (asked nil))
+          (cl-letf (((symbol-function 'emjupy-lsp-completion-at-point)
+                     (lambda (&rest _) (setq asked t) nil))
+                    ((symbol-function 'emjupy--cell-completion-at-point)
+                     (lambda (&rest _) (setq asked t) nil))
+                    ((symbol-function 'emjupy-lsp-eldoc)
+                     (lambda (&rest _) (setq asked t) nil))
+                    ((symbol-function 'emjupy--cell-eldoc-function)
+                     (lambda (&rest _) (setq asked t) nil)))
+            (emjupy--capf)
+            (emjupy--eldoc #'ignore)
+            (should-not asked)))
+        ;; and the notebook itself is unaffected
+        (should (string-match-p "import os" (buffer-string)))))))
+
+(ert-deftest emjupy-test-slow-hook-reporting ()
+  "`emjupy-report-slow-hooks\=' names the slow hook, or says nothing.
+
+A hang is hard to attribute from the outside; this says which of
+emjupy\='s per-command hooks is slow, or -- just as usefully -- that none
+of them is."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (f &rest args)
+                 (when f (push (apply #'format f args) said)) nil)))
+      ;; off: nothing said, and the value still comes back
+      (let ((emjupy-report-slow-hooks nil))
+        (should (eq (emjupy--timed "quick" (lambda () 'value)) 'value))
+        (should-not said))
+      ;; on, but fast enough: still nothing
+      (let ((emjupy-report-slow-hooks 5))
+        (emjupy--timed "quick" (lambda () 'value))
+        (should-not said))
+      ;; on and slow: named
+      (let ((emjupy-report-slow-hooks 0.01))
+        (emjupy--timed "sluggish hook" (lambda () (sleep-for 0.05)))
+        (should (cl-some (lambda (m) (string-match-p "sluggish hook" m)) said))))))
+
+(ert-deftest emjupy-test-stray-rules-are-swept ()
+  "Any emjupy overlay no live cell owns is deleted on a redraw.
+
+A cell overlay draws its rule through a `before-string\', which shows
+even when the overlay has collapsed to zero width -- so one left behind
+appears as a stray box border, and several stack up at the top where
+`erase-buffer\' collapsed them.  The render already deletes the overlays
+it knows about; this catches anything it does not, which is what makes
+the symptom unrepresentable rather than merely unlikely."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (cl-flet ((strays ()
+                    (seq-filter (lambda (o)
+                                  (and (overlay-get o 'emjupy-overlay)
+                                       (= (overlay-start o) (overlay-end o))))
+                                (overlays-in (point-min) (point-max))))
+                  (tagged ()
+                    (seq-filter (lambda (o) (overlay-get o 'emjupy-overlay))
+                                (overlays-in (point-min) (point-max)))))
+          ;; forge the symptom: collapsed overlays at the top, each drawing
+          ;; a rule, exactly as an abandoned cell would leave behind
+          (dotimes (_ 4)
+            (let ((ov (make-overlay 1 1)))
+              (overlay-put ov 'emjupy-overlay 'cell)
+              (overlay-put ov 'before-string (emjupy--rule "[In: 8] python" "┌"))))
+          (should (= (length (strays)) 4))
+          ;; anything that redraws clears them
+          (emjupy--rerender-notebook)
+          (should (= (length (strays)) 0))
+          ;; and the real cells are untouched
+          (should (= (length (tagged)) 2))
+          (should (overlayp (emjupy-cell-overlay c1)))
+          (should (overlayp (emjupy-cell-overlay c2)))
+          (should (string-match-p "a = 1" (buffer-string)))
+          (should (string-match-p "b = 2" (buffer-string))))))))
+
+(ert-deftest emjupy-test-sweep-keeps-output-overlays ()
+  "The sweep must not take the output boxes with it: they are claimed by
+their cells just as the source overlays are."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "run()"
+                                :outputs [] :metadata (make-hash-table)))
+        (o (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" o)
+    (puthash "name" "stdout" o)
+    (puthash "text" "result\n" o)
+    (setf (emjupy-cell-outputs cell) (vector o))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (should (emjupy-cell-output-ov cell))
+        (emjupy--sweep-stray-overlays)
+        (should (overlayp (emjupy-cell-output-ov cell)))
+        (should (overlay-buffer (emjupy-cell-output-ov cell)))
+        (should (string-match-p "result" (buffer-string)))))))
+
+(ert-deftest emjupy-test-reopening-leaves-no-stray-rules ()
+  "Re-opening a notebook into its existing buffer leaves no stray borders.
+
+Re-opening reuses the buffer but parses fresh cell structs, so the
+previous structs\=' overlays become unreachable.  The open path used to
+erase the text without deleting them, and an overlay collapsed to zero
+width still draws its rule -- which is the stack of borders at the top
+of a notebook opened again, the case that happens when the notebook was
+left running on the server.
+
+Drives `emjupy-open-notebook\' rather than imitating it, so that it fails
+if the open path stops going through the redraw."
+  (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"))
+         (ipynb (json-serialize
+                 (let ((nb (make-hash-table :test 'equal))
+                       (cell (make-hash-table :test 'equal))
+                       (content (make-hash-table :test 'equal))
+                       (top (make-hash-table :test 'equal)))
+                   (puthash "cell_type" "code" cell)
+                   (puthash "source" "a = 1" cell)
+                   (puthash "outputs" [] cell)
+                   (puthash "metadata" (make-hash-table :test 'equal) cell)
+                   (puthash "cells" (vector cell) nb)
+                   (puthash "metadata" (make-hash-table :test 'equal) nb)
+                   (puthash "nbformat" 4 nb)
+                   (puthash "nbformat_minor" 5 nb)
+                   (puthash "content" nb content)
+                   (puthash "type" "notebook" content)
+                   (setq top content)
+                   top)))
+         (buffer nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (&rest _) (json-parse-string ipynb :object-type 'hash-table)))
+              ((symbol-function 'switch-to-buffer) (lambda (b &rest _) b))
+              ((symbol-function 'emjupy-connect-kernel) (lambda (&rest _) nil)))
+      (unwind-protect
+          (progn
+            ;; open the same notebook three times into the same buffer
+            (dotimes (_ 3)
+              (setq buffer (emjupy-open-notebook "reopen.ipynb" server)))
+            (with-current-buffer buffer
+              (let ((strays (seq-filter
+                             (lambda (o) (and (overlay-get o 'emjupy-overlay)
+                                              (= (overlay-start o) (overlay-end o))))
+                             (overlays-in (point-min) (point-max))))
+                    (tagged (seq-filter (lambda (o) (overlay-get o 'emjupy-overlay))
+                                        (overlays-in (point-min) (point-max)))))
+                (should (= (length strays) 0))
+                ;; one cell, so one overlay, however many times it was opened
+                (should (= (length tagged) 1))
+                (should (string-match-p "a = 1" (buffer-string))))))
+        (when (buffer-live-p buffer)
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

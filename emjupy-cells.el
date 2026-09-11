@@ -87,6 +87,35 @@ while some OTHER buffer is current -- a WebSocket callback, a
 fontification temp buffer -- and a buffer-local flag is invisible from
 there.")
 
+(defun emjupy--sweep-stray-overlays ()
+  "Delete emjupy overlays that no live cell owns.
+
+A cell overlay draws its rule through a `before-string\', which is shown
+even when the overlay has collapsed to zero width -- so one left behind
+by a cell that has gone appears as a stray box border, several of them
+stacking up at the top of the buffer where `erase-buffer\' collapsed
+them.
+
+The render deletes the overlays it knows about, which is every overlay
+reachable from the current cells.  This is the belt: anything tagged as
+emjupy\='s that no current cell claims, or that has collapsed to nothing,
+goes.  Cheap -- the list is a few dozen entries -- and it makes the
+stray borders unrepresentable rather than merely unlikely, which
+matters for a fault I have not been able to reproduce."
+  (let ((claimed (make-hash-table :test 'eq)))
+    (cl-loop for cell across (or (and emjupy--buffer-notebook
+                                      (emjupy-notebook-cells emjupy--buffer-notebook))
+                                 [])
+             do (let ((ov (emjupy-cell-overlay cell))
+                      (out (emjupy-cell-output-ov cell)))
+                  (when (overlayp ov) (puthash ov t claimed))
+                  (when (overlayp out) (puthash out t claimed))))
+    (dolist (ov (overlays-in (point-min) (point-max)))
+      (when (and (overlay-get ov 'emjupy-overlay)
+                 (or (not (gethash ov claimed))
+                     (= (overlay-start ov) (overlay-end ov))))
+        (delete-overlay ov)))))
+
 (defun emjupy--rerender-notebook (&optional target-cell)
   "Re-render this notebook, leaving point at TARGET-CELL if given.
 
@@ -194,6 +223,8 @@ changed nothing -- the history is left intact."
                           (setq target-start start))))
           (when target-start
             (goto-char target-start))
+          ;; Nothing may be left drawing a rule that belongs to no cell.
+          (emjupy--sweep-stray-overlays)
           ;; Everything that is not a cell's source is now made read-only.
           ;; Those regions -- the rules, the gutters between cells, the
           ;; output boxes -- belong to no cell, so anything typed into them

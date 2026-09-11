@@ -223,6 +223,9 @@ Returns the notebook buffer."
         (let* ((ipynb-json (json-serialize content-hash))
                (nb-struct (emjupy--parse-ipynb ipynb-json))
                (buf-name (emjupy--notebook-buffer-name path server))
+               ;; Whether this notebook is already on screen decides where
+               ;; point ends up below.
+               (already-open (get-buffer buf-name))
                (buf (get-buffer-create buf-name)))
 
           (setf (emjupy-notebook-server nb-struct) server)
@@ -231,13 +234,25 @@ Returns the notebook buffer."
 
           (with-current-buffer buf
             (emjupy-mode)
-            (let ((inhibit-read-only t))
-              (erase-buffer)
-              (cl-loop for cell across (emjupy-notebook-cells nb-struct)
-                       do (emjupy--render-cell cell)))
-            (setq emjupy--buffer-notebook nb-struct))
+            ;; Set the notebook BEFORE drawing, and draw through
+            ;; `emjupy--rerender-notebook' rather than looping over the cells
+            ;; here.  Re-opening a notebook reuses its buffer but parses
+            ;; fresh cell structs, so the previous structs' overlays become
+            ;; unreachable -- and this path used to erase the text without
+            ;; deleting them, leaving each one collapsed at position 1 still
+            ;; drawing its rule.  That is the stack of stray box borders at
+            ;; the top of a re-opened notebook.
+            (setq emjupy--buffer-notebook nb-struct)
+            (emjupy--rerender-notebook)
+            ;; A freshly opened notebook starts at the top, as a file does.
+            ;; One already open keeps where you were: re-opening it to get
+            ;; back to what you were reading should not lose your place.
+            (unless already-open
+              (goto-char (point-min))))
 
           (switch-to-buffer buf)
+          (unless already-open
+            (goto-char (point-min)))
           ;; Attach this notebook to the kernel bound to its port, so opening
           ;; it drops you into the REPL already running behind that tunnel
           ;; rather than into a dead buffer needing a separate connect step.
@@ -475,8 +490,23 @@ one, and TRAMP already knows how to reach another machine."
       (user-error "Set `emjupy-remote-root\' to browse this server\='s files in Dired"))
     (dired (expand-file-name emjupy-list--path (file-name-as-directory root)))))
 
-(defun emjupy-list-new-notebook ()
-  "Create a new notebook in the directory being shown, and open it."
+(defun emjupy--blank-code-cell-json ()
+  "Return the nbformat representation of one empty code cell."
+  (let ((cell (make-hash-table :test 'equal)))
+    (puthash "cell_type" "code" cell)
+    (puthash "source" "" cell)
+    (puthash "outputs" [] cell)
+    (puthash "execution_count" :null cell)
+    (puthash "metadata" (make-hash-table :test 'equal) cell)
+    (puthash "id" (format "%08x" (random (expt 16 8))) cell)
+    cell))
+
+(defun emjupy-create-new-notebook ()
+  "Create a new notebook in the directory being shown, and open it.
+
+The notebook starts with one empty code cell.  A notebook with no cells
+at all is not a thing anyone wants: it offers nowhere to type, and the
+first act would always be to add one."
   (interactive)
   (let* ((server emjupy-list--server)
          (dir emjupy-list--path)
@@ -487,7 +517,7 @@ one, and TRAMP already knows how to reach another machine."
                  (concat (directory-file-name dir) "/" name)))
          (nb (make-hash-table :test 'equal))
          (req (make-hash-table :test 'equal)))
-    (puthash "cells" [] nb)
+    (puthash "cells" (vector (emjupy--blank-code-cell-json)) nb)
     (puthash "metadata" (make-hash-table :test 'equal) nb)
     (puthash "nbformat" 4 nb)
     (puthash "nbformat_minor" 5 nb)
@@ -501,6 +531,9 @@ one, and TRAMP already knows how to reach another machine."
     (emjupy--http-request "PUT" server (concat "/api/contents/" path)
                           (json-serialize req))
     (emjupy-open-notebook path server)))
+
+(define-obsolete-function-alias 'emjupy-list-new-notebook
+  'emjupy-create-new-notebook "0.1.0")
 
 (defun emjupy-list-kill-all-kernels ()
   "Shut down every kernel on this server."
@@ -524,7 +557,7 @@ one, and TRAMP already knows how to reach another machine."
     (define-key map (kbd "k")   #'emjupy-list-kill-kernel)
     (define-key map (kbd "K")   #'emjupy-list-kill-all-kernels)
     (define-key map (kbd "d")   #'emjupy-list-dired)
-    (define-key map (kbd "n")   #'emjupy-list-new-notebook)
+    (define-key map (kbd "n")   #'emjupy-create-new-notebook)
     map)
   "Keymap for `emjupy-list-mode\'.")
 

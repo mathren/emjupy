@@ -75,22 +75,96 @@ The value is a cons of the message id and the serialized message."
 
     (cons msg-id (json-serialize msg))))
 
+(defcustom emjupy-output-render-interval 0.15
+  "Seconds to let cell output accumulate before redrawing.
+
+A redraw rebuilds the whole notebook, so doing one per arriving message
+is the difference between a progress bar and a frozen Emacs: a
+`tqdm\' loop sends a message per iteration, and each redraw of a
+notebook with figures costs tens of milliseconds.  Coalescing them
+bounds the cost to one redraw per interval however fast the output
+comes."
+  :type 'number
+  :group 'emjupy)
+
+(defvar-local emjupy--render-timer nil
+  "Timer coalescing pending output redraws in this buffer.")
+
+(defun emjupy--schedule-render (buffer)
+  "Arrange for BUFFER to be redrawn soon, at most once per interval."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (unless emjupy--render-timer
+        (setq emjupy--render-timer
+              (run-with-timer
+               emjupy-output-render-interval nil
+               (lambda ()
+                 (when (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (setq emjupy--render-timer nil)
+                     ;; Rendering runs from a timer now rather than inside
+                     ;; the WebSocket callback, but the same reasoning
+                     ;; applies: an un-renderable output must not leave the
+                     ;; box silently blank with nothing logged.
+                     (condition-case err
+                         (emjupy--rerender-preserving-point)
+                       (error
+                        (message "[emjupy] Failed to render cell output: %s"
+                                 (error-message-string err)))))))))))))
+
+(defun emjupy--collapse-carriage-returns (text)
+  "Return TEXT with everything before a carriage return on a line dropped.
+
+What a terminal does, and what a progress bar relies on: `\r\' returns to
+the start of the line and the next write covers what was there."
+  (mapconcat (lambda (line)
+               (let ((parts (split-string line "\r")))
+                 (car (last parts))))
+             (split-string text "\n" )
+             "\n"))
+
+(defun emjupy--merge-stream-output (existing output-hash)
+  "Return EXISTING with OUTPUT-HASH merged in, or nil if it cannot be.
+
+Consecutive stream output on the same channel is one stream, as it is in
+Jupyter.  Keeping each message separately is what let a `tqdm\' bar leave
+thousands of entries behind -- every one of them walked on every redraw,
+so the notebook got slower for the rest of the session."
+  (let ((last (car (last existing))))
+    (when (and last
+               (equal (gethash "output_type" last) "stream")
+               (equal (gethash "output_type" output-hash) "stream")
+               (equal (gethash "name" last) (gethash "name" output-hash)))
+      (let ((merged (emjupy--collapse-carriage-returns
+                     (concat (emjupy--mime-text (gethash "text" last))
+                             (emjupy--mime-text (gethash "text" output-hash))))))
+        (puthash "text" merged last)
+        existing))))
+
+(defun emjupy-flush-output (&optional buffer)
+  "Redraw BUFFER now instead of waiting for the coalescing timer.
+
+Output is normally redrawn a fraction of a second after it arrives, so
+that a burst of messages costs one redraw rather than hundreds.  This
+forces the pending one, which matters when something needs the buffer to
+match the cells right away -- saving, or a test."
+  (interactive)
+  (let ((buffer (or buffer (current-buffer))))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when emjupy--render-timer
+          (cancel-timer emjupy--render-timer)
+          (setq emjupy--render-timer nil))
+        (emjupy--rerender-preserving-point)))))
+
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
-  "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK's buffer."
-  (let ((existing (append (or (emjupy-cell-outputs cell) []) nil)))
-    (setf (emjupy-cell-outputs cell) (vconcat (append existing (list output-hash))))
+  "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
+  (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
+         (merged (emjupy--merge-stream-output existing output-hash)))
+    (setf (emjupy-cell-outputs cell)
+          (vconcat (or merged (append existing (list output-hash)))))
     (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
-      (when (buffer-live-p buf)
-        (with-current-buffer buf
-          ;; Rendering runs inside the WebSocket callback, and websocket.el
-          ;; catches errors raised there -- so an un-renderable output (a PNG
-          ;; on a build without image support, say) would otherwise leave the
-          ;; box silently blank with nothing logged anywhere.
-          (condition-case err
-              (emjupy--rerender-preserving-point)
-            (error
-             (message "[emjupy] Failed to render cell output: %s"
-                      (error-message-string err)))))))))
+      (emjupy--schedule-render buf))))
 
 (defun emjupy--ws-payload (frame)
   "Return the text payload of FRAME.

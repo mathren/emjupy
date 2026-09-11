@@ -920,6 +920,21 @@ LSP awareness doesn't apply to prose."
   (emjupy--goto-shadow-section buf cell-id)
   (with-current-buffer buf (point)))
 
+(defcustom emjupy-shadow-when-kernel-unreachable t
+  "Whether to run a local language server when the kernel is elsewhere.
+
+The shadow file then sits on THIS machine, so what the server describes
+is this machine: its interpreter, its packages, and none of the modules
+that live beside the notebook.  For ordinary Python that is mostly
+right and worth having; for anything that depends on the environment the
+code will actually run in, it is confidently wrong.
+
+Set it to nil to have no language support at all in that case rather
+than approximate support.  Either way, `emjupy-shadow-host\' or
+`jupyter-lsp\' on the server gives answers from the right machine."
+  :type 'boolean
+  :group 'emjupy)
+
 (defun emjupy--shadow-would-mislead-p (nb)
   "Return non-nil when a shadow FILE here would describe the wrong machine.
 
@@ -931,11 +946,25 @@ packages, and none of the user\='s own modules.  Answers from it would
 look plausible and be wrong, which is worse than no answers, and it
 costs a language server to produce them."
   (let ((cwd (emjupy-notebook-kernel-cwd nb)))
-    (and cwd
+    (and (not emjupy-shadow-when-kernel-unreachable)
+         cwd
          (not (file-directory-p cwd))
          (not (and (boundp 'emjupy-shadow-host)
                    emjupy-shadow-host
                    (not (string-empty-p emjupy-shadow-host)))))))
+
+(defvar-local emjupy--shadow-locality-warned nil
+  "Non-nil once this buffer has explained where its shadow file lives.")
+
+(defun emjupy--warn-shadow-is-local (nb)
+  "Say once that NB's shadow file, and so its language server, is local."
+  (unless emjupy--shadow-locality-warned
+    (setq emjupy--shadow-locality-warned t)
+    (let ((cwd (emjupy-notebook-kernel-cwd nb)))
+      (when (and cwd (not (file-directory-p cwd)))
+        (message "%s %s"
+                 "[emjupy] The kernel runs elsewhere, so completions describe"
+                 "THIS machine.  Set emjupy-shadow-host, or install jupyter-lsp on the server.")))))
 
 (defun emjupy--lsp-in-charge-p ()
   "Return non-nil when the Jupyter-server language server is handling this.
@@ -956,6 +985,8 @@ equivalent position, and FN called with
 CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
 `(point)' there (already positioned) to do its work.  Returns FN's
 value, or nil if point isn't in a code cell."
+  (when emjupy--buffer-notebook
+    (emjupy--warn-shadow-is-local emjupy--buffer-notebook))
   (unless (or (emjupy--lsp-in-charge-p)
               (and emjupy--buffer-notebook
                    (emjupy--shadow-would-mislead-p emjupy--buffer-notebook)))

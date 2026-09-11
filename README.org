@@ -563,7 +563,7 @@ notebooks stored on it, browsable into subdirectories.
 | =g=     | re-fetch from the server                      |
 | =k=     | shut down the kernel on this line             |
 | =K=     | shut down every kernel on this server         |
-| =n=     | create a notebook in the folder being shown   |
+| =n=     | create a notebook in the folder being shown (with one empty cell) |
 | =d=     | hand this directory to Dired                  |
 
 It is built on =tabulated-list-mode=, so sorting and navigation are
@@ -728,6 +728,72 @@ If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
 server is reading a local scratch file and =M-.= will not find your
 modules.
 
+** Stray box borders
+
+A cell outline is drawn by an overlay, through a property that shows
+even when the overlay has collapsed to nothing.  An overlay left behind
+by a cell that no longer exists therefore appears as a stray border, and
+several of them stack up at the top of the buffer, where erasing the
+text collapsed them.
+
+This happened when re-opening a notebook: the buffer is reused but the
+cells are parsed afresh, so the previous cells\=' overlays become
+unreachable, and the open path erased the text without deleting them.
+Opening now goes through the same redraw as everything else, which
+deletes them.
+
+As a second line, every redraw deletes any emjupy overlay that no live
+cell claims -- so should any appear from a path not yet found, running a
+cell or =emjupy-re-render= clears them.
+
+** Finding what is slow
+
+Two switches, for when something is slow and it is not obvious what.
+
+=emjupy-language-support= covers every path that talks to a language
+server, on either transport:
+
+#+begin_src elisp
+(setq emjupy-language-support nil)
+#+end_src
+
+With it off, nothing runs after a command except emjupy's own
+bookkeeping, and the notebook still works -- cells run, output arrives,
+everything renders.  If the slowness goes, it is language support; if it
+stays, it is not, and that is worth knowing before changing anything
+else.
+
+=emjupy-report-slow-hooks= names the culprit:
+
+#+begin_src elisp
+(setq emjupy-report-slow-hooks 0.05)
+#+end_src
+
+Anything emjupy runs after a command taking longer than that is logged
+with the name of the function responsible.  Silence while Emacs is
+struggling is itself the answer: the time is going somewhere that is not
+emjupy's per-command work, and =M-x profiler-start= will say where.
+
+** Output does not redraw per message
+
+A redraw rebuilds the whole notebook, so one redraw per arriving message
+is the difference between a progress bar and a frozen Emacs.  A =tqdm=
+loop sends a message per iteration, and each redraw of a notebook with
+figures costs tens of milliseconds: 100 updates measured 2.2 seconds of
+blocked Emacs before this, and nothing at all after.
+
+Output is therefore coalesced -- at most one redraw per
+=emjupy-output-render-interval= (0.15 s) however fast it arrives.
+=M-x emjupy-flush-output= forces the pending one if you ever need the
+buffer to match the cells immediately.
+
+Consecutive stream output on one channel is also merged into a single
+output, as it is in Jupyter, and carriage returns collapse the way a
+terminal collapses them.  Keeping each message separately is what let a
+progress bar leave thousands of entries behind, every one of them walked
+on every redraw -- so the notebook stayed slow for the rest of the
+session, long after the loop finished.
+
 ** Nothing waits for the language server
 
 Measured on a 12-cell notebook with inline figures, per cursor
@@ -758,11 +824,18 @@ something to wait for.  If the socket cannot be opened at all -- usually
 *** When a shadow file would describe the wrong machine
 
 If the kernel runs somewhere this Emacs cannot reach, and
-=emjupy-shadow-host= does not say how to get there, no language server is
-started on a shadow file at all.  One started there reads *this*
-machine: the wrong interpreter, the wrong packages, and none of your own
-modules.  Its answers would look plausible and be wrong, which is worse
-than no answers, and it costs a server to produce them.
+=emjupy-shadow-host= does not say how to get there, the shadow file --
+and so the language server -- is local.  What it describes is *this*
+machine: its interpreter, its packages, and none of the modules beside
+the notebook.  For ordinary Python that is mostly right and worth
+having, which is why it is the default; for anything that depends on the
+environment the code will actually run in, it is confidently wrong, so
+emjupy says so once per notebook.
+
+Set =emjupy-shadow-when-kernel-unreachable= to nil to have no language
+support at all in that case rather than approximate support.  Either
+way, =emjupy-shadow-host= or =jupyter-lsp= on the server gives answers
+from the right machine.
 
 That is also why the shadow path shows up under =/tmp= in
 =M-x emjupy-version= for a remote kernel: it is the only place emjupy can
