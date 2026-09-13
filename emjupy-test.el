@@ -3838,5 +3838,48 @@ if the open path stops going through the redraw."
         (when (buffer-live-p buffer)
           (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))))
 
+(ert-deftest emjupy-test-lsp-failure-names-the-cause ()
+  "A refused WebSocket says nothing useful, so /lsp/status is asked.
+
+Its answer separates the three causes, which look identical from the
+outside: no `jupyter-lsp\' at all, a refused token, or the endpoint
+present but listing no language server -- the last being the usual
+surprise, since `jupyterlab-lsp\' is only the plumbing and installs
+none."
+  (let ((server (make-emjupy-server :base-url "box:9999" :token "t")))
+    (cl-flet ((said (stub)
+                (let ((out nil))
+                  (cl-letf (((symbol-function 'emjupy--http-request) stub)
+                            ((symbol-function 'message)
+                             (lambda (f &rest args)
+                               (when f (push (apply #'format f args) out))
+                               nil)))
+                    (emjupy--lsp-explain-failure server))
+                  (car out))))
+      ;; the endpoint is not there
+      (should (string-match-p
+               "jupyter-lsp"
+               (said (lambda (&rest _) (error "[Jupyter HTTP 404] GET: nope")))))
+      ;; the token is wrong -- which is a 403, not a missing endpoint
+      (should (string-match-p
+               "token"
+               (said (lambda (&rest _) (error "[Jupyter HTTP 403] GET: Forbidden")))))
+      ;; present, but nothing installed to run
+      (should (string-match-p
+               "no language server"
+               (said (lambda (&rest _)
+                       (let ((h (make-hash-table :test 'equal)))
+                         (puthash "sessions" (make-hash-table :test 'equal) h)
+                         h)))))
+      ;; present and listing one, so the fault is elsewhere
+      (should (string-match-p
+               "pylsp"
+               (said (lambda (&rest _)
+                       (let ((h (make-hash-table :test 'equal))
+                             (s (make-hash-table :test 'equal)))
+                         (puthash "pylsp" t s)
+                         (puthash "sessions" s h)
+                         h))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

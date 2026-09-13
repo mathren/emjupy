@@ -243,9 +243,42 @@ and the answer collected on the first request that needs it."
                  :on-error (lambda (_ws _type _err) nil)))
           session)
       (error
-       (message "[emjupy] Could not reach the language server on %s: %s"
-                (emjupy--server-label server) (error-message-string err))
+       (ignore err)
+       (emjupy--lsp-explain-failure server)
        nil))))
+
+(defun emjupy--lsp-explain-failure (server)
+  "Say why SERVER has no language server, distinguishing the three causes.
+
+The WebSocket refusing tells us nothing useful on its own, so ask
+/lsp/status, whose answer separates the cases:
+
+  404  `jupyter-lsp\' is not installed, so there is no endpoint at all
+  403  the token was refused
+  200  the endpoint is there -- then the question is what it lists,
+       and an empty list means no LANGUAGE server is installed, which
+       is the usual surprise: `jupyterlab-lsp\' is only the plumbing
+       and installs none."
+  (let* ((status (condition-case err
+                     (emjupy--http-request "GET" server "/lsp/status")
+                   (error (error-message-string err))))
+         (label (emjupy--server-label server)))
+    (cond
+     ((and (stringp status) (string-match-p "404" status))
+      (message "[emjupy] No jupyter-lsp on %s: pip install jupyter-lsp" label))
+     ((and (stringp status) (string-match-p "403" status))
+      (message "[emjupy] %s refused the token for /lsp/status." label))
+     ((hash-table-p status)
+      (let ((servers (and (hash-table-p (gethash "sessions" status))
+                          (hash-table-keys (gethash "sessions" status)))))
+        (if servers
+            (message "[emjupy] %s offers %s but %s did not start."
+                     label (string-join servers ", ") emjupy-lsp-server)
+          (message "%s %s"
+                   (format "[emjupy] jupyter-lsp on %s lists no language server." label)
+                   "Install one where the kernel runs, e.g. python-lsp-server."))))
+     (t
+      (message "[emjupy] No language server on %s (%s)." label status)))))
 
 (defvar-local emjupy--lsp-blocked-until nil
   "Time before which no further attempt is made to set up a session.")

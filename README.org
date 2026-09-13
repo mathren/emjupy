@@ -900,21 +900,74 @@ The consequences are worth stating plainly:
   =M-.= finds your own modules because the server resolves them against
   the notebook's own directory.
 
-*** Requirements
+*** Requirements: two packages, not one
 
-=jupyter-lsp= and a language server on the machine running Jupyter:
+Everything must be installed *in the environment the kernel runs in*,
+not on the machine running Emacs:
 
 #+begin_src bash
 pip install jupyter-lsp 'python-lsp-server[all]'
+# or, in a conda environment file:
+#   - jupyter-lsp
+#   - python-lsp-server
 #+end_src
 
-Check it is there with =GET /lsp/status= on your server, or just open a
-notebook -- =emjupy-lsp-server= (default ="pylsp"=) names which of the
-servers listed there to ask for.
+These are two different things and the distinction is where people get
+stuck:
 
-Set =emjupy-lsp-enabled= to nil to fall back to the older Eglot
-shadow-file arrangement, which needs no server-side support but pays
-the costs described below.
+- =jupyter-lsp= is the *plumbing*.  It adds the =/lsp/= endpoints to the
+  Jupyter server and proxies LSP over its WebSocket.  =jupyterlab-lsp=
+  depends on it, so having =jupyterlab-lsp= gives you the plumbing.
+- =python-lsp-server= is the *language server* -- the thing that actually
+  knows Python.  Neither =jupyter-lsp= nor =jupyterlab-lsp= installs one.
+
+So an environment listing =jupyterlab-lsp= and nothing else has the
+endpoints but no server behind them, and emjupy will find nothing to
+talk to.  That is the common case, and it looks exactly like emjupy
+being broken.
+
+*** Checking it from the shell
+
+#+begin_src bash
+curl -s "http://localhost:9999/lsp/status?token=YOUR_REAL_TOKEN"
+#+end_src
+
+Substitute the real token; the string =YOUR_REAL_TOKEN= will be refused.
+The three answers mean three different things:
+
+| Answer                                   | Meaning                                  |
+|------------------------------------------+------------------------------------------|
+| =404= (an HTML page)                       | =jupyter-lsp= is not installed             |
+| ={"message": "Forbidden"}= (403)           | the token was wrong, nothing more         |
+| ={"version": 2, "sessions": {...}}=        | the plumbing works; read what it lists    |
+
+On a working setup =sessions= names the language servers actually
+installed:
+
+#+begin_example
+{"version": 2, "sessions": {"pylsp": {"status": "not_started", ...}}}
+#+end_example
+
+An *empty* =sessions= is the giveaway that the plumbing is there and the
+language server is not.  =emjupy-lsp-server= (default ="pylsp"=) names
+which of the listed servers to ask for.
+
+emjupy makes the same check for you: when it cannot reach a language
+server it asks =/lsp/status= itself and says which of these three
+situations it found, rather than failing silently.
+
+*** If the token is the problem
+
+A tunnelled server is still a server with a token.  emjupy already knows
+it -- =M-x emjupy-version= inside a notebook shows what it is connected
+to -- so this only bites when checking by hand from the shell.
+
+*** Falling back
+
+Set =emjupy-lsp-enabled= to nil to use the older Eglot shadow-file
+arrangement, which needs no server-side support but pays the costs
+described below, and describes the machine running Emacs rather than the
+one running the kernel.
 
 *** Timeouts
 
@@ -960,12 +1013,21 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [X] remote notebook LSP slowing too much
-- [ ] spurious cells can get added to the top of the notebook
-- [ ] output (say from a long-running cell) should not move the
-  point/view when it comes out
-- [X] re-enforce git tag and =emjupy= version sync
-- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
-- [ ] integrate better with =tqdm=, which right now shows lines like: =
-  0%|                                                                                           | 0/3 [00:00<?, ?it/s]
-=
+- [ ] rendering issue when output arrives (fixed by
+  re-render, but should not occur at all)
+- [ ] emjupy-notebook-list should allow to create a new notebook
+- [ ] synthax highlight as typing doesn't always work (needs running
+  the cell for proper fix often)
+- [ ] confirm =eglot= is correct from this output: =[jsonrpc] e[16:53:54.170]
+  <-- textDocument/publishDiagnostics
+  {"jsonrpc":"2.0","method":"textDocument\/publishDiagnostics","params":{"uri":"file:\/\/\/tmp\/emjupy-shadow\/localhost_9999__expl_energy.ipynb.py","diagnostics":[]}}=
+
+- [ ] if eglot works, xref doesnt, still get =user-error: No definitions found for:=
+- make =eglot= try to connect immediately and give a message if failing
+- [ ] enable smooth scrolling with =pixel-*= mode for inline images
+- [ ] document functioning of =undo= compared to =ein=
+- [ ] re-enforce git tag and =emjupy= version sync, fix github action =build=
+- [ ] integrate better with =tqdm=, which right now shows lines like: =0%|                                                                                           | 0/3 [00:00<?, ?it/s]=
   specifically, clear the ^M character and make that line update.
+- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
+-
