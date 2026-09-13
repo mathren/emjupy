@@ -28,6 +28,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'emjupy-core)
+(declare-function dired-goto-file "dired" (file))
 (require 'emjupy-http)
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
@@ -339,13 +340,62 @@ nil disables `d\'."
 (defvar-local emjupy-list--path ""
   "Contents-API subdirectory this dashboard is showing.")
 
-(defun emjupy--remote-root-for (server)
-  "Return the Dired root configured for SERVER, or nil."
+(defun emjupy--configured-root-for (server)
+  "Return the root configured for SERVER by hand, or nil."
   (cond
    ((null emjupy-remote-root) nil)
    ((stringp emjupy-remote-root) emjupy-remote-root)
    ((consp emjupy-remote-root)
     (cdr (assoc (emjupy--server-label server) emjupy-remote-root)))))
+
+(defun emjupy--derive-server-root (nb)
+  "Work out the absolute directory NB's server serves, or nil.
+
+Jupyter does not publish its root directory -- deliberately, it is not
+something a client should be told.  But it can be worked out, because two
+things that ARE known overlap: the kernel reports the directory it runs
+in, which is the notebook's own folder, and the Contents API gives the
+notebook's path relative to the root.  Take the second off the end of the
+first and what remains is the root:
+
+  kernel cwd     /home/you/project/analysis
+  notebook path  analysis/run.ipynb
+  root           /home/you/project
+
+This is why `emjupy-remote-root' need not be set per project: the running
+kernel already knows, and is asked."
+  (let* ((cwd (emjupy-notebook-kernel-cwd nb))
+         (path (emjupy-notebook-path nb))
+         (rel (and path (file-name-directory path))))
+    (when (and cwd (not (string-empty-p cwd)))
+      (let* ((cwd (directory-file-name cwd))
+             (rel (and rel (directory-file-name rel))))
+        (cond
+         ;; The notebook sits in the root itself, so the kernel's directory
+         ;; IS the root.
+         ((null rel) cwd)
+         ((string-suffix-p (concat "/" rel) cwd)
+          (let ((root (substring cwd 0 (- (length cwd) (length rel) 1))))
+            (if (string-empty-p root) "/" root)))
+         ;; The two do not line up -- a kernel started somewhere else, say.
+         ;; Better to admit that than to invent a path.
+         (t nil))))))
+
+(defun emjupy--remember-server-root (nb)
+  "Record on NB's server the root derived from NB, if one can be."
+  (let ((server (emjupy-notebook-server nb)))
+    (when (and server (null (emjupy-server-root server)))
+      (when-let ((root (emjupy--derive-server-root nb)))
+        (setf (emjupy-server-root server) root)))))
+
+(defun emjupy--remote-root-for (server)
+  "Return the root to use for SERVER, or nil.
+
+A value set by hand wins, since it may point at a mirror or through a
+TRAMP hop that emjupy cannot infer.  Otherwise the root derived from a
+running kernel is used, which needs no configuration at all."
+  (or (emjupy--configured-root-for server)
+      (and server (emjupy-server-root server))))
 
 (defface emjupy-list-notebook
   ;; Inherit only.  MELPA's guidelines ask packages not to inherit a face
@@ -487,8 +537,24 @@ one, and TRAMP already knows how to reach another machine."
   (interactive)
   (let ((root (emjupy--remote-root-for emjupy-list--server)))
     (unless root
-      (user-error "Set `emjupy-remote-root\' to browse this server\='s files in Dired"))
-    (dired (expand-file-name emjupy-list--path (file-name-as-directory root)))))
+      (user-error "%s %s"
+                  "Cannot tell where this server's files are."
+                  "Open a notebook so a kernel can say, or set `emjupy-remote-root'"))
+    ;; The row under the cursor, not the directory being listed: pressing
+    ;; this on a line means that line.  With no row -- an empty listing, or
+    ;; point above the first entry -- fall back to what is being shown.
+    (let* ((row (tabulated-list-get-id))
+           (kind (plist-get row :kind))
+           (path (or (and (memq kind '(notebook file directory))
+                          (plist-get row :path))
+                     emjupy-list--path))
+           (target (expand-file-name path (file-name-as-directory root))))
+      (if (memq kind '(notebook file))
+          ;; A file: open the directory holding it and put point on it, as
+          ;; `dired-jump' would locally.
+          (progn (dired (file-name-directory target))
+                 (dired-goto-file target))
+        (dired target)))))
 
 (defun emjupy--blank-code-cell-json ()
   "Return the nbformat representation of one empty code cell."

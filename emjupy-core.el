@@ -57,6 +57,9 @@ instead; this is only the fallback for things like `emjupy-login'.")
 
 (cl-defstruct emjupy-server
   host port token base-url
+  ;; Absolute path of the directory this server serves, worked out from a
+  ;; kernel rather than configured.  nil until a kernel has reported in.
+  root
   ;; Per-server, not global: two servers issue different XSRF cookies, and
   ;; replaying one server's cookie at another gets a 403.
   xsrf

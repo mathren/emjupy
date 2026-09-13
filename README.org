@@ -452,6 +452,33 @@ character and short lines look ragged beside long ones.
 =M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
 faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
+*** Where the server's files are
+
+Jupyter does not publish its root directory, and that is deliberate -- it
+is not something a client should be handed.  emjupy works it out instead,
+from two things it does know: the kernel reports the directory it is
+running in, which is the notebook's own folder, and the Contents API
+gives the notebook's path relative to the root.  Take the second off the
+end of the first:
+
+: kernel cwd     /home/you/project/analysis
+: notebook path  analysis/run.ipynb
+: root           /home/you/project
+
+So =emjupy-remote-root= usually need not be set at all: open a notebook,
+let its kernel start, and browsing that server's files works.  Set it by
+hand when the derived answer is not the one you want -- a local mirror,
+or a path that has to go through a TRAMP hop emjupy cannot infer -- and
+the value you set takes precedence.
+
+If the kernel was started somewhere other than the notebook's folder the
+two will not line up, and emjupy says it cannot tell rather than
+inventing a path.
+
+In the dashboard, =d= opens whatever the cursor is on: a directory is
+opened in Dired, a notebook or file opens its containing directory with
+point on it.
+
 *** Copying between cells
 
 Text copied out of a cell carries its faces but none of emjupy's own
@@ -1048,14 +1075,9 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] if eglot works, xref doesnt, still get =user-error: No definitions found for:=
 - [ ] =eglot= still says it is missing on the remote machine. =[emjupy]
   The kernel runs elsewhere, so completions describe THIS machine. Set
   emjupy-shadow-host, or install jupyter-lsp on the server.
-- [ ] with =emjupy-remote-root= set, from the notebooklist view,
-  pressing =d= sends to the root instead of the file on the line. Can we
-  auto-set this variable to the project root? How does jupyter-lab
-  access its root? Right now I'm polluting the remote home with files.
 - [X] synthax highlight as typing doesn't always work (needs running
   the cell for proper fix often) user-error: Point is not in a code cell=. This is incorrect
 - with 2 tunneled ssh connections (on two separate ports), the second

@@ -4045,5 +4045,81 @@ until something asks -- by which time the user is mid-task."
             (should-not (emjupy-start-language-support emjupy--buffer-notebook))
             (should (= asked 0))))))))
 
+(ert-deftest emjupy-test-server-root-is-derived-not-configured ()
+  "The directory a server serves is worked out, not asked for.
+
+Jupyter does not publish its root -- deliberately.  But two things that
+are known overlap: the kernel reports the directory it runs in, which is
+the notebook's own folder, and the Contents API gives the notebook's
+path relative to the root.  Take the second off the end of the first."
+  (cl-flet ((derive (cwd path)
+              (emjupy--derive-server-root
+               (make-emjupy-notebook :cells [] :path path :kernel-cwd cwd))))
+    (should (equal (derive "/home/you/project/analysis" "analysis/run.ipynb")
+                   "/home/you/project"))
+    ;; a notebook in the root: the kernel's directory IS the root
+    (should (equal (derive "/home/you/project" "run.ipynb") "/home/you/project"))
+    (should (equal (derive "/srv/nb/a/b" "a/b/x.ipynb") "/srv/nb"))
+    ;; when the two do not line up, say so rather than invent a path
+    (should-not (derive "/tmp/somewhere" "a/b/x.ipynb"))
+    (should-not (derive nil "a/b/x.ipynb"))))
+
+(ert-deftest emjupy-test-server-root-remembered-and-overridable ()
+  "A derived root is kept on the server; one set by hand still wins."
+  (let* ((server (make-emjupy-server :base-url "box:9999" :token "t"))
+         (nb (make-emjupy-notebook :cells [] :path "analysis/run.ipynb"
+                                   :kernel-cwd "/home/you/project/analysis"
+                                   :server server)))
+    (let ((emjupy-remote-root nil))
+      (should-not (emjupy--remote-root-for server))
+      (emjupy--remember-server-root nb)
+      (should (equal (emjupy--remote-root-for server) "/home/you/project")))
+    ;; a value set by hand may point at a mirror, or through a TRAMP hop
+    ;; emjupy cannot infer, so it takes precedence
+    (let ((emjupy-remote-root "/ssh:box:/mirror"))
+      (should (equal (emjupy--remote-root-for server) "/ssh:box:/mirror")))))
+
+(ert-deftest emjupy-test-deliberate-lookup-waits-for-a-cold-server ()
+  "A jump to a definition waits; background work does not.
+
+`xref-find-definitions' used to go through the background path, where a
+server that has never answered is not asked at all.  The first jump of a
+session therefore reported \"No definitions found\" without asking
+anything -- while the same jump just after a completion worked, which is
+what made it look intermittent."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                 :source "helper()" :outputs []
+                                 :metadata (make-hash-table)))
+         (session (make-emjupy-lsp :pending (make-hash-table :test 'equal)
+                                   :callbacks (make-hash-table :test 'equal)
+                                   :uri "file:///srv/p/n.emjupy.py"
+                                   :ready t :warmed nil))
+         (asked nil))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "n.ipynb")
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/p")
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "h" :token "t"))
+        (setf (emjupy-notebook-lsp emjupy--buffer-notebook) session)
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--lsp-send) (lambda (&rest _) nil))
+                  ((symbol-function 'emjupy--lsp-request)
+                   (lambda (_s method &rest _) (setq asked method) nil)))
+          ;; cold and in the background: not asked
+          (setq asked nil)
+          (emjupy--lsp-ask "textDocument/hover")
+          (should-not asked)
+          ;; cold but deliberate: asked
+          (setq asked nil)
+          (emjupy--lsp-ask "textDocument/definition" t)
+          (should (equal asked "textDocument/definition"))
+          ;; once warm, the background path asks too
+          (setf (emjupy-lsp-warmed session) t)
+          (setq asked nil)
+          (emjupy--lsp-ask "textDocument/hover")
+          (should (equal asked "textDocument/hover")))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

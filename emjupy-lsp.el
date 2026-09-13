@@ -420,19 +420,30 @@ the nil here means \"not yet\", not \"never\"."
                        (emjupy--lsp-text-document-params session position)
                        callback)))
 
-(defun emjupy--lsp-ask (method)
-  "Ask the language server METHOD about point, and return the result."
+(defun emjupy--lsp-ask (method &optional deliberate)
+  "Ask the language server METHOD about point, and return the result.
+
+With DELIBERATE, this is a command the user actually invoked -- a jump to
+a definition, say -- and it is allowed to wait for a cold server to start
+up.  Without it, this is background work that runs after every command,
+where waiting for a server that has never answered would cost that wait
+on every keystroke.
+
+The distinction matters more than it looks.  Before it existed,
+`xref-find-definitions' went through the background path: the first
+request of a session returned nothing at all, without asking, so a jump
+made before anything had warmed the server reported \"No definitions
+found\" -- while the same jump a moment after a completion worked."
   (when-let* ((nb (and (bound-and-true-p emjupy--buffer-notebook)
                        emjupy--buffer-notebook))
               (position (emjupy--lsp-position nb))
               (session (emjupy--lsp-session nb)))
-    ;; Only a server that has already answered something is worth waiting
-    ;; for, and then only briefly.  Before that, return nothing rather than
-    ;; hold the editor while a language server starts up.
-    (when (emjupy-lsp-warmed session)
+    (when (or deliberate (emjupy-lsp-warmed session))
       (emjupy--lsp-request session method
                            (emjupy--lsp-text-document-params session position)
-                           emjupy-lsp-timeout))))
+                           (if (emjupy-lsp-warmed session)
+                               emjupy-lsp-timeout
+                             emjupy-lsp-first-timeout)))))
 
 ;; --- what the notebook asks for ---------------------------------------------
 
@@ -497,7 +508,7 @@ the Jupyter host is running."
 
 (defun emjupy--lsp-definitions ()
   "Return definition locations for point as a list of (FILE LINE COL)."
-  (let ((result (emjupy--lsp-ask "textDocument/definition")))
+  (let ((result (emjupy--lsp-ask "textDocument/definition" t)))
     (when result
       (let ((locs (if (vectorp result) (append result nil) (list result))))
         (delq nil

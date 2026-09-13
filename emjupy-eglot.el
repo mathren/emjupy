@@ -29,6 +29,7 @@
 (require 'emjupy-cells)
 (require 'emjupy-lsp)
 (defvar emjupy-language-support)
+(declare-function emjupy--remember-server-root "emjupy-notebook" (nb))
 (declare-function emjupy--kernel-eval "emjupy-kernel" (kernel code callback))
 (declare-function emjupy--ws-live-p "emjupy-kernel" (&optional kernel))
 
@@ -368,6 +369,10 @@ how to reach that machine."
        (lambda (out)
          (when (and out (not (string-empty-p out)))
            (setf (emjupy-notebook-kernel-cwd nb) (string-trim out))
+           ;; Now that a kernel has said where it runs, the server's root
+           ;; can be worked out from it -- so browsing its files needs no
+           ;; configuration either.
+           (emjupy--remember-server-root nb)
            ;; The working directory is the last thing language support was
            ;; waiting for, so start it now rather than when the user first
            ;; asks for a completion.  Starting it then means the first
