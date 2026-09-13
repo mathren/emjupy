@@ -273,13 +273,9 @@ none is found.
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
 =ein= was my working tool for more than a decade, but it is
-[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=.
-Credit where it is due on undo: =ein= does support it within a cell, and
-does so by maintaining a ledger mapping every =buffer-undo-list= entry to
-a cell and shifting the positions inside those entries as cells change
-length.  emjupy currently does less -- see
-[[file:notes_undo.org][notes_undo.org]]. I need to share code with non-emacs users, so =ob-jupyter=
-isn't an option, and =emacs-jupyter= doesn't seem the right tool for me.
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
+need to share code with non-emacs users, so =ob-jupyter= isn't an
+option, and =emacs-jupyter= doesn't seem the right tool for me.
 
 ** =emjupy= design
 
@@ -457,28 +453,23 @@ character and short lines look ragged beside long ones.
 faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
 *** Undo
+Undo works within a cell, and survives output arriving in any other
+cell.  Run a long cell, move down to edit another while it works, let
+its output land: the edits are still there and still undoable.
 
-Undo works within a cell until something redraws the notebook -- running
-a cell, output arriving from any cell, or adding, deleting, moving,
-splitting or merging cells.  A redraw drops the undo history, so edits
-made before it cannot be undone.  They are not lost: the text is still
-in the buffer and in the saved notebook, only the record of how it got
-there is gone.
+Output arriving redraws only the cell it
+belongs to, rather than rebuilding the notebook; and the undo entries
+that the redraw moved have their positions shifted to match, rather than
+being thrown away.
 
-The reason is that re-rendering erases the buffer and rebuilds it from
-the cell structs.  Recording that is worse than not recording it -- an
-early version did, and undoing one of those entries deleted every cell
-after the one being edited -- so the rebuild is kept out of the history.
-But undo entries hold plain buffer positions rather than markers, and
-nothing adjusts them while recording is off, so entries from before a
-rebuild may point anywhere.  Replaying one does not fail loudly; it
-quietly changes the wrong text.  Dropping them loses undo, which is bad;
-keeping them risks corrupting a notebook, which is worse.
+What still clears the history is a *structural* change -- adding,
+deleting, moving, splitting or merging cells -- which rebuilds the whole
+buffer.  Edits made before such a change cannot be undone afterwards.
+They are not lost: the text is in the buffer and in the saved notebook,
+only the record of how it got there is gone.
 
-This is a real gap against both =ein= and JupyterLab.
-[[file:notes_undo.org][notes_undo.org]] measures what survives and what does not, explains how
-each of those two avoids the problem, and sets out what closing it here
-would involve.
+[[file:notes_undo.org][notes_undo.org]] has the measurements, how =ein= and JupyterLab handle the
+same problem, and what closing the remaining gap would involve.
 
 *** Cell outlines
 
@@ -1029,8 +1020,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [X] remote notebook LSP slowing too much
-- [ ] rendering issue when output arrives (fixed by
-  re-render, but should not occur at all)
 - [ ] synthax highlight as typing doesn't always work (needs running
   the cell for proper fix often)
 - [ ] confirm =eglot= is correct from this output: =[jsonrpc] e[16:53:54.170]
@@ -1044,4 +1033,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [ ] integrate better with =tqdm=, which right now shows lines like: =0%|                                                                                           | 0/3 [00:00<?, ?it/s]=
   specifically, clear the ^M character and make that line update.
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
--
+** HOLD
+- [ ] make =undo= possible after structural changes (maybe using markers
+  just for the destructive actions?)

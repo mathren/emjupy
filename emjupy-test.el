@@ -3610,8 +3610,8 @@ figures costs tens of milliseconds."
         (renders 0))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
-        (cl-letf* ((real (symbol-function 'emjupy--rerender-preserving-point))
-                   ((symbol-function 'emjupy--rerender-preserving-point)
+        (cl-letf* ((real (symbol-function 'emjupy--redraw-pending-output))
+                   ((symbol-function 'emjupy--redraw-pending-output)
                     (lambda (&rest args) (setq renders (1+ renders)) (apply real args))))
           (dotimes (i 50)
             (let ((o (make-hash-table :test 'equal)))
@@ -3880,6 +3880,97 @@ none."
                          (puthash "pylsp" t s)
                          (puthash "sessions" s h)
                          h))))))))
+
+(defun emjupy-test--stream (text)
+  "Return a stream output carrying TEXT."
+  (let ((o (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" o)
+    (puthash "name" "stdout" o)
+    (puthash "text" text o)
+    o))
+
+(ert-deftest emjupy-test-output-redrawn-in-place ()
+  "Output arriving redraws its own cell, not the whole notebook."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((full 0))
+          (cl-letf* ((real (symbol-function 'emjupy--rerender-preserving-point))
+                     ((symbol-function 'emjupy--rerender-preserving-point)
+                      (lambda (&rest args) (setq full (1+ full)) (apply real args))))
+            (emjupy--append-output-to-cell c1 (emjupy-test--stream "one\n") nb)
+            (emjupy-flush-output buf))
+          ;; no full rebuild was needed
+          (should (= full 0)))
+        ;; and the output is actually there, in the right cell
+        (should (string-match-p "one" (buffer-string)))
+        (should (emjupy-cell-output-ov c1))
+        (should-not (emjupy-cell-output-ov c2))
+        ;; the second cell is still intact and still its own overlay
+        (should (string-match-p "b = 2" (buffer-string)))
+        (should (overlayp (emjupy-cell-overlay c2)))))))
+
+(ert-deftest emjupy-test-undo-survives-output-from-another-cell ()
+  "Typing in one cell survives output arriving in another, undoably.
+
+This is the case that matters: you run a long cell, move down to edit
+another while it works, and its output lands.  The edits worth keeping
+are precisely the ones the output has pushed further down the buffer,
+so keeping them means shifting the positions inside the undo entries
+rather than merely keeping the ones that did not move."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; type into the SECOND cell
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (end-of-line)
+        (insert " + 99")
+        (undo-boundary)
+        (should (string-match-p "b = 2 \\+ 99" (buffer-string)))
+        ;; output lands in the FIRST cell, above it
+        (emjupy--append-output-to-cell c1 (emjupy-test--stream "one\n") nb)
+        (emjupy-flush-output buf)
+        (should (string-match-p "one" (buffer-string)))
+        (should (string-match-p "b = 2 \\+ 99" (buffer-string)))
+        ;; and the typing can still be undone -- taking back exactly what
+        ;; was typed, and nothing else
+        (undo)
+        (should-not (string-match-p "\\+ 99" (buffer-string)))
+        (should (string-match-p "b = 2" (buffer-string)))
+        (should (string-match-p "a = 1" (buffer-string)))
+        (should (string-match-p "one" (buffer-string)))))))
+
+(ert-deftest emjupy-test-undo-entries-before-an-edit-are-untouched ()
+  "An edit leaves earlier undo entries exactly as they were."
+  (with-temp-buffer
+    (let ((buffer-undo-list (list (cons 5 10) nil (cons "gone" 50) (cons 60 70))))
+      ;; replace 40..80 with something 5 characters longer
+      (emjupy--undo-adjust 40 80 5)
+      ;; what is before the edit survives unchanged, boundary included
+      (should (equal buffer-undo-list (list (cons 5 10) nil)))
+      ;; both entries describing text inside the replaced region are gone,
+      ;; because that text no longer exists
+      (should-not (cl-find-if (lambda (e) (equal e (cons "gone" 50))) buffer-undo-list))
+      (should-not (cl-find-if (lambda (e) (equal e (cons 60 70))) buffer-undo-list)))))
+
+(ert-deftest emjupy-test-undo-entries-after-an-edit-shift ()
+  "Entries after the edited region move by the size change, keeping shape."
+  (with-temp-buffer
+    (let ((buffer-undo-list (list (cons 100 110) (cons "text" 120) (cons "text" -130))))
+      (emjupy--undo-adjust 10 20 7)
+      (should (equal (nth 0 buffer-undo-list) (cons 107 117)))
+      (should (equal (nth 1 buffer-undo-list) (cons "text" 127)))
+      ;; a negative position means point sat at the end of the deleted text;
+      ;; the sign carries information and has to survive the shift
+      (should (equal (nth 2 buffer-undo-list) (cons "text" -137))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

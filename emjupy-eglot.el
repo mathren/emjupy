@@ -936,7 +936,7 @@ than approximate support.  Either way, `emjupy-shadow-host\' or
   :group 'emjupy)
 
 (defun emjupy--shadow-would-mislead-p (nb)
-  "Return non-nil when a shadow FILE here would describe the wrong machine.
+  "Return non-nil when a shadow file for NB would describe the wrong machine.
 
 The kernel is somewhere this Emacs cannot reach -- its working directory
 does not exist locally and `emjupy-shadow-host\' does not say how to get

@@ -33,6 +33,7 @@
 ;; cycle never bites at load time.
 (declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
+(declare-function emjupy--protect-non-cell-regions "emjupy-cells" ())
 
 ;; --- Page colours ----------------------------------------------------------
 ;; Cells are marked out by their horizontal rules alone -- the buffer keeps
@@ -790,47 +791,15 @@ face."
             (when cell (emjupy--refontify-cell cell)))
         (error nil)))))
 
-(defun emjupy--render-cell (cell)
-  "Render CELL at point using overlays for boundary boxes and live outputs."
-  (let* ((type (emjupy-cell-type cell))
-         (source (emjupy-cell-source cell))
-         (outputs (emjupy-cell-outputs cell))
-         ;; Only show the output box when the cell actually has output --
-         ;; e.g. a bare `import numpy as np' shouldn't grow an empty box.
-         (has-outputs (and (eq type 'code) outputs (> (length outputs) 0)))
-         (src-start (point)))
+(defun emjupy--render-cell-output (cell)
+  "Insert CELL\='s output box at point and give it its overlay.
 
-    ;; 1. Insert source code (syntax-highlighted per cell type) and tag text
-    (let ((to-insert (emjupy--fontify-as (if (string-empty-p source) "\n" source) type)))
-      (insert to-insert)
-      ;; Faces are applied as plain (non-sticky) `face' properties so that
-      ;; text typed at a cell edge does not inherit the neighbouring face.
-      (remove-text-properties src-start (point) '(rear-nonsticky nil)))
-    (unless (string-suffix-p "\n" source) (insert "\n"))
-
-    (put-text-property src-start (point) 'emjupy-cell cell)
-
-    ;; Markdown only: code cells have no math, and a stray `$' in a string
-    ;; should not turn into a formula.
-    (when (eq type 'markdown)
-      (emjupy--preview-latex-in src-start (point)))
-
-    ;; 2. Source Box Overlay
-    (let* ((ov (make-overlay src-start (point)))
-           ;; The rules carry the cell background too, so the outline reads
-           ;; as the edge of the paper rather than floating on the canvas.
-           (header (emjupy--rule (emjupy--cell-label cell)))
-           ;; When output follows, its header line doubles as this box's
-           ;; closing edge -- no separate footer, no gap between the two.
-           (footer (if has-outputs "" (emjupy--rule nil))))
-      (overlay-put ov 'emjupy-overlay 'cell)
-      (overlay-put ov 'before-string header)
-      (overlay-put ov 'after-string footer)
-      ;; No face: source cells keep the buffer's normal background, and are
-      ;; marked out by their rules alone.
-      (setf (emjupy-cell-overlay cell) ov))
-
-    ;; 3. Output Box Overlay
+Separate from `emjupy--render-cell\=' so that output arriving can be drawn
+on its own.  Rebuilding the whole notebook for one cell\='s output is what
+made a `tqdm\=' loop crawl, threw away the undo history on every message,
+and restarted fontification from scratch each time."
+  (let* ((outputs (emjupy-cell-outputs cell))
+         (has-outputs (and outputs (> (length outputs) 0))))
     (when has-outputs
       (let ((out-start (point)))
         (cl-loop for out in (emjupy--outputs-for-render outputs)
@@ -884,7 +853,186 @@ face."
           ;; No face on the overlay: each output piece paints itself, so a
           ;; figure, a warning and a traceback in one cell each read as what
           ;; they are.  An overlay face here would override all of them.
-          (setf (emjupy-cell-output-ov cell) ov))))
+          (setf (emjupy-cell-output-ov cell) ov))))))
+
+(defun emjupy--undo-entry-position (entry)
+  "Return the largest buffer position ENTRY refers to, or nil.
+
+Undo entries come in several shapes and only some carry positions;
+one without any cannot be invalidated by an edit elsewhere."
+  (cond
+   ((integerp entry) (abs entry))
+   ((not (consp entry)) nil)
+   ;; (TEXT . POSITION) -- a deletion; POSITION may be negative
+   ((and (stringp (car entry)) (integerp (cdr entry))) (abs (cdr entry)))
+   ;; (BEG . END) -- an insertion
+   ((and (integerp (car entry)) (integerp (cdr entry)))
+    (max (car entry) (cdr entry)))
+   ;; (nil PROP VAL BEG . END) -- a property change
+   ((and (null (car entry)) (consp (last entry))
+         (integerp (car (last entry))) (integerp (cdr (last entry))))
+    (max (car (last entry)) (cdr (last entry))))
+   ;; (apply DELTA BEG END FUN . ARGS)
+   ((eq (car entry) 'apply)
+    (let ((beg (nth 2 entry)) (end (nth 3 entry)))
+      (and (integerp beg) (integerp end) (max beg end))))
+   ((markerp (car entry)) (marker-position (car entry)))
+   (t nil)))
+
+(defun emjupy--undo-map-positions (entry fn)
+  "Return ENTRY with every buffer position in it passed through FN.
+
+Undo entries come in several shapes and each hides its positions
+somewhere different.  Missing one does not fail loudly -- it leaves a
+position pointing at the wrong text, and undo then rewrites the wrong
+text.  The shapes are those Emacs documents for `buffer-undo-list'."
+  (cond
+   ((integerp entry) (funcall fn entry))
+   ((not (consp entry)) entry)
+   ;; (TEXT . POSITION) -- a deletion.  A negative POSITION means point
+   ;; was at the end of the deleted text, so the sign has to be kept.
+   ((and (stringp (car entry)) (integerp (cdr entry)))
+    (let ((shifted (funcall fn (abs (cdr entry)))))
+      (cons (car entry) (if (< (cdr entry) 0) (- shifted) shifted))))
+   ;; (BEG . END) -- an insertion
+   ((and (integerp (car entry)) (integerp (cdr entry)))
+    (cons (funcall fn (car entry)) (funcall fn (cdr entry))))
+   ;; (nil PROP VAL BEG . END) -- a property change
+   ((and (null (car entry)) (consp (last entry))
+         (integerp (car (last entry))) (integerp (cdr (last entry))))
+    (append (butlast entry)
+            (list (cons (funcall fn (car (last entry)))
+                        (funcall fn (cdr (last entry)))))))
+   ;; (apply DELTA BEG END FUN . ARGS)
+   ((and (eq (car entry) 'apply) (integerp (nth 2 entry)) (integerp (nth 3 entry)))
+    (append (list (nth 0 entry) (nth 1 entry)
+                  (funcall fn (nth 2 entry))
+                  (funcall fn (nth 3 entry)))
+            (nthcdr 4 entry)))
+   (t entry)))
+
+(defun emjupy--undo-adjust (start old-end delta)
+  "Keep the undo history usable across a replacement of START..OLD-END.
+
+Three cases, and they are all the story:
+
+- entries wholly before START are untouched by the edit and stay as they
+  are;
+- entries describing text inside the replaced region describe text that
+  no longer exists, and go;
+- entries after the region are still valid but have moved, so their
+  positions shift by DELTA.
+
+Without the third case this is nearly pointless in practice: output
+usually arrives from a cell ABOVE the one being edited, so the edits
+worth keeping are precisely the ones that moved.  Getting the shift
+wrong is worse than dropping everything -- a wrong position does not
+raise an error, it quietly rewrites the wrong text -- which is why each
+entry shape is handled explicitly rather than by pattern-guessing."
+  (when (listp buffer-undo-list)
+    (setq buffer-undo-list
+          (delq :emjupy-drop
+                (mapcar
+                 (lambda (entry)
+                   (let ((p (emjupy--undo-entry-position entry)))
+                     (cond
+                      ((null p) entry)
+                      ((< p start) entry)
+                      ((< p old-end) :emjupy-drop)
+                      (t (emjupy--undo-map-positions
+                          entry (lambda (x) (if (>= x old-end) (+ x delta) x)))))))
+                 buffer-undo-list)))))
+
+(defun emjupy--undo-drop-from (pos)
+  "Drop undo entries referring to POS or later in this buffer.
+
+An edit at POS shifts every position at or after it, and undo entries
+hold plain buffer positions rather than markers, so nothing adjusts them.
+Replaying a stale one does not fail loudly; it rewrites the wrong text.
+
+Entries wholly BEFORE the edit are untouched by it and are kept, which is
+the point: redrawing one cell's output no longer costs the history of
+every edit made anywhere else in the notebook.  See notes_undo.org."
+  (when (listp buffer-undo-list)
+    (setq buffer-undo-list
+          (cl-remove-if (lambda (entry)
+                          (let ((p (emjupy--undo-entry-position entry)))
+                            (and p (>= p pos))))
+                        buffer-undo-list))))
+
+(defun emjupy--refresh-cell-output (cell)
+  "Redraw CELL's output box in place, leaving the rest of the buffer alone.
+
+Only the text between the end of the cell's source and the end of its
+output box is replaced.  Returns non-nil when that could be done; nil
+means the caller should fall back to a full redraw."
+  (let ((src (emjupy-cell-overlay cell))
+        (out (emjupy-cell-output-ov cell)))
+    (when (and (overlayp src) (eq (overlay-buffer src) (current-buffer)))
+      (let* ((live-out (and (overlayp out)
+                            (eq (overlay-buffer out) (current-buffer))))
+             (start (if live-out (overlay-start out) (overlay-end src)))
+             (end (if live-out (overlay-end out) start)))
+        (let ((new-end start))
+          (let ((inhibit-read-only t)
+                (buffer-undo-list t))
+            (when live-out (delete-overlay out))
+            (setf (emjupy-cell-output-ov cell) nil)
+            (delete-region start end)
+            (save-excursion
+              (goto-char start)
+              (emjupy--render-cell-output cell)
+              (setq new-end (point)))
+            (emjupy--refresh-cell-header cell)
+            (emjupy--protect-non-cell-regions))
+          ;; Done after the edit, since the shift is the size it turned out
+          ;; to be rather than the size expected.
+          (emjupy--undo-adjust start end (- new-end end)))
+        t))))
+
+(defun emjupy--render-cell (cell)
+  "Render CELL at point using overlays for boundary boxes and live outputs."
+  (let* ((type (emjupy-cell-type cell))
+         (source (emjupy-cell-source cell))
+         (outputs (emjupy-cell-outputs cell))
+         ;; Only show the output box when the cell actually has output --
+         ;; e.g. a bare `import numpy as np' shouldn't grow an empty box.
+         (has-outputs (and (eq type 'code) outputs (> (length outputs) 0)))
+         (src-start (point)))
+
+    ;; 1. Insert source code (syntax-highlighted per cell type) and tag text
+    (let ((to-insert (emjupy--fontify-as (if (string-empty-p source) "\n" source) type)))
+      (insert to-insert)
+      ;; Faces are applied as plain (non-sticky) `face' properties so that
+      ;; text typed at a cell edge does not inherit the neighbouring face.
+      (remove-text-properties src-start (point) '(rear-nonsticky nil)))
+    (unless (string-suffix-p "\n" source) (insert "\n"))
+
+    (put-text-property src-start (point) 'emjupy-cell cell)
+
+    ;; Markdown only: code cells have no math, and a stray `$' in a string
+    ;; should not turn into a formula.
+    (when (eq type 'markdown)
+      (emjupy--preview-latex-in src-start (point)))
+
+    ;; 2. Source Box Overlay
+    (let* ((ov (make-overlay src-start (point)))
+           ;; The rules carry the cell background too, so the outline reads
+           ;; as the edge of the paper rather than floating on the canvas.
+           (header (emjupy--rule (emjupy--cell-label cell)))
+           ;; When output follows, its header line doubles as this box's
+           ;; closing edge -- no separate footer, no gap between the two.
+           (footer (if has-outputs "" (emjupy--rule nil))))
+      (overlay-put ov 'emjupy-overlay 'cell)
+      (overlay-put ov 'before-string header)
+      (overlay-put ov 'after-string footer)
+      ;; No face: source cells keep the buffer's normal background, and are
+      ;; marked out by their rules alone.
+      (setf (emjupy-cell-overlay cell) ov))
+
+    ;; 3. Output Box Overlay
+    (when has-outputs
+      (emjupy--render-cell-output cell))
 
     (insert "\n")))
 

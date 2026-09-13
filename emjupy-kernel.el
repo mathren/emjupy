@@ -30,6 +30,9 @@
 (require 'json)
 (require 'websocket)
 (require 'emjupy-core)
+(declare-function emjupy--refresh-cell-output "emjupy-render" (cell))
+(declare-function emjupy--overlays-sane-p "emjupy-cells" ())
+(declare-function emjupy--sync-all-cells "emjupy-cells" ())
 (declare-function emjupy--refresh-kernel-cwd "emjupy-eglot" (nb))
 (require 'emjupy-http)
 (require 'emjupy-cells)
@@ -107,7 +110,7 @@ comes."
                      ;; applies: an un-renderable output must not leave the
                      ;; box silently blank with nothing logged.
                      (condition-case err
-                         (emjupy--rerender-preserving-point)
+                         (emjupy--redraw-pending-output)
                        (error
                         (message "[emjupy] Failed to render cell output: %s"
                                  (error-message-string err)))))))))))))
@@ -155,7 +158,28 @@ match the cells right away -- saving, or a test."
         (when emjupy--render-timer
           (cancel-timer emjupy--render-timer)
           (setq emjupy--render-timer nil))
-        (emjupy--rerender-preserving-point)))))
+        (emjupy--redraw-pending-output)))))
+
+(defvar-local emjupy--cells-awaiting-output nil
+  "Cells whose output box is waiting to be redrawn in this buffer.")
+
+(defun emjupy--redraw-pending-output ()
+  "Redraw the output of cells that have some waiting, in place if possible.
+
+Falls back to rebuilding the notebook when the buffer and the cells have
+come out of step -- a cell added or removed, or a render interrupted --
+since patching one region only makes sense while the rest still matches."
+  (let ((cells emjupy--cells-awaiting-output))
+    (setq emjupy--cells-awaiting-output nil)
+    ;; Keep the structs matching the buffer.  The full redraw used to do
+    ;; this on the way past; patching one region does not touch the other
+    ;; cells, so an edit made while output was in flight would otherwise sit
+    ;; in the buffer and never reach the cell it belongs to.
+    (when cells (emjupy--sync-all-cells))
+    (if (and cells (emjupy--overlays-sane-p)
+             (cl-every (lambda (cell) (emjupy--refresh-cell-output cell)) cells))
+        t
+      (emjupy--rerender-preserving-point))))
 
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
@@ -164,6 +188,9 @@ match the cells right away -- saving, or a test."
     (setf (emjupy-cell-outputs cell)
           (vconcat (or merged (append existing (list output-hash)))))
     (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (cl-pushnew cell emjupy--cells-awaiting-output)))
       (emjupy--schedule-render buf))))
 
 (defun emjupy--ws-payload (frame)

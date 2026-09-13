@@ -3,17 +3,16 @@
 
 * The short version
 
-Undo works within a cell until something redraws the notebook.  A redraw
-discards the undo history, so edits made before it cannot be undone --
-though they are not lost, they are still in the buffer and in the saved
-notebook.
+Undo works within a cell, and survives output arriving in any other
+cell.  A *structural* change -- adding, deleting, moving, splitting or
+merging cells -- still clears the history, because it rebuilds the whole
+buffer.
 
-A redraw happens when a cell is run, when output arrives from any cell,
-and when cells are added, deleted, moved, split or merged.
+Edits made before such a change are not lost; the text is in the buffer
+and in the saved notebook.  Only the record of how it got there is gone.
 
-This is a real gap against both =ein= and JupyterLab, and it is a
-deliberate trade rather than an oversight.  The rest of this file says
-what the trade is.
+This file is working notes, not a specification: it records what was
+measured, what the others do, and what is left.
 
 * Measured behaviour
 
@@ -23,15 +22,23 @@ what undo can do:
 | Situation                             | Undo entries | =C-/= does                      |
 |---------------------------------------+--------------+-------------------------------|
 | No redraw in between                  |            2 | undoes the typing             |
-| After output arrives for ANOTHER cell |            0 | "No further undo information" |
+| After output arrives for ANOTHER cell |            2 | undoes the typing             |
+| After a full rebuild                  |            0 | "No further undo information" |
 
-In the second row the typed text is still there -- output arriving syncs
-the buffer into the cells before redrawing, so nothing is lost -- but the
-history describing how it got there is gone.
+The middle row is the case that matters in practice -- editing cell 5
+while cell 1 is still running, and its plot lands -- and it used to
+behave like the last row.  Making it work took two changes, and the
+first alone was not enough:
 
-That second row is the one that matters in practice: you are editing
-cell 5 while cell 1 is still running, its plot lands, and your last few
-edits are no longer undoable.
+1. output arriving redraws only its own cell, so most of the buffer does
+   not move at all;
+2. the undo entries that *did* move have their positions shifted to
+   match.
+
+Step 1 on its own left the middle row at one surviving entry and undo
+still refusing, because output usually arrives from a cell ABOVE the one
+being edited: the entries worth keeping are exactly the ones the new
+output pushed further down.
 
 * Why it is like this
 
@@ -71,8 +78,8 @@ buffer.
 
 ** ein
 
-=ein= keeps the single-buffer design and does the bookkeeping, which is
-worth reading before assuming it is easy.  From =ein-worksheet.el=:
+=ein= keeps the single-buffer design and does the bookkeeping. From
+=ein-worksheet.el=:
 
 - =ein:%which-cell%= is a parallel list, one entry per =buffer-undo-list=
   entry, recording which cell each change belonged to.  It is maintained
@@ -99,64 +106,63 @@ scopes undo to edits *within* a cell and not to structural operations.
 Whatever emjupy does should aim for the same scope rather than something
 more ambitious.
 
-* What it would take here
+* What is done, and what is left
 
-In increasing order of risk.
+** Done: redraw only what changed
 
-** 1. Redraw only what changed
+Output arriving patches the text between the end of a cell's source and
+the end of its output box, leaving the rest of the buffer untouched.
+Worth doing on its own merits -- it is also why a =tqdm= loop no longer
+makes Emacs crawl, and why fontification no longer restarts from
+scratch on every message.
 
-The root problem is that any change redraws everything.  Output arriving
-for one cell rebuilds the entire notebook, including cells nowhere near
-it.
+The full rebuild remains for structural changes, where it is the honest
+thing to do: the buffer genuinely is being replaced.
 
-There is already a working precedent in the codebase: the execution
-spinner updates =[In: |]= purely through =overlay-put= on a
-=before-string=, so it changes no buffer text at all -- invisible to undo,
-and it leaves the history intact.  Output is real text and cannot be
-done that way, but it can be patched in place within its own cell's
-region instead of triggering a full rebuild.
+** Done: keep and shift the undo entries
 
-This is worth doing on its own merits, undo aside.
+Three cases, all of them in =emjupy--undo-adjust=:
 
-** 2. Truncate the history by position, not wholesale
+- entries wholly before the edit are untouched by it and stay as they
+  are;
+- entries describing text inside the replaced region describe text that
+  no longer exists, and go;
+- entries after the region are still valid but have moved, so their
+  positions shift by the size change.
 
-Once a redraw touches only one region, entries positioned entirely
-*before* that region are still valid and can be kept.  That alone covers
-the common case: editing cell 5 while cell 1 produces output, since
-cell 1 is earlier in the buffer.
+The third case is the one that does the work, and the one to be careful
+with.  A wrong position does not raise an error, it rewrites the wrong
+text, so each undo entry shape is handled explicitly --  =(BEG . END)=,
+=(TEXT . POS)= including the negative POS that means point was at the end
+of the deleted text, =(nil PROP VAL BEG . END)=, and =(apply ...)=.  This
+is the same job =ein= does in =jigger-undo-list=.
 
-Worst case it is over-cautious and drops more than strictly necessary --
-the same failure as today, but narrower.
+** Left: structural changes
 
-** 3. Shift the entries that follow
+Adding, deleting, moving, splitting or merging cells still rebuilds the
+buffer and drops the history.  =ein= covers this and emjupy does not.
 
-Entries positioned *after* the edit could be adjusted by the size delta
-rather than discarded, which is what ein's =jigger-undo-list= does.  This
-is the piece that would make "typing in cell 2 while cell 5 produces
-output" survive as well.
+Doing it would mean either rendering structural edits incrementally too
+-- inserting one cell's text rather than rebuilding -- or the larger
+alternative below.
 
-It is also where an off-by-one stops being a cosmetic bug: a wrong
-position does not raise an error, it silently rewrites the wrong text.
-That is worse than the current behaviour, so it needs deciding
-deliberately and testing hard -- not bundling with step 2.
+** The larger alternative: leave =buffer-undo-list= out of it
 
-** An alternative: leave =buffer-undo-list= out of it
-
-Track each cell's edits separately, in the cell struct, and give
-=emjupy-undo= its own command that only ever replays within the cell at
-point.  This is what JupyterLab does in effect, and it is immune to the
-whole class of position bugs, since nothing is keyed by buffer position.
+Track each cell's edits in the cell struct, and give =emjupy-undo= its own
+command that only ever replays within the cell at point.  This is what
+JupyterLab does in effect, and it is immune to the whole class of
+position bugs, since nothing is keyed by buffer position.
 
 It means reimplementing undo and redo, including the parts people expect
 without thinking about them -- redo after undo, boundaries that match
 what a user considers "one change", interaction with =undo-tree= if they
-use it.  A larger project than steps 1 to 3, and the only route to a
-guarantee rather than a good approximation.
+use it.  Worth it only if incremental structural rendering turns out not
+to be enough.
 
 * Where this stands
 
-Nothing here is implemented.  Step 1 is the one to do first: it is
-bounded, it helps performance regardless, and steps 2 and 3 are not
-possible without it.  Whether step 3 is worth its risk should be decided
-after step 2 is in use, when it is clear how often the remaining gap is
-actually hit.
+Output arriving is handled.  Structural changes are not, and the next
+step there is incremental rendering for cell insertion and deletion,
+which the output work has already laid the ground for.  Whether that is
+worth doing should be decided by how often it actually bites, now that
+the common case no longer does.
