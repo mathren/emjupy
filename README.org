@@ -34,7 +34,7 @@ exceed cell border anymore.
 - remote or local kernel (just needs port and token)
 - in-line rendering of output including images
 - automatic loading of kernel from port, python environment (including
-  for =eglot=)
+  for =eglot= if =python-lsp-server= is listed in the environment)
 - resilient to connection drops (remote kernel keeps running,
   reconnect emacs)
 - =ein=-like workflow and key bindings
