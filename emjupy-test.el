@@ -4121,5 +4121,50 @@ what made it look intermittent."
           (emjupy--lsp-ask "textDocument/hover")
           (should (equal asked "textDocument/hover")))))))
 
+(ert-deftest emjupy-test-server-relative-path ()
+  "Absolute server paths convert to Contents-API paths, or fail plainly."
+  (let ((server (make-emjupy-server :base-url "box:9999" :token "t" :root "/srv/nb")))
+    (let ((emjupy-remote-root nil))
+      (should (equal (emjupy--server-relative-path server "/srv/nb/lib/mod.py")
+                     "lib/mod.py"))
+      (should (equal (emjupy--server-relative-path server "/srv/nb/top.py") "top.py"))
+      ;; outside what the server serves: say so rather than guess
+      (should-not (emjupy--server-relative-path server "/etc/passwd"))
+      (should-not (emjupy--server-relative-path server nil)))))
+
+(ert-deftest emjupy-test-definition-in-a-server-file-is-fetched ()
+  "A definition on the server opens over HTTP, not as a local path.
+
+The language server runs beside the kernel and answers with paths on
+THAT machine.  Handing one to `xref-make-file-location\' opened it as if
+it were local, so a jump the server had answered correctly still landed
+nowhere."
+  (let* ((server (make-emjupy-server :base-url "box:9999" :token "t" :root "/srv/nb"))
+         (fetched nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (_m _s path &rest _)
+                 (setq fetched path)
+                 (let ((h (make-hash-table :test 'equal)))
+                   (puthash "content" "def helper(x):\n    return x\n" h)
+                   h))))
+      (let ((buf (emjupy-open-server-file "/srv/nb/lib/mod.py" server 2)))
+        (unwind-protect
+            (progn
+              ;; asked the Contents API for the right thing, as text
+              (should (string-match-p "/api/contents/lib/mod.py" fetched))
+              (should (string-match-p "format=text" fetched))
+              (with-current-buffer buf
+                (should buffer-read-only)
+                (should (eq major-mode 'python-mode))
+                (should (string-match-p "def helper" (buffer-string)))
+                ;; and it went to the line asked for
+                (should (= (line-number-at-pos) 2))
+                ;; named so two servers holding the same path do not collide
+                (should (string-match-p "box:9999" (buffer-name)))))
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+    ;; a path the server does not serve is refused, not invented
+    (cl-letf (((symbol-function 'emjupy--http-request) (lambda (&rest _) nil)))
+      (should-error (emjupy-open-server-file "/etc/passwd" server) :type 'user-error))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

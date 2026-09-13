@@ -29,6 +29,7 @@
 (require 'json)
 (require 'emjupy-core)
 (declare-function dired-goto-file "dired" (file))
+(defvar python-indent-guess-indent-offset-verbose)
 (require 'emjupy-http)
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
@@ -380,6 +381,68 @@ kernel already knows, and is asked."
          ;; The two do not line up -- a kernel started somewhere else, say.
          ;; Better to admit that than to invent a path.
          (t nil))))))
+
+(defun emjupy--server-relative-path (server absolute)
+  "Return ABSOLUTE as a path relative to SERVER's root, or nil.
+
+The Contents API speaks in paths relative to the root it serves; a
+language server running beside the kernel speaks in absolute ones.  This
+is the conversion between them, and it fails rather than guesses when
+the path lies outside what the server serves."
+  (let ((root (and server (emjupy--remote-root-for server))))
+    (when (and root absolute)
+      (let ((root (file-name-as-directory (directory-file-name root))))
+        (when (string-prefix-p root absolute)
+          (substring absolute (length root)))))))
+
+(defun emjupy-open-server-file (path &optional server line)
+  "Open PATH from SERVER in a read-only buffer, and go to LINE.
+
+PATH is absolute on the machine the server runs on.  The file is fetched
+through the Contents API -- the same connection the notebook came down --
+so jumping into a module beside a remote notebook needs no TRAMP, no
+mirror, and nothing configured.
+
+Read-only on purpose: this is a copy fetched over HTTP, and writing it
+back is a different job from reading it.  The buffer is named after the
+server so two servers holding the same path do not collide."
+  (let* ((server (or server (emjupy--server)))
+         (rel (emjupy--server-relative-path server path)))
+    (unless rel
+      (user-error "%s is outside what %s serves"
+                  path (emjupy--server-label server)))
+    (let* ((name (format "*emjupy: %s [%s]*"
+                         (file-name-nondirectory path)
+                         (emjupy--server-label server)))
+           (existing (get-buffer name))
+           (buf (or existing (generate-new-buffer name))))
+      (unless existing
+        (let* ((res (emjupy--http-request
+                     "GET" server
+                     (concat "/api/contents/" rel "?type=file&format=text")))
+               (content (and (hash-table-p res) (gethash "content" res))))
+          (unless (stringp content)
+            (kill-buffer buf)
+            (user-error "Could not read %s from %s" rel (emjupy--server-label server)))
+          (with-current-buffer buf
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (insert content))
+            (goto-char (point-min))
+            (let ((python-indent-guess-indent-offset-verbose nil))
+              (delay-mode-hooks (python-mode)))
+            (setq-local default-directory temporary-file-directory)
+            ;; What it is, and where it came from, so nobody edits a copy
+            ;; believing it is the original.
+            (setq-local header-line-format
+                        (format " %s on %s -- read-only copy"
+                                path (emjupy--server-label server)))
+            (setq buffer-read-only t))))
+      (with-current-buffer buf
+        (when line
+          (goto-char (point-min))
+          (forward-line (max 0 (1- line)))))
+      buf)))
 
 (defun emjupy--remember-server-root (nb)
   "Record on NB's server the root derived from NB, if one can be."

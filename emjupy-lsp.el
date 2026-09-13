@@ -63,6 +63,7 @@
 (declare-function emjupy--shadow-section-start "emjupy-eglot" (buf id))
 (declare-function emjupy--shadow-cell-marker "emjupy-eglot" (id))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
+(declare-function emjupy--remote-root-for "emjupy-notebook" (server))
 
 (defcustom emjupy-lsp-enabled t
   "When non-nil, use the language server run by `jupyter-lsp\='.
@@ -246,6 +247,52 @@ and the answer collected on the first request that needs it."
        (ignore err)
        (emjupy--lsp-explain-failure server)
        nil))))
+
+;;;###autoload
+(defun emjupy-lsp-diagnose ()
+  "Report which language-server transport this notebook is using, and why.
+
+Says what was tried and what happened at each step, because from the
+outside a server that is not reached looks identical to one that has
+nothing to say."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (session (emjupy-notebook-lsp nb))
+         (lines
+          (list
+           (format "notebook      %s" (or (emjupy-notebook-path nb) "?"))
+           (format "server        %s" (if server (emjupy--server-label server) "none"))
+           (format "server root   %s" (or (and server (emjupy--remote-root-for server))
+                                          "unknown -- no kernel has reported in"))
+           (format "kernel cwd    %s" (or (emjupy-notebook-kernel-cwd nb)
+                                          "unknown -- kernel has not answered"))
+           (format "lsp enabled   %s" (if emjupy-lsp-enabled "yes" "no"))
+           (format "lsp url       %s" (if server (emjupy--lsp-url server) "n/a"))
+           (format "socket        %s" (cond ((null session) "never opened")
+                                            ((emjupy--lsp-live-p session) "open")
+                                            (t "closed")))
+           (format "handshake     %s" (cond ((null session) "not started")
+                                            ((emjupy-lsp-ready session) "done")
+                                            (t "sent, no reply yet")))
+           (format "answered      %s" (if (and session (emjupy-lsp-warmed session))
+                                          "yes" "not yet"))
+           (format "shadow file   %s"
+                   (let ((buf (emjupy-notebook-shadow-buffer nb)))
+                     (if (buffer-live-p buf)
+                         (or (buffer-local-value 'buffer-file-name buf) "unnamed")
+                       "none -- good, if the socket is open"))))))
+    (with-current-buffer (get-buffer-create "*emjupy language server*")
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (string-join lines "\n") "\n\n")
+        (insert "If the socket never opened, ask the server directly:\n")
+        (insert (format "  curl -s '%s://%s/lsp/status?token=TOKEN'\n"
+                        "http" (emjupy-server-base-url server)))
+        (insert "  404 no jupyter-lsp   403 wrong token   sessions {} no language server\n")
+        (goto-char (point-min)))
+      (setq buffer-read-only t)
+      (display-buffer (current-buffer)))))
 
 (defun emjupy--lsp-explain-failure (server)
   "Say why SERVER has no language server, distinguishing the three causes.

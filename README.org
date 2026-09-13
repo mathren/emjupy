@@ -452,6 +452,24 @@ character and short lines look ragged beside long ones.
 =M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
 faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
+*** Jumping into modules beside a remote notebook
+
+\[xref-find-definitions] on a function from one of your own modules
+opens that module, even when it lives on another machine.  The language
+server runs beside the kernel and answers with a path on *its*
+filesystem, so emjupy fetches the file through the Contents API -- the
+same connection the notebook came down -- and shows it read-only, with a
+header line saying where it came from.
+
+No TRAMP, no mirror, nothing configured.  Read-only because it is a copy
+fetched over HTTP: reading it is a different job from writing it back.
+
+=M-x emjupy-lsp-diagnose= says which transport a notebook is actually
+using and how far it got -- whether the socket opened, whether the
+handshake finished, whether anything has answered -- since from the
+outside a server that is never reached looks exactly like one with
+nothing to say.
+
 *** Where the server's files are
 
 Jupyter does not publish its root directory, and that is deliberate -- it

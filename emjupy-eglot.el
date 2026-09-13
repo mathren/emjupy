@@ -30,6 +30,7 @@
 (require 'emjupy-lsp)
 (defvar emjupy-language-support)
 (declare-function emjupy--remember-server-root "emjupy-notebook" (nb))
+(declare-function emjupy-open-server-file "emjupy-notebook" (path &optional server line))
 (declare-function emjupy--kernel-eval "emjupy-kernel" (kernel code callback))
 (declare-function emjupy--ws-live-p "emjupy-kernel" (&optional kernel))
 
@@ -736,8 +737,24 @@ honest when they do not."
                          (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
                                     (xref-make-buffer-location
                                      (emjupy-notebook-buffer nb) mapped)))
-                     (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
-                                (xref-make-file-location file (1+ line) (or col 0)))))))
+                     ;; The path is absolute on the machine the language
+                     ;; server runs on.  Handing it to
+                     ;; `xref-make-file-location' opened it as if it were
+                     ;; local, which for a remote notebook means a file that
+                     ;; is not there -- so a jump that the server answered
+                     ;; correctly still went nowhere.  Fetch it instead.
+                     (let ((server (emjupy-notebook-server nb)))
+                       (if (and server (file-name-absolute-p file)
+                                (not (file-exists-p file)))
+                           (xref-make
+                            (format "%s:%s" (file-name-nondirectory file) (1+ line))
+                            (xref-make-buffer-location
+                             (emjupy-open-server-file file server (1+ line))
+                             (with-current-buffer
+                                 (emjupy-open-server-file file server (1+ line))
+                               (point))))
+                         (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
+                                    (xref-make-file-location file (1+ line) (or col 0)))))))))
              (ignore-errors (emjupy--lsp-definitions)))))))
 
 (defun emjupy--lsp-line-to-cell (nb line col)
