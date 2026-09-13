@@ -452,6 +452,35 @@ character and short lines look ragged beside long ones.
 =M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
 faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
+*** Copying between cells
+
+Text copied out of a cell carries its faces but none of emjupy's own
+properties.  That matters because one of them, =emjupy-cell=, holds the
+cell structure itself: killed text used to reference a whole cell --
+outputs, overlay and all -- as a snapshot that stopped being true as
+soon as the cell changed, and yanking it elsewhere left the pasted text
+claiming to belong to a cell it had nothing to do with.
+
+One consequence of the read-only regions is worth knowing: a kill whose
+region runs off the end of a cell is refused, but the text still reaches
+the kill ring, because Emacs copies before it deletes.  You get an error
+and a working =C-y=.
+
+*** Smooth scrolling past figures
+
+A tall inline image is a single screen line, so line-based scrolling
+jumps over it in one step.  Emacs 29 and later can scroll by pixel
+instead:
+
+#+begin_src elisp
+(pixel-scroll-precision-mode 1)
+#+end_src
+
+emjupy does not turn this on: it is a global mode and changes scrolling
+in every buffer, which is the user's decision rather than a notebook's.
+=pixel-scroll-precision-interpolate-page= makes =C-v= and =M-v= glide as
+well.
+
 *** Undo
 Undo works within a cell, and survives output arriving in any other
 cell.  Run a long cell, move down to edit another while it works, let
@@ -1025,14 +1054,18 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [ ] confirm =eglot= is correct from this output: =[jsonrpc] e[16:53:54.170]
   <-- textDocument/publishDiagnostics
   {"jsonrpc":"2.0","method":"textDocument\/publishDiagnostics","params":{"uri":"file:\/\/\/tmp\/emjupy-shadow\/localhost_9999__expl_energy.ipynb.py","diagnostics":[]}}=
-
+- [ ] with =emjupy-remote-root= set, from the notebooklist view,
+  pressing =d= sends to the root instead of the file on the line. Can we
+  auto-set this variable to the project root? How does jupyter-lab
+  access its root?
 - [ ] if eglot works, xref doesnt, still get =user-error: No definitions found for:=
-- make =eglot= try to connect immediately and give a message if failing
-- [ ] enable smooth scrolling with =pixel-*= mode for inline images
 - [ ] re-enforce git tag and =emjupy= version sync, fix github action =build=
 - [ ] integrate better with =tqdm=, which right now shows lines like: =0%|                                                                                           | 0/3 [00:00<?, ?it/s]=
   specifically, clear the ^M character and make that line update.
-- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
 ** HOLD
 - [ ] make =undo= possible after structural changes (maybe using markers
   just for the destructive actions?)
+- [ ] avoid full rebuild for split/merge/erase/new cell: these actions
+  affect at most 2 cells at a time, why can't we just redraw these and
+  leave the =undo= alone?
+- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

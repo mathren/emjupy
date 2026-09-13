@@ -3972,5 +3972,78 @@ rather than merely keeping the ones that did not move."
       ;; the sign carries information and has to survive the shift
       (should (equal (nth 2 buffer-undo-list) (cons "text" -137))))))
 
+(ert-deftest emjupy-test-killed-text-leaves-the-cell-behind ()
+  "Text copied out of a cell must not carry the cell with it.
+
+The `emjupy-cell' property holds the cell STRUCT, so killed text
+referenced a whole cell -- outputs, overlay, hash tables -- as a snapshot
+that stopped being true the moment the cell changed.  Yanked elsewhere,
+that text claimed to belong to a cell it had nothing to do with, which
+`emjupy--cell-at-point' reads as a fallback wherever no overlay covers
+the position."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((kill-ring nil) (kill-ring-yank-pointer nil))
+          ;; copy out of the second cell
+          (let ((beg (overlay-start (emjupy-cell-overlay c2))))
+            (copy-region-as-kill beg (+ beg 5)))
+          (let ((killed (car kill-ring)))
+            (should (equal (substring-no-properties killed) "b = 2"))
+            ;; no internal property anywhere in it
+            (dolist (prop emjupy--internal-text-properties)
+              (should-not (text-property-not-all 0 (length killed) prop nil killed)))
+            ;; faces are kept -- yanked code should still look like code
+            (should (text-properties-at 0 killed)))
+          ;; and yanking it into another cell does not misattribute it
+          (goto-char (overlay-start (emjupy-cell-overlay c1)))
+          (end-of-line)
+          (yank)
+          (backward-char 2)
+          (should-not (get-text-property (point) 'emjupy-cell))
+          (should (eq (emjupy--cell-at-point) c1)))))))
+
+(ert-deftest emjupy-test-yank-strips-properties-from-older-text ()
+  "Text killed before the filter existed is cleaned on the way in too."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((kill-ring (list (propertize "y = 2" 'emjupy-cell 'a-stale-struct)))
+              (kill-ring-yank-pointer nil))
+          (setq kill-ring-yank-pointer kill-ring)
+          (goto-char (overlay-start (emjupy-cell-overlay cell)))
+          (end-of-line)
+          (yank)
+          (backward-char 2)
+          (should-not (get-text-property (point) 'emjupy-cell)))))))
+
+(ert-deftest emjupy-test-language-support-starts-eagerly ()
+  "Language support begins when the notebook learns where its kernel is.
+
+Waiting for the first completion means the first request of a session
+pays for the handshake, and a server that will never start stays silent
+until something asks -- by which time the user is mid-task."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table)))
+        (started 0))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) temporary-file-directory)
+        (cl-letf (((symbol-function 'emjupy--lsp-session)
+                   (lambda (&rest _) (setq started (1+ started)) t)))
+          (should (emjupy-start-language-support emjupy--buffer-notebook))
+          (should (= started 1)))
+        ;; and it respects the master switch
+        (let ((emjupy-language-support nil)
+              (asked 0))
+          (cl-letf (((symbol-function 'emjupy--lsp-session)
+                     (lambda (&rest _) (setq asked (1+ asked)) t)))
+            (should-not (emjupy-start-language-support emjupy--buffer-notebook))
+            (should (= asked 0))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

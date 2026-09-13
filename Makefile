@@ -26,7 +26,7 @@ SOURCES = emjupy-core.el emjupy-http.el emjupy-render.el emjupy-cells.el \
           emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el emjupy-notebook.el emjupy.el
 PKGFILES = $(SOURCES) emjupy-pkg.el README.org
 
-.PHONY: all compile test check package install clean timestamps
+.PHONY: all compile test check check-version package install clean timestamps
 
 all: compile
 
@@ -41,6 +41,27 @@ test:
 # Integration tests are opt-in; see the README for the environment variables.
 check:
 	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
+
+# Called by the release workflow, which passes the tag being released.
+# Three things have to agree or a release ships claiming to be a version
+# it is not: the Version: header, the emjupy-version constant that
+# M-x emjupy-version reports, and the tag itself.
+check-version:
+	@version=$$(sed -n 's/^;; Version: *//p' emjupy.el | head -1); \
+	constant=$$(sed -n 's/^(defconst emjupy-version "\([^"]*\)".*/\1/p' emjupy.el | head -1); \
+	tag=$$(echo "$(TAG)" | sed 's/^v//'); \
+	if [ -z "$$version" ]; then \
+	  echo "check-version: no ';; Version:' header in emjupy.el" >&2; exit 1; \
+	fi; \
+	if [ "$$constant" != "$$version" ]; then \
+	  echo "check-version: emjupy-version is $$constant but the header says $$version" >&2; \
+	  exit 1; \
+	fi; \
+	if [ -n "$$tag" ] && [ "$$tag" != "$$version" ]; then \
+	  echo "check-version: tag $$tag does not match version $$version" >&2; \
+	  exit 1; \
+	fi; \
+	echo "check-version: $$version$${tag:+ (tag $$tag)} ok"
 
 package:
 	@rm -rf $(PKG) $(TAR)

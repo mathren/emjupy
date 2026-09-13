@@ -93,6 +93,35 @@ NAME is what gets reported."
   "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
   (apply #'emjupy--timed "rule refresh" #'emjupy--refresh-box-rules args))
 
+(defconst emjupy--internal-text-properties
+  '(emjupy-cell emjupy-pad emjupy-overlay)
+  "Text properties that belong to this buffer and must not travel.
+
+`emjupy-cell' is the worst of them: it holds the cell STRUCT, so text
+copied out of a cell carries a reference to that whole cell -- its
+outputs, its overlay, its hash tables -- and the reference is a snapshot
+that stops being true the moment the cell changes.  Yank it somewhere
+else and the pasted text claims to belong to a cell it has nothing to do
+with, which `emjupy--cell-at-point' reads as a fallback when no overlay
+covers the position.")
+
+(defun emjupy--strip-internal-properties (string)
+  "Return STRING without emjupy's internal text properties.
+
+Faces and the like are kept: they are what makes yanked code still look
+like code.  Only the properties that mean something to emjupy alone, and
+only inside the buffer they came from, are removed."
+  (let ((copy (copy-sequence string)))
+    (remove-list-of-text-properties 0 (length copy)
+                                    emjupy--internal-text-properties copy)
+    copy))
+
+(defun emjupy--filter-buffer-substring (beg end &optional delete)
+  "Return the text between BEG and END, fit to leave this buffer.
+DELETE is passed through to `buffer-substring--filter'."
+  (emjupy--strip-internal-properties
+   (buffer-substring--filter beg end delete)))
+
 (defvar emjupy--buffer-notebook)
 
 (defconst emjupy-version "0.1.0"
@@ -257,6 +286,16 @@ the echo area, for pasting into a bug report."
   ;; notebook needs a backend of its own that forwards there.
   (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t)
   (add-hook 'pre-command-hook #'emjupy--clear-indent-cycling nil t)
+  ;; Everything leaving this buffer -- kill, copy, `M-w' -- goes through
+  ;; here, so the cell struct never reaches the kill ring.
+  (setq-local filter-buffer-substring-function #'emjupy--filter-buffer-substring)
+  ;; And nothing arriving carries one either, for text killed before this
+  ;; was in place or copied from a notebook in an older session.
+  (setq-local yank-excluded-properties
+              (append emjupy--internal-text-properties
+                      (if (listp yank-excluded-properties)
+                          yank-excluded-properties
+                        nil)))
   (eldoc-mode 1))
 
 (provide 'emjupy)

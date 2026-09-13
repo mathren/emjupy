@@ -28,6 +28,7 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-lsp)
+(defvar emjupy-language-support)
 (declare-function emjupy--kernel-eval "emjupy-kernel" (kernel code callback))
 (declare-function emjupy--ws-live-p "emjupy-kernel" (&optional kernel))
 
@@ -366,7 +367,37 @@ how to reach that machine."
        kernel "import os as _o; print(_o.getcwd())"
        (lambda (out)
          (when (and out (not (string-empty-p out)))
-           (setf (emjupy-notebook-kernel-cwd nb) (string-trim out))))))))
+           (setf (emjupy-notebook-kernel-cwd nb) (string-trim out))
+           ;; The working directory is the last thing language support was
+           ;; waiting for, so start it now rather than when the user first
+           ;; asks for a completion.  Starting it then means the first
+           ;; request of a session is the one that pays for the handshake --
+           ;; and if it is going to fail, failing here says so while there is
+           ;; still something to be done about it.
+           (emjupy-start-language-support nb)))))))
+
+(defun emjupy-start-language-support (&optional nb)
+  "Begin talking to a language server for NB, without waiting for it.
+
+Called when a notebook learns where its kernel is running, and available
+by hand.  Reports what it found rather than failing quietly: a language
+server that never starts is otherwise indistinguishable from one that
+simply has nothing to say."
+  (interactive)
+  (let ((nb (or nb (emjupy--notebook))))
+    (when (and nb emjupy-language-support)
+      (cond
+       ;; The Jupyter-server transport, when it is available: connecting
+       ;; and the handshake are both asynchronous, so this returns at once.
+       ((and (bound-and-true-p emjupy-lsp-enabled)
+             (fboundp 'emjupy--lsp-session)
+             (emjupy--lsp-session nb))
+        t)
+       ;; Otherwise the shadow file, unless it would describe this machine
+       ;; rather than the one the kernel runs on.
+       ((not (emjupy--shadow-would-mislead-p nb))
+        (ignore-errors (emjupy--ensure-shadow-buffer nb)))
+       (t nil)))))
 
 (defun emjupy--shadow-file-path (nb)
   "Return a stable on-disk path for NB's shadow Python file.
