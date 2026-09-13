@@ -268,13 +268,17 @@ none is found.
 
 | Package       | Approach          | Limitations                                                                                           |
 |---------------+-------------------+-------------------------------------------------------------------------------------------------------|
-| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; no undo; no eglot                                                    |
+| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
 | =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
 
 =ein= was my working tool for more than a decade, but it is
-[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= breaks undo and makes it hard to
-use =eglot=. I need to share code with non-emacs users, so =ob-jupyter=
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=.
+Credit where it is due on undo: =ein= does support it within a cell, and
+does so by maintaining a ledger mapping every =buffer-undo-list= entry to
+a cell and shifting the positions inside those entries as cells change
+length.  emjupy currently does less -- see
+[[file:notes_undo.org][notes_undo.org]]. I need to share code with non-emacs users, so =ob-jupyter=
 isn't an option, and =emacs-jupyter= doesn't seem the right tool for me.
 
 ** =emjupy= design
@@ -454,15 +458,27 @@ faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
 *** Undo
 
-Re-rendering erases the buffer and rebuilds it from the cell structs, so
-it is kept out of the undo history entirely -- as a recorded change it
-is both enormous and meaningless to undo.
+Undo works within a cell until something redraws the notebook -- running
+a cell, output arriving from any cell, or adding, deleting, moving,
+splitting or merging cells.  A redraw drops the undo history, so edits
+made before it cannot be undone.  They are not lost: the text is still
+in the buffer and in the saved notebook, only the record of how it got
+there is gone.
 
-Because the rebuild is invisible to undo, entries recorded before it
-refer to a buffer layout that no longer exists, so they are dropped when
-a rebuild actually changed the text.  Undo therefore stops at the last
-render instead of corrupting the notebook.  A re-render that produces
-identical text leaves the history alone.
+The reason is that re-rendering erases the buffer and rebuilds it from
+the cell structs.  Recording that is worse than not recording it -- an
+early version did, and undoing one of those entries deleted every cell
+after the one being edited -- so the rebuild is kept out of the history.
+But undo entries hold plain buffer positions rather than markers, and
+nothing adjusts them while recording is off, so entries from before a
+rebuild may point anywhere.  Replaying one does not fail loudly; it
+quietly changes the wrong text.  Dropping them loses undo, which is bad;
+keeping them risks corrupting a notebook, which is worse.
+
+This is a real gap against both =ein= and JupyterLab.
+[[file:notes_undo.org][notes_undo.org]] measures what survives and what does not, explains how
+each of those two avoids the problem, and sets out what closing it here
+would involve.
 
 *** Cell outlines
 
@@ -1025,7 +1041,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [ ] if eglot works, xref doesnt, still get =user-error: No definitions found for:=
 - make =eglot= try to connect immediately and give a message if failing
 - [ ] enable smooth scrolling with =pixel-*= mode for inline images
-- [ ] document functioning of =undo= compared to =ein=
 - [ ] re-enforce git tag and =emjupy= version sync, fix github action =build=
 - [ ] integrate better with =tqdm=, which right now shows lines like: =0%|                                                                                           | 0/3 [00:00<?, ?it/s]=
   specifically, clear the ^M character and make that line update.

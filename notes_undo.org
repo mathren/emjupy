@@ -1,0 +1,162 @@
+#+TITLE: Undo in emjupy
+#+SUBTITLE: What it does today, why, and what it would take to do better
+
+* The short version
+
+Undo works within a cell until something redraws the notebook.  A redraw
+discards the undo history, so edits made before it cannot be undone --
+though they are not lost, they are still in the buffer and in the saved
+notebook.
+
+A redraw happens when a cell is run, when output arrives from any cell,
+and when cells are added, deleted, moved, split or merged.
+
+This is a real gap against both =ein= and JupyterLab, and it is a
+deliberate trade rather than an oversight.  The rest of this file says
+what the trade is.
+
+* Measured behaviour
+
+Typing =+ 99= into the second cell of a two-cell notebook, then asking
+what undo can do:
+
+| Situation                            | Undo entries | =C-/= does           |
+|--------------------------------------+--------------+--------------------|
+| No redraw in between                 | 2            | undoes the typing  |
+| After output arrives for ANOTHER cell | 0            | "No further undo information" |
+
+In the second row the typed text is still there -- output arriving syncs
+the buffer into the cells before redrawing, so nothing is lost -- but the
+history describing how it got there is gone.
+
+That second row is the one that matters in practice: you are editing
+cell 5 while cell 1 is still running, its plot lands, and your last few
+edits are no longer undoable.
+
+* Why it is like this
+
+Rendering erases the whole buffer and rebuilds it from the cell structs.
+Two things follow, and the second is the awkward one.
+
+** Recording the rebuild is worse than not recording it
+
+The first version let the rebuild go into the undo history.  A single
+redraw pushed about twenty entries, and undoing one of them tore the
+notebook apart -- deleting every cell after the one being edited, because
+an undo entry described a deletion of a region that, by then, meant
+something else entirely.  Rendering is therefore done with
+=buffer-undo-list= bound to =t=, which keeps it out of the history.
+
+** But then the history that remains is describing a buffer that no longer exists
+
+Emacs undo entries hold plain buffer positions -- =(BEG . END)= pairs and
+bare integers -- not markers.  Nothing adjusts them when text moves
+around while undo recording is off.  After a rebuild, an entry recorded
+before it may point anywhere.  Replaying it does not fail loudly; it
+quietly changes the wrong text.
+
+So the choice is between losing the history and risking silent
+corruption.  emjupy currently clears =buffer-undo-list= when a rebuild
+actually changed the text, and leaves it alone when the text came out
+identical.  Losing undo is bad.  Corrupting a notebook is worse.
+
+* How the others avoid it
+
+** JupyterLab
+
+Each cell is a separate CodeMirror editor with its own history.  There is
+no shared buffer for a redraw to invalidate, so the question does not
+arise.  Nothing in Emacs gives this for free: a notebook here is one
+buffer.
+
+** ein
+
+=ein= keeps the single-buffer design and does the bookkeeping, which is
+worth reading before assuming it is easy.  From =ein-worksheet.el=:
+
+- =ein:%which-cell%= is a parallel list, one entry per =buffer-undo-list=
+  entry, recording which cell each change belonged to.  It is maintained
+  in an =after-change-functions= hook whose own docstring opens "This is a
+  costly after-change-functions hook."
+- =ein:worksheet--jigger-undo-list= shifts the positions inside undo
+  entries by a signed distance when a cell's length changes.  Doing that
+  correctly means handling every shape an undo entry can take: integers,
+  =(BEG . END)=, =(TEXT . POS)=, markers, =(nil PROP VAL BEG . END)= and
+  =(apply ...)=.  The function is headed:
+
+  #+begin_quote
+  Nobody said it was easy.
+  No one ever said it would be this hard.
+  #+end_quote
+
+- =buffer-undo-list= is pruned at 2000 entries, because Emacs garbage
+  collects it by *bytes* and elisp cannot see that number.
+- =ein:worksheet-enable-undo= covers "cell inputs only (as opposed to
+  whole-cell operations such as killing, moving, executing cells)".
+
+That last point is worth noting: even ein, having done all this work,
+scopes undo to edits *within* a cell and not to structural operations.
+Whatever emjupy does should aim for the same scope rather than something
+more ambitious.
+
+* What it would take here
+
+In increasing order of risk.
+
+** 1. Redraw only what changed
+
+The root problem is that any change redraws everything.  Output arriving
+for one cell rebuilds the entire notebook, including cells nowhere near
+it.
+
+There is already a working precedent in the codebase: the execution
+spinner updates =[In: |]= purely through =overlay-put= on a
+=before-string=, so it changes no buffer text at all -- invisible to undo,
+and it leaves the history intact.  Output is real text and cannot be
+done that way, but it can be patched in place within its own cell's
+region instead of triggering a full rebuild.
+
+This is worth doing on its own merits, undo aside.
+
+** 2. Truncate the history by position, not wholesale
+
+Once a redraw touches only one region, entries positioned entirely
+*before* that region are still valid and can be kept.  That alone covers
+the common case: editing cell 5 while cell 1 produces output, since
+cell 1 is earlier in the buffer.
+
+Worst case it is over-cautious and drops more than strictly necessary --
+the same failure as today, but narrower.
+
+** 3. Shift the entries that follow
+
+Entries positioned *after* the edit could be adjusted by the size delta
+rather than discarded, which is what ein's =jigger-undo-list= does.  This
+is the piece that would make "typing in cell 2 while cell 5 produces
+output" survive as well.
+
+It is also where an off-by-one stops being a cosmetic bug: a wrong
+position does not raise an error, it silently rewrites the wrong text.
+That is worse than the current behaviour, so it needs deciding
+deliberately and testing hard -- not bundling with step 2.
+
+** An alternative: leave =buffer-undo-list= out of it
+
+Track each cell's edits separately, in the cell struct, and give
+=emjupy-undo= its own command that only ever replays within the cell at
+point.  This is what JupyterLab does in effect, and it is immune to the
+whole class of position bugs, since nothing is keyed by buffer position.
+
+It means reimplementing undo and redo, including the parts people expect
+without thinking about them -- redo after undo, boundaries that match
+what a user considers "one change", interaction with =undo-tree= if they
+use it.  A larger project than steps 1 to 3, and the only route to a
+guarantee rather than a good approximation.
+
+* Where this stands
+
+Nothing here is implemented.  Step 1 is the one to do first: it is
+bounded, it helps performance regardless, and steps 2 and 3 are not
+possible without it.  Whether step 3 is worth its risk should be decided
+after step 2 is in use, when it is clear how often the remaining gap is
+actually hit.
