@@ -20,10 +20,10 @@ what the trade is.
 Typing =+ 99= into the second cell of a two-cell notebook, then asking
 what undo can do:
 
-| Situation                            | Undo entries | =C-/= does           |
-|--------------------------------------+--------------+--------------------|
-| No redraw in between                 | 2            | undoes the typing  |
-| After output arrives for ANOTHER cell | 0            | "No further undo information" |
+| Situation                             | Undo entries | =C-/= does                      |
+|---------------------------------------+--------------+-------------------------------|
+| No redraw in between                  |            2 | undoes the typing             |
+| After output arrives for ANOTHER cell |            0 | "No further undo information" |
 
 In the second row the typed text is still there -- output arriving syncs
 the buffer into the cells before redrawing, so nothing is lost -- but the
