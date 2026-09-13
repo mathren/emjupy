@@ -1031,7 +1031,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [X] remote notebook LSP slowing too much
 - [ ] rendering issue when output arrives (fixed by
   re-render, but should not occur at all)
-- [ ] emjupy-notebook-list should allow to create a new notebook
 - [ ] synthax highlight as typing doesn't always work (needs running
   the cell for proper fix often)
 - [ ] confirm =eglot= is correct from this output: =[jsonrpc] e[16:53:54.170]
