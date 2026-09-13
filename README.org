@@ -1048,7 +1048,6 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [X] remote notebook LSP slowing too much
 - [ ] synthax highlight as typing doesn't always work (needs running
   the cell for proper fix often)
 - [ ] confirm =eglot= is correct from this output: =[jsonrpc] e[16:53:54.170]
@@ -1057,10 +1056,13 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 - [ ] with =emjupy-remote-root= set, from the notebooklist view,
   pressing =d= sends to the root instead of the file on the line. Can we
   auto-set this variable to the project root? How does jupyter-lab
-  access its root?
+  access its root? Right now I'm polluting the remote home with files.
+- with 2 tunneled ssh connections (on two separate ports), the second
+  one appears unreachable, with messages like =emjupy-login: JSON Parse Error on /api/kernels: (json-end-of-file 1 0 0)=
 - [ ] if eglot works, xref doesnt, still get =user-error: No definitions found for:=
 - [ ] re-enforce git tag and =emjupy= version sync, fix github action =build=
-- [ ] integrate better with =tqdm=, which right now shows lines like: =0%|                                                                                           | 0/3 [00:00<?, ?it/s]=
+- [X] remote notebook LSP slowing too much
+- [X] integrate better with =tqdm=, which right now shows lines like: =0%|                                                                                           | 0/3 [00:00<?, ?it/s]=
   specifically, clear the ^M character and make that line update.
 ** HOLD
 - [ ] make =undo= possible after structural changes (maybe using markers
