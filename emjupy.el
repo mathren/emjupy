@@ -79,15 +79,12 @@ NAME is what gets reported."
 (defun emjupy--capf ()
   "Completion for the cell at point, on whichever transport is available."
   (when emjupy-language-support
-    (or (emjupy--timed "lsp completion" #'emjupy-lsp-completion-at-point)
-        (emjupy--timed "shadow completion" #'emjupy--cell-completion-at-point))))
+    (emjupy--timed "completion" #'emjupy--cell-completion-at-point)))
 
 (defun emjupy--eldoc (callback &rest args)
   "Report documentation for the cell at point to CALLBACK, passing ARGS on."
   (when emjupy-language-support
-    (or (apply #'emjupy--timed "lsp eldoc" #'emjupy-lsp-eldoc callback args)
-        (apply #'emjupy--timed "shadow eldoc" #'emjupy--cell-eldoc-function
-               callback args))))
+    (apply #'emjupy--timed "eldoc" #'emjupy--cell-eldoc-function callback args)))
 
 (defun emjupy--refresh-rules-timed (&rest args)
   "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
@@ -218,6 +215,9 @@ the echo area, for pasting into a bug report."
     (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
     (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
     (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
+    ;; Deleting against a rendered formula reveals it rather than removing
+    ;; a character that cannot be seen.
+    (define-key map (kbd "DEL")     #'emjupy-latex-unrender-or-delete)
     (define-key map (kbd "C-$")     #'emjupy-show-traceback)
     (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
     (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)

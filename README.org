@@ -452,6 +452,108 @@ character and short lines look ragged beside long ones.
 =M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
 faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
 
+*** If Eglot is missing
+
+Eglot ships with Emacs 29, which this package requires, so in practice it
+is always present.  Be aware, though, that the WebSocket transport
+inherits from Eglot\='s own connection class, so its absence would be a
+load error rather than a graceful degradation.  Supporting an Emacs
+without Eglot would mean guarding that section -- and a =featurep= check
+around it is not sufficient.
+
+*** Opening files from the listing
+
+=RET= on a file in the server dashboard opens it.  The route depends on
+what emjupy can address:
+
+| Condition                          | Result                     |
+|------------------------------------+----------------------------|
+| =emjupy-remote-root= set             | the file, writable         |
+| host known (see below)             | the file over TRAMP, writable |
+| server runs on this machine        | the file, writable         |
+| none of the above                  | read-only copy over HTTP   |
+
+The last case uses the Contents API and requires no configuration.  The
+buffer is read-only and its header line gives the originating path.
+
+*** Tunnelled servers
+
+A server reached through an SSH tunnel answers at =localhost=:
+
+#+begin_src bash
+ssh -L 9999:localhost:9999 box
+#+end_src
+
+The address therefore does not name the machine the files are on.
+emjupy determines it in this order:
+
+1. =emjupy-remote-root=, if set.  A complete path, used as given.
+2. The address, if it names a host other than =localhost=.
+3. =emjupy-ssh-host=, if set.
+4. The command line of the =ssh= process forwarding the port.
+
+Cases 2 to 4 supply only the host name.  The directory is taken from the
+kernel, which reports the notebook's own directory, so notebooks in
+different directories on one machine resolve to different roots without
+further configuration.
+
+Set =emjupy-ssh-host= when no =ssh= process can be found, for instance when
+the tunnel was established outside Emacs by other means:
+
+#+begin_src elisp
+(setq emjupy-ssh-host "box")
+#+end_src
+
+For several servers, use an alist keyed by server label:
+
+#+begin_src elisp
+(setq emjupy-ssh-host '(("localhost:9999" . "box")
+                       ("localhost:8888" . "other")))
+#+end_src
+
+TRAMP cannot reuse the tunnel itself.  A tunnel forwards the Jupyter
+HTTP port; connecting TRAMP to that port would reach the HTTP server,
+not an SSH server.
+
+*** Editing a rendered formula
+
+A rendered fragment is an image displayed over its source text.  The
+source remains in the buffer and remains editable, but is not visible
+while the image is displayed.
+
+=DEL= with point at the end of a rendered fragment removes the image and
+leaves point after the last character of the source.  A second =DEL=
+deletes as usual.  =M-x emjupy-toggle-latex-preview= renders it again.
+
+*** Eglot over the Jupyter WebSocket
+
+Every Eglot command works against the language server running beside the
+kernel -- rename, formatting, code actions, find-implementation, and
+whatever Eglot gains next.  Nothing is wired up per command.
+
+Eglot reaches a server through three =jsonrpc= generics, and
+=jsonrpc-connection-send= dispatches on the connection class, so a
+subclass can carry the traffic anywhere.  =emjupy-eglot-server= carries
+it over the same WebSocket the notebook already uses.
+=jsonrpc-process-connection= type-checks for a process object, so one is
+stood up and then ignored: it satisfies the check and carries nothing.
+
+The document has two names -- the shadow file on this machine, which is
+what Eglot manages, and the path the kernel would see, which is what the
+server knows -- so every message is rewritten in one direction or the
+other as it passes through.  That is the single place the two have to
+agree.
+
+Completion, eldoc, `\[xref-find-definitions]\=' and every other Eglot
+command go the same way: to the shadow buffer, where Eglot is attached.
+Nothing asks the language server directly any more -- the hand-rolled
+request path emjupy used before this is gone, along with the special
+case that made rename work and nothing else.
+
+The shadow file is therefore local again, and only ever local: it is
+something for Eglot to attach to, not something a language server reads.
+=emjupy-shadow-host= is no longer needed for this to work.
+
 *** Jumping into modules beside a remote notebook
 
 \[xref-find-definitions] on a function from one of your own modules
@@ -506,10 +608,9 @@ outputs, overlay and all -- as a snapshot that stopped being true as
 soon as the cell changed, and yanking it elsewhere left the pasted text
 claiming to belong to a cell it had nothing to do with.
 
-One consequence of the read-only regions is worth knowing: a kill whose
-region runs off the end of a cell is refused, but the text still reaches
-the kill ring, because Emacs copies before it deletes.  You get an error
-and a working =C-y=.
+A kill whose region extends past the end of a cell is refused, but the
+text still reaches the kill ring: Emacs copies before deleting.  The
+error is therefore accompanied by a usable =C-y=.
 
 *** Smooth scrolling past figures
 
@@ -527,23 +628,19 @@ in every buffer, which is the user's decision rather than a notebook's.
 well.
 
 *** Undo
-Undo works within a cell, and survives output arriving in any other
-cell.  Run a long cell, move down to edit another while it works, let
-its output land: the edits are still there and still undoable.
 
-Output arriving redraws only the cell it
-belongs to, rather than rebuilding the notebook; and the undo entries
-that the redraw moved have their positions shifted to match, rather than
-being thrown away.
+Undo works within a cell, and survives output arriving, a cell being
+inserted, and a cell being deleted.  Every structural change now keeps it too: inserting, deleting, splitting
+and merging cells all redraw only the cells involved.
 
-What still clears the history is a *structural* change -- adding,
-deleting, moving, splitting or merging cells -- which rebuilds the whole
-buffer.  Edits made before such a change cannot be undone afterwards.
-They are not lost: the text is in the buffer and in the saved notebook,
-only the record of how it got there is gone.
+Output and single-cell structural changes move only part of the buffer,
+by a known amount, so the undo entries before the change are untouched
+and those after it have their positions shifted to match.  A full
+rebuild moves everything while undo recording is off, and undo entries
+hold plain buffer positions rather than markers, so there is nothing
+left to adjust and the history is dropped.
 
-[[file:notes_undo.org][notes_undo.org]] has the measurements, how =ein= and JupyterLab handle the
-same problem, and what closing the remaining gap would involve.
+[[file:notes_undo.org][notes_undo.org]] has the measurements and what is left.
 
 *** Cell outlines
 
@@ -726,16 +823,16 @@ it.  These are applied as real colours rather than shown as
 =\\033[33m=; set =emjupy-render-ansi-colors= to nil to strip them
 instead.
 
-** Only cells are editable
+** Editable regions
 
-Everything that is not a cell\='s source -- the rules, the gutters between
-cells, the output boxes -- is read-only.  Text typed there belongs to no
-cell, so it is stored nowhere and disappears at the next redraw; refusing
-it is better than losing it silently.  Set
-=emjupy-protect-non-cell-regions= to nil to allow it anyway.
+Only cell source text is editable.  Rules, the gutters between cells and
+output boxes are read-only, because text entered there belongs to no
+cell and would be discarded at the next redraw.
 
-Editing at the edges still works: the end of a cell\='s last line and the
-start of the next cell are both inside cells.
+Editing at cell boundaries is unaffected: the end of a cell's last line
+and the start of the next cell are both within cells.
+
+Set =emjupy-protect-non-cell-regions= to nil to disable this.
 
 ** Indentation, tracebacks, and finding your own code
 
@@ -809,98 +906,62 @@ If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
 server is reading a local scratch file and =M-.= will not find your
 modules.
 
-** Stray box borders
+** Cell outline artifacts
 
-A cell outline is drawn by an overlay, through a property that shows
-even when the overlay has collapsed to nothing.  An overlay left behind
-by a cell that no longer exists therefore appears as a stray border, and
-several of them stack up at the top of the buffer, where erasing the
-text collapsed them.
+A cell outline is drawn by an overlay property that is displayed even
+when the overlay has collapsed to zero width.  An overlay belonging to a
+cell that no longer exists therefore appears as a border with no cell.
 
-This happened when re-opening a notebook: the buffer is reused but the
-cells are parsed afresh, so the previous cells\=' overlays become
-unreachable, and the open path erased the text without deleting them.
-Opening now goes through the same redraw as everything else, which
-deletes them.
+Every redraw deletes emjupy overlays that no live cell owns, so running
+a cell or =M-x emjupy-re-render= removes any that appear.
 
-As a second line, every redraw deletes any emjupy overlay that no live
-cell claims -- so should any appear from a path not yet found, running a
-cell or =emjupy-re-render= clears them.
+** Diagnosing slowness
 
-** Finding what is slow
+=emjupy-language-support= set to nil disables every path that contacts a
+language server.  Notebooks, kernels, output and rendering are
+unaffected.  Use it to determine whether a delay originates in language
+support.
 
-Two switches, for when something is slow and it is not obvious what.
+=emjupy-report-slow-hooks=, set to a number of seconds, reports any
+per-command work exceeding that duration, naming the function
+responsible.
 
-=emjupy-language-support= covers every path that talks to a language
-server, on either transport:
+If neither reports anything, use =M-x profiler-start=, reproduce the
+delay, and inspect =M-x profiler-report=.
 
-#+begin_src elisp
-(setq emjupy-language-support nil)
-#+end_src
+** Output rendering
 
-With it off, nothing runs after a command except emjupy's own
-bookkeeping, and the notebook still works -- cells run, output arrives,
-everything renders.  If the slowness goes, it is language support; if it
-stays, it is not, and that is worth knowing before changing anything
-else.
+Output is redrawn at most once per =emjupy-output-render-interval=
+seconds (0.15 by default), however many messages arrive.  Redrawing on
+each message is impractical: a progress bar sends one message per
+iteration, and each redraw of a notebook containing figures takes tens
+of milliseconds.
 
-=emjupy-report-slow-hooks= names the culprit:
+=M-x emjupy-flush-output= forces a pending redraw.
 
-#+begin_src elisp
-(setq emjupy-report-slow-hooks 0.05)
-#+end_src
+Consecutive stream output on the same channel is merged into a single
+output, as in Jupyter, and carriage returns are collapsed as in a
+terminal.  A progress bar therefore occupies one output rather than one
+per update.
 
-Anything emjupy runs after a command taking longer than that is logged
-with the name of the function responsible.  Silence while Emacs is
-struggling is itself the answer: the time is going somewhere that is not
-emjupy's per-command work, and =M-x profiler-start= will say where.
+** Language server requests
 
-** Output does not redraw per message
+Requests are asynchronous.  eldoc runs after every command, so a
+blocking request would cost one round trip per keystroke.  Completion
+answers from the previous reply and requests the next in the background.
 
-A redraw rebuilds the whole notebook, so one redraw per arriving message
-is the difference between a progress bar and a frozen Emacs.  A =tqdm=
-loop sends a message per iteration, and each redraw of a notebook with
-figures costs tens of milliseconds: 100 updates measured 2.2 seconds of
-blocked Emacs before this, and nothing at all after.
+The handshake is also asynchronous.  =jupyter-lsp= starts the language
+server on demand, so connecting may take several seconds; until it
+completes, no answers are available.  If the socket cannot be opened,
+another attempt is not made for =emjupy-lsp-retry-interval= seconds.
 
-Output is therefore coalesced -- at most one redraw per
-=emjupy-output-render-interval= (0.15 s) however fast it arrives.
-=M-x emjupy-flush-output= forces the pending one if you ever need the
-buffer to match the cells immediately.
+Per-command cost, measured on a twelve-cell notebook containing figures:
 
-Consecutive stream output on one channel is also merged into a single
-output, as it is in Jupyter, and carriage returns collapse the way a
-terminal collapses them.  Keeping each message separately is what let a
-progress bar leave thousands of entries behind, every one of them walked
-on every redraw -- so the notebook stayed slow for the rest of the
-session, long after the loop finished.
-
-** Nothing waits for the language server
-
-Measured on a 12-cell notebook with inline figures, per cursor
-movement:
-
-| Configuration                          | Steady state |
-|----------------------------------------+--------------|
-| No language server at all               | 0.01 ms      |
-| Server on the Jupyter host (the default)| 0.01 ms      |
-| Eglot on a local shadow file            | 0.59 ms      |
-| Remote kernel emjupy cannot address     | 0.01 ms      |
-
-Every request is asynchronous.  eldoc runs after *every* command, so a
-blocking wait there costs the request timeout per keystroke -- measured
-at ten seconds a move against a server that never answered, which is a
-hang in every way that matters.  Completion answers from the previous
-reply and asks for the next in the background: with an eager completion
-UI it also runs on every keystroke, and an answer one character stale
-beats a frozen editor.
-
-The handshake is asynchronous too.  =jupyter-lsp= starts the language
-server lazily, so connecting can take seconds; until it reports ready,
-emjupy simply has no answers, which is the correct behaviour rather than
-something to wait for.  If the socket cannot be opened at all -- usually
-=jupyter-lsp= is not installed on that server -- it is not retried for
-=emjupy-lsp-retry-interval= seconds.
+| Operation     | Time    |
+|---------------+---------|
+| cursor motion | 0.0 ms  |
+| completion    | 0.1 ms  |
+| eldoc         | 1.2 ms  |
 
 *** When a shadow file would describe the wrong machine
 
@@ -981,31 +1042,47 @@ The consequences are worth stating plainly:
   =M-.= finds your own modules because the server resolves them against
   the notebook's own directory.
 
-*** Requirements: two packages, not one
+*** Requirements
 
-Everything must be installed *in the environment the kernel runs in*,
-not on the machine running Emacs:
+Two packages must be installed in the Python environment that runs
+=jupyter server=:
 
 #+begin_src bash
 pip install jupyter-lsp 'python-lsp-server[all]'
-# or, in a conda environment file:
-#   - jupyter-lsp
-#   - python-lsp-server
 #+end_src
 
-These are two different things and the distinction is where people get
-stuck:
+In a conda environment file:
 
-- =jupyter-lsp= is the *plumbing*.  It adds the =/lsp/= endpoints to the
-  Jupyter server and proxies LSP over its WebSocket.  =jupyterlab-lsp=
-  depends on it, so having =jupyterlab-lsp= gives you the plumbing.
-- =python-lsp-server= is the *language server* -- the thing that actually
-  knows Python.  Neither =jupyter-lsp= nor =jupyterlab-lsp= installs one.
+#+begin_src yaml
+dependencies:
+  - jupyter-lsp
+  - python-lsp-server
+#+end_src
 
-So an environment listing =jupyterlab-lsp= and nothing else has the
-endpoints but no server behind them, and emjupy will find nothing to
-talk to.  That is the common case, and it looks exactly like emjupy
-being broken.
+They serve different purposes:
+
+| Package             | Purpose                                     |
+|---------------------+---------------------------------------------|
+| =jupyter-lsp=         | adds the =/lsp/= endpoints to Jupyter         |
+| =jupyterlab-lsp=      | JupyterLab front end; requires =jupyter-lsp=  |
+| =python-lsp-server=   | the Python language server                  |
+
+Installing =jupyterlab-lsp= does not install a language server.  An
+environment containing it alone provides the endpoints with no server
+behind them.
+
+*** Locating the language server
+
+=jupyter-lsp= detects a server by importing it:
+=importlib.util.find_spec("pylsp")=, evaluated in the interpreter running
+=jupyter server=, and started as =[sys.executable, "-m", "pylsp"]=.  The
+=PATH= variable is not consulted.
+
+A =pylsp= installed elsewhere on the machine is therefore not found.  It
+must be importable by the interpreter running =jupyter server=.
+
+This is a property of the Jupyter server, not of a project: one server
+requires one installation regardless of how many notebooks it serves.
 
 *** Checking it from the shell
 
@@ -1105,9 +1182,4 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
   specifically, clear the ^M character and make that line update.
 ** HOLD
 - [ ] re-enforce git tag and =emjupy= version sync, fix github action =build=
-- [ ] make =undo= possible after structural changes (maybe using markers
-  just for the destructive actions?)
-- [ ] avoid full rebuild for split/merge/erase/new cell: these actions
-  affect at most 2 cells at a time, why can't we just redraw these and
-  leave the =undo= alone?
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

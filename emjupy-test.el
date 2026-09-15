@@ -3411,25 +3411,36 @@ client recurse until Emacs ran out of stack."
       (let ((emjupy--lsp-in-request t))
         (should-not (emjupy--lsp-request session "textDocument/hover" nil 0.01))))))
 
-(ert-deftest emjupy-test-shadow-file-skipped-while-lsp-is-live ()
-  "With the Jupyter-server transport working, the shadow FILE is not
-built at all -- otherwise the TRAMP round trips it costs would be back
-on the completion path, having just been removed."
+(ert-deftest emjupy-test-shadow-is-built-for-eglot-either-way ()
+  "The shadow buffer is what Eglot manages, on either transport.
+
+It used to be skipped when the WebSocket client was live, because that
+client answered requests itself and the shadow only meant TRAMP.  Now
+Eglot rides the WebSocket, so the shadow is simply the buffer it
+attaches to -- local, and built whichever server is underneath."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
-        (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t)))
-          (let ((emjupy-lsp-enabled t))
-            (should (emjupy--lsp-in-charge-p))
-            (let ((built nil))
-              (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
-                         (lambda (&rest _) (setq built t) nil)))
-                (emjupy--cell-shadow-delegate (lambda (&rest _) t))
-                (should-not built)))))
-        ;; disabled, the old path is still there
-        (let ((emjupy-lsp-enabled nil))
-          (should-not (emjupy--lsp-in-charge-p)))))))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((built nil))
+          (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                     (lambda (&rest _) (setq built t) nil)))
+            ;; the delegate needs a real buffer to hand on to; what matters
+            ;; here is only that it asked for one
+            (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) t)))
+            (should built)))
+        ;; the exception stands: a kernel this Emacs cannot reach, with no
+        ;; way given to reach it, would have the server describe the wrong
+        ;; machine, so nothing is built
+        (let ((emjupy-shadow-host nil)
+              (emjupy-shadow-when-kernel-unreachable nil))
+          (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/nowhere")
+          (let ((built nil))
+            (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                       (lambda (&rest _) (setq built t) nil)))
+              (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) t)))
+              (should-not built))))))))
 
 (ert-deftest emjupy-test-known-token-is-not-reprobed ()
   "A token already registered for a server is used as it stands.
@@ -4029,19 +4040,19 @@ pays for the handshake, and a server that will never start stays silent
 until something asks -- by which time the user is mid-task."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
                                 :outputs [] :metadata (make-hash-table)))
-        (started 0))
+        (built 0))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) temporary-file-directory)
-        (cl-letf (((symbol-function 'emjupy--lsp-session)
-                   (lambda (&rest _) (setq started (1+ started)) t)))
-          (should (emjupy-start-language-support emjupy--buffer-notebook))
-          (should (= started 1)))
+        (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                   (lambda (&rest _) (setq built (1+ built)) nil)))
+          (emjupy-start-language-support emjupy--buffer-notebook)
+          (should (= built 1)))
         ;; and it respects the master switch
         (let ((emjupy-language-support nil)
               (asked 0))
-          (cl-letf (((symbol-function 'emjupy--lsp-session)
-                     (lambda (&rest _) (setq asked (1+ asked)) t)))
+          (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                     (lambda (&rest _) (setq asked (1+ asked)) nil)))
             (should-not (emjupy-start-language-support emjupy--buffer-notebook))
             (should (= asked 0))))))))
 
@@ -4078,48 +4089,6 @@ path relative to the root.  Take the second off the end of the first."
     ;; emjupy cannot infer, so it takes precedence
     (let ((emjupy-remote-root "/ssh:box:/mirror"))
       (should (equal (emjupy--remote-root-for server) "/ssh:box:/mirror")))))
-
-(ert-deftest emjupy-test-deliberate-lookup-waits-for-a-cold-server ()
-  "A jump to a definition waits; background work does not.
-
-`xref-find-definitions' used to go through the background path, where a
-server that has never answered is not asked at all.  The first jump of a
-session therefore reported \"No definitions found\" without asking
-anything -- while the same jump just after a completion worked, which is
-what made it look intermittent."
-  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
-                                 :source "helper()" :outputs []
-                                 :metadata (make-hash-table)))
-         (session (make-emjupy-lsp :pending (make-hash-table :test 'equal)
-                                   :callbacks (make-hash-table :test 'equal)
-                                   :uri "file:///srv/p/n.emjupy.py"
-                                   :ready t :warmed nil))
-         (asked nil))
-    (emjupy-test--with-notebook (vector cell) buf nb
-      (with-current-buffer buf
-        (setf (emjupy-notebook-path emjupy--buffer-notebook) "n.ipynb")
-        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/p")
-        (setf (emjupy-notebook-server emjupy--buffer-notebook)
-              (make-emjupy-server :base-url "h" :token "t"))
-        (setf (emjupy-notebook-lsp emjupy--buffer-notebook) session)
-        (goto-char (overlay-start (emjupy-cell-overlay cell)))
-        (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t))
-                  ((symbol-function 'emjupy--lsp-send) (lambda (&rest _) nil))
-                  ((symbol-function 'emjupy--lsp-request)
-                   (lambda (_s method &rest _) (setq asked method) nil)))
-          ;; cold and in the background: not asked
-          (setq asked nil)
-          (emjupy--lsp-ask "textDocument/hover")
-          (should-not asked)
-          ;; cold but deliberate: asked
-          (setq asked nil)
-          (emjupy--lsp-ask "textDocument/definition" t)
-          (should (equal asked "textDocument/definition"))
-          ;; once warm, the background path asks too
-          (setf (emjupy-lsp-warmed session) t)
-          (setq asked nil)
-          (emjupy--lsp-ask "textDocument/hover")
-          (should (equal asked "textDocument/hover")))))))
 
 (ert-deftest emjupy-test-server-relative-path ()
   "Absolute server paths convert to Contents-API paths, or fail plainly."
@@ -4165,6 +4134,358 @@ nowhere."
     ;; a path the server does not serve is refused, not invented
     (cl-letf (((symbol-function 'emjupy--http-request) (lambda (&rest _) nil)))
       (should-error (emjupy-open-server-file "/etc/passwd" server) :type 'user-error))))
+
+(ert-deftest emjupy-test-undo-survives-cell-insertion-and-deletion ()
+  "Adding or removing a cell no longer costs the undo history.
+
+A full rebuild moves every position in the buffer while undo recording
+is off, and undo entries hold plain positions, so the history had to be
+dropped.  Inserting or deleting one cell moves only what follows it, by
+a known amount, so entries before it are untouched and those after it
+shift.  This was the structural gap notes_undo.org described."
+  (cl-flet ((mk (s) (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source s
+                                      :outputs [] :metadata (make-hash-table))))
+    (dolist (action '(insert delete))
+      (let* ((c1 (mk "a = 1")) (c2 (mk "b = 2")) (c3 (mk "c = 3"))
+             (nb (make-emjupy-notebook :cells (vector c1 c2 c3) :path "n.ipynb"))
+             (buf (generate-new-buffer "*structural*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (emjupy-mode)
+              (setq emjupy--buffer-notebook nb)
+              (setf (emjupy-notebook-buffer nb) buf)
+              (emjupy--rerender-notebook)
+              (buffer-enable-undo)
+              (setq buffer-undo-list nil)
+              ;; type into the FIRST cell, then act on the LAST one
+              (goto-char (overlay-start (emjupy-cell-overlay c1)))
+              (end-of-line)
+              (insert " + 7")
+              (undo-boundary)
+              (goto-char (overlay-start (emjupy-cell-overlay c3)))
+              (if (eq action 'insert)
+                  (emjupy-insert-cell-below)
+                (emjupy-delete-cell))
+              (should (= (length (emjupy-notebook-cells nb))
+                         (if (eq action 'insert) 4 2)))
+              ;; the typing is still there and still undoable
+              (should (string-match-p "a = 1 \\+ 7" (buffer-string)))
+              (undo)
+              (should-not (string-match-p "\\+ 7" (buffer-string)))
+              (should (string-match-p "a = 1" (buffer-string))))
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))))
+
+(ert-deftest emjupy-test-lsp-edits-are-applied-back-to-front ()
+  "Edits are applied from the end, or each one moves the next.
+
+Every edit's range refers to the document as the server last saw it, so
+applying from the front shifts the ground under the rest -- the classic
+way to turn a rename into plausible-looking nonsense."
+  (let ((text "aaa bbb aaa"))
+    (cl-flet ((edit (l1 c1 l2 c2 new)
+                (let ((e (make-hash-table :test 'equal))
+                      (r (make-hash-table :test 'equal))
+                      (s (make-hash-table :test 'equal))
+                      (n (make-hash-table :test 'equal)))
+                  (puthash "line" l1 s) (puthash "character" c1 s)
+                  (puthash "line" l2 n) (puthash "character" c2 n)
+                  (puthash "start" s r) (puthash "end" n r)
+                  (puthash "range" r e) (puthash "newText" new e)
+                  e)))
+      ;; both occurrences of aaa -> zzzz, given in document order
+      (should (equal (emjupy--lsp-apply-edits
+                      text (vector (edit 0 0 0 3 "zzzz") (edit 0 8 0 11 "zzzz")))
+                     "zzzz bbb zzzz")))))
+
+(ert-deftest emjupy-test-lsp-position-offsets ()
+  "LSP counts lines and characters from zero; buffer offsets differ."
+  (let ((text "one\ntwo\nthree"))
+    (should (= (emjupy--lsp-offset-of-position text 0 0) 0))
+    (should (= (emjupy--lsp-offset-of-position text 1 0) 4))
+    (should (= (emjupy--lsp-offset-of-position text 2 2) 10))
+    ;; past the end clamps rather than signalling: a server being generous
+    ;; about a final newline is not a reason to abandon a rename
+    (should (= (emjupy--lsp-offset-of-position text 99 99) (length text)))))
+
+(ert-deftest emjupy-test-eglot-websocket-class ()
+  "The WebSocket-backed server overrides the transport, not the protocol.
+
+Eglot reaches a server through jsonrpc generics, and
+`jsonrpc-connection-send\' dispatches on the connection class -- so a
+subclass can carry the traffic anywhere.  That is what makes every Eglot
+command work at once rather than one at a time."
+  (should (memq 'eglot-lsp-server
+                (mapcar #'eieio-class-name
+                        (eieio-class-parents 'emjupy-eglot-server))))
+  ;; the three generics that carry traffic are specialised here
+  (dolist (generic '(jsonrpc-connection-send jsonrpc-running-p jsonrpc-shutdown))
+    (should (cl-find-if
+             (lambda (m)
+               (equal (car (cl--generic-method-specializers m)) 'emjupy-eglot-server))
+             (cl--generic-method-table (cl--generic generic))))))
+
+(ert-deftest emjupy-test-eglot-uri-rewriting ()
+  "The document has two names and they have to agree.
+
+Eglot names it by the shadow file on this machine; the language server
+knows it by the path the kernel would see.  Every message passes through
+the rewrite in one direction or the other."
+  (let ((local "file:///tmp/shadow/nb.py")
+        (remote "file:///srv/project/nb.emjupy.py"))
+    ;; a bare URI
+    (should (equal (emjupy--eglot-rewrite-uris local local remote) remote))
+    ;; nested in a hash table
+    (let* ((doc (make-hash-table :test 'equal))
+           (params (make-hash-table :test 'equal)))
+      (puthash "uri" local doc)
+      (puthash "textDocument" doc params)
+      (let ((out (emjupy--eglot-rewrite-uris params local remote)))
+        (should (equal (gethash "uri" (gethash "textDocument" out)) remote))))
+    ;; and in a plist, which is how Eglot hands them over
+    (let ((out (emjupy--eglot-rewrite-uris (list :uri local :line 3) local remote)))
+      (should (equal (plist-get out :uri) remote))
+      (should (= (plist-get out :line) 3)))
+    ;; anything else is left alone
+    (should (equal (emjupy--eglot-rewrite-uris "unrelated" local remote) "unrelated"))))
+
+(ert-deftest emjupy-test-undo-survives-split-and-merge ()
+  "Splitting and merging no longer cost the undo history.
+
+Both change only the cells involved, so everything outside moves by a
+known amount and `emjupy--undo-adjust\' can keep the entries: before is
+untouched, inside is dropped, after is shifted.  This was the last of
+the structural gaps notes_undo.org described."
+  (cl-flet ((mk (s) (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source s
+                                      :outputs [] :metadata (make-hash-table))))
+    (dolist (action '(split merge))
+      (let* ((c1 (mk "a = 1")) (c2 (mk "b = 2\nc = 3")) (c3 (mk "d = 4"))
+             (nb (make-emjupy-notebook :cells (vector c1 c2 c3) :path "n.ipynb"))
+             (buf (generate-new-buffer "*structural2*")))
+        (unwind-protect
+            (with-current-buffer buf
+              (emjupy-mode)
+              (setq emjupy--buffer-notebook nb)
+              (setf (emjupy-notebook-buffer nb) buf)
+              (emjupy--rerender-notebook)
+              (buffer-enable-undo)
+              (setq buffer-undo-list nil)
+              ;; type into the FIRST cell, then act further down
+              (goto-char (overlay-start (emjupy-cell-overlay c1)))
+              (end-of-line)
+              (insert " + 7")
+              (undo-boundary)
+              (if (eq action 'split)
+                  (progn (goto-char (overlay-start (emjupy-cell-overlay c2)))
+                         (forward-line 1)
+                         (emjupy-split-cell))
+                (goto-char (overlay-start (emjupy-cell-overlay c3)))
+                (emjupy-join-cell-above))
+              (should (= (length (emjupy-notebook-cells nb))
+                         (if (eq action 'split) 4 2)))
+              (should (string-match-p "a = 1 \\+ 7" (buffer-string)))
+              (undo)
+              (should-not (string-match-p "\\+ 7" (buffer-string)))
+              (should (string-match-p "a = 1" (buffer-string))))
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))))
+
+(ert-deftest emjupy-test-eglot-uris-rewritten-by-directory ()
+  "Rewriting is by directory prefix, so the root travels with the document.
+
+The project has to contain the shadow buffer or Eglot will not manage it,
+and an unmanaged buffer sends no `didOpen\' -- the server never learns the
+document exists, and every lookup comes back empty.  So the project stays
+local and the paths are corrected on the wire: one substitution fixes
+`rootUri\', the document URI, and anything else naming a path beneath
+them."
+  (let ((local "file:///tmp/shadow/")
+        (remote "file:///srv/project/"))
+    ;; the root itself
+    (should (equal (emjupy--eglot-rewrite-uris local local remote) remote))
+    ;; a file beneath it
+    (should (equal (emjupy--eglot-rewrite-uris
+                    (concat local "nb.py") local remote)
+                   (concat remote "nb.py")))
+    ;; nested, as Eglot sends it
+    (let ((params (make-hash-table :test 'equal))
+          (doc (make-hash-table :test 'equal)))
+      (puthash "uri" (concat local "nb.py") doc)
+      (puthash "textDocument" doc params)
+      (should (equal (gethash "uri" (gethash "textDocument"
+                                             (emjupy--eglot-rewrite-uris
+                                              params local remote)))
+                     (concat remote "nb.py"))))
+    ;; paths elsewhere are left alone
+    (should (equal (emjupy--eglot-rewrite-uris "file:///other/x.py" local remote)
+                   "file:///other/x.py"))))
+
+(ert-deftest emjupy-test-clearing-output-keeps-undo ()
+  "Clearing a cell's output redraws that cell, not the notebook.
+
+Nothing was ever lost to the full rebuild -- the text and the cells came
+through it intact -- but the undo history did not, so an edit made
+before clearing could not be undone afterwards.  The last operation that
+behaved that way."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                               :outputs [] :metadata (make-hash-table)))
+         (out (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" out)
+    (puthash "name" "stdout" out)
+    (puthash "text" "result\n" out)
+    (setf (emjupy-cell-outputs c2) (vector out))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; type into the first cell, then clear the second cell\='s output
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (emjupy-clear-cell-output)
+        (should (= (length (emjupy-cell-outputs c2)) 0))
+        (should-not (string-match-p "result" (buffer-string)))
+        ;; the typing is there and can still be taken back
+        (should (string-match-p "a = 1 \\+ 7" (buffer-string)))
+        (undo)
+        (should-not (string-match-p "\\+ 7" (buffer-string)))
+        (should (string-match-p "a = 1" (buffer-string)))))))
+
+(ert-deftest emjupy-test-del-reveals-rendered-latex ()
+  "Deleting against a rendered formula reveals its source.
+
+The image is laid OVER the text, so the source was always still there
+and still editable -- but with the image covering it there was no way to
+see what was being typed.  The first press takes the image away and puts
+point after the last character of the formula; the next deletes as
+usual."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                                :source "see $x^2 + 1$ here" :outputs []
+                                :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (should (search-forward "$x^2" nil t))
+        ;; stand in for a rendered fragment: an overlay displaying an image
+        (let* ((beg (match-beginning 0))
+               (fin (save-excursion (search-forward "$" nil t)))
+               (ov (make-overlay beg fin)))
+          (overlay-put ov 'display "IMAGE")
+          (overlay-put ov 'emjupy-latex t)
+          (goto-char fin)
+          (should (emjupy--latex-overlay-near (point)))
+          (let ((before (buffer-string)))
+            (emjupy-latex-unrender-or-delete 1)
+            ;; the image is gone, no text was removed, and point sits at the
+            ;; end of the formula ready to edit
+            (should-not (emjupy--latex-overlay-near (point)))
+            (should (equal (buffer-string) before))
+            (should (= (point) fin)))
+          ;; pressing again deletes, as it normally would
+          (emjupy-latex-unrender-or-delete 1)
+          (should-not (equal (char-before (1+ (point))) ?$)))))))
+
+(ert-deftest emjupy-test-list-open-file-picks-the-best-route ()
+  "Opening a file from the listing prefers a route that can be written.
+
+Three ways to reach it, differing in whether the result is editable: a
+root set by hand is addressable by definition, a server on this machine
+can be opened directly, and otherwise the Contents API serves a
+read-only copy -- which needs no configuration and always works."
+  (let ((server (make-emjupy-server :base-url "box:9999" :token "t"
+                                    :root "/srv/nb"))
+        (opened nil)
+        (fetched nil))
+    (cl-letf (((symbol-function 'find-file) (lambda (f) (setq opened f)))
+              ((symbol-function 'emjupy-open-server-file)
+               (lambda (path &rest _) (setq fetched path))))
+      (let ((emjupy-list--server server))
+        ;; a root set by hand wins, TRAMP or not
+        (let ((emjupy-remote-root "/ssh:box:/mirror"))
+          (setq opened nil fetched nil)
+          (emjupy-list-open-file "lib/mod.py")
+          (should (equal opened "/ssh:box:/mirror/lib/mod.py"))
+          (should-not fetched))
+        ;; no configured root, but the address names a real machine: build a
+        ;; TRAMP path from it and the path the kernel reported
+        (let ((emjupy-remote-root nil))
+          (setq opened nil fetched nil)
+          (emjupy-list-open-file "lib/mod.py")
+          (should (equal opened "/ssh:box:/srv/nb/lib/mod.py"))
+          (should-not fetched))
+        ;; a tunnelled server answers at localhost and says nothing about the
+        ;; host it leads to, so there is nothing to build a TRAMP path from
+        ;; and the file is fetched instead
+        (let ((emjupy-remote-root nil)
+              (emjupy-list--server (make-emjupy-server :base-url "localhost:9999"
+                                                      :token "t" :root "/srv/nb")))
+          (setq opened nil fetched nil)
+          (emjupy-list-open-file "lib/mod.py")
+          (should-not opened)
+          (should (equal fetched "/srv/nb/lib/mod.py")))
+        ;; nothing known about where the files are: say so
+        (let ((emjupy-remote-root nil)
+              (emjupy-list--server (make-emjupy-server :base-url "h" :token "t")))
+          (should-error (emjupy-list-open-file "x.py") :type 'user-error))))))
+
+(ert-deftest emjupy-test-tramp-root-from-the-address ()
+  "A TRAMP path is built when the address names a real machine.
+
+The absolute path comes from a kernel.  The machine can only come from
+the address emjupy connects to, and that names the machine only when the
+connection goes straight to it.  A tunnelled server answers at localhost
+and never mentions the host the tunnel leads to -- so exactly where a
+TRAMP path is most wanted, the address cannot supply one."
+  ;; a direct connection to a named host
+  (should (equal (emjupy--tramp-root-for
+                  (make-emjupy-server :base-url "box:8888" :token "t"
+                                      :root "/home/you/nb"))
+                 "/ssh:box:/home/you/nb"))
+  (should (equal (emjupy--tramp-root-for
+                  (make-emjupy-server :base-url "http://box.example:8888" :token "t"
+                                      :root "/srv/nb"))
+                 "/ssh:box.example:/srv/nb"))
+  ;; a tunnel: the address is a local one and says nothing about the host
+  (dolist (local '("localhost:9999" "127.0.0.1:9999"))
+    (should-not (emjupy--tramp-root-for
+                 (make-emjupy-server :base-url local :token "t" :root "/srv/nb"))))
+  ;; and with no kernel having reported, there is no path to append
+  (should-not (emjupy--tramp-root-for
+               (make-emjupy-server :base-url "box:8888" :token "t"))))
+
+(ert-deftest emjupy-test-ssh-destination-parsing ()
+  "The host is the last word that is neither an option nor an option\='s
+argument.  Tedious, but not ambiguous."
+  (should (equal (emjupy--ssh-destination "ssh -L 9999:localhost:9999 ua_w") "ua_w"))
+  ;; the destination may come before the options
+  (should (equal (emjupy--ssh-destination "ssh ua_w -L 9999:localhost:9999 -N") "ua_w"))
+  ;; options that take a value must not be mistaken for one
+  (should (equal (emjupy--ssh-destination
+                  "ssh -o BatchMode=yes -p 2222 -L 19100:localhost:18888 -N -f me@box")
+                 "me@box"))
+  (should-not (emjupy--ssh-destination "ssh -N")))
+
+(ert-deftest emjupy-test-ssh-host-is-a-host-not-a-path ()
+  "`emjupy-ssh-host\' names the machine only; the path comes from the kernel.
+
+That is what lets several projects on one machine each keep their own
+root while the machine is said once."
+  (let ((s1 (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                :root "/home/you/project-one"))
+        (s2 (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                :root "/home/you/project-two")))
+    (let ((emjupy-ssh-host "box"))
+      (should (equal (emjupy--tramp-root-for s1) "/ssh:box:/home/you/project-one"))
+      (should (equal (emjupy--tramp-root-for s2) "/ssh:box:/home/you/project-two")))
+    ;; per-server, for more than one machine
+    (let ((emjupy-ssh-host '(("localhost:9999" . "box"))))
+      (should (equal (emjupy--tramp-root-for s1) "/ssh:box:/home/you/project-one")))
+    ;; and with nothing to go on, nothing is invented
+    (let ((emjupy-ssh-host nil))
+      (cl-letf (((symbol-function 'emjupy--ssh-host-forwarding) (lambda (&rest _) nil)))
+        (should-not (emjupy--tramp-root-for s1))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

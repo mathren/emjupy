@@ -137,14 +137,28 @@ text, so each undo entry shape is handled explicitly --  =(BEG . END)=,
 of the deleted text, =(nil PROP VAL BEG . END)=, and =(apply ...)=.  This
 is the same job =ein= does in =jigger-undo-list=.
 
-** Left: structural changes
+** Done: inserting and deleting a cell
 
-Adding, deleting, moving, splitting or merging cells still rebuilds the
-buffer and drops the history.  =ein= covers this and emjupy does not.
+Both draw incrementally now.  Inserting moves only what follows the new
+cell, deleting moves only what followed the old one, and in each case by
+a known amount -- so the same three-way treatment applies: keep what is
+before, drop what described the removed text, shift what comes after.
 
-Doing it would mean either rendering structural edits incrementally too
--- inserting one cell's text rather than rebuilding -- or the larger
-alternative below.
+Measured: typing in the first cell, then adding or deleting a cell at
+the end, leaves the typing undoable.  It used to leave the history
+empty.
+
+** Done: split and merge
+
+Both go through one helper with insert and delete: a split is one region
+becoming two cells, a merge is two regions becoming one, and in each
+case the change is bounded by the cells involved.
+
+One wrinkle worth recording.  The check that the overlays still line up
+has to happen BEFORE the new cell list is stored, because a cell just
+added has no overlay yet and the check would fail on the very cell about
+to be drawn.  Split fell back to a full rebuild -- silently, and only
+undo showed it -- until that was moved.
 
 ** The larger alternative: leave =buffer-undo-list= out of it
 
@@ -159,10 +173,31 @@ what a user considers "one change", interaction with =undo-tree= if they
 use it.  Worth it only if incremental structural rendering turns out not
 to be enough.
 
+* What was swept at the end
+
+Every operation that changes the buffer was tried in turn, typing into
+one cell and then acting on another:
+
+| Operation           | Undo afterwards |
+|---------------------+-----------------|
+| output arrives      | kept            |
+| insert a cell       | kept            |
+| delete a cell       | kept            |
+| split a cell        | kept            |
+| merge cells         | kept            |
+| cycle cell type     | kept            |
+| clear cell output   | kept            |
+| re-render command   | kept            |
+| two operations back to back | kept    |
+
+Clearing output was the last one still rebuilding the notebook, and so
+the last one discarding the history.  Nothing had ever been lost to it
+-- text and cells came through intact -- but an edit made before
+clearing could not be undone afterwards.
+
 * Where this stands
 
-Output arriving is handled.  Structural changes are not, and the next
-step there is incremental rendering for cell insertion and deletion,
-which the output work has already laid the ground for.  Whether that is
-worth doing should be decided by how often it actually bites, now that
-the common case no longer does.
+Output arriving, inserting a cell and deleting a cell are all handled.
+Split and merge are what remain, and they are the same shape of problem.
+Whether to do them should be decided by how often they actually bite,
+now that the common cases no longer do.

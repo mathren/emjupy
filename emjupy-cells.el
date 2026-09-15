@@ -116,6 +116,132 @@ matters for a fault I have not been able to reproduce."
                      (= (overlay-start ov) (overlay-end ov))))
         (delete-overlay ov)))))
 
+(defun emjupy--cell-region (cell)
+  "Return (START . END) of everything CELL occupies, or nil.
+
+A cell owns its source and, when it has one, its output box; the two are
+contiguous.  END is the position just past the gutter newline that
+follows, since that newline belongs to this cell rather than the next."
+  (let ((src (emjupy-cell-overlay cell))
+        (out (emjupy-cell-output-ov cell)))
+    (when (and (overlayp src) (eq (overlay-buffer src) (current-buffer)))
+      (let ((start (overlay-start src))
+            (end (if (and (overlayp out)
+                          (eq (overlay-buffer out) (current-buffer)))
+                     (overlay-end out)
+                   (overlay-end src))))
+        (cons start (min (point-max) (1+ end)))))))
+
+(defun emjupy--render-cell-incrementally (cell at)
+  "Draw CELL at position AT, leaving the rest of the buffer alone.
+
+Returns the number of characters inserted."
+  (let ((inhibit-read-only t)
+        (buffer-undo-list t)
+        (inserted 0))
+    (save-excursion
+      (goto-char at)
+      (let ((before (point-max)))
+        (emjupy--render-cell cell)
+        (setq inserted (- (point-max) before))))
+    (emjupy--protect-non-cell-regions)
+    inserted))
+
+(defun emjupy--redraw-cells-in-place (old-cells new-cells &optional known-sane)
+  "Replace what OLD-CELLS occupy with NEW-CELLS, drawn in their place.
+
+The general form of what inserting and deleting do one cell at a time.
+A split is one region becoming two cells, a merge is two regions
+becoming one; in both the change is bounded by the cells involved, so
+everything outside moves by a known amount and the undo history can be
+kept.
+
+OLD-CELLS must be adjacent and in buffer order.  Returns non-nil when it
+was done, nil when the caller should fall back to a full redraw."
+  (let ((regions (delq nil (mapcar #'emjupy--cell-region old-cells))))
+    (when (and regions
+               (= (length regions) (length old-cells))
+               ;; KNOWN-SANE is for callers that have already put a new cell
+               ;; into the notebook: it has no overlay yet, so the check
+               ;; would fail on the very cell about to be drawn.  They test
+               ;; before mutating instead.
+               (or known-sane (emjupy--overlays-sane-p)))
+      (let ((start (apply #'min (mapcar #'car regions)))
+            (end (apply #'max (mapcar #'cdr regions)))
+            (new-end nil))
+        (let ((inhibit-read-only t)
+              (buffer-undo-list t))
+          (dolist (cell old-cells)
+            (when (overlayp (emjupy-cell-overlay cell))
+              (delete-overlay (emjupy-cell-overlay cell)))
+            (when (overlayp (emjupy-cell-output-ov cell))
+              (delete-overlay (emjupy-cell-output-ov cell)))
+            (setf (emjupy-cell-overlay cell) nil)
+            (setf (emjupy-cell-output-ov cell) nil))
+          (delete-region start end)
+          (save-excursion
+            (goto-char start)
+            (dolist (cell new-cells)
+              (emjupy--render-cell cell))
+            (setq new-end (point)))
+          (emjupy--protect-non-cell-regions))
+        (emjupy--undo-adjust start end (- new-end end))
+        t))))
+
+(defun emjupy-insert-cell-at (nb index new-cell)
+  "Put NEW-CELL into NB at INDEX and draw it without rebuilding the buffer.
+
+A full rebuild costs the undo history, because it moves every position
+in the buffer while undo recording is off and undo entries hold plain
+positions.  Inserting one cell moves only what follows it, and by a
+known amount, so the history can be kept: entries before the insertion
+are untouched, and those after it shift.  See notes_undo.org.
+
+Returns non-nil when it was done incrementally, nil when the caller
+should fall back to a full redraw."
+  (let* ((cells (append (emjupy-notebook-cells nb) nil))
+         (following (nth index cells))
+         (at (cond
+              ;; before an existing cell: at its start
+              (following (car (emjupy--cell-region following)))
+              ;; at the very end: after the last cell there is
+              (cells (cdr (emjupy--cell-region (car (last cells)))))
+              ;; an empty notebook has nowhere to be incremental about
+              (t nil))))
+    (when (and at (emjupy--overlays-sane-p))
+      (setf (emjupy-notebook-cells nb)
+            (vconcat (append (cl-subseq cells 0 index)
+                             (list new-cell)
+                             (cl-subseq cells index))))
+      (let ((inserted (emjupy--render-cell-incrementally new-cell at)))
+        (emjupy--undo-adjust at at inserted))
+      t)))
+
+(defun emjupy-delete-cell-at (nb cell)
+  "Remove CELL from NB and erase it without rebuilding the buffer.
+
+Returns non-nil when it was done incrementally."
+  (let ((region (emjupy--cell-region cell)))
+    (when (and region (emjupy--overlays-sane-p))
+      (let ((start (car region))
+            (end (cdr region)))
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (delq cell (append (emjupy-notebook-cells nb) nil))))
+        (let ((inhibit-read-only t)
+              (buffer-undo-list t))
+          (when (overlayp (emjupy-cell-overlay cell))
+            (delete-overlay (emjupy-cell-overlay cell)))
+          (when (overlayp (emjupy-cell-output-ov cell))
+            (delete-overlay (emjupy-cell-output-ov cell)))
+          (setf (emjupy-cell-overlay cell) nil)
+          (setf (emjupy-cell-output-ov cell) nil)
+          (delete-region start end)
+          (emjupy--protect-non-cell-regions))
+        ;; The deleted text is gone, so entries describing it go; what
+        ;; followed it moves up by its length.
+        (emjupy--undo-adjust start end (- (- end start)))
+        t))))
+
 (defun emjupy--rerender-notebook (&optional target-cell)
   "Re-render this notebook, leaving point at TARGET-CELL if given.
 
@@ -243,13 +369,14 @@ changed nothing -- the history is left intact."
          (cells (append (emjupy-notebook-cells nb) nil))
          (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
          (idx (cl-position curr-cell cells)))
-    (if idx
-        (setq cells (append (cl-subseq cells 0 (1+ idx))
-                            (list new-cell)
-                            (cl-subseq cells (1+ idx))))
-      (setq cells (append cells (list new-cell))))
-    (setf (emjupy-notebook-cells nb) (vconcat cells))
-    (emjupy--rerender-notebook new-cell)))
+    (let ((index (if idx (1+ idx) (length cells))))
+      (unless (emjupy-insert-cell-at nb index new-cell)
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (append (cl-subseq cells 0 index)
+                               (list new-cell)
+                               (cl-subseq cells index))))
+        (emjupy--rerender-notebook new-cell)))
+    (emjupy--goto-cell new-cell 'start)))
 
 (defun emjupy-insert-cell-above ()
   "Insert a new empty code cell above the cell at point."
@@ -260,13 +387,14 @@ changed nothing -- the history is left intact."
          (cells (append (emjupy-notebook-cells nb) nil))
          (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
          (idx (cl-position curr-cell cells)))
-    (if idx
-        (setq cells (append (cl-subseq cells 0 idx)
-                            (list new-cell)
-                            (cl-subseq cells idx)))
-      (setq cells (cons new-cell cells)))
-    (setf (emjupy-notebook-cells nb) (vconcat cells))
-    (emjupy--rerender-notebook new-cell)))
+    (let ((index (or idx 0)))
+      (unless (emjupy-insert-cell-at nb index new-cell)
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (append (cl-subseq cells 0 index)
+                               (list new-cell)
+                               (cl-subseq cells index))))
+        (emjupy--rerender-notebook new-cell)))
+    (emjupy--goto-cell new-cell 'start)))
 
 (defun emjupy-move-cell-up ()
   "Move the cell at point up, swapping it with the cell above.
@@ -377,6 +505,9 @@ by property.  Overlays move with insertions, so they always know."
                         (when (< d best-d) (setq best-d d best cell))))))
       best)))
 
+(defvar-local emjupy--split-was-sane nil
+  "Whether the overlays lined up before a split rearranged the cells.")
+
 (defun emjupy-split-cell ()
   "Split the cell at point in two, at point.
 
@@ -405,6 +536,7 @@ attribute them to source that never produced them."
                       :metadata (make-hash-table :test 'equal)))
            (cells (append (emjupy-notebook-cells nb) nil))
            (idx (cl-position cell cells)))
+      (setq emjupy--split-was-sane (emjupy--overlays-sane-p))
       (setf (emjupy-cell-source cell) (substring source 0 offset))
       ;; Neither half produced what is on screen any more.
       (setf (emjupy-cell-outputs cell) [])
@@ -413,7 +545,11 @@ attribute them to source that never produced them."
             (vconcat (append (cl-subseq cells 0 (1+ idx))
                              (list new-cell)
                              (cl-subseq cells (1+ idx)))))
-      (emjupy--rerender-notebook new-cell)
+      (unless (emjupy--redraw-cells-in-place (list cell) (list cell new-cell)
+                                             emjupy--split-was-sane)
+        (emjupy--rerender-notebook new-cell))
+      (let ((ov (emjupy-cell-overlay new-cell)))
+        (when (overlayp ov) (goto-char (overlay-start ov))))
       new-cell)))
 
 (defun emjupy-join-cell-above ()
@@ -456,7 +592,8 @@ reverse, would silently reinterpret one of them."
           (setf (emjupy-notebook-cells nb)
                 (vconcat (append (cl-subseq cells 0 idx)
                                  (cl-subseq cells (1+ idx)))))
-          (emjupy--rerender-notebook above)
+          (unless (emjupy--redraw-cells-in-place (list above cell) (list above))
+            (emjupy--rerender-notebook above))
           ;; Leave point at the seam, where the merged-in cell begins.
           (let ((ov (emjupy-cell-overlay above)))
             (when (overlayp ov)
@@ -480,7 +617,12 @@ outputs until you save."
         (message "[emjupy] This cell has no output.")
       (setf (emjupy-cell-outputs cell) [])
       (setf (emjupy-cell-exec-count cell) nil)
-      (emjupy--rerender-notebook cell)
+      ;; Only this cell's box goes, so only this cell need be redrawn -- and
+      ;; redrawing just it keeps the undo history, where rebuilding the
+      ;; notebook threw it away.  Nothing was lost even then, but an edit
+      ;; made before clearing could not be undone afterwards.
+      (unless (emjupy--refresh-cell-output cell)
+        (emjupy--rerender-notebook cell))
       (message "[emjupy] Cleared this cell's output."))))
 
 (defun emjupy-clear-all-outputs ()
@@ -520,13 +662,16 @@ outputs until you save."
          (cells (append (emjupy-notebook-cells nb) nil)))
     (when curr-cell
       (let* ((idx (cl-position curr-cell cells))
-             (rest (progn (setq cells (delete curr-cell cells)) cells))
+             (remaining (remq curr-cell cells))
              ;; The cell that slides up into the deleted one's place, or the
              ;; last one if it was at the end.  Leaving point at the end of
              ;; the notebook, as it used to, loses your place entirely.
-             (next (and rest (nth (min idx (1- (length rest))) rest))))
-        (setf (emjupy-notebook-cells nb) (vconcat cells))
-        (emjupy--rerender-notebook next)))))
+             (next (and remaining
+                        (nth (min idx (1- (length remaining))) remaining))))
+        (unless (emjupy-delete-cell-at nb curr-cell)
+          (setf (emjupy-notebook-cells nb) (vconcat remaining))
+          (emjupy--rerender-notebook next))
+        (when next (ignore-errors (emjupy--goto-cell next 'start)))))))
 
 (defun emjupy-cycle-cell-type ()
   "Cycle the cell at point between `code' and `markdown'."

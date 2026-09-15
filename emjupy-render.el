@@ -673,6 +673,37 @@ the whole fragment with its image."
               ;; The source is still there underneath; show it on hover.
               (overlay-put ov 'help-echo body))))))))
 
+(defun emjupy--latex-overlay-near (pos)
+  "Return the rendered-LaTeX overlay covering or ending at POS, or nil."
+  (or (seq-find (lambda (ov) (overlay-get ov 'emjupy-latex))
+                (overlays-at pos))
+      (and (> pos (point-min))
+           (seq-find (lambda (ov) (overlay-get ov 'emjupy-latex))
+                     (overlays-in (1- pos) pos)))))
+
+(defun emjupy-latex-unrender-or-delete (&optional n)
+  "Reveal the LaTeX source behind a rendered image, else delete backwards.
+
+A rendered fragment is an image laid OVER its source, so the source is
+still there and still editable -- but with the image covering it there
+is no way to see what is being typed.  Pressing \\[backward-delete-char]
+against one therefore takes the image away and leaves point after the
+last character of the formula, ready to edit.  Press it again and it
+deletes as usual.
+
+N is passed on when this is an ordinary deletion."
+  (interactive "p")
+  (let ((ov (emjupy--latex-overlay-near (point))))
+    (if (not ov)
+        ;; `delete-char' with a negative count, not `delete-backward-char':
+        ;; the latter is documented as interactive-only.
+        (delete-char (- (or n 1)))
+      (let ((end (overlay-end ov)))
+        (delete-overlay ov)
+        (goto-char end)
+        (message "%s" (substitute-command-keys
+                       "LaTeX source revealed; \\[emjupy-toggle-latex-preview] re-renders"))))))
+
 (defun emjupy-toggle-latex-preview ()
   "Turn LaTeX previews in markdown cells on or off, and redraw."
   (interactive)

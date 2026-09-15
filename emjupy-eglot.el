@@ -382,28 +382,42 @@ how to reach that machine."
            ;; still something to be done about it.
            (emjupy-start-language-support nb)))))))
 
-(defun emjupy-start-language-support (&optional nb)
-  "Begin talking to a language server for NB, without waiting for it.
+(defvar emjupy--suppress-plain-eglot nil
+  "Non-nil while a WebSocket-backed Eglot is about to be attached.
 
-Called when a notebook learns where its kernel is running, and available
-by hand.  Reports what it found rather than failing quietly: a language
-server that never starts is otherwise indistinguishable from one that
-simply has nothing to say."
+`emjupy--ensure-shadow-buffer\' starts Eglot itself, in the ordinary way,
+as soon as it has a buffer.  That happens before anything can ask for
+the WebSocket transport -- so the guard against attaching twice saw a
+server already there and left it: a local one, reading the shadow file
+in a temp directory, which resolves symbols in the notebook and nothing
+beside it.  Every cross-file lookup came back empty for that reason, and
+looked like a fault in the transport that was not being used.")
+
+(defun emjupy-start-language-support (&optional nb)
+  "Begin language support for NB, without waiting for it.
+
+The shadow buffer is built either way -- it is what Eglot manages -- and
+what differs is the transport underneath.  When the server runs
+`jupyter-lsp\', Eglot is attached over its WebSocket and so reaches the
+language server beside the kernel; otherwise Eglot starts one here in
+the ordinary way.
+
+Called when a notebook learns where its kernel is, and available by
+hand.  Reports what it found rather than failing quietly."
   (interactive)
   (let ((nb (or nb (emjupy--notebook))))
-    (when (and nb emjupy-language-support)
-      (cond
-       ;; The Jupyter-server transport, when it is available: connecting
-       ;; and the handshake are both asynchronous, so this returns at once.
-       ((and (bound-and-true-p emjupy-lsp-enabled)
-             (fboundp 'emjupy--lsp-session)
-             (emjupy--lsp-session nb))
-        t)
-       ;; Otherwise the shadow file, unless it would describe this machine
-       ;; rather than the one the kernel runs on.
-       ((not (emjupy--shadow-would-mislead-p nb))
-        (ignore-errors (emjupy--ensure-shadow-buffer nb)))
-       (t nil)))))
+    (when (and nb emjupy-language-support
+               (not (emjupy--shadow-would-mislead-p nb)))
+      (let* ((want-socket (and (bound-and-true-p emjupy-lsp-enabled)
+                               (emjupy-notebook-kernel-cwd nb)))
+             (emjupy--suppress-plain-eglot want-socket)
+             (buffer (ignore-errors (emjupy--ensure-shadow-buffer nb))))
+        (when (buffer-live-p buffer)
+          (or (and want-socket
+                   (not (with-current-buffer buffer
+                          (and (fboundp 'eglot-current-server) (eglot-current-server))))
+                   (emjupy--eglot-connect nb buffer))
+              buffer))))))
 
 (defun emjupy--shadow-file-path (nb)
   "Return a stable on-disk path for NB's shadow Python file.
@@ -607,7 +621,8 @@ automatically, with nothing for the user to run."
             ;; Emacs to a crawl at exactly the moment the user is running
             ;; cells.  Same treatment as the file: a short leash, then leave
             ;; it alone for a while.
-            (unless (and (boundp 'eglot--managed-mode) eglot--managed-mode)
+            (unless (or emjupy--suppress-plain-eglot
+                        (and (boundp 'eglot--managed-mode) eglot--managed-mode))
               (with-timeout (emjupy-shadow-timeout
                              (emjupy--shadow-block "language server did not start"
                                                    nb-buffer))
@@ -786,11 +801,10 @@ honest when they do not."
 
 (cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
   "Return definitions of IDENTIFIER, mapped back onto notebook cells."
-  (or (emjupy--lsp-xrefs)
-      (let ((nb emjupy--buffer-notebook))
+  (let ((nb emjupy--buffer-notebook))
         (emjupy--xref-remap
          nb (emjupy--xref-in-shadow
-             (lambda (b) (xref-backend-definitions b identifier)))))))
+             (lambda (b) (xref-backend-definitions b identifier))))))
 
 (cl-defmethod xref-backend-references ((_backend (eql emjupy)) identifier)
   "Return references to IDENTIFIER, mapped back onto notebook cells."
@@ -873,9 +887,14 @@ the advice does nothing at all."
 The interactive arguments are still read in the notebook buffer, before
 this runs, so prompts like `eglot-rename\'s see the symbol under the
 real cursor rather than whatever is under point in the shadow buffer."
-  (if (and (derived-mode-p 'emjupy-mode) emjupy--buffer-notebook)
-      (emjupy-eglot-delegate (lambda () (apply orig args)))
-    (apply orig args)))
+  (cond
+   ((not (and (derived-mode-p 'emjupy-mode) emjupy--buffer-notebook))
+    (apply orig args))
+   ;; Every command goes the same way now: to the shadow buffer, where
+   ;; Eglot is attached -- over the Jupyter WebSocket when that server has
+   ;; jupyter-lsp, over a local process otherwise.  Nothing here knows
+   ;; which command it is, which is the point.
+   (t (emjupy-eglot-delegate (lambda () (apply orig args))))))
 
 (defun emjupy-eglot-install-advice ()
   "Advise `emjupy-eglot-delegated-commands\' to work inside notebooks."
@@ -1020,16 +1039,20 @@ costs a language server to produce them."
                  "THIS machine.  Set emjupy-shadow-host, or install jupyter-lsp on the server.")))))
 
 (defun emjupy--lsp-in-charge-p ()
-  "Return non-nil when the Jupyter-server language server is handling this.
+  "Return non-nil when Eglot is attached over the Jupyter WebSocket.
 
-While it is, the shadow FILE must not be built at all: that is the whole
-point of the other transport.  Building it anyway would put the TRAMP
-round trips -- and the timer re-entrancy they cause -- back on the
-completion path, having just removed them."
-  (and (bound-and-true-p emjupy-lsp-enabled)
-       (bound-and-true-p emjupy--buffer-notebook)
-       (fboundp 'emjupy--lsp-live-p)
-       (emjupy--lsp-live-p (emjupy-notebook-lsp emjupy--buffer-notebook))))
+Kept for reporting -- `emjupy-lsp-diagnose\' and the wording of one
+message -- rather than for routing.  Routing no longer needs it: every
+request goes to the shadow buffer, and what differs is only which
+transport Eglot found underneath it."
+  (and (bound-and-true-p emjupy--buffer-notebook)
+       (let ((buf (emjupy-notebook-shadow-buffer emjupy--buffer-notebook)))
+         (and (buffer-live-p buf)
+              (with-current-buffer buf
+                (let ((server (and (fboundp 'eglot-current-server)
+                                   (eglot-current-server))))
+                  (and server
+                       (object-of-class-p server 'emjupy-eglot-server))))))))
 
 (defun emjupy--cell-shadow-delegate (fn)
   "Delegate to the shadow buffer when point is in a code cell.
@@ -1040,9 +1063,8 @@ CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
 value, or nil if point isn't in a code cell."
   (when emjupy--buffer-notebook
     (emjupy--warn-shadow-is-local emjupy--buffer-notebook))
-  (unless (or (emjupy--lsp-in-charge-p)
-              (and emjupy--buffer-notebook
-                   (emjupy--shadow-would-mislead-p emjupy--buffer-notebook)))
+  (unless (and emjupy--buffer-notebook
+                (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
   (let ((cell (get-text-property (point) 'emjupy-cell))
         (nb emjupy--buffer-notebook))
     (when (and cell nb (eq (emjupy-cell-type cell) 'code) (emjupy-cell-overlay cell))
@@ -1123,12 +1145,24 @@ is the whole point.  `jsonrpc-request' (blocking) bypasses that gate."
                 (fboundp 'jsonrpc-request)
                 (ignore-errors (emjupy--eglot-capable-p :hoverProvider)))
        (ignore-errors
-         (let* ((server (emjupy--eglot-live-server))
-                (resp (jsonrpc-request server :textDocument/hover
-                                        (eglot--TextDocumentPositionParams)))
-                (contents (plist-get resp :contents)))
-           (unless (seq-empty-p contents)
-             (funcall callback (eglot--hover-info contents (plist-get resp :range))))))
+         (let ((server (emjupy--eglot-live-server)))
+           ;; Asked for, not waited for.  This runs after every command, so
+           ;; a blocking request costs a round trip per keystroke -- which
+           ;; went unnoticed while the server was a local process and did
+           ;; not once it moved to the far end of a WebSocket.  eldoc is
+           ;; built for a late answer: that is what the callback is for.
+           (jsonrpc-async-request
+            server :textDocument/hover (eglot--TextDocumentPositionParams)
+            :success-fn
+            (lambda (resp)
+              (let ((contents (plist-get resp :contents)))
+                (unless (seq-empty-p contents)
+                  (ignore-errors
+                    (funcall callback
+                             (eglot--hover-info contents
+                                                (plist-get resp :range)))))))
+            :error-fn #'ignore
+            :timeout-fn #'ignore)))
        t))))
 
 (provide 'emjupy-eglot)

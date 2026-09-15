@@ -53,13 +53,24 @@
 (require 'json)
 (require 'emjupy-core)
 (require 'emjupy-http)
+(require 'jsonrpc)
+;; Eglot ships with Emacs 29, which this package requires, so it is always
+;; there in practice.  Required softly all the same, as the rest of emjupy
+;; does -- though note the WebSocket transport below inherits from Eglot's
+;; own class, so its absence is a load error rather than a graceful
+;; degradation.  If emjupy ever supports an Emacs without Eglot, that
+;; section needs guarding, and a `featurep' check around it is not enough.
+(require 'eglot nil t)
 
 (declare-function websocket-open "websocket")
 (declare-function websocket-send-text "websocket")
 (declare-function websocket-openp "websocket")
 (declare-function websocket-close "websocket")
 (declare-function websocket-frame-text "websocket")
+(declare-function websocket-on-message "websocket" (ws))
 (declare-function emjupy--build-shadow-content "emjupy-eglot" (nb))
+(declare-function emjupy--parse-shadow-sections "emjupy-eglot" (text))
+(declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
 (declare-function emjupy--shadow-section-start "emjupy-eglot" (buf id))
 (declare-function emjupy--shadow-cell-marker "emjupy-eglot" (id))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
@@ -457,117 +468,292 @@ the nil here means \"not yet\", not \"never\"."
     (puthash "position" position params)
     params))
 
-(defun emjupy--lsp-ask-async (method callback)
-  "Ask the language server METHOD about point; call CALLBACK with the result."
-  (when-let* ((nb (and (bound-and-true-p emjupy--buffer-notebook)
-                       emjupy--buffer-notebook))
-              (position (emjupy--lsp-position nb))
-              (session (emjupy--lsp-session nb)))
-    (emjupy--lsp-async session method
-                       (emjupy--lsp-text-document-params session position)
-                       callback)))
-
-(defun emjupy--lsp-ask (method &optional deliberate)
-  "Ask the language server METHOD about point, and return the result.
-
-With DELIBERATE, this is a command the user actually invoked -- a jump to
-a definition, say -- and it is allowed to wait for a cold server to start
-up.  Without it, this is background work that runs after every command,
-where waiting for a server that has never answered would cost that wait
-on every keystroke.
-
-The distinction matters more than it looks.  Before it existed,
-`xref-find-definitions' went through the background path: the first
-request of a session returned nothing at all, without asking, so a jump
-made before anything had warmed the server reported \"No definitions
-found\" -- while the same jump a moment after a completion worked."
-  (when-let* ((nb (and (bound-and-true-p emjupy--buffer-notebook)
-                       emjupy--buffer-notebook))
-              (position (emjupy--lsp-position nb))
-              (session (emjupy--lsp-session nb)))
-    (when (or deliberate (emjupy-lsp-warmed session))
-      (emjupy--lsp-request session method
-                           (emjupy--lsp-text-document-params session position)
-                           (if (emjupy-lsp-warmed session)
-                               emjupy-lsp-timeout
-                             emjupy-lsp-first-timeout)))))
 
 ;; --- what the notebook asks for ---------------------------------------------
 
-(defvar-local emjupy--lsp-completion-cache nil
-  "Last completion answer, as (KEY . CANDIDATES).")
 
-(defun emjupy-lsp-completion-at-point ()
-  "`completion-at-point-functions\=' entry backed by the Jupyter server.
+(defun emjupy--lsp-offset-of-position (text line character)
+  "Return the character offset of LINE and CHARACTER within TEXT.
 
-Answers from the last reply and asks for the next one in the
-background.  Nothing waits: with an eager completion UI this runs on
-every keystroke, so a wait here is a wait on every keystroke -- and the
-answer for the position one character back is worth more than a frozen
-editor."
-  (when emjupy-lsp-enabled
-    (let* ((key (list (point) (buffer-chars-modified-tick)))
-           (cached (and emjupy--lsp-completion-cache
-                        (equal (car emjupy--lsp-completion-cache) key)
-                        (cdr emjupy--lsp-completion-cache)))
-           (buffer (current-buffer)))
-      (unless cached
-        (emjupy--lsp-ask-async
-         "textDocument/completion"
-         (lambda (result)
-           (when (buffer-live-p buffer)
-             (with-current-buffer buffer
-               (let* ((items (if (hash-table-p result)
-                                 (gethash "items" result)
-                               result))
-                      (cands (delq nil (mapcar (lambda (it)
-                                                 (and (hash-table-p it)
-                                                      (gethash "label" it)))
-                                               (append items nil)))))
-                 (setq emjupy--lsp-completion-cache (cons key cands))))))))
-      (when cached
-        (let ((bounds (bounds-of-thing-at-point 'symbol)))
-          (list (or (car bounds) (point)) (or (cdr bounds) (point))
-                cached :exclusive 'no))))))
+LSP counts lines and characters from zero; Emacs counts buffer positions
+from one and does not count either.  This is the conversion, and it
+clamps rather than signalling, because an edit landing one past the end
+of a document is a server being generous about a final newline, not a
+reason to abandon a rename."
+  (let ((offset 0)
+        (remaining line)
+        (len (length text)))
+    (while (and (> remaining 0) (< offset len))
+      (let ((nl (string-search "\n" text offset)))
+        (if nl
+            (setq offset (1+ nl) remaining (1- remaining))
+          (setq offset len remaining 0))))
+    (min len (+ offset (or character 0)))))
 
-(defun emjupy-lsp-eldoc (callback &rest _)
-  "Report hover documentation for point to CALLBACK.
-An `eldoc-documentation-functions\=' entry, backed by the language server
-the Jupyter host is running."
-  (when emjupy-lsp-enabled
-    (emjupy--lsp-ask-async
-     "textDocument/hover"
-     (lambda (result)
-       (when result
-        (let* ((contents (gethash "contents" result))
-               (text (cond
-                      ((stringp contents) contents)
-                      ((hash-table-p contents) (gethash "value" contents))
-                      ((vectorp contents)
-                       (mapconcat (lambda (c) (if (hash-table-p c)
-                                                  (or (gethash "value" c) "")
-                                                (format "%s" c)))
-                                  (append contents nil) "\n")))))
-          (when (and text (not (string-empty-p (string-trim text))))
-            (funcall callback (string-trim text)))))))
-    ;; Answering later is allowed: this is what the callback is for.
-    t))
+(defun emjupy--lsp-apply-edits (text edits)
+  "Return TEXT with EDITS applied, where EDITS are LSP TextEdits.
 
-(defun emjupy--lsp-definitions ()
-  "Return definition locations for point as a list of (FILE LINE COL)."
-  (let ((result (emjupy--lsp-ask "textDocument/definition" t)))
-    (when result
-      (let ((locs (if (vectorp result) (append result nil) (list result))))
-        (delq nil
-              (mapcar
-               (lambda (loc)
-                 (when (hash-table-p loc)
-                   (let* ((uri (or (gethash "uri" loc) (gethash "targetUri" loc)))
-                          (range (or (gethash "range" loc) (gethash "targetRange" loc)))
-                          (start (and range (gethash "start" range))))
-                     (when (and uri start)
-                       (list uri (gethash "line" start) (gethash "character" start))))))
-               locs))))))
+Applied back to front.  Every edit's range refers to the document as the
+server last saw it, so applying one from the front moves the ground
+under all the others -- the classic way to corrupt a rename into
+nonsense that still looks plausible."
+  (let* ((prepared
+          (mapcar (lambda (edit)
+                    (let* ((range (gethash "range" edit))
+                           (start (gethash "start" range))
+                           (end (gethash "end" range)))
+                      (list (emjupy--lsp-offset-of-position
+                             text (gethash "line" start) (gethash "character" start))
+                            (emjupy--lsp-offset-of-position
+                             text (gethash "line" end) (gethash "character" end))
+                            (or (gethash "newText" edit) ""))))
+                  (append edits nil)))
+         (sorted (sort prepared (lambda (a b) (> (car a) (car b))))))
+    (dolist (edit sorted text)
+      (setq text (concat (substring text 0 (nth 0 edit))
+                         (nth 2 edit)
+                         (substring text (nth 1 edit)))))))
+
+(defun emjupy--lsp-edits-for-this-document (result uri)
+  "Return the TextEdits in a WorkspaceEdit RESULT that apply to URI."
+  (when (hash-table-p result)
+    (let ((changes (gethash "changes" result))
+          (docs (gethash "documentChanges" result)))
+      (cond
+       ((hash-table-p changes) (gethash uri changes))
+       ((and docs (> (length docs) 0))
+        (let (found)
+          (cl-loop for change across docs
+                   until found
+                   do (let* ((doc (and (hash-table-p change)
+                                       (gethash "textDocument" change)))
+                             (this (and (hash-table-p doc) (gethash "uri" doc))))
+                        (when (equal this uri)
+                          (setq found (gethash "edits" change)))))
+          found))))))
+
 
 (provide 'emjupy-lsp)
+;;; Eglot over the Jupyter WebSocket ----------------------------------------
+
+;; Everything below exists so that Eglot's own commands -- all of them, and
+;; any added later -- reach the language server running beside the kernel.
+;;
+;; The alternative was wiring each command up by hand, which does not scale
+;; and did not: rename worked and nothing else did.  Eglot talks to a server
+;; through three jsonrpc generics, and `jsonrpc-connection-send' dispatches
+;; on the connection class, so a subclass can carry the traffic anywhere it
+;; likes.  Here it goes over the same WebSocket the notebook already uses.
+;;
+;; `jsonrpc-process-connection' insists on a process object, so one is
+;; created and then ignored: it exists to satisfy a type check and carries
+;; nothing.
+
+(defcustom emjupy-eglot-idle-command "cat"
+  "Program stood up to satisfy Eglot's requirement for a process.
+
+Eglot builds its connection on `jsonrpc-process-connection', which type
+checks for a process object.  Nothing is written to this one and nothing
+is read from it -- the traffic goes over the WebSocket -- so the
+requirement is met by the most inert program available."
+  :type 'string
+  :group 'emjupy)
+
+(defvar emjupy--eglot-pending nil
+  "Plist handed to the next `emjupy-eglot-server' as it is constructed.
+
+`eglot--connect' decides the initargs, so there is no way to pass the
+WebSocket in.  It is left here instead and collected on the way past.")
+
+(defclass emjupy-eglot-server (eglot-lsp-server)
+  ((ws :initform nil :accessor emjupy-eglot-server-ws)
+   (local-uri :initform nil :accessor emjupy-eglot-server-local-uri)
+   (server-uri :initform nil :accessor emjupy-eglot-server-server-uri)
+   (local-doc :initform nil :accessor emjupy-eglot-server-local-doc)
+   (server-doc :initform nil :accessor emjupy-eglot-server-server-doc))
+  :documentation "An Eglot server reached over the Jupyter server's WebSocket.")
+
+(cl-defmethod initialize-instance :after ((server emjupy-eglot-server) &rest _)
+  "Collect the WebSocket and URIs left by `emjupy--eglot-connect'."
+  (setf (emjupy-eglot-server-ws server) (plist-get emjupy--eglot-pending :ws)
+        (emjupy-eglot-server-local-uri server) (plist-get emjupy--eglot-pending :local-uri)
+        (emjupy-eglot-server-server-uri server) (plist-get emjupy--eglot-pending :server-uri)
+        (emjupy-eglot-server-local-doc server) (plist-get emjupy--eglot-pending :local-doc)
+        (emjupy-eglot-server-server-doc server) (plist-get emjupy--eglot-pending :server-doc))
+  (let ((ws (emjupy-eglot-server-ws server)))
+    (when ws
+      ;; The socket was opened before the server existed, so its handler is
+      ;; pointed at the server now that there is one.
+      ;; The socket was opened before the server existed, so its handler is
+      ;; pointed at the server now that there is one.  Set through the
+      ;; struct rather than a setf accessor, which websocket.el does not
+      ;; export.
+      (aset ws (cl-struct-slot-offset 'websocket 'on-message)
+            (lambda (_ws frame) (emjupy--eglot-receive server frame))))))
+
+(defun emjupy--eglot-rewrite-uris (object from to)
+  "Return OBJECT with every URI equal to FROM replaced by TO.
+
+Eglot names the document by the file it manages, which is the shadow
+file on this machine.  The language server knows it by the path the
+kernel would see.  Both directions of every message pass through here,
+which is the one place the two names have to agree."
+  (cond
+   ((and (stringp object) (equal object from)) to)
+   ((and (stringp object) from to (string-suffix-p "/" from)
+         (string-prefix-p from object))
+    (concat to (substring object (length from))))
+   ((hash-table-p object)
+    (let ((copy (make-hash-table :test 'equal)))
+      (maphash (lambda (k v)
+                 (puthash k (emjupy--eglot-rewrite-uris v from to) copy))
+               object)
+      copy))
+   ((vectorp object)
+    (vconcat (mapcar (lambda (x) (emjupy--eglot-rewrite-uris x from to))
+                     (append object nil))))
+   ((consp object)
+    ;; A plist from Eglot: values may be URIs, keys never are.
+    (let (out)
+      (while object
+        (let ((k (car object)) (v (cadr object)))
+          (push k out)
+          (push (emjupy--eglot-rewrite-uris v from to) out)
+          (setq object (cddr object))))
+      (nreverse out)))
+   (t object)))
+
+(cl-defmethod jsonrpc-connection-send ((server emjupy-eglot-server)
+                                       &rest args
+                                       &key id method params
+                                       result error)
+  "Send a JSON-RPC message for SERVER over its WebSocket.
+ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
+  (ignore args)
+  (let* ((msg (make-hash-table :test 'equal)))
+    (puthash "jsonrpc" "2.0" msg)
+    (when id (puthash "id" id msg))
+    (when method
+      (puthash "method" (cond ((keywordp method) (substring (symbol-name method) 1))
+                              ((symbolp method) (symbol-name method))
+                              (t method))
+               msg))
+    (when params
+      (puthash "params"
+               (emjupy--eglot-rewrite-uris
+                (emjupy--eglot-plist-to-table params)
+                (emjupy-eglot-server-local-uri server)
+                (emjupy-eglot-server-server-uri server))
+               msg))
+    (when result (puthash "result" (emjupy--eglot-plist-to-table result) msg))
+    (when error (puthash "error" (emjupy--eglot-plist-to-table error) msg))
+    (let ((ws (emjupy-eglot-server-ws server)))
+      (when (and ws (websocket-openp ws))
+        (websocket-send-text ws (json-serialize msg))))))
+
+(defun emjupy--eglot-plist-to-table (object)
+  "Return OBJECT with plists turned into hash tables, for `json-serialize'."
+  (cond
+   ((and (consp object) (keywordp (car object)))
+    (let ((table (make-hash-table :test 'equal)))
+      (while object
+        (puthash (substring (symbol-name (car object)) 1)
+                 (emjupy--eglot-plist-to-table (cadr object))
+                 table)
+        (setq object (cddr object)))
+      table))
+   ((and (consp object) (listp (cdr object)))
+    (vconcat (mapcar #'emjupy--eglot-plist-to-table object)))
+   ((eq object :json-false) :false)
+   ((eq object t) t)
+   (t object)))
+
+(defun emjupy--eglot-receive (server frame)
+  "Hand the message in FRAME to SERVER, as if it had come from a process."
+  (let* ((text (websocket-frame-text frame))
+         (msg (ignore-errors (json-parse-string text :object-type 'plist
+                                                :null-object nil
+                                                :false-object :json-false))))
+    (when msg
+      (jsonrpc-connection-receive
+       server
+       ;; Only the document itself is renamed on the way back.  Rewriting by
+       ;; directory, as the outbound direction does, would drag every other
+       ;; path under the server's root along with it -- so a definition
+       ;; correctly answered as .../latmod.py came back pointing at a file
+       ;; of that name beside the shadow, which does not exist, and the
+       ;; lookup produced nothing.  Paths elsewhere on the server are left
+       ;; as they are; `emjupy-open-server-file' knows how to fetch them.
+       (emjupy--eglot-rewrite-uris
+        msg
+        (emjupy-eglot-server-server-doc server)
+        (emjupy-eglot-server-local-doc server))))))
+
+(cl-defmethod jsonrpc-running-p ((server emjupy-eglot-server))
+  "Return non-nil while SERVER's WebSocket is open."
+  (let ((ws (emjupy-eglot-server-ws server)))
+    (and ws (ignore-errors (websocket-openp ws)) t)))
+
+(cl-defmethod jsonrpc-shutdown ((server emjupy-eglot-server) &optional _cleanup)
+  "Close SERVER's WebSocket."
+  (let ((ws (emjupy-eglot-server-ws server)))
+    (when (and ws (ignore-errors (websocket-openp ws)))
+      (ignore-errors (websocket-close ws))))
+  (setf (emjupy-eglot-server-ws server) nil))
+
+(defun emjupy--eglot-connect (nb buffer)
+  "Attach Eglot to BUFFER, talking to NB's server over its WebSocket.
+
+BUFFER is the shadow buffer, which stays on this machine: it is now only
+something for Eglot to manage, not something a language server reads.
+Returns the server, or nil."
+  (let* ((server (emjupy-notebook-server nb))
+         (local-file (buffer-local-value 'buffer-file-name buffer))
+         (ws (condition-case err
+                 (websocket-open (emjupy--lsp-url server)
+                                 :on-message (lambda (_ws _frame) nil)
+                                 :on-error (lambda (&rest _) nil))
+               (error (emjupy--lsp-explain-failure server)
+                      (ignore err)
+                      nil))))
+    (when (and ws local-file)
+      (let* ((emjupy--eglot-pending
+              (list :ws ws
+                    ;; Directory prefixes, not the one file: the same
+                    ;; substitution then fixes rootUri, the document URI and
+                    ;; anything else naming a path under them.
+                    :local-uri (concat "file://" (file-name-directory local-file))
+                    :server-uri (concat "file://"
+                                        (file-name-as-directory
+                                         (or (emjupy-notebook-kernel-cwd nb) "/")))
+                    :local-doc (concat "file://" local-file)
+                    :server-doc (concat "file://"
+                                        (file-name-as-directory
+                                         (or (emjupy-notebook-kernel-cwd nb) "/"))
+                                        (file-name-nondirectory local-file))))
+             ;; The root has to be the directory the SERVER will resolve
+             ;; against, not the one holding the shadow file here.  Eglot
+             ;; turns this into rootUri, and pylsp resolves `import mylib'
+             ;; against it -- so pointing it at the local shadow directory
+             ;; meant every cross-file lookup came back empty while
+             ;; same-document ones worked, which is a confusing way to fail.
+             ;; The project must contain the shadow buffer or Eglot will not
+             ;; manage it -- and an unmanaged buffer sends no didOpen, so the
+             ;; server never learns the document exists.  The root the SERVER
+             ;; is told about is fixed on the wire instead, below.
+             (project (cons 'transient (file-name-directory local-file))))
+        (with-current-buffer buffer
+          (condition-case err
+              (eglot--connect (list major-mode) project
+                              'emjupy-eglot-server
+                              ;; A process must exist for the base class;
+                              ;; this one is never written to or read from.
+                              (list emjupy-eglot-idle-command)
+                              "python")
+            (error
+             (ignore-errors (websocket-close ws))
+             (message "[emjupy] Could not attach Eglot over the WebSocket: %s"
+                      (error-message-string err))
+             nil)))))))
+
 ;;; emjupy-lsp.el ends here
