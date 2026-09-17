@@ -317,16 +317,32 @@ temp directory is used and this quietly has no effect."
   :type 'boolean
   :group 'emjupy)
 
+(defvar emjupy--force-local-shadow nil
+  "Non-nil while the shadow file must be on this machine.
+
+The WebSocket transport does not read the shadow file: it is only
+something for Eglot to attach to, and the paths it reports are rewritten
+in flight.  Putting it on the remote host therefore buys nothing and
+costs everything -- building it over TRAMP is slow, can time out, and
+when it does the attach that was waiting on it never happens.  That is
+how the socket came to be reported as never opened.")
+
 (defun emjupy--shadow-directory-for (nb)
   "Return the directory NB\='s shadow file belongs in."
-  (let* ((explicit (and emjupy-shadow-directory
-                        (file-name-as-directory emjupy-shadow-directory)))
-         (beside (and (not explicit)
-                      emjupy-shadow-beside-notebook
-                      (emjupy--notebook-directory nb))))
-    (or explicit beside
-        (file-name-as-directory
-         (expand-file-name "emjupy-shadow" temporary-file-directory)))))
+  ;; Forcing local rejects REMOTE candidates only.  A directory set by hand
+  ;; that is already on this machine is still what the user asked for.
+  (cl-flet ((usable (dir)
+              (and dir
+                   (not (and emjupy--force-local-shadow (file-remote-p dir)))
+                   dir)))
+    (let* ((explicit (usable (and emjupy-shadow-directory
+                                  (file-name-as-directory emjupy-shadow-directory))))
+           (beside (and (not explicit)
+                        emjupy-shadow-beside-notebook
+                        (usable (emjupy--notebook-directory nb)))))
+      (or explicit beside
+          (file-name-as-directory
+           (expand-file-name "emjupy-shadow" temporary-file-directory))))))
 
 (defun emjupy--notebook-directory (nb)
   "Return the directory NB lives in as a file name Emacs can use, or nil.
@@ -411,6 +427,9 @@ hand.  Reports what it found rather than failing quietly."
       (let* ((want-socket (and (bound-and-true-p emjupy-lsp-enabled)
                                (emjupy-notebook-kernel-cwd nb)))
              (emjupy--suppress-plain-eglot want-socket)
+             ;; Keep it local when the socket is what will read it -- which
+             ;; is to say, when nothing will read it.
+             (emjupy--force-local-shadow want-socket)
              (buffer (ignore-errors (emjupy--ensure-shadow-buffer nb))))
         (when (buffer-live-p buffer)
           (or (and want-socket
@@ -1097,7 +1116,15 @@ equivalent position, and FN called with
 CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
 `(point)' there (already positioned) to do its work.  Returns FN's
 value, or nil if point isn't in a code cell."
-  (when emjupy--buffer-notebook
+  ;; Only when the better transport is genuinely unavailable.  While it is
+  ;; merely still connecting -- which is the case every time a notebook is
+  ;; opened, and so every time a second one is -- saying the kernel runs
+  ;; elsewhere is both wrong and unhelpful, since it recommends installing
+  ;; something that is installed and about to be used.
+  (when (and emjupy--buffer-notebook
+             (or (not (bound-and-true-p emjupy-lsp-enabled))
+                 (emjupy--shadow-blocked-p))
+             (not (emjupy--lsp-in-charge-p)))
     (emjupy--warn-shadow-is-local emjupy--buffer-notebook))
   (unless (and emjupy--buffer-notebook
                 (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))

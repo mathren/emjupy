@@ -215,7 +215,32 @@ should fall back to a full redraw."
             (vconcat (append (cl-subseq cells 0 index)
                              (list new-cell)
                              (cl-subseq cells index))))
-      (let ((inserted (emjupy--render-cell-incrementally new-cell at)))
+      (let ((following-ov (and following (emjupy-cell-overlay following)))
+            (inserted 0))
+        (setq inserted (emjupy--render-cell-incrementally new-cell at))
+        ;; Text inserted at an overlay's start may be taken INTO that
+        ;; overlay, depending on how the overlay was made and on the Emacs
+        ;; version.  Where it is, the following cell swallows the new one:
+        ;; two cells over one region, which shows as a doubled boundary,
+        ;; fails the consistency check and stops syncing -- so the next edit
+        ;; there is not saved and the cell appears to vanish.
+        ;;
+        ;; Tested for rather than assumed: the repair asks whether the two
+        ;; overlays actually overlap, which is the condition that matters
+        ;; and is true or false the same way everywhere.
+        (let ((new-ov (emjupy-cell-overlay new-cell))
+              (resume (+ at inserted)))
+          (when (and (overlayp following-ov)
+                     (overlayp new-ov)
+                     (eq (overlay-buffer following-ov) (current-buffer))
+                     (< (overlay-start following-ov) (overlay-end new-ov)))
+            ;; Past everything just inserted, which includes the blank line
+            ;; separating the new cell from this one -- starting at the new
+            ;; cell's own end would leave that newline inside the following
+            ;; cell, where it shows up as a stray line at the top of its
+            ;; source.
+            (move-overlay following-ov resume
+                          (max resume (overlay-end following-ov)))))
         (emjupy--undo-adjust at at inserted))
       t)))
 

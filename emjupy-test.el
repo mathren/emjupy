@@ -4421,14 +4421,17 @@ read-only copy -- which needs no configuration and always works."
           (should-not fetched))
         ;; a tunnelled server answers at localhost and says nothing about the
         ;; host it leads to, so there is nothing to build a TRAMP path from
-        ;; and the file is fetched instead
-        (let ((emjupy-remote-root nil)
-              (emjupy-list--server (make-emjupy-server :base-url "localhost:9999"
-                                                      :token "t" :root "/srv/nb")))
+        ;; and the file is fetched instead.  The detector is stubbed: left
+        ;; live, this reads the tunnels of whichever machine runs the test.
+        (cl-letf (((symbol-function 'emjupy--ssh-host-forwarding) (lambda (&rest _) nil)))
+         (let ((emjupy-remote-root nil)
+               (emjupy-ssh-host nil)
+               (emjupy-list--server (make-emjupy-server :base-url "localhost:9999"
+                                                       :token "t" :root "/srv/nb")))
           (setq opened nil fetched nil)
           (emjupy-list-open-file "lib/mod.py")
           (should-not opened)
-          (should (equal fetched "/srv/nb/lib/mod.py")))
+          (should (equal fetched "/srv/nb/lib/mod.py"))))
         ;; nothing known about where the files are: say so
         (let ((emjupy-remote-root nil)
               (emjupy-list--server (make-emjupy-server :base-url "h" :token "t")))
@@ -4451,10 +4454,15 @@ TRAMP path is most wanted, the address cannot supply one."
                   (make-emjupy-server :base-url "http://box.example:8888" :token "t"
                                       :root "/srv/nb"))
                  "/ssh:box.example:/srv/nb"))
-  ;; a tunnel: the address is a local one and says nothing about the host
-  (dolist (local '("localhost:9999" "127.0.0.1:9999"))
-    (should-not (emjupy--tramp-root-for
-                 (make-emjupy-server :base-url local :token "t" :root "/srv/nb"))))
+  ;; a tunnel: the address is a local one and says nothing about the host.
+  ;; The detector is stubbed out, or this test would find whatever tunnels
+  ;; the machine running it happens to have -- which it did, on a machine
+  ;; forwarding 9999.
+  (cl-letf (((symbol-function 'emjupy--ssh-host-forwarding) (lambda (&rest _) nil)))
+    (let ((emjupy-ssh-host nil))
+      (dolist (local '("localhost:9999" "127.0.0.1:9999"))
+        (should-not (emjupy--tramp-root-for
+                     (make-emjupy-server :base-url local :token "t" :root "/srv/nb"))))))
   ;; and with no kernel having reported, there is no path to append
   (should-not (emjupy--tramp-root-for
                (make-emjupy-server :base-url "box:8888" :token "t"))))
@@ -4590,6 +4598,104 @@ avoid.  What matters is whether the attached server is ours."
                  (lambda (&rest _) (setq shut (1+ shut)))))
         (should-not (emjupy--claim-shadow-for-websocket (current-buffer)))
         (should (= shut 1))))))
+
+(ert-deftest emjupy-test-insert-keeps-overlays-consistent ()
+  "Inserting a cell before another leaves both with their own region.
+
+Text inserted at an overlay\='s start is taken into that overlay, since
+overlays do not advance at the front.  The following cell therefore
+swallowed the new one: two cells sharing a region, which shows as a
+doubled boundary, fails the consistency check, and stops syncing -- so
+the next edit there is not saved and a cell appears to vanish."
+  (cl-flet ((mk (s) (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source s
+                                      :outputs [] :metadata (make-hash-table))))
+    (let* ((c1 (mk "a = 1")) (c2 (mk "b = 2"))
+           (nb (make-emjupy-notebook :cells (vector c1 c2) :path "n.ipynb"))
+           (buf (generate-new-buffer "*insert*")))
+      (unwind-protect
+          (with-current-buffer buf
+            (emjupy-mode)
+            (setq emjupy--buffer-notebook nb)
+            (setf (emjupy-notebook-buffer nb) buf)
+            (emjupy--rerender-notebook)
+            (should (emjupy--overlays-sane-p))
+            ;; insert between the two
+            (goto-char (overlay-start (emjupy-cell-overlay c1)))
+            (emjupy-insert-cell-below)
+            (should (= (length (emjupy-notebook-cells nb)) 3))
+            (should (emjupy--overlays-sane-p))
+            ;; and syncing still works, so edits are not silently dropped
+            (should (emjupy--sync-all-cells))
+            ;; exactly their own text: an overlay resumed one character early
+            ;; leaves the separating newline inside the following cell, where
+            ;; it shows as a stray blank line at the top of its source
+            (should (equal (emjupy-cell-source c1) "a = 1"))
+            (should (equal (emjupy-cell-source c2) "b = 2"))
+            ;; the new cell carries no content of its own.  It is not
+            ;; compared to "" because a freshly rendered empty cell holds a
+            ;; newline either way -- incremental and full renders agree, and
+            ;; that is what matters here
+            (should (string-empty-p
+                     (string-trim (emjupy-cell-source
+                                   (aref (emjupy-notebook-cells nb) 1)))))
+            ;; at the end of the notebook too
+            (goto-char (point-max))
+            (emjupy-insert-cell-below)
+            (should (emjupy--overlays-sane-p)))
+        (let ((kill-buffer-query-functions nil)) (kill-buffer buf))))))
+
+(ert-deftest emjupy-test-socket-shadow-is-local ()
+  "When the WebSocket transport is used, the shadow file stays here.
+
+That transport never reads the file -- it is only something for Eglot to
+attach to -- so putting it on the remote host buys nothing and costs
+everything: building it over TRAMP is slow, can time out, and when it
+does the attach waiting on it never happens, which is reported as a
+socket that never opened."
+  (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb"
+                                  :kernel-cwd "/srv/elsewhere"
+                                  :server (make-emjupy-server :base-url "h" :token "t"))))
+    (let ((emjupy-shadow-host "/ssh:box:")
+          (emjupy-remote-root "/ssh:box:~/"))
+      ;; ordinarily the shadow follows the notebook, remote and all
+      (let ((emjupy--force-local-shadow nil))
+        (should (string-prefix-p "/ssh:" (emjupy--shadow-directory-for nb))))
+      ;; but not when the socket is what will attach to it
+      (let ((emjupy--force-local-shadow t))
+        (should-not (string-prefix-p "/ssh:" (emjupy--shadow-directory-for nb)))))))
+
+(ert-deftest emjupy-test-locality-warning-only-when-it-applies ()
+  "The message about the kernel running elsewhere waits until it is true.
+
+It fired whenever the WebSocket transport was not yet in charge, which
+is the case every time a notebook is opened -- so opening a second
+notebook announced that completions describe this machine and advised
+installing something already installed and about to be used."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table)))
+        (warned 0))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (cl-letf (((symbol-function 'emjupy--warn-shadow-is-local)
+                   (lambda (&rest _) (setq warned (1+ warned))))
+                  ((symbol-function 'emjupy--ensure-shadow-buffer) (lambda (&rest _) nil))
+                  ((symbol-function 'emjupy--lsp-in-charge-p) (lambda (&rest _) nil)))
+          ;; still connecting: nothing said
+          (let ((emjupy-lsp-enabled t))
+            (setq emjupy--shadow-blocked-until nil)
+            (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) t)))
+            (should (= warned 0)))
+          ;; the attempt has failed, so the shadow really is what answers
+          (let ((emjupy-lsp-enabled t))
+            (setq emjupy--shadow-blocked-until (time-add (current-time) 30))
+            (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) t)))
+            (should (= warned 1)))
+          ;; or the transport was never wanted
+          (let ((emjupy-lsp-enabled nil))
+            (setq emjupy--shadow-blocked-until nil)
+            (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) t)))
+            (should (= warned 2))))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

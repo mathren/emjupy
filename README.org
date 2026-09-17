@@ -1185,11 +1185,6 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - [ ] =M-.= returns no identifier at point on a custom function instead
   of jumping to the *.py file
-- creating a new cell with =C-c C-b= now throws =[emjupy] Buffer and
-  cells are out of step; not syncing.  Press C-c C-x C-l to redraw.=
-  and shows 2 upper cell boundaries. This later led to me losing a
-  cell when running.
-- connecting to a second notebook on the same kernel gives =[emjupy] The kernel runs elsewhere, so completions describe THIS machine.  Set emjupy-shadow-host, or install jupyter-lsp on the server.=
 - with 2 tunneled ssh connections (on two separate ports), the second
   one appears unreachable, with messages like =emjupy-login: JSON Parse Error on /api/kernels: (json-end-of-file 1 0 0)=
 ** Hold
