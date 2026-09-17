@@ -414,10 +414,32 @@ hand.  Reports what it found rather than failing quietly."
              (buffer (ignore-errors (emjupy--ensure-shadow-buffer nb))))
         (when (buffer-live-p buffer)
           (or (and want-socket
-                   (not (with-current-buffer buffer
-                          (and (fboundp 'eglot-current-server) (eglot-current-server))))
+                   (emjupy--claim-shadow-for-websocket buffer)
                    (emjupy--eglot-connect nb buffer))
               buffer))))))
+
+(defun emjupy--claim-shadow-for-websocket (buffer)
+  "Return non-nil if BUFFER is free for a WebSocket server to attach to.
+
+A plain Eglot server may already be there.  Anything that asks for
+completion or documentation builds the shadow buffer, and that path
+starts a server the ordinary way -- so on a notebook where the kernel
+reports its directory a moment later, the ordinary server wins the race
+and the WebSocket one is never tried.  The result is a language server
+reading a scratch file over TRAMP instead of the one beside the kernel,
+which is the arrangement the WebSocket transport exists to avoid.
+
+Skipping when any server is attached was therefore wrong: what matters
+is whether the attached one is ours.  One that is not is shut down."
+  (with-current-buffer buffer
+    (let ((server (and (fboundp 'eglot-current-server)
+                       (ignore-errors (eglot-current-server)))))
+      (cond
+       ((null server) t)
+       ((object-of-class-p server 'emjupy-eglot-server) nil)
+       (t
+        (ignore-errors (eglot-shutdown server))
+        t)))))
 
 (defun emjupy--shadow-file-path (nb)
   "Return a stable on-disk path for NB's shadow Python file.

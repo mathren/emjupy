@@ -4559,5 +4559,37 @@ never code."
         (should (eq (emjupy-cell-type md) 'markdown))
         (should (string-match-p "Title" (emjupy-cell-source md)))))))
 
+(ert-deftest emjupy-test-websocket-claims-the-shadow-from-plain-eglot ()
+  "A plain Eglot server does not keep the WebSocket one out.
+
+Anything asking for completion or documentation builds the shadow
+buffer, and that path starts a server the ordinary way.  On a notebook
+whose kernel reports its directory a moment later, the ordinary server
+therefore wins the race, and skipping when ANY server was attached meant
+the WebSocket one was never tried -- leaving a language server reading a
+scratch file over TRAMP, which is what the WebSocket transport exists to
+avoid.  What matters is whether the attached server is ours."
+  (let ((shut 0))
+    (with-temp-buffer
+      ;; nothing attached: free to claim
+      (cl-letf (((symbol-function 'eglot-current-server) (lambda (&rest _) nil)))
+        (should (emjupy--claim-shadow-for-websocket (current-buffer))))
+      ;; a plain server: shut down, then claimed
+      (cl-letf (((symbol-function 'eglot-current-server)
+                 (lambda (&rest _) 'a-plain-server))
+                ((symbol-function 'object-of-class-p) (lambda (&rest _) nil))
+                ((symbol-function 'eglot-shutdown)
+                 (lambda (&rest _) (setq shut (1+ shut)))))
+        (should (emjupy--claim-shadow-for-websocket (current-buffer)))
+        (should (= shut 1)))
+      ;; already ours: left alone, and not claimed again
+      (cl-letf (((symbol-function 'eglot-current-server)
+                 (lambda (&rest _) 'our-server))
+                ((symbol-function 'object-of-class-p) (lambda (&rest _) t))
+                ((symbol-function 'eglot-shutdown)
+                 (lambda (&rest _) (setq shut (1+ shut)))))
+        (should-not (emjupy--claim-shadow-for-websocket (current-buffer)))
+        (should (= shut 1))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
