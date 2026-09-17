@@ -517,7 +517,7 @@ is how emjupy learns a name nobody told it."
           (setq found (emjupy--ssh-destination line)))))))
 
 (defun emjupy--ssh-host-for (server)
-  "Return the host SERVER really runs on, or nil."
+  "Return the name of the host SERVER is on, or nil."
   (let ((configured (cond
                      ((stringp emjupy-ssh-host) emjupy-ssh-host)
                      ((consp emjupy-ssh-host)

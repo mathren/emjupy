@@ -2097,9 +2097,13 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
          (puthash def (1+ (gethash def by-command 0)) by-command)))
      emjupy-mode-map)
     (maphash (lambda (cmd n)
-               ;; execute-at-point is bound to Shift-RET in two spellings on
-               ;; purpose: terminals disagree about which one they send.
-               (when (and (> n 1) (not (eq cmd 'emjupy-execute-cell-at-point)))
+               ;; Two commands are bound twice on purpose, both because
+               ;; terminals and graphical frames disagree about which key
+               ;; they send: Shift-RET for execution, and DEL versus
+               ;; <backspace> for revealing a rendered formula.
+               (when (and (> n 1)
+                          (not (memq cmd '(emjupy-execute-cell-at-point
+                                           emjupy-latex-unrender-or-delete))))
                  (push (cons cmd n) dupes)))
              by-command)
     (should-not dupes)))
@@ -4486,6 +4490,74 @@ root while the machine is said once."
     (let ((emjupy-ssh-host nil))
       (cl-letf (((symbol-function 'emjupy--ssh-host-forwarding) (lambda (&rest _) nil)))
         (should-not (emjupy--tramp-root-for s1))))))
+
+(ert-deftest emjupy-test-shadow-works-without-a-language-server ()
+  "The shadow buffer is built and moved on a machine with no language server.
+
+The back-off exists for work that can hang -- a remote directory, a
+language server that will not start.  It briefly covered this whole
+function, so where no language server is installed the first attempt
+failed, set the back-off, and every later call returned early: the
+buffer was never built, and never moved when its path changed.  That is
+how the build broke, since a build machine has no pylsp."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                 :outputs [] :metadata (make-hash-table)))
+         (later (expand-file-name "emjupy-noserver-test" temporary-file-directory)))
+    (make-directory later t)
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (cl-letf (((symbol-function 'eglot--connect)
+                   (lambda (&rest _) (error "no language server here"))))
+          (let ((emjupy-shadow-directory nil) (emjupy-remote-root nil))
+            ;; built, despite the failed attach
+            (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))
+            (let ((first (buffer-local-value
+                          'buffer-file-name
+                          (emjupy-notebook-shadow-buffer emjupy--buffer-notebook))))
+              (should first)
+              ;; and still moved when the kernel reports a directory
+              (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) later)
+              (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))
+              (let ((second (buffer-local-value
+                             'buffer-file-name
+                             (emjupy-notebook-shadow-buffer emjupy--buffer-notebook))))
+                (should-not (equal first second))
+                (should (string-prefix-p (file-name-as-directory later) second))))))))))
+
+(ert-deftest emjupy-test-del-is-bound-both-ways ()
+  "Both spellings of the key reach the command.
+
+A graphical Emacs sends =<backspace>=, which normally translates to DEL --
+but a configuration binding =<backspace>= itself takes precedence, and the
+DEL binding is then never reached.  Testing the function rather than the
+key hid that."
+  (should (eq (lookup-key emjupy-mode-map (kbd "DEL"))
+              'emjupy-latex-unrender-or-delete))
+  (should (eq (lookup-key emjupy-mode-map (kbd "<backspace>"))
+              'emjupy-latex-unrender-or-delete)))
+
+(ert-deftest emjupy-test-executing-markdown-renders-it ()
+  "Running a markdown cell renders it; no code is sent to the kernel.
+
+Jupyter treats running a markdown cell as rendering it.  emjupy sent its
+prose to Python, which answered with a syntax error about text that was
+never code."
+  (let ((md (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                              :source "# Title\n\n$x^2$" :outputs []
+                              :metadata (make-hash-table)))
+        (sent nil))
+    (emjupy-test--with-notebook (vector md) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay md)))
+        (cl-letf (((symbol-function 'emjupy--make-execute-request)
+                   (lambda (&rest _) (setq sent t) (cons "id" "{}")))
+                  ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t)))
+          (emjupy-execute-cell-at-point))
+        (should-not sent)
+        ;; and the cell is untouched otherwise
+        (should (eq (emjupy-cell-type md) 'markdown))
+        (should (string-match-p "Title" (emjupy-cell-source md)))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

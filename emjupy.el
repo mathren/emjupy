@@ -217,7 +217,11 @@ the echo area, for pasting into a bug report."
     (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
     ;; Deleting against a rendered formula reveals it rather than removing
     ;; a character that cannot be seen.
-    (define-key map (kbd "DEL")     #'emjupy-latex-unrender-or-delete)
+    ;; Both spellings: a graphical Emacs sends <backspace>, and although it
+    ;; normally translates to DEL, a configuration that binds <backspace>
+    ;; itself takes precedence and the DEL binding is never reached.
+    (define-key map (kbd "DEL")         #'emjupy-latex-unrender-or-delete)
+    (define-key map (kbd "<backspace>") #'emjupy-latex-unrender-or-delete)
     (define-key map (kbd "C-$")     #'emjupy-show-traceback)
     (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
     (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)

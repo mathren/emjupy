@@ -31,6 +31,7 @@
 (require 'websocket)
 (require 'emjupy-core)
 (declare-function emjupy--refresh-cell-output "emjupy-render" (cell))
+(declare-function emjupy--render-markdown-cell "emjupy-render" (cell))
 (declare-function emjupy--overlays-sane-p "emjupy-cells" ())
 (declare-function emjupy--sync-all-cells "emjupy-cells" ())
 (declare-function emjupy--refresh-kernel-cwd "emjupy-eglot" (nb))
@@ -319,9 +320,16 @@ kernels never cross-talk."
           ;;          count)
 	  ))))))
 
-(defun emjupy-execute-cell-at-point ()
+(cl-defun emjupy-execute-cell-at-point ()
   "Sync cell code and send to this notebook's kernel for execution."
   (interactive)
+  ;; A markdown cell has nothing to run.  Jupyter treats running one as
+  ;; rendering it, and sending its prose to Python produces a syntax error
+  ;; from text that was never code.
+  (let ((here (emjupy--cell-at-point)))
+    (when (and here (eq (emjupy-cell-type here) 'markdown))
+      (emjupy--render-markdown-cell here)
+      (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
     (unless (emjupy--ws-live-p kernel)
       (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))

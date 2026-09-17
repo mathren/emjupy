@@ -156,8 +156,10 @@ becoming one; in both the change is bounded by the cells involved, so
 everything outside moves by a known amount and the undo history can be
 kept.
 
-OLD-CELLS must be adjacent and in buffer order.  Returns non-nil when it
-was done, nil when the caller should fall back to a full redraw."
+OLD-CELLS must be adjacent and in buffer order.  KNOWN-SANE skips the
+overlay check, for callers that have already added a cell which has no
+overlay yet.  Returns non-nil when it was done, nil when the caller
+should fall back to a full redraw."
   (let ((regions (delq nil (mapcar #'emjupy--cell-region old-cells))))
     (when (and regions
                (= (length regions) (length old-cells))

@@ -612,20 +612,33 @@ A kill whose region extends past the end of a cell is refused, but the
 text still reaches the kill ring: Emacs copies before deleting.  The
 error is therefore accompanied by a usable =C-y=.
 
-*** Smooth scrolling past figures
+*** Scrolling past figures
 
-A tall inline image is a single screen line, so line-based scrolling
-jumps over it in one step.  Emacs 29 and later can scroll by pixel
-instead:
+A tall inline image occupies a single screen line, so line-based
+scrolling passes over it in one step.  Two options:
 
 #+begin_src elisp
-(pixel-scroll-precision-mode 1)
+(pixel-scroll-precision-mode 1)          ; built in, Emacs 29 and later
 #+end_src
 
-emjupy does not turn this on: it is a global mode and changes scrolling
-in every buffer, which is the user's decision rather than a notebook's.
-=pixel-scroll-precision-interpolate-page= makes =C-v= and =M-v= glide as
-well.
+or the =ultra-scroll= package, which handles tall images and mixed line
+heights more smoothly and is recommended for notebooks containing
+figures:
+
+#+begin_src elisp
+(use-package ultra-scroll
+  :config (ultra-scroll-mode 1))
+#+end_src
+
+emjupy enables neither: both are global and affect every buffer.
+
+*** Inspecting the cell outlines
+
+The rule above an output box is an overlay string rather than buffer
+text, so point cannot be placed in it and \[describe-char] cannot be
+used on its columns.  =M-x emjupy-report-box-geometry= reports the width
+the rules are drawn at, the width of the rule in place, and the column
+the output background is aligned to.
 
 *** Undo
 
@@ -1170,50 +1183,9 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] =C-c C-c= in a markdown cell tries to run it as python, instead it should only try to render latex
-- [ ] =DEL= on the rendered latex does not work as desired (remove
-  image, place cursor at the end of formula)
 - [ ] =M-.= returns no identifier at point on a custom function instead
   of jumping to the *.py file
-- [ ] update the docs to recommend using =ultra-scroll= package for inline images scrolling
-- [ ] I cannot put the cursor at the end of the [Out: ] line to debug the overflowing background
 - with 2 tunneled ssh connections (on two separate ports), the second
   one appears unreachable, with messages like =emjupy-login: JSON Parse Error on /api/kernels: (json-end-of-file 1 0 0)=
-- [ ] Fix gitHub build error:
-  #+begin_src
-Ran 239 tests, 214 results as expected, 2 unexpected, 23 skipped (2026-09-15 15:29:45+0000, 0.785157 sec)
-
-2 unexpected results:
-   FAILED  emjupy-test-shadow-buffer-follows-a-changed-path
-   FAILED  emjupy-test-shadow-sync-to-disk-option
-
-23 skipped results:
-  SKIPPED  emjupy-int-dashboard-lists-kernels-and-notebooks
-  SKIPPED  emjupy-int-duplicate-figure-renders-once
-  SKIPPED  emjupy-int-eglot-completes-stdlib-in-notebook-buffer
-  SKIPPED  emjupy-int-eglot-eldoc-returns-hover-info
-  SKIPPED  emjupy-int-eglot-rename-works-from-a-notebook
-  SKIPPED  emjupy-int-eglot-works-for-second-notebook-in-session
-  SKIPPED  emjupy-int-image-output-is-never-a-blank-box
-  SKIPPED  emjupy-int-kernel-session-is-persistent
-  SKIPPED  emjupy-int-kernel-survives-websocket-reconnect
-  SKIPPED  emjupy-int-login-adopts-the-running-kernel
-  SKIPPED  emjupy-int-login-on-two-ports-gives-two-kernels
-  SKIPPED  emjupy-int-matplotlib-emits-png
-  SKIPPED  emjupy-int-python-execute-result
-  SKIPPED  emjupy-int-python-stdlib-and-multiline
-  SKIPPED  emjupy-int-python-traceback
-  SKIPPED  emjupy-int-restart-affects-only-its-own-notebook
-  SKIPPED  emjupy-int-saved-notebook-is-valid-nbformat
-  SKIPPED  emjupy-int-tunnel-rest-api
-  SKIPPED  emjupy-int-tunnel-websocket-and-execute
-  SKIPPED  emjupy-int-two-notebooks-have-independent-kernels
-  SKIPPED  emjupy-int-two-servers-on-separate-tunnels
-  SKIPPED  emjupy-int-xref-finds-definitions-across-cells
-  SKIPPED  emjupy-test-eglot-cross-cell-completion
-
-make: *** [Makefile:43: check] Error 1
-Error: Process completed with exit code 2.
-  #+end_src
 ** Hold
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

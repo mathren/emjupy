@@ -33,6 +33,7 @@
 ;; cycle never bites at load time.
 (declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
+(declare-function emjupy--sync-all-cells "emjupy-cells" ())
 (declare-function emjupy--protect-non-cell-regions "emjupy-cells" ())
 
 ;; --- Page colours ----------------------------------------------------------
@@ -703,6 +704,48 @@ N is passed on when this is an ordinary deletion."
         (goto-char end)
         (message "%s" (substitute-command-keys
                        "LaTeX source revealed; \\[emjupy-toggle-latex-preview] re-renders"))))))
+
+;;;###autoload
+(defun emjupy-report-box-geometry ()
+  "Report the widths the cell outlines are drawn at.
+
+The rule above an output box is an overlay string, not buffer text, so
+point cannot be placed in it and its columns cannot be inspected with
+\\[describe-char].  This reports them instead: the width the rules are
+drawn at, the width of the rule actually in place, and the column the
+output background is aligned to.  If the last exceeds the others, the
+background is wider than the box."
+  (interactive)
+  (let* ((cell (emjupy--cell-at-point))
+         (width (emjupy--box-width))
+         (ov (and cell (emjupy-cell-output-ov cell)))
+         (rule (and (overlayp ov) (overlay-get ov 'before-string)))
+         (rule-width (and rule (length (string-trim-right rule "\n"))))
+         (pad (and (overlayp ov)
+                   (save-excursion
+                     (goto-char (overlay-start ov))
+                     (let ((found nil))
+                       (while (and (not found) (< (point) (overlay-end ov)))
+                         (let ((d (get-text-property (point) 'display)))
+                           (when (and (consp d) (eq (car d) 'space))
+                             (setq found (plist-get (cdr d) :align-to))))
+                         (forward-char 1))
+                       found)))))
+    (message "box width %s | rule %s | output aligned to %s%s"
+             width (or rule-width "none") (or pad "none")
+             (if (and rule-width pad (> pad rule-width))
+                 (format "  -- background is %d column(s) wider" (- pad rule-width))
+               ""))))
+
+(defun emjupy--render-markdown-cell (cell)
+  "Re-render CELL, which is markdown, and its math.
+
+What running a markdown cell means in Jupyter: there is no code in it,
+so the result is the rendered form rather than anything from a kernel."
+  (emjupy--sync-all-cells)
+  (emjupy--rerender-notebook cell)
+  (message "[emjupy] Rendered markdown cell.")
+  cell)
 
 (defun emjupy-toggle-latex-preview ()
   "Turn LaTeX previews in markdown cells on or off, and redraw."

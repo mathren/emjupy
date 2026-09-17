@@ -482,10 +482,12 @@ attempt would repeat after every command anyway."
 Its content is refreshed to
 match the current cells, and make sure Eglot is (or becomes) attached --
 automatically, with nothing for the user to run."
-  (when (emjupy--shadow-blocked-p)
-    (cl-return-from emjupy--ensure-shadow-buffer
-      (and (buffer-live-p (emjupy-notebook-shadow-buffer nb))
-           (emjupy-notebook-shadow-buffer nb))))
+  ;; The back-off covers starting a language server, which is what can be
+  ;; slow or impossible.  It used to cover this whole function, so on a
+  ;; machine with no language server installed the first call would fail,
+  ;; set the back-off, and every later call would return early -- leaving
+  ;; the buffer unbuilt and, worse, never moved when its path changed.
+  ;; Building and refreshing the buffer is local work and always safe.
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (nb-buffer (or (emjupy-notebook-buffer nb) (current-buffer)))
          (content (emjupy--build-shadow-content nb))
@@ -517,6 +519,14 @@ automatically, with nothing for the user to run."
     ;; this function is reached from eldoc and completion -- after every
     ;; command.  One unreachable host would otherwise mean a blocking TRAMP
     ;; attempt per keystroke, which is indistinguishable from a hang.
+    ;; The back-off applies to remote work only.  Creating a local directory
+    ;; cannot hang, and blocking it meant that on a machine with no language
+    ;; server -- where the back-off is set by the failed attach -- the buffer
+    ;; was never built and never moved when its path changed.
+    (when (and (not (buffer-live-p buf))
+               (file-remote-p path)
+               (emjupy--shadow-blocked-p))
+      (cl-return-from emjupy--ensure-shadow-buffer nil))
     (unless (buffer-live-p buf)
       (condition-case err
           (with-timeout (emjupy-shadow-timeout
@@ -621,7 +631,11 @@ automatically, with nothing for the user to run."
             ;; Emacs to a crawl at exactly the moment the user is running
             ;; cells.  Same treatment as the file: a short leash, then leave
             ;; it alone for a while.
+            ;; The flag lives in the NOTEBOOK buffer -- that is where the
+            ;; next request comes from -- and this runs with the shadow
+            ;; buffer current, where it would always read nil.
             (unless (or emjupy--suppress-plain-eglot
+                        (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
                         (and (boundp 'eglot--managed-mode) eglot--managed-mode))
               (with-timeout (emjupy-shadow-timeout
                              (emjupy--shadow-block "language server did not start"
