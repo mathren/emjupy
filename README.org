@@ -1281,4 +1281,7 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] =tqdm= does not draw progress bar anymore (but shows timer)
+- [ ] after suspending the computer (disconnecting from remote), and
+  reopening it the notebook got scrambled. Fixable with =emjupy-re-draw=
+  but inelegant
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
