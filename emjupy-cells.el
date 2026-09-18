@@ -29,8 +29,96 @@
   "Read the live buffer text bounded by CELL's overlay into `emjupy-cell-source'."
   (when-let ((ov (emjupy-cell-overlay cell)))
     (when (overlay-buffer ov)
-      (let ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
-        (setf (emjupy-cell-source cell) (string-trim-right text "\n"))))))
+      (let* ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
+             (trimmed (string-trim-right text "\n")))
+        ;; An empty cell is drawn with a newline so that it occupies a line
+        ;; and can be typed into.  Trimming one newline leaves that line in
+        ;; the source, so reading the buffer back turned an empty cell into
+        ;; one holding a newline -- a change to the notebook that nobody
+        ;; made, on the first sync after opening it.
+        (setf (emjupy-cell-source cell)
+              (if (string-empty-p (string-trim-right trimmed "[\n]+")) "" trimmed))))))
+
+(defun emjupy--check-invariants ()
+  "Return a list of ways this buffer and its cells disagree, or nil.
+
+`emjupy--overlays-sane-p' answers whether anything is wrong;  this says
+what, which is the difference between a test that fails and a test that
+tells you why.  The invariants:
+
+- every cell has a live overlay in this buffer;
+- the overlays run in cell order and do not overlap;
+- an output box, where there is one, begins where its source ends;
+- nothing but the separating newline sits between one cell and the next;
+- the buffer text of each cell matches that cell's source, so a sync
+  would be a no-op.
+
+The last is the one that matters most: when it fails, what the user sees
+and what would be saved have come apart."
+  (let ((cells (append (or (and emjupy--buffer-notebook
+                                (emjupy-notebook-cells emjupy--buffer-notebook))
+                           [])
+                       nil))
+        (problems nil)
+        (index -1)
+        (prev-end nil))
+    (dolist (cell cells)
+      (setq index (1+ index))
+      (let ((ov (emjupy-cell-overlay cell))
+            (out (emjupy-cell-output-ov cell)))
+        (cond
+         ((not (overlayp ov))
+          (push (format "cell %d has no overlay" index) problems))
+         ((not (eq (overlay-buffer ov) (current-buffer)))
+          (push (format "cell %d's overlay is in another buffer" index) problems))
+         (t
+          (when (> (overlay-start ov) (overlay-end ov))
+            (push (format "cell %d's overlay is inside out" index) problems))
+          (when (> (overlay-end ov) (point-max))
+            (push (format "cell %d's overlay runs past the buffer" index) problems))
+          (when (and prev-end (< (overlay-start ov) prev-end))
+            (push (format "cell %d overlaps the cell before it" index) problems))
+          ;; The text really there, against the text we would save.  Trailing
+          ;; blank lines are not compared: an empty cell is drawn with a
+          ;; newline so that it occupies a line and can be typed into, and
+          ;; that line is display, not content.
+          (let ((shown (string-trim-right
+                        (buffer-substring-no-properties
+                         (overlay-start ov) (overlay-end ov))
+                        "[\n]+"))
+                (stored (string-trim-right (or (emjupy-cell-source cell) "")
+                                           "[\n]+")))
+            (unless (equal shown stored)
+              (push (format "cell %d shows %S but holds %S" index shown stored)
+                    problems)))
+          (when (overlayp out)
+            (if (not (eq (overlay-buffer out) (current-buffer)))
+                (push (format "cell %d's output box is in another buffer" index)
+                      problems)
+              (unless (= (overlay-start out) (overlay-end ov))
+                (push (format "cell %d's output box does not follow its source" index)
+                      problems))))
+          (setq prev-end (if (overlayp out)
+                             (max (overlay-end ov) (overlay-end out))
+                           (overlay-end ov)))))))
+    (nreverse problems)))
+
+;;;###autoload
+(defun emjupy-debug-check-invariants ()
+  "Report whether this buffer and its cells still agree.
+
+Useful when something looks wrong and it is not clear whether the
+display or the notebook is at fault.  Tests call it after every
+operation."
+  (interactive)
+  (let ((problems (emjupy--check-invariants)))
+    (if problems
+        (message "[emjupy] %d problem%s: %s"
+                 (length problems)
+                 (if (= (length problems) 1) "" "s")
+                 (string-join problems "; "))
+      (message "[emjupy] Buffer and cells agree."))
+    problems))
 
 (defun emjupy--overlays-sane-p ()
   "Return non-nil if this buffer's cell overlays still describe the cells.
@@ -170,7 +258,8 @@ should fall back to a full redraw."
                (or known-sane (emjupy--overlays-sane-p)))
       (let ((start (apply #'min (mapcar #'car regions)))
             (end (apply #'max (mapcar #'cdr regions)))
-            (new-end nil))
+            (new-end nil)
+            (following-after nil))
         (let ((inhibit-read-only t)
               (buffer-undo-list t))
           (dolist (cell old-cells)
@@ -180,12 +269,33 @@ should fall back to a full redraw."
               (delete-overlay (emjupy-cell-output-ov cell)))
             (setf (emjupy-cell-overlay cell) nil)
             (setf (emjupy-cell-output-ov cell) nil))
+          ;; The cell that follows may start exactly where this region ends,
+          ;; in which case the text about to be inserted is taken into its
+          ;; overlay and the two come to share a region -- the same fault
+          ;; that inserting a cell had.  Its bounds are noted here and
+          ;; restored afterwards.
+          (setq following-after
+                (let ((cells (and emjupy--buffer-notebook
+                                  (append (emjupy-notebook-cells emjupy--buffer-notebook)
+                                          nil))))
+                  (cl-find-if (lambda (cell)
+                                (let ((ov (emjupy-cell-overlay cell)))
+                                  (and (overlayp ov)
+                                       (eq (overlay-buffer ov) (current-buffer))
+                                       (>= (overlay-start ov) end))))
+                              cells)))
           (delete-region start end)
           (save-excursion
             (goto-char start)
             (dolist (cell new-cells)
               (emjupy--render-cell cell))
             (setq new-end (point)))
+          ;; Put it back where it belongs if it swallowed the new text.
+          (let ((ov (and following-after (emjupy-cell-overlay following-after))))
+            (when (and (overlayp ov)
+                       (eq (overlay-buffer ov) (current-buffer))
+                       (< (overlay-start ov) new-end))
+              (move-overlay ov new-end (max new-end (overlay-end ov)))))
           (emjupy--protect-non-cell-regions))
         (emjupy--undo-adjust start end (- new-end end))
         t))))

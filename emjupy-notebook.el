@@ -505,7 +505,7 @@ tedious to work out but not ambiguous."
 The tunnel is invisible in the HTTP conversation, but it is a process on
 this machine and its command line says where it goes.  Reading it back
 is how emjupy learns a name nobody told it."
-  (when (and port (executable-find "ps"))
+  (when (and port emjupy-probe-environment (executable-find "ps"))
     (let ((lines (split-string
                   (shell-command-to-string "ps -eo args= 2>/dev/null") "\n" t))
           (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))

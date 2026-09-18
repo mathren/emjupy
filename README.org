@@ -197,6 +197,37 @@ Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
 =emjupy--rerender-notebook=) are runtime-only and marked with
 =declare-function=.
 
+** Submitting to MELPA
+
+The recipe must list the files explicitly.  A recipe without =:files=
+takes every =.el= in the repository, which here would ship the tests to
+users and include =emjupy-run-tests.el=, a script with no =provide= form
+that =package-lint= rejects.
+
+The recipe used is kept at =.github/melpa-recipe=:
+
+#+begin_src elisp
+(emjupy :fetcher github
+        :repo "mathren/emjupy"
+        :files ("emjupy.el" "emjupy-core.el" "emjupy-http.el"
+                "emjupy-render.el" "emjupy-cells.el" "emjupy-kernel.el"
+                "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-notebook.el"))
+#+end_src
+
+It matches what =make package= builds, so the tar produced locally is the
+package MELPA would produce.
+
+Before submitting, check all four:
+
+#+begin_src bash
+make check                 # tests
+make package               # builds the tar
+#+end_src
+
+and, with =package-lint= available, that it reports nothing for the nine
+files above, and that the tar installs into an empty
+=package-user-dir= and =M-x emjupy-mode= works there.
+
 ** Makefile targets
 
 | Target       | Effect                                                  |
@@ -276,6 +307,72 @@ none is found.
 [[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
 need to share code with non-emacs users, so =ob-jupyter= isn't an
 option, and =emacs-jupyter= doesn't seem the right tool for me.
+
+** Test hygiene
+
+A unit test must give the same answer on every machine.  Two things in
+emjupy make that easy to lose: the host of an SSH tunnel is found by
+reading the process list, and whether LaTeX can be rendered is decided
+by looking for the programs that render it.  Both are correct in use and
+wrong in a test.
+
+=emjupy-probe-environment= governs both, and the unit test runner binds it
+to nil.  A test that needs the detection tested -- as opposed to merely
+used -- binds it back to t and stubs what it examines.
+
+This is not hypothetical: two tests asking what a tunnelled server
+resolves to passed here and failed on a machine that happened to be
+forwarding that port, and a LaTeX test depended on whether LaTeX was
+installed.
+
+Other rules worth following, each learned from a test that passed while
+the thing it covered was broken:
+
+- Test the key binding, not only the function behind it.  A command
+  bound to =DEL= alone is not reached in a graphical Emacs that sends
+  =<backspace>=.
+- Do not wrap the action under test in =ignore-errors=.  A test that
+  guards against remote connections passed because the connection it
+  should have caught raised an error which was then swallowed.
+- When a stub replaces a function used by Emacs itself, call through for
+  the cases the test is not about.
+- Prefer asserting an invariant over asserting a mechanism; mechanisms
+  differ between Emacs versions, invariants do not.
+
+** Invariants
+
+=M-x emjupy-debug-check-invariants= reports how a buffer and its cells
+disagree: which cell, and whether its overlay is missing, overlapping,
+out of order, detached from its output box, or showing text the cell
+does not hold.  The last means what is displayed and what would be saved
+have come apart.
+
+Tests call it after every operation.  It has caught overlays left
+overlapping after a split, and a sync that turned an empty cell into one
+containing a newline.
+
+** Performance
+
+Three tests guard against regressions rather than measuring speed:
+
+- work done after every command does not grow with the notebook;
+- redrawing output does not grow with the notebook, since only the cell
+  concerned is redrawn;
+- nothing on a path that runs after a command touches a remote file.
+
+The last matters most.  A remote operation costs a round trip, TRAMP
+blocks Emacs while it waits, and anything on the per-command path pays
+that on every keystroke.  The test asserts the absence of such calls
+rather than a duration, since a duration would depend on a network.
+
+Measured on a twelve-cell notebook with figures, over the WebSocket
+transport:
+
+| Operation     | Time   |
+|---------------+--------|
+| cursor motion | 0.0 ms |
+| completion    | 0.1 ms |
+| eldoc         | 1.2 ms |
 
 ** =emjupy= design
 
@@ -1183,9 +1280,5 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] =M-.= returns no identifier at point on a custom function instead
-  of jumping to the *.py file
-- with 2 tunneled ssh connections (on two separate ports), the second
-  one appears unreachable, with messages like =emjupy-login: JSON Parse Error on /api/kernels: (json-end-of-file 1 0 0)=
-** Hold
+- [ ] =tqdm= does not draw progress bar anymore (but shows timer)
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

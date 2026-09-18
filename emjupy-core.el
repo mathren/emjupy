@@ -55,6 +55,19 @@ instead; this is only the fallback for things like `emjupy-login'.")
 (defvar-local emjupy--buffer-notebook nil
   "The `emjupy-notebook' struct associated with the current buffer.")
 
+(defvar emjupy-probe-environment t
+  "When non-nil, emjupy may look at the machine it is running on.
+
+Two things depend on it: finding the host of an SSH tunnel by reading
+the process list, and deciding whether LaTeX can be rendered by looking
+for the programs that do it.  Both are right in use and wrong in a test,
+where they make the result depend on what the machine happens to have --
+a test asking what a tunnelled server resolves to found the tunnels of
+whichever machine ran it, and passed or failed accordingly.
+
+The unit tests bind this to nil, so a test that depends on the machine
+gets a definite answer rather than a local one.")
+
 (cl-defstruct emjupy-server
   host port token base-url
   ;; Absolute path of the directory this server serves, worked out from a

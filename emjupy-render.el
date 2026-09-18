@@ -602,9 +602,11 @@ the whole fragment with its image."
 (defun emjupy--latex-available-p ()
   "Return the backend that can actually render math here, or nil."
   (pcase emjupy-latex-backend
-    ('math-preview (and (executable-find "math-preview") 'math-preview))
-    ('org (and (executable-find "latex") 'org))
-    (_ (cond ((executable-find "latex") 'org)
+    ('math-preview (and emjupy-probe-environment
+                        (executable-find "math-preview") 'math-preview))
+    ('org (and emjupy-probe-environment (executable-find "latex") 'org))
+    (_ (cond ((not emjupy-probe-environment) nil)
+             ((executable-find "latex") 'org)
              ((executable-find "math-preview") 'math-preview)
              (t nil)))))
 

@@ -75,6 +75,7 @@
 (declare-function emjupy--shadow-cell-marker "emjupy-eglot" (id))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
 (declare-function emjupy--remote-root-for "emjupy-notebook" (server))
+(declare-function emjupy--shadow-blocked-p "emjupy-eglot" ())
 
 (defcustom emjupy-lsp-enabled t
   "When non-nil, use the language server run by `jupyter-lsp\='.
@@ -261,45 +262,55 @@ and the answer collected on the first request that needs it."
 
 ;;;###autoload
 (defun emjupy-lsp-diagnose ()
-  "Report which language-server transport this notebook is using, and why.
+  "Report which language server this notebook is using, and how it got there.
 
-Says what was tried and what happened at each step, because from the
-outside a server that is not reached looks identical to one that has
-nothing to say."
+Reads the server Eglot has attached to the shadow buffer, which is where
+the answer lives.  It used to read a slot filled in by an earlier,
+hand-written client; once that client was replaced the slot stayed
+empty, and this reported a socket that had never opened however well the
+socket was working."
   (interactive)
   (let* ((nb (emjupy--notebook))
          (server (emjupy-notebook-server nb))
-         (session (emjupy-notebook-lsp nb))
+         (shadow (emjupy-notebook-shadow-buffer nb))
+         (attached (and (buffer-live-p shadow)
+                        (with-current-buffer shadow
+                          (and (fboundp 'eglot-current-server)
+                               (ignore-errors (eglot-current-server))))))
+         (kind (cond
+                ((null attached) "none")
+                ((ignore-errors (object-of-class-p attached 'emjupy-eglot-server))
+                 "over the Jupyter WebSocket")
+                (t "a local process")))
+         (alive (and attached (ignore-errors (jsonrpc-running-p attached))))
          (lines
           (list
-           (format "notebook      %s" (or (emjupy-notebook-path nb) "?"))
-           (format "server        %s" (if server (emjupy--server-label server) "none"))
-           (format "server root   %s" (or (and server (emjupy--remote-root-for server))
-                                          "unknown -- no kernel has reported in"))
-           (format "kernel cwd    %s" (or (emjupy-notebook-kernel-cwd nb)
-                                          "unknown -- kernel has not answered"))
-           (format "lsp enabled   %s" (if emjupy-lsp-enabled "yes" "no"))
-           (format "lsp url       %s" (if server (emjupy--lsp-url server) "n/a"))
-           (format "socket        %s" (cond ((null session) "never opened")
-                                            ((emjupy--lsp-live-p session) "open")
-                                            (t "closed")))
-           (format "handshake     %s" (cond ((null session) "not started")
-                                            ((emjupy-lsp-ready session) "done")
-                                            (t "sent, no reply yet")))
-           (format "answered      %s" (if (and session (emjupy-lsp-warmed session))
-                                          "yes" "not yet"))
-           (format "shadow file   %s"
-                   (let ((buf (emjupy-notebook-shadow-buffer nb)))
-                     (if (buffer-live-p buf)
-                         (or (buffer-local-value 'buffer-file-name buf) "unnamed")
-                       "none -- good, if the socket is open"))))))
+           (format "notebook        %s" (or (emjupy-notebook-path nb) "?"))
+           (format "server          %s" (if server (emjupy--server-label server) "none"))
+           (format "server root     %s" (or (and server (emjupy--remote-root-for server))
+                                            "unknown -- no kernel has reported in"))
+           (format "kernel cwd      %s" (or (emjupy-notebook-kernel-cwd nb)
+                                            "unknown -- kernel has not answered"))
+           (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
+           (format "lsp url         %s" (if server (emjupy--lsp-url server) "n/a"))
+           (format "shadow file     %s"
+                   (if (buffer-live-p shadow)
+                       (or (buffer-local-value 'buffer-file-name shadow) "unnamed")
+                     "not created"))
+           (format "language server %s" kind)
+           (format "connection      %s"
+                   (cond ((null attached) "not attached")
+                         (alive "running")
+                         (t "attached but not running")))
+           (format "back-off        %s"
+                   (if (ignore-errors (emjupy--shadow-blocked-p)) "in effect" "none")))))
     (with-current-buffer (get-buffer-create "*emjupy language server*")
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (string-join lines "\n") "\n\n")
-        (insert "If the socket never opened, ask the server directly:\n")
-        (insert (format "  curl -s '%s://%s/lsp/status?token=TOKEN'\n"
-                        "http" (emjupy-server-base-url server)))
+        (insert "If no language server is attached, ask the Jupyter server directly:\n")
+        (insert (format "  curl -s 'http://%s/lsp/status?token=TOKEN'\n"
+                        (and server (emjupy-server-base-url server))))
         (insert "  404 no jupyter-lsp   403 wrong token   sessions {} no language server\n")
         (goto-char (point-min)))
       (setq buffer-read-only t)

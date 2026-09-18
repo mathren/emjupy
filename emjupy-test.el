@@ -2176,8 +2176,13 @@ in a string is not a formula."
 
 (ert-deftest emjupy-test-latex-backend-detection ()
   "`auto\' prefers org, which needs no Emacs package beyond what ships
-with Emacs; math-preview is the fallback."
-  (cl-letf (((symbol-function 'executable-find)
+with Emacs; math-preview is the fallback.
+
+Probing is enabled deliberately: this test is about the detection
+itself, and `executable-find\' is stubbed so the answer still does not
+depend on what this machine has installed."
+  (let ((emjupy-probe-environment t))
+   (cl-letf (((symbol-function 'executable-find)
              (lambda (p) (member p '("latex" "math-preview")))))
     (let ((emjupy-latex-backend 'auto))
       (should (eq (emjupy--latex-available-p) 'org))))
@@ -2187,7 +2192,11 @@ with Emacs; math-preview is the fallback."
       (should (eq (emjupy--latex-available-p) 'math-preview))))
   (cl-letf (((symbol-function 'executable-find) (lambda (_p) nil)))
     (let ((emjupy-latex-backend 'auto))
-      (should-not (emjupy--latex-available-p)))))
+      (should-not (emjupy--latex-available-p))))
+   ;; and with probing off nothing is detected, whatever is installed
+   (let ((emjupy-probe-environment nil)
+         (emjupy-latex-backend 'auto))
+     (should-not (emjupy--latex-available-p)))))
 
 (ert-deftest emjupy-test-dashboard-groups-notebooks-above-kernels ()
   "Rows are grouped, not interleaved: directories, notebooks, files, then
@@ -4696,6 +4705,427 @@ installing something already installed and about to be used."
             (setq emjupy--shadow-blocked-until nil)
             (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) t)))
             (should (= warned 2))))))))
+
+(ert-deftest emjupy-test-diagnose-reads-the-attached-server ()
+  "The report describes the server Eglot has attached, not a stale slot.
+
+It read a field filled in by an earlier hand-written client.  When that
+client was replaced the field stayed empty, so the report said the
+socket had never opened however well the socket was working."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "h:1" :token "t"))
+        (let ((shadow (generate-new-buffer " *shadow*")))
+          (setf (emjupy-notebook-shadow-buffer emjupy--buffer-notebook) shadow)
+          (unwind-protect
+              (cl-letf (((symbol-function 'eglot-current-server) (lambda (&rest _) 'a-server))
+                        ((symbol-function 'object-of-class-p) (lambda (&rest _) t))
+                        ((symbol-function 'jsonrpc-running-p) (lambda (&rest _) t))
+                        ((symbol-function 'display-buffer) #'ignore))
+                (emjupy-lsp-diagnose)
+                (with-current-buffer "*emjupy language server*"
+                  (should (string-match-p "over the Jupyter WebSocket" (buffer-string)))
+                  (should (string-match-p "connection      running" (buffer-string)))
+                  (should-not (string-match-p "never opened" (buffer-string)))))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer shadow))))))))
+
+;;; Invariants ---------------------------------------------------------------
+
+(defun emjupy-test--cell-like (type source &optional outputs exec metadata)
+  "Return a cell of TYPE holding SOURCE, OUTPUTS, EXEC and METADATA."
+  (make-emjupy-cell :id (emjupy--new-cell-id) :type type :source source
+                    :outputs (or outputs [])
+                    :exec-count exec
+                    :metadata (or metadata (make-hash-table :test 'equal))))
+
+(defun emjupy-test--stream-output (text)
+  "Return a stream output carrying TEXT."
+  (let ((o (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" o)
+    (puthash "name" "stdout" o)
+    (puthash "text" text o)
+    o))
+
+(defun emjupy-test--assert-invariants (label)
+  "Fail with LABEL if this buffer and its cells disagree."
+  (let ((problems (emjupy--check-invariants)))
+    (should (equal (cons label problems) (cons label nil)))))
+
+(ert-deftest emjupy-test-render-round-trip-preserves-everything ()
+  "Rendering and reading back must change nothing about the cells.
+
+The property the whole package rests on: what is drawn is what is held,
+so what is saved is what was seen.  Checked over the kinds of cell that
+differ in how they render -- empty, multiline, unicode, markdown, one
+with output and an execution count, one carrying metadata nothing else
+looks at."
+  (let* ((meta (make-hash-table :test 'equal))
+         (cells (progn
+                  (puthash "scrolled" t meta)
+                  (vector
+                   (emjupy-test--cell-like 'code "a = 1")
+                   (emjupy-test--cell-like 'code "")
+                   (emjupy-test--cell-like 'code "def f(x):\n    return x + 1\n")
+                   (emjupy-test--cell-like 'markdown "# Title\n\nsome *prose*")
+                   (emjupy-test--cell-like 'code "s = \"héllo — ünicode\"")
+                   (emjupy-test--cell-like
+                    'code "print('hi')"
+                    (vector (emjupy-test--stream-output "hi\n")) 7)
+                   (emjupy-test--cell-like 'code "m = 1" nil nil meta))))
+         (snapshot (lambda (list-of-cells)
+                     (mapcar (lambda (c)
+                               (list (emjupy-cell-type c)
+                                     ;; trailing newlines are normalised on
+                                     ;; the way in, so they are not part of
+                                     ;; what must be preserved
+                                     (string-trim-right (or (emjupy-cell-source c) "")
+                                                        "[\n]+")
+                                     (length (emjupy-cell-outputs c))
+                                     (emjupy-cell-exec-count c)
+                                     (emjupy-cell-metadata c)))
+                             list-of-cells)))
+         (before (funcall snapshot (append cells nil))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (emjupy-test--assert-invariants "after render")
+        ;; reading the buffer back must not alter anything
+        (should (emjupy--sync-all-cells))
+        (let ((after (funcall snapshot (append (emjupy-notebook-cells nb) nil))))
+          (should (= (length after) (length before)))
+          (cl-loop for b in before
+                   for a in after
+                   for i from 0
+                   do (should (equal (cons i a) (cons i b)))))
+        ;; and again after a redraw, which is where drift would show: a
+        ;; second cycle must change nothing at all, or repeated opening and
+        ;; saving would keep rewriting the notebook
+        (let ((once (funcall snapshot (append (emjupy-notebook-cells nb) nil))))
+          (emjupy--rerender-notebook)
+          (emjupy-test--assert-invariants "after redraw")
+          (should (emjupy--sync-all-cells))
+          (should (equal (funcall snapshot (append (emjupy-notebook-cells nb) nil))
+                         once)))))))
+
+(ert-deftest emjupy-test-invariants-hold-across-every-operation ()
+  "Buffer and cells agree after each structural operation in turn.
+
+Run as a sequence rather than separately: the failures this is meant to
+catch -- an overlay left overlapping, a sync quietly refusing -- appear
+when operations follow one another, not in isolation."
+  (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                       (emjupy-test--cell-like 'code "b = 2\nc = 3")
+                       (emjupy-test--cell-like 'code "d = 4"))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (emjupy-test--assert-invariants "start")
+        ;; insert
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (emjupy-insert-cell-below)
+        (emjupy-test--assert-invariants "after insert")
+        ;; type into a cell
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (end-of-line)
+        (insert " + 9")
+        (should (emjupy--sync-all-cells))
+        (emjupy-test--assert-invariants "after typing")
+        ;; split
+        (let ((multi (cl-find-if (lambda (c) (string-match-p "\n" (emjupy-cell-source c)))
+                                 (append (emjupy-notebook-cells nb) nil))))
+          (when multi
+            (goto-char (overlay-start (emjupy-cell-overlay multi)))
+            (forward-line 1)
+            (emjupy-split-cell)
+            (emjupy-test--assert-invariants "after split")))
+        ;; merge
+        (goto-char (overlay-start (emjupy-cell-overlay
+                                   (aref (emjupy-notebook-cells nb)
+                                         (1- (length (emjupy-notebook-cells nb)))))))
+        (emjupy-join-cell-above)
+        (emjupy-test--assert-invariants "after merge")
+        ;; output arriving
+        (emjupy--append-output-to-cell (aref (emjupy-notebook-cells nb) 0)
+                                       (emjupy-test--stream-output "out\n") nb)
+        (emjupy-flush-output buf)
+        (emjupy-test--assert-invariants "after output")
+        ;; clearing it again
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (emjupy-clear-cell-output)
+        (emjupy-test--assert-invariants "after clearing output")
+        ;; delete
+        (goto-char (overlay-start (emjupy-cell-overlay
+                                   (aref (emjupy-notebook-cells nb) 1))))
+        (emjupy-delete-cell)
+        (emjupy-test--assert-invariants "after delete")
+        ;; and a full redraw on top of all that
+        (emjupy--rerender-notebook)
+        (emjupy-test--assert-invariants "after redraw")))))
+
+;;; Undo matrix ---------------------------------------------------------------
+
+(defun emjupy-test--undo-case (operation)
+  "Type into the first cell, run OPERATION, and return whether undo works.
+
+Returns a plist: :undone whether the typing was taken back, :intact
+whether the first cell survived, :problems any invariant violations."
+  (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                       (emjupy-test--cell-like 'code "b = 2\nc = 3")
+                       (emjupy-test--cell-like 'code "d = 4")))
+        (result nil))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        (funcall operation nb buf)
+        (goto-char (point-min))
+        (let ((worked (condition-case nil (progn (undo) t) (error nil))))
+          ;; Undo changes the buffer; the cells catch up at the next sync,
+          ;; which every path that reads them -- saving included -- performs
+          ;; first.  Syncing here is what a user's next action would do.
+          (emjupy--sync-all-cells)
+          (setq result
+                (list :worked worked
+                      :undone (not (string-match-p "\\+ 7" (buffer-string)))
+                      :intact (and (string-match-p "a = 1" (buffer-string)) t)
+                      :saved-undone (not (string-match-p
+                                          "\\+ 7"
+                                          (mapconcat (lambda (c)
+                                                       (or (emjupy-cell-source c) ""))
+                                                     (append (emjupy-notebook-cells nb) nil)
+                                                     "\n")))
+                      :problems (emjupy--check-invariants))))))
+    result))
+
+(ert-deftest emjupy-test-undo-matrix ()
+  "Undo survives every operation that redraws part of the buffer.
+
+Each case types into the first cell, does something elsewhere, then
+undoes.  A full rebuild cannot keep the history -- undo entries hold
+plain buffer positions and a rebuild moves all of them -- so an
+operation appearing here is a claim that it does not rebuild."
+  (dolist (case
+           (list
+            (cons "output arrives"
+                  (lambda (nb buf)
+                    (emjupy--append-output-to-cell
+                     (aref (emjupy-notebook-cells nb) 2)
+                     (emjupy-test--stream-output "out\n") nb)
+                    (emjupy-flush-output buf)))
+            (cons "insert a cell"
+                  (lambda (nb _buf)
+                    (goto-char (overlay-start
+                                (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 2))))
+                    (emjupy-insert-cell-below)))
+            (cons "delete a cell"
+                  (lambda (nb _buf)
+                    (goto-char (overlay-start
+                                (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 2))))
+                    (emjupy-delete-cell)))
+            (cons "split a cell"
+                  (lambda (nb _buf)
+                    (goto-char (overlay-start
+                                (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 1))))
+                    (forward-line 1)
+                    (emjupy-split-cell)))
+            (cons "merge cells"
+                  (lambda (nb _buf)
+                    (goto-char (overlay-start
+                                (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 2))))
+                    (emjupy-join-cell-above)))
+            (cons "clear output"
+                  (lambda (nb buf)
+                    (let ((cell (aref (emjupy-notebook-cells nb) 2)))
+                      (emjupy--append-output-to-cell
+                       cell (emjupy-test--stream-output "out\n") nb)
+                      (emjupy-flush-output buf)
+                      (goto-char (overlay-start (emjupy-cell-overlay cell)))
+                      (emjupy-clear-cell-output))))
+            (cons "two operations in a row"
+                  (lambda (nb _buf)
+                    (goto-char (overlay-start
+                                (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 2))))
+                    (emjupy-insert-cell-below)
+                    (goto-char (overlay-start
+                                (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 1))))
+                    (emjupy-delete-cell)))))
+    (let* ((label (car case))
+           (r (emjupy-test--undo-case (cdr case))))
+      (should (equal (cons label (plist-get r :worked)) (cons label t)))
+      (should (equal (cons label (plist-get r :undone)) (cons label t)))
+      (should (equal (cons label (plist-get r :intact)) (cons label t)))
+      ;; and what would be saved matches what is shown
+      (should (equal (cons label (plist-get r :saved-undone)) (cons label t)))
+      (should (equal (cons label (plist-get r :problems)) (cons label nil))))))
+
+(ert-deftest emjupy-test-rendering-is-not-an-undo-step ()
+  "Redrawing never appears in the undo history as something to take back.
+
+A redraw erases the buffer and rebuilds it.  Recorded, one such entry
+deleted every cell after the one being edited, which is why rendering is
+kept out of the history entirely."
+  (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                       (emjupy-test--cell-like 'code "b = 2"))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; a redraw on its own records nothing
+        (emjupy--rerender-notebook)
+        (should (null buffer-undo-list))
+        ;; nor does re-aligning the outlines
+        (let ((emjupy-box-width 60))
+          (emjupy--refresh-box-rules t))
+        (should (null buffer-undo-list))
+        ;; a real edit does
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (end-of-line)
+        (insert "!")
+        (should buffer-undo-list)))))
+
+;;; Performance --------------------------------------------------------------
+;;
+;; These guard against regressions, not absolute speed.  The thresholds are
+;; far above what the operations cost here -- a loaded machine should not
+;; turn them red -- but well below the cost of the mistakes they exist to
+;; catch, which have been order-of-magnitude ones: work proportional to the
+;; whole notebook where it should be proportional to one cell, or a remote
+;; round trip on a path that runs after every keystroke.
+
+(defun emjupy-test--big-notebook (cells-count output-lines)
+  "Return CELLS-COUNT code cells, each with OUTPUT-LINES of output."
+  (vconcat
+   (cl-loop for i from 0 below cells-count
+            collect (let ((cell (emjupy-test--cell-like
+                                 'code
+                                 (format "def f%d(a):\n    return a + %d" i i))))
+                      (when (> output-lines 0)
+                        (setf (emjupy-cell-outputs cell)
+                              (vector (emjupy-test--stream-output
+                                       (mapconcat (lambda (n) (format "line %d" n))
+                                                  (number-sequence 1 output-lines)
+                                                  "\n")))))
+                      cell))))
+
+(defmacro emjupy-test--elapsed (&rest body)
+  "Return the seconds BODY took."
+  (declare (indent 0))
+  `(let ((start (float-time)))
+     ,@body
+     (- (float-time) start)))
+
+(ert-deftest emjupy-test-per-command-work-is-small ()
+  "What runs after every command must not depend on the notebook's size.
+
+eldoc and completion run on every keystroke.  Anything proportional to
+the whole notebook there is felt directly, and anything that touches the
+network is felt tenfold."
+  (let ((cells (emjupy-test--big-notebook 60 20)))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 30))))
+        ;; no language server in a unit test, so this measures emjupy's own
+        ;; share: locating the cell, syncing, and reaching the delegate
+        (let ((per-call (/ (emjupy-test--elapsed
+                             (dotimes (_ 50)
+                               (ignore-errors (emjupy--cell-shadow-delegate
+                                               (lambda (&rest _) nil)))))
+                           50.0)))
+          (should (< per-call 0.05)))
+        (let ((per-move (/ (emjupy-test--elapsed
+                             (dotimes (_ 200)
+                               (run-hooks 'pre-command-hook)
+                               (ignore-errors (forward-line 1))))
+                           200.0)))
+          (should (< per-move 0.01)))))))
+
+(ert-deftest emjupy-test-output-redraw-does-not-scale-with-the-notebook ()
+  "Output arriving redraws its own cell, so its cost does not grow with
+the notebook.  Rebuilding everything for one cell's output is what made
+a progress bar unusable."
+  (let* ((small (emjupy-test--big-notebook 5 5))
+         (large (emjupy-test--big-notebook 80 20))
+         (time-for
+          (lambda (cells)
+            (let ((elapsed nil))
+              (emjupy-test--with-notebook cells buf nb
+                (with-current-buffer buf
+                  (let ((cell (aref (emjupy-notebook-cells nb) 0)))
+                    (setq elapsed
+                          (/ (emjupy-test--elapsed
+                               (dotimes (i 20)
+                                 (emjupy--append-output-to-cell
+                                  cell (emjupy-test--stream-output (format "n %d\n" i)) nb)
+                                 (emjupy-flush-output buf)))
+                             20.0)))))
+              elapsed))))
+    (let ((small-time (funcall time-for small))
+          (large-time (funcall time-for large)))
+      ;; sixteen times the notebook must not cost anything like sixteen
+      ;; times as much; allow a wide margin and still catch a rebuild
+      (should (< large-time (max 0.05 (* 6 (max small-time 0.0005))))))))
+
+(ert-deftest emjupy-test-nothing-remote-on-the-interactive-path ()
+  "No path that runs after a command may touch a remote file.
+
+Remote file operations cost a round trip each, and TRAMP blocks Emacs
+while it waits -- which is how output once appeared to stall until the
+user interrupted.  This asserts the absence rather than the speed,
+because the speed depends on a network that a test cannot rely on."
+  (let ((cells (emjupy-test--big-notebook 10 5))
+        (remote-calls nil))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/ssh:box:/srv/nb")
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 3))))
+        (cl-letf* ((real (symbol-function 'file-remote-p))
+                   ;; Probing a remote path is itself a round trip: asking
+                   ;; whether a TRAMP directory exists opens a connection to
+                   ;; find out.  Counted alongside the writes.
+                   (real-dirp (symbol-function 'file-directory-p))
+                   (real-existsp (symbol-function 'file-exists-p))
+                   ((symbol-function 'file-directory-p)
+                    (lambda (dir &rest args)
+                      (if (and (stringp dir) (funcall real dir))
+                          (progn (push (list 'file-directory-p dir) remote-calls) nil)
+                        (apply real-dirp dir args))))
+                   ((symbol-function 'file-exists-p)
+                    (lambda (file &rest args)
+                      (if (and (stringp file) (funcall real file))
+                          (progn (push (list 'file-exists-p file) remote-calls) nil)
+                        (apply real-existsp file args))))
+                   ((symbol-function 'make-directory)
+                    (lambda (dir &rest _)
+                      (when (funcall real dir) (push (list 'make-directory dir) remote-calls))))
+                   ((symbol-function 'write-region)
+                    (lambda (_s _e file &rest _)
+                      (when (and (stringp file) (funcall real file))
+                        (push (list 'write-region file) remote-calls))))
+                   ((symbol-function 'find-file-noselect)
+                    (lambda (file &rest _)
+                      (when (and (stringp file) (funcall real file))
+                        (push (list 'find-file file) remote-calls))
+                      (generate-new-buffer " *stand-in*"))))
+          ;; the things that happen on every command
+          ;; deliberately not wrapped in `ignore-errors': a TRAMP failure
+          ;; here is the fault being tested for, and swallowing it made an
+          ;; earlier version of this test pass while the path it guards was
+          ;; opening connections
+          (dotimes (_ 5)
+            (run-hooks 'pre-command-hook)
+            (emjupy--eldoc #'ignore)
+            (emjupy--capf)
+            (forward-line 1))
+          ;; and output arriving
+          (emjupy--append-output-to-cell (aref (emjupy-notebook-cells nb) 0)
+                                         (emjupy-test--stream-output "out\n") nb)
+          (emjupy-flush-output buf))
+        (should (equal remote-calls nil))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

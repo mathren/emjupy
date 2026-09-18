@@ -42,6 +42,13 @@
 
 (message "Dependencies loaded. Running emjupy ERT tests...")
 
+;; Unit tests must not depend on the machine running them.  Without this a
+;; test asking what a tunnelled server resolves to finds whatever tunnels
+;; are running here, and one rendering a markdown cell behaves differently
+;; depending on whether LaTeX is installed.  The integration tests, which
+;; are about a real server, rebind it themselves where they need to.
+(setq emjupy-probe-environment nil)
+
 (ert-run-tests-batch-and-exit)
 
 ;;; emjupy-run-tests.el ends here

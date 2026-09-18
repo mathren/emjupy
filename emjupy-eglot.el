@@ -364,6 +364,17 @@ how to reach that machine."
                       (expand-file-name path (file-name-as-directory root)))))
             (and dir (file-name-as-directory dir)))))))
 
+(defun emjupy--local-directory-p (dir)
+  "Return non-nil if DIR exists on this machine, without contacting another.
+
+`file-directory-p\' on a TRAMP name opens a connection to answer, and
+this is asked on paths that run after a command -- so the question
+\"is this directory here?\" could block Emacs, or fail, on a name that is
+plainly not here.  A remote name is not here by definition."
+  (and dir
+       (not (file-remote-p dir))
+       (file-directory-p dir)))
+
 (defun emjupy--notebook-directory-from-kernel (nb)
   "Return NB\='s directory as its kernel reports it, or nil."
   (let ((cwd (emjupy-notebook-kernel-cwd nb)))
@@ -374,7 +385,7 @@ how to reach that machine."
        ;; No prefix: trust the path only if it exists here, which it does
        ;; when the kernel is on this machine.  Treating a remote absolute
        ;; path as a local one is how an unrelated file gets clobbered.
-       ((file-directory-p cwd) (file-name-as-directory cwd))
+       ((emjupy--local-directory-p cwd) (file-name-as-directory cwd))
        (t nil)))))
 
 (defun emjupy--refresh-kernel-cwd (nb)
@@ -1075,7 +1086,7 @@ costs a language server to produce them."
   (let ((cwd (emjupy-notebook-kernel-cwd nb)))
     (and (not emjupy-shadow-when-kernel-unreachable)
          cwd
-         (not (file-directory-p cwd))
+         (not (emjupy--local-directory-p cwd))
          (not (and (boundp 'emjupy-shadow-host)
                    emjupy-shadow-host
                    (not (string-empty-p emjupy-shadow-host)))))))
@@ -1088,7 +1099,7 @@ costs a language server to produce them."
   (unless emjupy--shadow-locality-warned
     (setq emjupy--shadow-locality-warned t)
     (let ((cwd (emjupy-notebook-kernel-cwd nb)))
-      (when (and cwd (not (file-directory-p cwd)))
+      (when (and cwd (not (emjupy--local-directory-p cwd)))
         (message "%s %s"
                  "[emjupy] The kernel runs elsewhere, so completions describe"
                  "THIS machine.  Set emjupy-shadow-host, or install jupyter-lsp on the server.")))))
