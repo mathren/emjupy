@@ -1335,3 +1335,4 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
+- [ ] upon reshowing output, the background color is removed (for output/warnings/errors/figures)
