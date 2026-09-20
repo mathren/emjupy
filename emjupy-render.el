@@ -831,14 +831,20 @@ installed."
 
 (defun emjupy--apply-faces-from (string start)
   "Copy the `face' properties of STRING onto the buffer text at START.
-Only properties are touched; the buffer text itself is left alone."
+Only properties are touched; the buffer text itself is left alone.
+
+Copied to `font-lock-face' as well, for the same reason as everything
+else painted here: font-lock removes `face' from the regions it
+refontifies, so the ANSI colours of a traceback and the highlighting
+inside it lasted only until the next pass."
   (let ((i 0) (len (length string)))
-    (remove-text-properties start (+ start len) '(face nil))
+    (remove-text-properties start (+ start len) '(face nil font-lock-face nil))
     (while (< i len)
       (let* ((next (or (next-single-property-change i 'face string) len))
              (f (get-text-property i 'face string)))
         (when f
-          (put-text-property (+ start i) (+ start next) 'face f))
+          (put-text-property (+ start i) (+ start next) 'face f)
+          (put-text-property (+ start i) (+ start next) 'font-lock-face f))
         (setq i next)))))
 
 (defun emjupy--refontify-cell (cell)
@@ -1001,6 +1007,8 @@ and restarted fontification from scratch each time."
                         (when face
                           (font-lock-prepend-text-property
                            piece-start (point) 'face face)
+                          (font-lock-prepend-text-property
+                           piece-start (point) 'font-lock-face face)
                           ;; Fill out to the border, not to the window edge.
                           (goto-char (emjupy--pad-output-lines
                                       piece-start (point) face))
@@ -1280,6 +1288,15 @@ and it costs nothing to re-align when the window changes width."
           (insert (propertize " "
                               'emjupy-pad t
                               'face face
+                              ;; Also as `font-lock-face': font-lock owns the
+                              ;; `face' property and removes it from any
+                              ;; region it refontifies, which is how the
+                              ;; output background disappeared a moment after
+                              ;; a cell was redrawn.  It does not touch
+                              ;; `font-lock-face', and displays it as a face
+                              ;; whenever font-lock is on.  Both are set so
+                              ;; the tint survives either way.
+                              'font-lock-face face
                               ;; Ends exactly where the rule does: the rule is
                               ;; WIDTH characters, occupying columns 0..WIDTH-1,
                               ;; and a stretch to :align-to WIDTH paints the
@@ -1300,7 +1317,8 @@ one character beyond the right-hand rule."
     (while (< (point) end)
       (end-of-line)
       (when (and (< (point) end) (eq (char-after) ?\n))
-        (remove-text-properties (point) (1+ (point)) '(face nil)))
+        (remove-text-properties (point) (1+ (point))
+                                '(face nil font-lock-face nil)))
       (forward-line 1))))
 
 (defun emjupy--repad-output (cell)

@@ -5325,5 +5325,56 @@ hide."
           (should-not (emjupy--cell-outputs-hidden-p c2))
           (should-not (emjupy--check-invariants)))))))
 
+(ert-deftest emjupy-test-output-colour-survives-fontification ()
+  "Nothing in an output box loses its colour to a fontification pass.
+
+font-lock owns the `face\=' property and removes it from every region it
+refontifies.  Redrawing a cell marks its region for refontification, so
+the next pass stripped the lot -- which is why the output background
+vanished a moment after a cell was redrawn and never came back.
+
+Checked over a box holding three kinds of output at once, plain output,
+a warning, and an error with ANSI escapes, because each is coloured by
+different code and fixing one of them is not fixing the others."
+  (let* ((err (make-hash-table :test 'equal))
+         (cell nil))
+    (puthash "output_type" "error" err)
+    (puthash "ename" "NameError" err)
+    (puthash "evalue" "name 'error' is not defined" err)
+    (puthash "traceback"
+             (vector "\e[0;31mNameError\e[0m  Traceback (most recent call last)"
+                     "Cell In[58], line 3"
+                     "----> 3 print(error)"
+                     "\e[0;31mNameError\e[0m: name 'error' is not defined")
+             err)
+    (setq cell (emjupy-test--cell-like
+                'code "print(\"output line\")"
+                (vector (emjupy-test--stream-output "output line\n")
+                        (emjupy-test--stream-output "RuntimeWarning: divide by zero\n")
+                        err)))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-flet ((uncoloured ()
+                    ;; characters showing no face at all, newlines aside --
+                    ;; those are left bare deliberately, so the background
+                    ;; stops at the rule instead of painting past it
+                    (let ((ov (emjupy-cell-output-ov cell)) (bare 0))
+                      (save-excursion
+                        (goto-char (overlay-start ov))
+                        (while (< (point) (overlay-end ov))
+                          (unless (eq (char-after) ?\n)
+                            (unless (or (get-text-property (point) 'face)
+                                        (get-text-property (point) 'font-lock-face))
+                              (setq bare (1+ bare))))
+                          (forward-char 1)))
+                      bare)))
+          (should (= (uncoloured) 0))
+          ;; after a redraw, which is what marks the region for font-lock
+          (emjupy--rerender-notebook)
+          (should (= (uncoloured) 0))
+          ;; and after font-lock has actually been over it
+          (font-lock-fontify-region (point-min) (point-max))
+          (should (= (uncoloured) 0)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
