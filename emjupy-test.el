@@ -5185,5 +5185,123 @@ for a request that had in fact succeeded."
                  (progn (emjupy--http-interpret server "GET" "/api/kernels" 200 "{oops") "no error")
                (error (error-message-string err)))))))
 
+(ert-deftest emjupy-test-toggle-cell-output ()
+  "Collapsing output hides it without discarding it.
+
+The outputs stay on the cell, so showing them again is a redraw and
+never a re-run.  The bottom rule says the output is there but folded
+away, which is the difference between hidden and absent."
+  (let ((cell (emjupy-test--cell-like
+               'code "print(1)"
+               (vector (emjupy-test--stream-output "line one\nline two\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (should (string-match-p "line two" (buffer-string)))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (emjupy-toggle-cell-output)
+        ;; gone from view, still on the cell
+        (should-not (string-match-p "line two" (buffer-string)))
+        (should (= (length (emjupy-cell-outputs cell)) 1))
+        (should (emjupy--cell-outputs-hidden-p cell))
+        ;; the rule says so, and the cell still has a bottom
+        (let ((footer (overlay-get (emjupy-cell-overlay cell) 'after-string)))
+          (should (string-match-p emjupy-hidden-output-glyph footer))
+          (should (string-match-p "hidden" footer))
+          (should (string-prefix-p "└" footer)))
+        (should-not (emjupy--check-invariants))
+        ;; and back again, from the outputs that were never thrown away
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (emjupy-toggle-cell-output)
+        (should (string-match-p "line two" (buffer-string)))
+        (should-not (emjupy--cell-outputs-hidden-p cell))
+        (should-not (emjupy--check-invariants))
+        ;; nothing left behind in the metadata to be written out
+        (should-not (gethash "jupyter" (emjupy-cell-metadata cell)))))))
+
+(ert-deftest emjupy-test-hidden-state-is-where-jupyter-keeps-it ()
+  "The collapsed flag lives at metadata.jupyter.outputs_hidden.
+
+That is where Jupyter keeps it, so the state survives saving and means
+the same thing to other front ends rather than being private to emjupy."
+  (let ((cell (emjupy-test--cell-like
+               'code "x" (vector (emjupy-test--stream-output "out\n")))))
+    (emjupy--set-cell-outputs-hidden cell t)
+    (should (eq (gethash "outputs_hidden"
+                         (gethash "jupyter" (emjupy-cell-metadata cell)))
+                t))
+    (should (emjupy--cell-outputs-hidden-p cell))
+    (emjupy--set-cell-outputs-hidden cell nil)
+    (should-not (emjupy--cell-outputs-hidden-p cell))))
+
+(ert-deftest emjupy-test-clearing-output-keeps-the-bottom-rule ()
+  "A cell keeps a bottom edge after its output is cleared.
+
+The bottom rule belongs to whichever box is last.  With output that is
+the output box\='s own footer and the cell has none -- but when the output
+went, so did the only bottom edge, leaving the cell open."
+  (let ((cell (emjupy-test--cell-like
+               'code "print(1)" (vector (emjupy-test--stream-output "1\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        ;; with output, the output box carries the bottom
+        (should (equal (overlay-get (emjupy-cell-overlay cell) 'after-string) ""))
+        (should (string-prefix-p
+                 "└" (overlay-get (emjupy-cell-output-ov cell) 'after-string)))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (emjupy-clear-cell-output)
+        ;; with it gone, the cell carries it again
+        (should-not (emjupy-cell-output-ov cell))
+        (should (string-prefix-p
+                 "└" (overlay-get (emjupy-cell-overlay cell) 'after-string)))
+        (should-not (emjupy--check-invariants))))))
+
+(ert-deftest emjupy-test-collapsed-marker-is-clickable ()
+  "Clicking the marker on a collapsed box restores that cell\='s output.
+
+The marker carries the cell\='s id, so the click acts on the cell the
+marker belongs to rather than on whatever is near point.  A buffer
+position would not serve: the footer sits at the very end of a cell,
+where it is ambiguous which of two neighbours is meant."
+  (let ((c1 (emjupy-test--cell-like
+             'code "print(1)" (vector (emjupy-test--stream-output "first\n"))))
+        (c2 (emjupy-test--cell-like
+             'code "print(2)" (vector (emjupy-test--stream-output "second\n")))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (emjupy-toggle-cell-output)
+        (should-not (string-match-p "first" (buffer-string)))
+        (let* ((footer (overlay-get (emjupy-cell-overlay c1) 'after-string))
+               (idx (text-property-not-all 0 (length footer)
+                                           'emjupy-toggle-cell nil footer)))
+          ;; only the marker is live; the rest of the rule is an ordinary line
+          (should idx)
+          (should (equal (get-text-property idx 'emjupy-toggle-cell footer)
+                         (emjupy-cell-id c1)))
+          (should (get-text-property idx 'keymap footer))
+          (should (eq (get-text-property idx 'mouse-face footer) 'highlight))
+          (should-not (get-text-property 0 'emjupy-toggle-cell footer))
+          ;; the click itself
+          (emjupy--toggle-output-from-string (cons footer idx) buf)
+          (should (string-match-p "first" (buffer-string)))
+          (should-not (emjupy--cell-outputs-hidden-p c1))
+          ;; the neighbour is untouched
+          (should-not (emjupy--cell-outputs-hidden-p c2))
+          (should (string-match-p "second" (buffer-string)))
+          (should-not (emjupy--check-invariants)))))))
+
+(ert-deftest emjupy-test-click-elsewhere-does-nothing ()
+  "A click that names no cell is ignored rather than acting on a guess."
+  (let ((cell (emjupy-test--cell-like
+               'code "x" (vector (emjupy-test--stream-output "out\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        ;; a plain string, as a click on ordinary text gives
+        (should-not (emjupy--toggle-output-from-string (cons "no marker here" 2) buf))
+        (should-not (emjupy--cell-outputs-hidden-p cell))
+        ;; and nothing at all, as a click outside any string gives
+        (should-not (emjupy--toggle-output-from-string nil buf))
+        (should-not (emjupy--cell-outputs-hidden-p cell))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

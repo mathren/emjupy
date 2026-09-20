@@ -737,6 +737,47 @@ reverse, would silently reinterpret one of them."
               (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
           above)))))
 
+;;;###autoload
+(defun emjupy-toggle-cell-output ()
+  "Collapse or restore the output of the cell at point.
+
+Collapsing hides the output and marks the cell's bottom rule with a
+glyph.  Nothing is discarded: the outputs stay on the cell, so restoring
+them is a redraw rather than a re-run, and the kernel is not involved
+either way.
+
+The state is kept in the cell's metadata where Jupyter keeps it, so it
+survives saving and means the same thing elsewhere."
+  (interactive)
+  (emjupy--sync-all-cells)
+  (let ((cell (emjupy--cell-at-point)))
+    (unless cell (user-error "Point is not in a cell"))
+    (emjupy-toggle-output-of-cell cell)))
+
+(defun emjupy--cell-by-id (id)
+  "Return the cell of this notebook whose id is ID, or nil."
+  (when (and id emjupy--buffer-notebook)
+    (cl-find-if (lambda (cell) (equal (emjupy-cell-id cell) id))
+                (append (emjupy-notebook-cells emjupy--buffer-notebook) nil))))
+
+(defun emjupy-toggle-output-of-cell (cell)
+  "Collapse or restore the output of CELL.
+
+Takes the cell rather than finding it at point, so that a click on a
+collapsed marker can act on the cell the marker belongs to without
+moving point or guessing from a buffer position."
+  (unless cell (user-error "No cell there"))
+  (when (zerop (length (or (emjupy-cell-outputs cell) [])))
+    (user-error "This cell has no output to hide"))
+  (let ((hidden (not (emjupy--cell-outputs-hidden-p cell))))
+    (emjupy--set-cell-outputs-hidden cell hidden)
+    ;; Only this cell changes, so only this cell is redrawn -- which also
+    ;; keeps the undo history.
+    (unless (emjupy--redraw-cells-in-place (list cell) (list cell))
+      (emjupy--rerender-notebook cell))
+    (message "[emjupy] Output %s." (if hidden "hidden" "shown"))
+    hidden))
+
 (defun emjupy-clear-cell-output ()
   "Discard the output of the cell at point.
 

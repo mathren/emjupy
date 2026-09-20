@@ -33,6 +33,8 @@
 ;; cycle never bites at load time.
 (declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
+(declare-function emjupy--cell-by-id "emjupy-cells" (id))
+(declare-function emjupy-toggle-output-of-cell "emjupy-cells" (cell))
 (declare-function emjupy--sync-all-cells "emjupy-cells" ())
 (declare-function emjupy--protect-non-cell-regions "emjupy-cells" ())
 
@@ -408,7 +410,9 @@ and does not enter the undo history."
 (defun emjupy--rule (label &optional corner)
   "Return a propertized box rule line showing LABEL.
 CORNER is the left corner glyph; with LABEL nil a footer is returned."
-  (let* ((text (if label (emjupy--box-header label corner) (emjupy--box-footer)))
+  (let* ((text (if (and label (not (eq corner 'footer)))
+                   (emjupy--box-header label corner)
+                 (emjupy--box-footer label)))
          (end (if (string-suffix-p "\n" text) (1- (length text)) (length text))))
     ;; Face the glyphs but NOT the closing newline.  A newline carrying a
     ;; background paints a column of its own past the last box character, so
@@ -479,9 +483,15 @@ instead of trailing off into a bare horizontal line."
          (fill (max 0 (- (emjupy--box-width) (length prefix) (length right)))))
     (concat prefix (make-string fill ?─) right "\n")))
 
-(defun emjupy--box-footer ()
-  "Return a box-drawing footer line of `emjupy--box-width' columns."
-  (concat "└" (make-string (max 0 (- (emjupy--box-width) 2)) ?─) "┘\n"))
+(defun emjupy--box-footer (&optional label)
+  "Return a box-drawing footer line of `emjupy--box-width' columns.
+With LABEL, it is written into the rule, which is how a collapsed output
+box says that it is collapsed rather than absent."
+  (if (null label)
+      (concat "└" (make-string (max 0 (- (emjupy--box-width) 2)) ?─) "┘\n")
+    (let* ((prefix (format "└─ %s " label))
+           (fill (max 0 (- (emjupy--box-width) (string-width prefix) 1))))
+      (concat prefix (make-string fill ?─) "┘\n"))))
 
 ;; --- Markdown highlighting -------------------------------------------------
 
@@ -867,6 +877,90 @@ face."
             (when cell (emjupy--refontify-cell cell)))
         (error nil)))))
 
+(defcustom emjupy-hidden-output-glyph "▼"
+  "Glyph marking an output box that is collapsed."
+  :type 'string
+  :group 'emjupy)
+
+(defun emjupy--cell-outputs-hidden-p (cell)
+  "Return non-nil when CELL's output is collapsed.
+
+Kept in the cell's own metadata under the key Jupyter uses, so the state
+survives saving and means the same thing to other front ends."
+  (let* ((meta (emjupy-cell-metadata cell))
+         (jupyter (and (hash-table-p meta) (gethash "jupyter" meta))))
+    (and (hash-table-p jupyter)
+         (eq (gethash "outputs_hidden" jupyter) t))))
+
+(defun emjupy--set-cell-outputs-hidden (cell hidden)
+  "Record in CELL's metadata whether its output is HIDDEN."
+  (let* ((meta (or (emjupy-cell-metadata cell)
+                   (setf (emjupy-cell-metadata cell)
+                         (make-hash-table :test 'equal))))
+         (jupyter (or (gethash "jupyter" meta)
+                      (puthash "jupyter" (make-hash-table :test 'equal) meta))))
+    (if hidden
+        (puthash "outputs_hidden" t jupyter)
+      (remhash "outputs_hidden" jupyter)
+      ;; leave nothing behind: an empty table would be written out as {}
+      (when (zerop (hash-table-count jupyter))
+        (remhash "jupyter" meta)))
+    hidden))
+
+(defvar emjupy-hidden-output-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] #'emjupy-toggle-output-at-click)
+    ;; Without this, the press begins a drag-selection and the release is
+    ;; never delivered as a click.
+    (define-key map [down-mouse-1] #'ignore)
+    map)
+  "Keymap active on the marker of a collapsed output box.")
+
+(defun emjupy--hidden-output-label (cell)
+  "Return the label shown on CELL's footer while its output is hidden.
+
+The marker carries the cell's id and a keymap of its own, so a click on
+it can say which cell was meant.  Only the marker is live: the rest of
+the rule is an ordinary line, and the pointer highlights the part that
+does something."
+  (let* ((outputs (or (emjupy-cell-outputs cell) []))
+         (n (length outputs))
+         (glyph (copy-sequence emjupy-hidden-output-glyph))
+         (rest (format " %d output%s hidden" n (if (= n 1) "" "s"))))
+    (add-text-properties
+     0 (length glyph)
+     (list 'emjupy-toggle-cell (emjupy-cell-id cell)
+           'keymap emjupy-hidden-output-map
+           'mouse-face 'highlight
+           'help-echo "mouse-1: show this output")
+     glyph)
+    (concat glyph rest)))
+
+;;;###autoload
+(defun emjupy-toggle-output-at-click (event)
+  "Show the output whose collapsed marker was clicked.
+EVENT is the mouse event."
+  (interactive "e")
+  ;; A click on an overlay string is located by `posn-string\=', which returns
+  ;; the string and the index within it.  A buffer position would not do:
+  ;; the footer sits at the very end of a cell, where it is ambiguous which
+  ;; of two neighbours is meant.
+  (let ((posn (event-start event)))
+    (emjupy--toggle-output-from-string
+     (posn-string posn)
+     (window-buffer (posn-window posn)))))
+
+(defun emjupy--toggle-output-from-string (pair buffer)
+  "Toggle the cell named by PAIR, a (STRING . INDEX) pair, within BUFFER.
+
+Separated from the mouse event so it can be tested: the accessors that
+take a click apart are inlined by the compiler and cannot be stubbed."
+  (let ((id (and (consp pair)
+                 (get-text-property (cdr pair) 'emjupy-toggle-cell (car pair)))))
+    (when (and id (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (emjupy-toggle-output-of-cell (emjupy--cell-by-id id))))))
+
 (defun emjupy--render-cell-output (cell)
   "Insert CELL\='s output box at point and give it its overlay.
 
@@ -1036,6 +1130,20 @@ every edit made anywhere else in the notebook.  See notes_undo.org."
                             (and p (>= p pos))))
                         buffer-undo-list))))
 
+(defun emjupy--refresh-cell-footer (cell)
+  "Give CELL the bottom rule it should have, or none if its output has one."
+  (let ((src (emjupy-cell-overlay cell))
+        (out (emjupy-cell-output-ov cell))
+        (outputs (or (emjupy-cell-outputs cell) [])))
+    (when (overlayp src)
+      (overlay-put
+       src 'after-string
+       (cond
+        ((overlayp out) "")
+        ((and (> (length outputs) 0) (emjupy--cell-outputs-hidden-p cell))
+         (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
+        (t (emjupy--rule nil)))))))
+
 (defun emjupy--refresh-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
 
@@ -1060,6 +1168,11 @@ means the caller should fall back to a full redraw."
               (emjupy--render-cell-output cell)
               (setq new-end (point)))
             (emjupy--refresh-cell-header cell)
+            ;; The bottom edge belongs to whichever box is last.  With
+            ;; output, that is the output box's own footer and the cell has
+            ;; none; without, the cell must carry it again -- otherwise
+            ;; clearing output left the cell with no bottom at all.
+            (emjupy--refresh-cell-footer cell)
             (emjupy--protect-non-cell-regions))
           ;; Done after the edit, since the shift is the size it turned out
           ;; to be rather than the size expected.
@@ -1098,7 +1211,14 @@ means the caller should fall back to a full redraw."
            (header (emjupy--rule (emjupy--cell-label cell)))
            ;; When output follows, its header line doubles as this box's
            ;; closing edge -- no separate footer, no gap between the two.
-           (footer (if has-outputs "" (emjupy--rule nil))))
+           ;; Hidden output is not drawn at all -- the outputs stay in the
+           ;; cell, so showing them again is a redraw and never a re-run --
+           ;; and this cell's own footer says so.
+           (hidden (and has-outputs (emjupy--cell-outputs-hidden-p cell)))
+           (footer (cond
+                    (hidden (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
+                    (has-outputs "")
+                    (t (emjupy--rule nil)))))
       (overlay-put ov 'emjupy-overlay 'cell)
       (overlay-put ov 'before-string header)
       (overlay-put ov 'after-string footer)
@@ -1107,7 +1227,7 @@ means the caller should fall back to a full redraw."
       (setf (emjupy-cell-overlay cell) ov))
 
     ;; 3. Output Box Overlay
-    (when has-outputs
+    (when (and has-outputs (not (emjupy--cell-outputs-hidden-p cell)))
       (emjupy--render-cell-output cell))
 
     (insert "\n")))

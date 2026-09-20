@@ -206,6 +206,8 @@ the echo area, for pasting into a bug report."
     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
     (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
+    ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
+    (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
     ;; A prefix, not a plain letter: `C-c' followed by a letter is reserved
     ;; for users, and package-lint -- which MELPA requires to be clean --
     ;; reports any such binding as an error.  `C-c C-u C-l' is all control

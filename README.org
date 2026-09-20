@@ -107,6 +107,7 @@ by gitHub actions.
 | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                           |
 | =C-c C-l=     | =emjupy-clear-cell-output=          | Discard this cell's output                                         |
+| =C-c C-o=       | hide or show this cell's output             |
 | =C-c C-u C-l= | =emjupy-clear-all-outputs=          | Discard every cell's output (asks first)                           |
 | =C-c C-s=     | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
 | =C-c C-j=     | =emjupy-join-cell-above=            | Merge this cell into the one above (clears both outputs)           |
@@ -1051,6 +1052,29 @@ responsible.
 If neither reports anything, use =M-x profiler-start=, reproduce the
 delay, and inspect =M-x profiler-report=.
 
+** Hiding output
+
+=C-c C-o= collapses the output of the cell at point, and restores it.  A
+collapsed cell shows its bottom rule marked:
+
+: └─ ▼ 3 outputs hidden ─────────────────────────────┘
+
+The marker is clickable: =mouse-1= on the triangle shows the output
+again.  Only the triangle is live -- it highlights under the pointer,
+and the rest of the rule is an ordinary line.  In a terminal this needs
+=xterm-mouse-mode=; the key binding works either way.
+
+Nothing is discarded.  The outputs stay on the cell, so restoring them
+is a redraw and never a re-run, and the kernel is not involved either
+way.  This is the difference between hiding output and clearing it.
+
+The state is kept at =metadata.jupyter.outputs_hidden=, where Jupyter
+keeps it, so it survives saving and means the same thing in other front
+ends.
+
+The binding is =C-c C-o= rather than =C-c h=: keys of the form
+=C-c <letter>= are reserved for users, and a package may not take them.
+
 ** Output rendering
 
 Output is redrawn at most once per =emjupy-output-render-interval=
@@ -1310,9 +1334,4 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] implement "hide cell output" feature that collapses the "output"
-  portion hiding the content and signaling in the output line that the
-  output is hidden. Suggest toggling with =C-c h= maybe. This makes it
-  easy to keep readable when inline figures or output is many lines.
-- [ ] =C-c l= should not erase the bottom border
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
