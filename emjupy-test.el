@@ -5303,5 +5303,27 @@ where it is ambiguous which of two neighbours is meant."
         (should-not (emjupy--toggle-output-from-string nil buf))
         (should-not (emjupy--cell-outputs-hidden-p cell))))))
 
+(ert-deftest emjupy-test-toggle-works-from-the-output-area ()
+  "The toggle acts on the cell whose output point is in.
+
+A position inside an output box lies between two cells as far as the
+source lookup is concerned.  Commands about the output itself want the
+cell above -- the one whose output that is -- not the one below, whose
+own output is usually empty and which therefore reported nothing to
+hide."
+  (let ((c1 (emjupy-test--cell-like
+             'code "print(1)" (vector (emjupy-test--stream-output "alpha\nbeta\n"))))
+        (c2 (emjupy-test--cell-like 'code "y = 2")))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((out (emjupy-cell-output-ov c1)))
+          (goto-char (/ (+ (overlay-start out) (overlay-end out)) 2))
+          ;; the cell owning this position, output included, is the one above
+          (should (eq (emjupy--cell-at-point-including-output) c1))
+          (emjupy-toggle-cell-output)
+          (should (emjupy--cell-outputs-hidden-p c1))
+          (should-not (emjupy--cell-outputs-hidden-p c2))
+          (should-not (emjupy--check-invariants)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

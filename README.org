@@ -164,6 +164,981 @@ Completion (=M-TAB=) and eldoc need no =emjupy= binding: they are wired into
 the standard hooks and reach the language server through the shadow buffer
 automatically.
 
+* Using a notebook
+
+How a notebook behaves once it is open.
+
+** Server dashboard
+
+=M-x emjupy-server-dashboard= (also =emjupy-notebook-list=) opens one buffer
+per server showing what it has: the kernels running on it and the
+notebooks stored on it, browsable into subdirectories.
+
+| Key | Effect                                                            |
+|-----+-------------------------------------------------------------------|
+| =RET= | open the notebook, or descend into the folder                     |
+| =^=   | up a directory (the =..= row)                                       |
+| =g=   | re-fetch from the server                                          |
+| =k=   | shut down the kernel on this line                                 |
+| =K=   | shut down every kernel on this server                             |
+| =n=   | create a notebook in the folder being shown (with one empty cell) |
+| =d=   | hand this directory to Dired                                      |
+
+It is built on =tabulated-list-mode=, so sorting and navigation are
+Emacs's own.  It is deliberately *not* a file manager: =d= hands the
+directory to Dired, over TRAMP when the server is remote.  The Contents
+API says what notebooks exist but not how to reach them as files -- and a
+tunnelled server looks like localhost from here -- so tell =emjupy= where
+they live:
+
+#+begin_src elisp
+(setq emjupy-remote-root "/ssh:user@host:/home/user/notebooks")
+;; or per server:
+(setq emjupy-remote-root
+      \='(("localhost:8888" . "~/notebooks")
+        ("localhost:9999" . "/ssh:box:/srv/nb")))
+#+end_src
+
+** Editing while a cell runs
+
+A slow cell shows a marker where its execution count will go -- =[In: |]=,
+cycling -- so a cell that is running looks different from one that was
+never run.  =emjupy-running-indicator= sets the frames; a single-element
+vector like =["*"]= gives Jupyter's static marker instead.  The animation
+moves only overlay strings, never buffer text, so it cannot disturb what
+you are typing or land in the undo history.
+
+You can edit anywhere in the notebook while a cell runs.  Output
+arriving folds the buffer back into the cells before redrawing, so
+nothing typed in the meantime is lost -- earlier this silently reverted
+edits made while a long cell was working, which looked like the notebook
+scrambling itself.
+
+If the display ever does look wrong, =C-c C-x C-l= (=emjupy-re-render=)
+rebuilds it from the cells.  It keeps pending edits, and never touches
+the notebook on the server.
+
+** Editable regions
+
+Only cell source text is editable.  Rules, the gutters between cells and
+output boxes are read-only, because text entered there belongs to no
+cell and would be discarded at the next redraw.
+
+Editing at cell boundaries is unaffected: the end of a cell's last line
+and the start of the next cell are both within cells.
+
+Set =emjupy-protect-non-cell-regions= to nil to disable this.
+
+** Indentation, tracebacks, and finding your own code
+
+=TAB= indents as =python-mode= would, and offers the alternatives on
+repeat: after =def f():= the next line might be the body or back at the
+outer level, so pressing it again cycles.  emjupy asks python-mode
+rather than guessing, using the cell as the context.
+
+=C-$= opens the cell\='s full traceback in its own buffer, with Python
+highlighting and the colours the kernel sent -- the output box squeezes
+a deep stack into a few lines, which is where tracebacks become
+unreadable.
+
+=M-.= on a function from one of your own modules needs the shadow file to
+sit beside that module: a language server resolves =import mylib=
+relative to the directory of the file it is reading.
+
+emjupy puts it there by asking the kernel.  Kernels are started through
+a Jupyter /session/ bound to the notebook, which starts them in the
+notebook\='s own directory, so the kernel simply knows -- and for a kernel
+on this machine there is nothing to configure.
+
+** Hiding output
+
+=C-c C-o= collapses the output of the cell at point, and restores it.  A
+collapsed cell shows its bottom rule marked:
+
+: └─ ▼ 3 outputs hidden ─────────────────────────────┘
+
+The marker is clickable: =mouse-1= on the triangle shows the output
+again.  Only the triangle is live -- it highlights under the pointer,
+and the rest of the rule is an ordinary line.  In a terminal this needs
+=xterm-mouse-mode=; the key binding works either way.
+
+Nothing is discarded.  The outputs stay on the cell, so restoring them
+is a redraw and never a re-run, and the kernel is not involved either
+way.  This is the difference between hiding output and clearing it.
+
+The state is kept at =metadata.jupyter.outputs_hidden=, where Jupyter
+keeps it, so it survives saving and means the same thing in other front
+ends.
+
+The binding is =C-c C-o= rather than =C-c h=: keys of the form
+=C-c <letter>= are reserved for users, and a package may not take them.
+
+** Clearing output
+
+=C-c C-l= discards the output of the cell at point; =C-c C-u C-l= does it
+for the whole notebook, asking first, since re-running everything is not
+always cheap.
+
+Both clear the execution count along with the output -- leaving =[In: 4]=
+beside an empty box would claim something had been run since -- and both
+touch only the buffer.  The notebook on the server keeps its outputs
+until you save, so clearing is not a way to lose results by accident.
+
+Clearing everything before committing is the usual reason to want this:
+it strips the outputs that make =.ipynb= diffs unreadable.
+
+** Output rendering
+
+Output is redrawn at most once per =emjupy-output-render-interval=
+seconds (0.15 by default), however many messages arrive.  Redrawing on
+each message is impractical: a progress bar sends one message per
+iteration, and each redraw of a notebook containing figures takes tens
+of milliseconds.
+
+=M-x emjupy-flush-output= forces a pending redraw.
+
+Consecutive stream output on the same channel is merged into a single
+output, as in Jupyter, and carriage returns are collapsed as in a
+terminal.  A progress bar therefore occupies one output rather than one
+per update.
+
+** Progress bars
+
+A progress bar redraws itself by returning to the start of the line with
+a carriage return and writing over what was there.  emjupy collapses
+those the way a terminal does, so a bar occupies one line and shows its
+latest state.
+
+What appears depends on what the program actually wrote, and =tqdm=
+writes a frame only every =mininterval= seconds, 0.1 by default.  A loop
+that finishes faster than that produces exactly two frames: the opening
+one, at 0%% with the bar area blank, and the closing one at 100%%.
+Nothing was lost -- nothing else was ever sent.
+
+Text written by something else while a bar is on screen lands on the
+bar's line, because the bar line has no newline of its own until the bar
+closes.  A warning raised mid-loop therefore appears appended to the
+frame that was current, which is what a terminal shows too.
+
+** ANSI colour in output
+
+Output from =termcolor=, =rich= or =colorama= arrives with ANSI escapes in
+it.  These are applied as real colours rather than shown as
+=\\033[33m=; set =emjupy-render-ansi-colors= to nil to strip them
+instead.
+
+** Markdown highlighting
+
+Markdown cells are highlighted out of the box -- headings, emphasis,
+inline code and fences, links, list markers and blockquotes -- with no
+external package. =markdown-mode= and =markdown-ts-mode= are MELPA
+packages =emjupy= does not depend on; when one of them IS installed it is
+used in preference to the built-in approximation.
+
+** Copying between cells
+
+Text copied out of a cell carries its faces but none of emjupy's own
+properties.  That matters because one of them, =emjupy-cell=, holds the
+cell structure itself: killed text used to reference a whole cell --
+outputs, overlay and all -- as a snapshot that stopped being true as
+soon as the cell changed, and yanking it elsewhere left the pasted text
+claiming to belong to a cell it had nothing to do with.
+
+A kill whose region extends past the end of a cell is refused, but the
+text still reaches the kill ring: Emacs copies before deleting.  The
+error is therefore accompanied by a usable =C-y=.
+
+** Relative paths in cells
+
+Because kernels are now started through a session, a cell\='s working
+directory is the notebook\='s own folder, as it is in Jupyter, so
+=open("data.csv")= finds the file next to the notebook.  Previously the
+kernel started in the server root, so the same code needed the path
+spelled out from there.  If a notebook has been written to expect the
+old behaviour, its relative paths will need adjusting.
+
+** Exporting to a plain .py
+
+=C-c C-x C-e= (=emjupy-export-py=) writes the notebook out as Python in
+percent format: =# %%= before each code cell, and markdown cells carried
+across as commented =# %% [markdown]= blocks.  That is the format
+Jupytext, VS Code and Spyder already read, so the result opens as a
+notebook again elsewhere rather than being a one-way dump.
+
+The default destination is beside the notebook itself, *on the server it
+came from*.  The file is written through the same Contents API the
+notebook is read through, so this works for a remote kernel with no
+TRAMP and no configuration -- the =.py= lands next to the =.ipynb= on that
+machine.  With a prefix argument it writes to a local file instead, and
+a TRAMP file name works there if you want it somewhere else again.
+
+The buffer is synced first, so unsaved edits are included, and an
+existing file is never overwritten without asking.  Set
+=emjupy-export-markdown-cells= to nil to export code only.
+
+Note this is not the shadow buffer dumped to disk, although that is
+where the idea came from: the shadow buffer's markers carry emjupy's
+internal cell ids, which mean nothing outside emjupy, and it holds code
+cells only -- so exporting it directly would silently drop your prose.
+
+** Which version am I running?
+
+=M-x emjupy-version= reports the version, where the code was loaded from
+and, in a checkout, the revision.  In a notebook buffer it also names
+the kernel\='s working directory and the shadow file, which together
+decide whether the language server can see your own modules:
+
+#+begin_example
+emjupy 0.1.0, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
+kernel cwd /home/you/project; shadow /ssh:box:/home/you/project/localhost_9999__nb.ipynb.py
+#+end_example
+
+If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
+server is reading a local scratch file and =M-.= will not find your
+modules.
+
+* Appearance
+
+How a notebook is drawn, and what to do when it is drawn wrongly.
+
+** Cell appearance
+
+Cells are marked out by their horizontal rules alone -- the buffer keeps
+its normal background throughout.  The one exception is a cell's
+*output*, which gets a faint background band so results are
+distinguishable from the code that produced them.  The band lives on the
+output overlay, so when the outputs are cleared and the box shrinks the
+background goes with them.
+
+=emjupy-output-color= sets that band.  It defaults to ='auto=, which
+blends the buffer background =emjupy-output-blend= (8%) of the way
+toward the foreground: darker on a light theme, lighter on a dark one,
+and tinted by the theme rather than a flat neutral grey.  Theme switches
+are followed automatically.
+
+#+begin_src elisp
+(setq emjupy-output-color "#f0f0f0")   ;; pin a colour
+(setq emjupy-output-color nil)         ;; no band at all
+#+end_src
+
+The band fills each output line edge to edge -- the =emjupy-output= face
+sets =:extend t=, without which a face's background stops at the last
+character and short lines look ragged beside long ones.
+
+=M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
+faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
+
+** Editing a rendered formula
+
+A rendered fragment is an image displayed over its source text.  The
+source remains in the buffer and remains editable, but is not visible
+while the image is displayed.
+
+=DEL= with point at the end of a rendered fragment removes the image and
+leaves point after the last character of the source.  A second =DEL=
+deletes as usual.  =M-x emjupy-toggle-latex-preview= renders it again.
+
+** Scrolling past figures
+
+A tall inline image occupies a single screen line, so line-based
+scrolling passes over it in one step.  Two options:
+
+#+begin_src elisp
+(pixel-scroll-precision-mode 1)          ; built in, Emacs 29 and later
+#+end_src
+
+or the =ultra-scroll= package, which handles tall images and mixed line
+heights more smoothly and is recommended for notebooks containing
+figures:
+
+#+begin_src elisp
+(use-package ultra-scroll
+  :config (ultra-scroll-mode 1))
+#+end_src
+
+emjupy enables neither: both are global and affect every buffer.
+
+** Inspecting the cell outlines
+
+The rule above an output box is an overlay string rather than buffer
+text, so point cannot be placed in it and \[describe-char] cannot be
+used on its columns.  =M-x emjupy-report-box-geometry= reports the width
+the rules are drawn at, the width of the rule in place, and the column
+the output background is aligned to.
+
+** Cell outlines
+
+The rule that outlines each cell is sized by =emjupy-box-width=. The
+default, ='window=, fits it to the window, so the outline spans a wide
+frame instead of stopping short at a fixed 80 columns. Set it to an
+integer for a fixed width, and =emjupy-box-min-width= is the floor when
+fitting.
+
+Outlines follow the window as it changes: splitting, dragging a mode
+line or toggling full screen all redraw the rules at the new width, so
+they never wrap onto a second line. Only the overlay strings are
+rebuilt, not the buffer text, so point, markers and the undo history
+are untouched. When the buffer is shown in two windows at once the
+*narrower* one wins, since a rule sized for the wide window would wrap
+in the narrow one.
+
+** Cell outline artifacts
+
+A cell outline is drawn by an overlay property that is displayed even
+when the overlay has collapsed to zero width.  An overlay belonging to a
+cell that no longer exists therefore appears as a border with no cell.
+
+Every redraw deletes emjupy overlays that no live cell owns, so running
+a cell or =M-x emjupy-re-render= removes any that appear.
+
+** LaTeX in markdown cells
+
+Off by default.  Turn it on with =M-x emjupy-toggle-latex-preview=, or:
+
+#+begin_src elisp
+(setq emjupy-render-latex t)
+#+end_src
+
+Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then replaced
+*on screen* by a rendered image.  The buffer text is untouched -- the
+image is an overlay -- so the cell still holds, and saves, the LaTeX you
+wrote, and hovering shows the source.
+
+The rendering is done by org, which ships with Emacs, so the only
+requirement is a LaTeX installation:
+
+#+begin_src bash
+sudo apt install texlive-latex-base dvipng
+#+end_src
+
+No extra Emacs package is needed.  =math-preview= is used instead if that
+is what you have installed -- it works well, but it wants nodejs and npm
+on top of everything else, which is why it is not the default.  Choose
+explicitly with =emjupy-latex-backend=; size the images with
+=emjupy-latex-scale=.
+
+Formulae are drawn in the theme's foreground colour on a transparent
+background, so they are dark on a light theme and light on a dark one.
+Set =emjupy-latex-foreground= to a colour to override that, and
+=emjupy-latex-scale= to size them.
+
+Images are cached by content /and colour/, so redrawing a notebook full
+of formulae does not re-run LaTeX, and switching theme regenerates
+them rather than serving back black glyphs on a dark background.
+=emjupy= uses a minimal preamble (amsmath and amssymb) rather than org's
+full default package list, which pulls in packages a small TeX install
+does not have.
+
+** Inline images need a graphical Emacs
+
+Images are only drawn when the running Emacs can actually display them
+(=display-graphic-p= *and* =image-type-available-p=). On a terminal
+frame or an image-less build (=emacs-nox= is the common case),
+=create-image= *signals* rather than degrading, and because rendering
+happens inside the WebSocket callback -- where =websocket.el= swallows
+errors -- the old behaviour was a silently blank output box. =emjupy= now
+falls back to the bundle's own =text/plain= repr plus a short note
+saying why there is no picture.
+
+Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
+=image/svg+xml=.
+
+** Duplicate figures
+
+A cell whose last expression is a figure receives the same picture
+twice from the kernel: once as the =execute_result= repr and again as
+the inline backend's =display_data=. That is kernel-side behaviour, so
+emjupy drops the repeat at *render* time only -- the cell's outputs, and
+the =.ipynb= written back, still contain exactly what the kernel sent,
+keeping the file faithful for other clients. Set
+=emjupy-deduplicate-image-outputs= to =nil= to draw both.
+
+* Working with a remote server
+
+Running notebooks on another machine, over a tunnel or otherwise.
+
+** Notebooks on another machine
+
+The kernel answers with an absolute path on *its* filesystem, say
+=/srv/nb/analysis=.  That path means nothing on yours: Emacs would read
+it as a local one and write the shadow file into whatever =/srv/nb/analysis=
+happens to be on your own disk.  So emjupy uses a kernel-reported
+directory only when it can actually address it.
+
+Tell it how to reach that machine once:
+
+#+begin_src elisp
+(setq emjupy-shadow-host "/ssh:box:")
+#+end_src
+
+The directory still comes from the kernel, so this is a host, not a
+path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  Eglot then
+starts the language server on =box=, which has a second benefit worth
+knowing -- it sees the environment the kernel actually runs in, so
+completions and signatures describe the packages your code will really
+import, not the ones that happen to be installed locally.
+
+Leave it unset and a remote kernel falls back to a local temp directory:
+=M-.= will not find your own modules, but nothing is written to a path
+that means something else here.  That is the deliberate trade -- emjupy
+would rather lose a feature than write to the wrong file.
+
+| Kernel runs      | =emjupy-shadow-host= | Shadow file            | =M-.= into your modules |
+|------------------+--------------------+------------------------+-----------------------|
+| this machine     | unset              | beside the notebook    | works                 |
+| another machine  | set                | beside it, over TRAMP  | works                 |
+| another machine  | unset              | local temp directory   | no                    |
+
+=emjupy-shadow-directory= still overrides everything, and
+=emjupy-shadow-beside-notebook= turns the behaviour off.
+
+** Tunnelled servers
+
+A server reached through an SSH tunnel answers at =localhost=:
+
+#+begin_src bash
+ssh -L 9999:localhost:9999 box
+#+end_src
+
+The address therefore does not name the machine the files are on.
+emjupy determines it in this order:
+
+1. =emjupy-remote-root=, if set.  A complete path, used as given.
+2. The address, if it names a host other than =localhost=.
+3. =emjupy-ssh-host=, if set.
+4. The command line of the =ssh= process forwarding the port.
+
+Cases 2 to 4 supply only the host name.  The directory is taken from the
+kernel, which reports the notebook's own directory, so notebooks in
+different directories on one machine resolve to different roots without
+further configuration.
+
+Set =emjupy-ssh-host= when no =ssh= process can be found, for instance when
+the tunnel was established outside Emacs by other means:
+
+#+begin_src elisp
+(setq emjupy-ssh-host "box")
+#+end_src
+
+For several servers, use an alist keyed by server label:
+
+#+begin_src elisp
+(setq emjupy-ssh-host '(("localhost:9999" . "box")
+                       ("localhost:8888" . "other")))
+#+end_src
+
+TRAMP cannot reuse the tunnel itself.  A tunnel forwards the Jupyter
+HTTP port; connecting TRAMP to that port would reach the HTTP server,
+not an SSH server.
+
+** Opening files from the listing
+
+=RET= on a file in the server dashboard opens it.  The route depends on
+what emjupy can address:
+
+| Condition                          | Result                     |
+|------------------------------------+----------------------------|
+| =emjupy-remote-root= set             | the file, writable         |
+| host known (see below)             | the file over TRAMP, writable |
+| server runs on this machine        | the file, writable         |
+| none of the above                  | read-only copy over HTTP   |
+
+The last case uses the Contents API and requires no configuration.  The
+buffer is read-only and its header line gives the originating path.
+
+** Multiple notebooks & multiple servers
+
+Each server owns its token and its XSRF cookie; a notebook owns its
+kernel; a kernel owns its WebSocket and its table of in-flight
+requests. So you can keep several notebooks open at once, from several
+servers at once -- typically several =ssh= tunnels on different local
+ports.
+
+Run =emjupy-login= once per tunnel:
+
+#+begin_src
+M-x emjupy-login RET 8888 RET     ;; tunnel to machine A
+M-x emjupy-login RET 9999 RET     ;; tunnel to machine B
+#+end_src
+
+The typical workflow this is built around:
+
+1. On the remote host, start a notebook kernel on port X.
+2. Locally, =ssh -L X:localhost:X user@remote=.
+3. =M-x emjupy-login RET X RET=.
+
+=emjupy= adopts the kernel already running behind that port rather than
+spawning a second one next to it, so opening a notebook puts you in the
+REPL you started. A port with nothing running gets a fresh kernel; a
+port with several asks which one.
+
+Each port keeps its own kernel, so several remote sessions stay live in
+one Emacs. Use =C-c C-z= to give an individual notebook a different
+kernel. Logging in again to a server you already know updates its token
+and keeps the same object, so notebooks already pointing at it stay
+valid.
+
+=C-c C-z= marks kernels already driving another open notebook as =[in
+use]=: attaching two notebooks to one kernel makes them share
+interpreter state, which is occasionally what you want and usually not.
+
+Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
+path can exist on two servers and one buffer cannot stand for both. The
+Eglot shadow file is qualified the same way, so two servers hosting
+=analysis.ipynb= don't clobber each other's code.
+
+
+If a tunnel drops and the remote kernel keeps running,
+use =emjupy-reconnect-kernel= to re-establish emacs's
+socket and your session state survives.
+
+** Access tokens
+The token is resolved without bothering you where possible: an explicit
+argument, else the token already registered for that server, else no
+token at all (common for tunnelled servers started with
+=--IdentityProvider.token=), and only then a prompt. =C-u M-x emjupy-login=
+always prompts.
+
+** If the token is the problem
+
+A tunnelled server is still a server with a token.  emjupy already knows
+it -- =M-x emjupy-version= inside a notebook shows what it is connected
+to -- so this only bites when checking by hand from the shell.
+
+** Where the server's files are
+
+Jupyter does not publish its root directory, and that is deliberate -- it
+is not something a client should be handed.  emjupy works it out instead,
+from two things it does know: the kernel reports the directory it is
+running in, which is the notebook's own folder, and the Contents API
+gives the notebook's path relative to the root.  Take the second off the
+end of the first:
+
+: kernel cwd     /home/you/project/analysis
+: notebook path  analysis/run.ipynb
+: root           /home/you/project
+
+So =emjupy-remote-root= usually need not be set at all: open a notebook,
+let its kernel start, and browsing that server's files works.  Set it by
+hand when the derived answer is not the one you want -- a local mirror,
+or a path that has to go through a TRAMP hop emjupy cannot infer -- and
+the value you set takes precedence.
+
+If the kernel was started somewhere other than the notebook's folder the
+two will not line up, and emjupy says it cannot tell rather than
+inventing a path.
+
+In the dashboard, =d= opens whatever the cursor is on: a directory is
+opened in Dired, a notebook or file opens its containing directory with
+point on it.
+
+** Recovering from a dropped connection
+
+Suspending the machine kills a tunnelled WebSocket.  A socket that dies
+during a render can leave the buffer showing something the cells do not
+hold.
+
+=M-x emjupy-reconnect-kernel= now checks the invariants and redraws if
+they fail, so the repair happens as part of reconnecting rather than
+being left to the user.  The cells are the notebook and the buffer is a
+drawing of them, so redrawing is free and correct.
+=M-x emjupy-re-render= still does the same thing by hand.
+
+* Language server support
+
+Completion, documentation, definitions and the rest, from a language
+server that sees the environment the code will run in.
+
+** Requirements
+
+Two packages must be installed in the Python environment that runs
+=jupyter server=:
+
+#+begin_src bash
+pip install jupyter-lsp 'python-lsp-server[all]'
+#+end_src
+
+In a conda environment file:
+
+#+begin_src yaml
+dependencies:
+  - jupyter-lsp
+  - python-lsp-server
+#+end_src
+
+They serve different purposes:
+
+| Package             | Purpose                                     |
+|---------------------+---------------------------------------------|
+| =jupyter-lsp=         | adds the =/lsp/= endpoints to Jupyter         |
+| =jupyterlab-lsp=      | JupyterLab front end; requires =jupyter-lsp=  |
+| =python-lsp-server=   | the Python language server                  |
+
+Installing =jupyterlab-lsp= does not install a language server.  An
+environment containing it alone provides the endpoints with no server
+behind them.
+
+** Locating the language server
+
+=jupyter-lsp= detects a server by importing it:
+=importlib.util.find_spec("pylsp")=, evaluated in the interpreter running
+=jupyter server=, and started as =[sys.executable, "-m", "pylsp"]=.  The
+=PATH= variable is not consulted.
+
+A =pylsp= installed elsewhere on the machine is therefore not found.  It
+must be importable by the interpreter running =jupyter server=.
+
+This is a property of the Jupyter server, not of a project: one server
+requires one installation regardless of how many notebooks it serves.
+
+** Eglot over the Jupyter WebSocket
+
+Every Eglot command works against the language server running beside the
+kernel -- rename, formatting, code actions, find-implementation, and
+whatever Eglot gains next.  Nothing is wired up per command.
+
+Eglot reaches a server through three =jsonrpc= generics, and
+=jsonrpc-connection-send= dispatches on the connection class, so a
+subclass can carry the traffic anywhere.  =emjupy-eglot-server= carries
+it over the same WebSocket the notebook already uses.
+=jsonrpc-process-connection= type-checks for a process object, so one is
+stood up and then ignored: it satisfies the check and carries nothing.
+
+The document has two names -- the shadow file on this machine, which is
+what Eglot manages, and the path the kernel would see, which is what the
+server knows -- so every message is rewritten in one direction or the
+other as it passes through.  That is the single place the two have to
+agree.
+
+Completion, eldoc, `\[xref-find-definitions]\=' and every other Eglot
+command go the same way: to the shadow buffer, where Eglot is attached.
+Nothing asks the language server directly any more -- the hand-rolled
+request path emjupy used before this is gone, along with the special
+case that made rename work and nothing else.
+
+The shadow file is therefore local again, and only ever local: it is
+something for Eglot to attach to, not something a language server reads.
+=emjupy-shadow-host= is no longer needed for this to work.
+
+** Eglot commands in a notebook
+
+Completion and eldoc reach the language server through a hidden shadow
+buffer holding the notebook's code.  Eglot's own commands did not: they
+call =eglot--current-server-or-lose=, and the notebook buffer is not the
+one Eglot manages, so =M-x eglot-rename= failed with a bare "No current
+JSON-RPC connection".
+
+The commands in =emjupy-eglot-delegated-commands= -- =eglot-rename=,
+=eglot-code-actions=, =eglot-format= and the =eglot-find-*= family -- now run
+in the shadow buffer at the position matching point, with any edits
+pulled back into the cells.  Because that buffer holds every cell at
+once, a rename fixes references in *all* of them, not only the cell
+point was in.
+
+The advice does nothing outside =emjupy-mode=; =M-x
+emjupy-eglot-remove-advice= takes it off entirely.
+
+** Jumping to definitions
+
+=M-.= works inside a notebook.  Eglot installs its xref backend in the
+buffer it manages -- the hidden shadow buffer, not the notebook -- so
+emjupy adds a backend that forwards there and maps the answer back.
+
+Because the shadow buffer holds every cell at once, a jump crosses
+cells: =M-.= on a call in one cell lands on the definition in another.
+Locations pointing anywhere else, into a library say, are left alone,
+because the real file is the right destination there.
+
+** Jumping into modules beside a remote notebook
+
+\[xref-find-definitions] on a function from one of your own modules
+opens that module, even when it lives on another machine.  The language
+server runs beside the kernel and answers with a path on *its*
+filesystem, so emjupy fetches the file through the Contents API -- the
+same connection the notebook came down -- and shows it read-only, with a
+header line saying where it came from.
+
+No TRAMP, no mirror, nothing configured.  Read-only because it is a copy
+fetched over HTTP: reading it is a different job from writing it back.
+
+=M-x emjupy-lsp-diagnose= says which transport a notebook is actually
+using and how far it got -- whether the socket opened, whether the
+handshake finished, whether anything has answered -- since from the
+outside a server that is never reached looks exactly like one with
+nothing to say.
+
+** If Eglot is missing
+
+Eglot ships with Emacs 29, which this package requires, so in practice it
+is always present.  Be aware, though, that the WebSocket transport
+inherits from Eglot\='s own connection class, so its absence would be a
+load error rather than a graceful degradation.  Supporting an Emacs
+without Eglot would mean guarding that section -- and a =featurep= check
+around it is not sufficient.
+
+** Language support: the server next to the kernel
+
+emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
+Jupyter server*, over that server's own WebSocket -- the same transport
+the notebook already uses, and the arrangement JupyterLab's
+=jupyterlab-lsp= uses.
+
+The consequences are worth stating plainly:
+
+- *No file.* The code is sent in-band with =didChange=, which is what LSP
+  is for.  Nothing is written to disk, locally or remotely.
+- *No second connection.* No TRAMP, no ssh, no directory probing.
+  Measured: completion, hover and =M-.= over this transport cost *zero*
+  filesystem operations, against 36 remote round trips to create the
+  old shadow file.
+- *The right environment.* The server runs beside the kernel, so
+  completions describe the packages the code will actually import, and
+  =M-.= finds your own modules because the server resolves them against
+  the notebook's own directory.
+
+** Language server requests
+
+Requests are asynchronous.  eldoc runs after every command, so a
+blocking request would cost one round trip per keystroke.  Completion
+answers from the previous reply and requests the next in the background.
+
+The handshake is also asynchronous.  =jupyter-lsp= starts the language
+server on demand, so connecting may take several seconds; until it
+completes, no answers are available.  If the socket cannot be opened,
+another attempt is not made for =emjupy-lsp-retry-interval= seconds.
+
+Per-command cost, measured on a twelve-cell notebook containing figures:
+
+| Operation     | Time    |
+|---------------+---------|
+| cursor motion | 0.0 ms  |
+| completion    | 0.1 ms  |
+| eldoc         | 1.2 ms  |
+
+** When a shadow file would describe the wrong machine
+
+If the kernel runs somewhere this Emacs cannot reach, and
+=emjupy-shadow-host= does not say how to get there, the shadow file --
+and so the language server -- is local.  What it describes is *this*
+machine: its interpreter, its packages, and none of the modules beside
+the notebook.  For ordinary Python that is mostly right and worth
+having, which is why it is the default; for anything that depends on the
+environment the code will actually run in, it is confidently wrong, so
+emjupy says so once per notebook.
+
+Set =emjupy-shadow-when-kernel-unreachable= to nil to have no language
+support at all in that case rather than approximate support.  Either
+way, =emjupy-shadow-host= or =jupyter-lsp= on the server gives answers
+from the right machine.
+
+That is also why the shadow path shows up under =/tmp= in
+=M-x emjupy-version= for a remote kernel: it is the only place emjupy can
+safely write when it cannot address the kernel's own filesystem.  Set
+=emjupy-shadow-host=, or install =jupyter-lsp= on the server and let the
+default transport handle it.
+
+** When the language server cannot be reached
+
+Completion and eldoc ask for the shadow buffer after every command.  If
+the notebook is remote and the host is slow or unreachable, each attempt
+blocks Emacs while TRAMP waits -- so one failure repeated per keystroke
+is indistinguishable from a hang.
+
+emjupy gives setup =emjupy-shadow-timeout= seconds (2 by default) and, if
+it fails, stops trying for =emjupy-shadow-retry-interval= seconds (30),
+saying so once.  That covers both halves: creating the file, and
+starting the language server -- the second being the expensive one, and
+the one that otherwise repeats after every command when the host has no
+=pylsp=.  Editing and running cells never depend on the shadow
+buffer, so they keep working: only completion, eldoc and =M-.= are lost
+until the host answers again.
+
+** Falling back
+
+Set =emjupy-lsp-enabled= to nil to use the older Eglot shadow-file
+arrangement, which needs no server-side support but pays the costs
+described below, and describes the machine running Emacs rather than the
+one running the kernel.
+
+** Timeouts
+
+Requests wait =emjupy-lsp-timeout= seconds (1) -- short, because
+completion and eldoc run after ordinary commands and a late answer is
+worth less than a responsive editor.  The first request after connecting
+gets =emjupy-lsp-first-timeout= (10), since =jupyter-lsp= starts the
+language server lazily and the first question waits for a process
+launch: measured cold, a completion that answers in milliseconds
+afterwards took seconds the first time.
+
+A request arriving while another is waiting is refused rather than
+nested.  Waiting uses =accept-process-output=, which runs Emacs's timers,
+so eldoc can fire inside a request -- and allowing that to nest is what
+made the file-based client recurse until Emacs ran out of stack.
+
+** Checking it from the shell
+
+#+begin_src bash
+curl -s "http://localhost:9999/lsp/status?token=YOUR_REAL_TOKEN"
+#+end_src
+
+Substitute the real token; the string =YOUR_REAL_TOKEN= will be refused.
+The three answers mean three different things:
+
+| Answer                                   | Meaning                                  |
+|------------------------------------------+------------------------------------------|
+| =404= (an HTML page)                       | =jupyter-lsp= is not installed             |
+| ={"message": "Forbidden"}= (403)           | the token was wrong, nothing more         |
+| ={"version": 2, "sessions": {...}}=        | the plumbing works; read what it lists    |
+
+On a working setup =sessions= names the language servers actually
+installed:
+
+#+begin_example
+{"version": 2, "sessions": {"pylsp": {"status": "not_started", ...}}}
+#+end_example
+
+An *empty* =sessions= is the giveaway that the plumbing is there and the
+language server is not.  =emjupy-lsp-server= (default ="pylsp"=) names
+which of the listed servers to ask for.
+
+emjupy makes the same check for you: when it cannot reach a language
+server it asks =/lsp/status= itself and says which of these three
+situations it found, rather than failing silently.
+
+* Troubleshooting
+
+When something behaves unexpectedly.
+
+** Diagnosing slowness
+
+=emjupy-language-support= set to nil disables every path that contacts a
+language server.  Notebooks, kernels, output and rendering are
+unaffected.  Use it to determine whether a delay originates in language
+support.
+
+=emjupy-report-slow-hooks=, set to a number of seconds, reports any
+per-command work exceeding that duration, naming the function
+responsible.
+
+If neither reports anything, use =M-x profiler-start=, reproduce the
+delay, and inspect =M-x profiler-report=.
+
+** If it is still slow: profile it
+
+emjupy's own per-command work is small -- a cursor move costs well under
+a millisecond, and re-aligning the output boxes on a window change went
+from 10 ms to 0.7 ms.  What remains, on a notebook full of figures, is
+usually Emacs redisplay of large inline images rather than emjupy code.
+
+The way to tell is to measure rather than guess:
+
+#+begin_src
+M-x profiler-start RET cpu RET
+  ... move the point around until it feels slow ...
+M-x profiler-report
+#+end_src
+
+The top entries name the culprit.  If they are emjupy functions that is
+a bug worth reporting with the report attached; if they are
+=redisplay_internal= or image scaling, the notebook is asking Emacs to
+draw more than it comfortably can, and clearing some output
+(=emjupy-clear-all-outputs=) will confirm it in seconds.
+
+* How it works
+
+Why emjupy is built the way it is.
+
+** =emjupy= design
+
+*** The shadow buffer
+
+A notebook is not valid python, but rather a JSON containing blocks.
+There are *n* python fragments with prose between them, and a name
+defined in, say, cell 3 is used in cell 7. A language server handed
+one cell at a time would see seven unrelated files. So instead, =emjupy=
+keeps a hidden *shadow buffer*: one ordinary python file holding every
+code cell concatenated, each preceded by a marker comment naming its
+cell. =eglot= attaches to that file and sees exactly what it expects --
+one module, in order, with all the definitions in it.
+
+The shadow buffer is never displayed, it only exists so that a
+language server has a well-formed document to read. It can be open
+with =C-c '= for multi-cell editing.
+
+Everything that needs the server is delegated there at the matching
+position:
+
+- completion and eldoc, through
+  =completion-at-point-functions= and =eldoc-documentation-functions=;
+- =M-.= and friends, through an xref backend that forwards to Eglot's own
+  and maps the answers back onto cells;
+- =eglot-rename= and the other Eglot commands, advised to run in the
+  shadow buffer and pull their edits back.
+
+Because the shadow buffer holds every cell at once, this is not merely a
+workaround: a rename fixes references in *all* cells, and =M-.= on a call
+in one cell lands on the definition in another.
+
+The shadow file lives in a temporary directory by default. When the
+kernel is on another machine, point =emjupy-shadow-directory= at it and
+=eglot= starts the server there over =tramp=, so the completions come from
+the environment the code actually runs in.
+
+*** Mapping positions
+
+Point in a cell maps to a position in the shadow buffer by finding
+that cell's marker and adding the offset within the cell; results
+coming back map the other way. Everything the server returns is in
+shadow-file coordinates, so =xref= results are rewritten into buffer
+positions in the notebook - with locations pointing anywhere *else*,
+into a library say, left alone, because the real file is the right
+destination.
+
+*** Use the browser's transport, not ZMQ
+
+When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
+
+- =GET  /api/kernels=          \rightarrow list running kernels
+- =POST /api/kernels=          \rightarrow start a kernel
+- =GET  /api/sessions=         \rightarrow list sessions (kernel ↔ notebook pairs)
+- =POST /api/sessions=         \rightarrow create/attach session
+- =GET  /api/contents=         \rightarrow list notebooks
+- =GET  /api/contents/<path>=  \rightarrow fetch notebook JSON
+- =PUT  /api/contents/<path>=  \rightarrow save notebook JSON
+- =WS   /api/kernels/<id>/channels= \rightarrow Jupyter wire protocol over WebSocket
+
+This is exactly what every browser-based client (JupyterLab, Classic Notebook)
+uses. It works transparently through an =ssh= tunnel, survives reconnects, and
+requires only =url.el= (built-in) and =websocket.el= (GNU ELPA).
+
+** Undo
+
+Undo works within a cell, and survives output arriving, a cell being
+inserted, and a cell being deleted.  Every structural change now keeps it too: inserting, deleting, splitting
+and merging cells all redraw only the cells involved.
+
+Output and single-cell structural changes move only part of the buffer,
+by a known amount, so the undo entries before the change are untouched
+and those after it have their positions shifted to match.  A full
+rebuild moves everything while undo recording is off, and undo entries
+hold plain buffer positions rather than markers, so there is nothing
+left to adjust and the history is dropped.
+
+[[file:notes_undo.org][notes_undo.org]] has the measurements and what is left.
+
+** Landscape of other emacs/jupyter packages
+
+| Package       | Approach          | Limitations                                                                                           |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
+| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
+| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
+
+=ein= was my working tool for more than a decade, but it is
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
+need to share code with non-emacs users, so =ob-jupyter= isn't an
+option, and =emacs-jupyter= doesn't seem the right tool for me.
+
 * Building & development
 
 =emjupy= is a multi-file Emacs package. To build a tar and install it:
@@ -197,37 +1172,6 @@ Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
 =eglot= on top of =cells=. The two genuine cycles (=emjupy-mode= and
 =emjupy--rerender-notebook=) are runtime-only and marked with
 =declare-function=.
-
-** Submitting to MELPA
-
-The recipe must list the files explicitly.  A recipe without =:files=
-takes every =.el= in the repository, which here would ship the tests to
-users and include =emjupy-run-tests.el=, a script with no =provide= form
-that =package-lint= rejects.
-
-The recipe used is kept at =.github/melpa-recipe=:
-
-#+begin_src elisp
-(emjupy :fetcher github
-        :repo "mathren/emjupy"
-        :files ("emjupy.el" "emjupy-core.el" "emjupy-http.el"
-                "emjupy-render.el" "emjupy-cells.el" "emjupy-kernel.el"
-                "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-notebook.el"))
-#+end_src
-
-It matches what =make package= builds, so the tar produced locally is the
-package MELPA would produce.
-
-Before submitting, check all four:
-
-#+begin_src bash
-make check                 # tests
-make package               # builds the tar
-#+end_src
-
-and, with =package-lint= available, that it reports nothing for the nine
-files above, and that the tar installs into an empty
-=package-user-dir= and =M-x emjupy-mode= works there.
 
 ** Makefile targets
 
@@ -296,19 +1240,6 @@ The eglot tests additionally need a Python language server on =PATH=
 (=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
 none is found.
 
-* Landscape of other emacs/jupyter packages
-
-| Package       | Approach          | Limitations                                                                                           |
-|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
-| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
-| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
-| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
-
-=ein= was my working tool for more than a decade, but it is
-[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
-need to share code with non-emacs users, so =ob-jupyter= isn't an
-option, and =emacs-jupyter= doesn't seem the right tool for me.
-
 ** Test hygiene
 
 A unit test must give the same answer on every machine.  Two things in
@@ -352,18 +1283,6 @@ Tests call it after every operation.  It has caught overlays left
 overlapping after a split, and a sync that turned an empty cell into one
 containing a newline.
 
-** Recovering from a dropped connection
-
-Suspending the machine kills a tunnelled WebSocket.  A socket that dies
-during a render can leave the buffer showing something the cells do not
-hold.
-
-=M-x emjupy-reconnect-kernel= now checks the invariants and redraws if
-they fail, so the repair happens as part of reconnecting rather than
-being left to the user.  The cells are the notebook and the buffer is a
-drawing of them, so redrawing is free and correct.
-=M-x emjupy-re-render= still does the same thing by hand.
-
 ** Performance
 
 Three tests guard against regressions rather than measuring speed:
@@ -387,937 +1306,40 @@ transport:
 | completion    | 0.1 ms |
 | eldoc         | 1.2 ms |
 
-** =emjupy= design
+** Submitting to MELPA
 
-*** The shadow buffer
+The recipe must list the files explicitly.  A recipe without =:files=
+takes every =.el= in the repository, which here would ship the tests to
+users and include =emjupy-run-tests.el=, a script with no =provide= form
+that =package-lint= rejects.
 
-A notebook is not valid python, but rather a JSON containing blocks.
-There are *n* python fragments with prose between them, and a name
-defined in, say, cell 3 is used in cell 7. A language server handed
-one cell at a time would see seven unrelated files. So instead, =emjupy=
-keeps a hidden *shadow buffer*: one ordinary python file holding every
-code cell concatenated, each preceded by a marker comment naming its
-cell. =eglot= attaches to that file and sees exactly what it expects --
-one module, in order, with all the definitions in it.
-
-The shadow buffer is never displayed, it only exists so that a
-language server has a well-formed document to read. It can be open
-with =C-c '= for multi-cell editing.
-
-Everything that needs the server is delegated there at the matching
-position:
-
-- completion and eldoc, through
-  =completion-at-point-functions= and =eldoc-documentation-functions=;
-- =M-.= and friends, through an xref backend that forwards to Eglot's own
-  and maps the answers back onto cells;
-- =eglot-rename= and the other Eglot commands, advised to run in the
-  shadow buffer and pull their edits back.
-
-Because the shadow buffer holds every cell at once, this is not merely a
-workaround: a rename fixes references in *all* cells, and =M-.= on a call
-in one cell lands on the definition in another.
-
-The shadow file lives in a temporary directory by default. When the
-kernel is on another machine, point =emjupy-shadow-directory= at it and
-=eglot= starts the server there over =tramp=, so the completions come from
-the environment the code actually runs in.
-
-*** Mapping positions
-
-Point in a cell maps to a position in the shadow buffer by finding
-that cell's marker and adding the offset within the cell; results
-coming back map the other way. Everything the server returns is in
-shadow-file coordinates, so =xref= results are rewritten into buffer
-positions in the notebook - with locations pointing anywhere *else*,
-into a library say, left alone, because the real file is the right
-destination.
-
-*** Use the browser's transport, not ZMQ
-
-When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
-
-- =GET  /api/kernels=          \rightarrow list running kernels
-- =POST /api/kernels=          \rightarrow start a kernel
-- =GET  /api/sessions=         \rightarrow list sessions (kernel ↔ notebook pairs)
-- =POST /api/sessions=         \rightarrow create/attach session
-- =GET  /api/contents=         \rightarrow list notebooks
-- =GET  /api/contents/<path>=  \rightarrow fetch notebook JSON
-- =PUT  /api/contents/<path>=  \rightarrow save notebook JSON
-- =WS   /api/kernels/<id>/channels= \rightarrow Jupyter wire protocol over WebSocket
-
-This is exactly what every browser-based client (JupyterLab, Classic Notebook)
-uses. It works transparently through an =ssh= tunnel, survives reconnects, and
-requires only =url.el= (built-in) and =websocket.el= (GNU ELPA).
-
-** Multiple notebooks & multiple servers
-
-Each server owns its token and its XSRF cookie; a notebook owns its
-kernel; a kernel owns its WebSocket and its table of in-flight
-requests. So you can keep several notebooks open at once, from several
-servers at once -- typically several =ssh= tunnels on different local
-ports.
-
-Run =emjupy-login= once per tunnel:
-
-#+begin_src
-M-x emjupy-login RET 8888 RET     ;; tunnel to machine A
-M-x emjupy-login RET 9999 RET     ;; tunnel to machine B
-#+end_src
-
-The typical workflow this is built around:
-
-1. On the remote host, start a notebook kernel on port X.
-2. Locally, =ssh -L X:localhost:X user@remote=.
-3. =M-x emjupy-login RET X RET=.
-
-=emjupy= adopts the kernel already running behind that port rather than
-spawning a second one next to it, so opening a notebook puts you in the
-REPL you started. A port with nothing running gets a fresh kernel; a
-port with several asks which one.
-
-Each port keeps its own kernel, so several remote sessions stay live in
-one Emacs. Use =C-c C-z= to give an individual notebook a different
-kernel. Logging in again to a server you already know updates its token
-and keeps the same object, so notebooks already pointing at it stay
-valid.
-
-=C-c C-z= marks kernels already driving another open notebook as =[in
-use]=: attaching two notebooks to one kernel makes them share
-interpreter state, which is occasionally what you want and usually not.
-
-Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
-path can exist on two servers and one buffer cannot stand for both. The
-Eglot shadow file is qualified the same way, so two servers hosting
-=analysis.ipynb= don't clobber each other's code.
-
-
-If a tunnel drops and the remote kernel keeps running,
-use =emjupy-reconnect-kernel= to re-establish emacs's
-socket and your session state survives.
-
-** Access tokens
-The token is resolved without bothering you where possible: an explicit
-argument, else the token already registered for that server, else no
-token at all (common for tunnelled servers started with
-=--IdentityProvider.token=), and only then a prompt. =C-u M-x emjupy-login=
-always prompts.
-
-* Notes
-** Eglot commands in a notebook
-
-Completion and eldoc reach the language server through a hidden shadow
-buffer holding the notebook's code.  Eglot's own commands did not: they
-call =eglot--current-server-or-lose=, and the notebook buffer is not the
-one Eglot manages, so =M-x eglot-rename= failed with a bare "No current
-JSON-RPC connection".
-
-The commands in =emjupy-eglot-delegated-commands= -- =eglot-rename=,
-=eglot-code-actions=, =eglot-format= and the =eglot-find-*= family -- now run
-in the shadow buffer at the position matching point, with any edits
-pulled back into the cells.  Because that buffer holds every cell at
-once, a rename fixes references in *all* of them, not only the cell
-point was in.
-
-The advice does nothing outside =emjupy-mode=; =M-x
-emjupy-eglot-remove-advice= takes it off entirely.
-
-** Jumping to definitions
-
-=M-.= works inside a notebook.  Eglot installs its xref backend in the
-buffer it manages -- the hidden shadow buffer, not the notebook -- so
-emjupy adds a backend that forwards there and maps the answer back.
-
-Because the shadow buffer holds every cell at once, a jump crosses
-cells: =M-.= on a call in one cell lands on the definition in another.
-Locations pointing anywhere else, into a library say, are left alone,
-because the real file is the right destination there.
-
-** Rendering notes
-
-*** Cell appearance
-
-Cells are marked out by their horizontal rules alone -- the buffer keeps
-its normal background throughout.  The one exception is a cell's
-*output*, which gets a faint background band so results are
-distinguishable from the code that produced them.  The band lives on the
-output overlay, so when the outputs are cleared and the box shrinks the
-background goes with them.
-
-=emjupy-output-color= sets that band.  It defaults to ='auto=, which
-blends the buffer background =emjupy-output-blend= (8%) of the way
-toward the foreground: darker on a light theme, lighter on a dark one,
-and tinted by the theme rather than a flat neutral grey.  Theme switches
-are followed automatically.
+The recipe used is kept at =.github/melpa-recipe=:
 
 #+begin_src elisp
-(setq emjupy-output-color "#f0f0f0")   ;; pin a colour
-(setq emjupy-output-color nil)         ;; no band at all
+(emjupy :fetcher github
+        :repo "mathren/emjupy"
+        :files ("emjupy.el" "emjupy-core.el" "emjupy-http.el"
+                "emjupy-render.el" "emjupy-cells.el" "emjupy-kernel.el"
+                "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-notebook.el"))
 #+end_src
 
-The band fills each output line edge to edge -- the =emjupy-output= face
-sets =:extend t=, without which a face's background stops at the last
-character and short lines look ragged beside long ones.
+It matches what =make package= builds, so the tar produced locally is the
+package MELPA would produce.
 
-=M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
-faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
-
-*** If Eglot is missing
-
-Eglot ships with Emacs 29, which this package requires, so in practice it
-is always present.  Be aware, though, that the WebSocket transport
-inherits from Eglot\='s own connection class, so its absence would be a
-load error rather than a graceful degradation.  Supporting an Emacs
-without Eglot would mean guarding that section -- and a =featurep= check
-around it is not sufficient.
-
-*** Opening files from the listing
-
-=RET= on a file in the server dashboard opens it.  The route depends on
-what emjupy can address:
-
-| Condition                          | Result                     |
-|------------------------------------+----------------------------|
-| =emjupy-remote-root= set             | the file, writable         |
-| host known (see below)             | the file over TRAMP, writable |
-| server runs on this machine        | the file, writable         |
-| none of the above                  | read-only copy over HTTP   |
-
-The last case uses the Contents API and requires no configuration.  The
-buffer is read-only and its header line gives the originating path.
-
-*** Tunnelled servers
-
-A server reached through an SSH tunnel answers at =localhost=:
+Before submitting, check all four:
 
 #+begin_src bash
-ssh -L 9999:localhost:9999 box
+make check                 # tests
+make package               # builds the tar
 #+end_src
 
-The address therefore does not name the machine the files are on.
-emjupy determines it in this order:
+and, with =package-lint= available, that it reports nothing for the nine
+files above, and that the tar installs into an empty
+=package-user-dir= and =M-x emjupy-mode= works there.
 
-1. =emjupy-remote-root=, if set.  A complete path, used as given.
-2. The address, if it names a host other than =localhost=.
-3. =emjupy-ssh-host=, if set.
-4. The command line of the =ssh= process forwarding the port.
+* Known limitations
 
-Cases 2 to 4 supply only the host name.  The directory is taken from the
-kernel, which reports the notebook's own directory, so notebooks in
-different directories on one machine resolve to different roots without
-further configuration.
-
-Set =emjupy-ssh-host= when no =ssh= process can be found, for instance when
-the tunnel was established outside Emacs by other means:
-
-#+begin_src elisp
-(setq emjupy-ssh-host "box")
-#+end_src
-
-For several servers, use an alist keyed by server label:
-
-#+begin_src elisp
-(setq emjupy-ssh-host '(("localhost:9999" . "box")
-                       ("localhost:8888" . "other")))
-#+end_src
-
-TRAMP cannot reuse the tunnel itself.  A tunnel forwards the Jupyter
-HTTP port; connecting TRAMP to that port would reach the HTTP server,
-not an SSH server.
-
-*** Editing a rendered formula
-
-A rendered fragment is an image displayed over its source text.  The
-source remains in the buffer and remains editable, but is not visible
-while the image is displayed.
-
-=DEL= with point at the end of a rendered fragment removes the image and
-leaves point after the last character of the source.  A second =DEL=
-deletes as usual.  =M-x emjupy-toggle-latex-preview= renders it again.
-
-*** Eglot over the Jupyter WebSocket
-
-Every Eglot command works against the language server running beside the
-kernel -- rename, formatting, code actions, find-implementation, and
-whatever Eglot gains next.  Nothing is wired up per command.
-
-Eglot reaches a server through three =jsonrpc= generics, and
-=jsonrpc-connection-send= dispatches on the connection class, so a
-subclass can carry the traffic anywhere.  =emjupy-eglot-server= carries
-it over the same WebSocket the notebook already uses.
-=jsonrpc-process-connection= type-checks for a process object, so one is
-stood up and then ignored: it satisfies the check and carries nothing.
-
-The document has two names -- the shadow file on this machine, which is
-what Eglot manages, and the path the kernel would see, which is what the
-server knows -- so every message is rewritten in one direction or the
-other as it passes through.  That is the single place the two have to
-agree.
-
-Completion, eldoc, `\[xref-find-definitions]\=' and every other Eglot
-command go the same way: to the shadow buffer, where Eglot is attached.
-Nothing asks the language server directly any more -- the hand-rolled
-request path emjupy used before this is gone, along with the special
-case that made rename work and nothing else.
-
-The shadow file is therefore local again, and only ever local: it is
-something for Eglot to attach to, not something a language server reads.
-=emjupy-shadow-host= is no longer needed for this to work.
-
-*** Jumping into modules beside a remote notebook
-
-\[xref-find-definitions] on a function from one of your own modules
-opens that module, even when it lives on another machine.  The language
-server runs beside the kernel and answers with a path on *its*
-filesystem, so emjupy fetches the file through the Contents API -- the
-same connection the notebook came down -- and shows it read-only, with a
-header line saying where it came from.
-
-No TRAMP, no mirror, nothing configured.  Read-only because it is a copy
-fetched over HTTP: reading it is a different job from writing it back.
-
-=M-x emjupy-lsp-diagnose= says which transport a notebook is actually
-using and how far it got -- whether the socket opened, whether the
-handshake finished, whether anything has answered -- since from the
-outside a server that is never reached looks exactly like one with
-nothing to say.
-
-*** Where the server's files are
-
-Jupyter does not publish its root directory, and that is deliberate -- it
-is not something a client should be handed.  emjupy works it out instead,
-from two things it does know: the kernel reports the directory it is
-running in, which is the notebook's own folder, and the Contents API
-gives the notebook's path relative to the root.  Take the second off the
-end of the first:
-
-: kernel cwd     /home/you/project/analysis
-: notebook path  analysis/run.ipynb
-: root           /home/you/project
-
-So =emjupy-remote-root= usually need not be set at all: open a notebook,
-let its kernel start, and browsing that server's files works.  Set it by
-hand when the derived answer is not the one you want -- a local mirror,
-or a path that has to go through a TRAMP hop emjupy cannot infer -- and
-the value you set takes precedence.
-
-If the kernel was started somewhere other than the notebook's folder the
-two will not line up, and emjupy says it cannot tell rather than
-inventing a path.
-
-In the dashboard, =d= opens whatever the cursor is on: a directory is
-opened in Dired, a notebook or file opens its containing directory with
-point on it.
-
-*** Copying between cells
-
-Text copied out of a cell carries its faces but none of emjupy's own
-properties.  That matters because one of them, =emjupy-cell=, holds the
-cell structure itself: killed text used to reference a whole cell --
-outputs, overlay and all -- as a snapshot that stopped being true as
-soon as the cell changed, and yanking it elsewhere left the pasted text
-claiming to belong to a cell it had nothing to do with.
-
-A kill whose region extends past the end of a cell is refused, but the
-text still reaches the kill ring: Emacs copies before deleting.  The
-error is therefore accompanied by a usable =C-y=.
-
-*** Scrolling past figures
-
-A tall inline image occupies a single screen line, so line-based
-scrolling passes over it in one step.  Two options:
-
-#+begin_src elisp
-(pixel-scroll-precision-mode 1)          ; built in, Emacs 29 and later
-#+end_src
-
-or the =ultra-scroll= package, which handles tall images and mixed line
-heights more smoothly and is recommended for notebooks containing
-figures:
-
-#+begin_src elisp
-(use-package ultra-scroll
-  :config (ultra-scroll-mode 1))
-#+end_src
-
-emjupy enables neither: both are global and affect every buffer.
-
-*** Inspecting the cell outlines
-
-The rule above an output box is an overlay string rather than buffer
-text, so point cannot be placed in it and \[describe-char] cannot be
-used on its columns.  =M-x emjupy-report-box-geometry= reports the width
-the rules are drawn at, the width of the rule in place, and the column
-the output background is aligned to.
-
-*** Undo
-
-Undo works within a cell, and survives output arriving, a cell being
-inserted, and a cell being deleted.  Every structural change now keeps it too: inserting, deleting, splitting
-and merging cells all redraw only the cells involved.
-
-Output and single-cell structural changes move only part of the buffer,
-by a known amount, so the undo entries before the change are untouched
-and those after it have their positions shifted to match.  A full
-rebuild moves everything while undo recording is off, and undo entries
-hold plain buffer positions rather than markers, so there is nothing
-left to adjust and the history is dropped.
-
-[[file:notes_undo.org][notes_undo.org]] has the measurements and what is left.
-
-*** Cell outlines
-
-The rule that outlines each cell is sized by =emjupy-box-width=. The
-default, ='window=, fits it to the window, so the outline spans a wide
-frame instead of stopping short at a fixed 80 columns. Set it to an
-integer for a fixed width, and =emjupy-box-min-width= is the floor when
-fitting.
-
-Outlines follow the window as it changes: splitting, dragging a mode
-line or toggling full screen all redraw the rules at the new width, so
-they never wrap onto a second line. Only the overlay strings are
-rebuilt, not the buffer text, so point, markers and the undo history
-are untouched. When the buffer is shown in two windows at once the
-*narrower* one wins, since a rule sized for the wide window would wrap
-in the narrow one.
-
-*** LaTeX in markdown cells
-
-Off by default.  Turn it on with =M-x emjupy-toggle-latex-preview=, or:
-
-#+begin_src elisp
-(setq emjupy-render-latex t)
-#+end_src
-
-Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then replaced
-*on screen* by a rendered image.  The buffer text is untouched -- the
-image is an overlay -- so the cell still holds, and saves, the LaTeX you
-wrote, and hovering shows the source.
-
-The rendering is done by org, which ships with Emacs, so the only
-requirement is a LaTeX installation:
-
-#+begin_src bash
-sudo apt install texlive-latex-base dvipng
-#+end_src
-
-No extra Emacs package is needed.  =math-preview= is used instead if that
-is what you have installed -- it works well, but it wants nodejs and npm
-on top of everything else, which is why it is not the default.  Choose
-explicitly with =emjupy-latex-backend=; size the images with
-=emjupy-latex-scale=.
-
-Formulae are drawn in the theme's foreground colour on a transparent
-background, so they are dark on a light theme and light on a dark one.
-Set =emjupy-latex-foreground= to a colour to override that, and
-=emjupy-latex-scale= to size them.
-
-Images are cached by content /and colour/, so redrawing a notebook full
-of formulae does not re-run LaTeX, and switching theme regenerates
-them rather than serving back black glyphs on a dark background.
-=emjupy= uses a minimal preamble (amsmath and amssymb) rather than org's
-full default package list, which pulls in packages a small TeX install
-does not have.
-
-** Markdown highlighting
-
-Markdown cells are highlighted out of the box -- headings, emphasis,
-inline code and fences, links, list markers and blockquotes -- with no
-external package. =markdown-mode= and =markdown-ts-mode= are MELPA
-packages =emjupy= does not depend on; when one of them IS installed it is
-used in preference to the built-in approximation.
-
-*** Inline images need a graphical Emacs
-
-Images are only drawn when the running Emacs can actually display them
-(=display-graphic-p= *and* =image-type-available-p=). On a terminal
-frame or an image-less build (=emacs-nox= is the common case),
-=create-image= *signals* rather than degrading, and because rendering
-happens inside the WebSocket callback -- where =websocket.el= swallows
-errors -- the old behaviour was a silently blank output box. =emjupy= now
-falls back to the bundle's own =text/plain= repr plus a short note
-saying why there is no picture.
-
-Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
-=image/svg+xml=.
-
-**** Duplicate figures
-
-A cell whose last expression is a figure receives the same picture
-twice from the kernel: once as the =execute_result= repr and again as
-the inline backend's =display_data=. That is kernel-side behaviour, so
-emjupy drops the repeat at *render* time only -- the cell's outputs, and
-the =.ipynb= written back, still contain exactly what the kernel sent,
-keeping the file faithful for other clients. Set
-=emjupy-deduplicate-image-outputs= to =nil= to draw both.
-
-** Server dashboard
-
-=M-x emjupy-server-dashboard= (also =emjupy-notebook-list=) opens one buffer
-per server showing what it has: the kernels running on it and the
-notebooks stored on it, browsable into subdirectories.
-
-| Key | Effect                                                            |
-|-----+-------------------------------------------------------------------|
-| =RET= | open the notebook, or descend into the folder                     |
-| =^=   | up a directory (the =..= row)                                       |
-| =g=   | re-fetch from the server                                          |
-| =k=   | shut down the kernel on this line                                 |
-| =K=   | shut down every kernel on this server                             |
-| =n=   | create a notebook in the folder being shown (with one empty cell) |
-| =d=   | hand this directory to Dired                                      |
-
-It is built on =tabulated-list-mode=, so sorting and navigation are
-Emacs's own.  It is deliberately *not* a file manager: =d= hands the
-directory to Dired, over TRAMP when the server is remote.  The Contents
-API says what notebooks exist but not how to reach them as files -- and a
-tunnelled server looks like localhost from here -- so tell =emjupy= where
-they live:
-
-#+begin_src elisp
-(setq emjupy-remote-root "/ssh:user@host:/home/user/notebooks")
-;; or per server:
-(setq emjupy-remote-root
-      \='(("localhost:8888" . "~/notebooks")
-        ("localhost:9999" . "/ssh:box:/srv/nb")))
-#+end_src
-
-** Clearing output
-
-=C-c C-l= discards the output of the cell at point; =C-c C-u C-l= does it
-for the whole notebook, asking first, since re-running everything is not
-always cheap.
-
-Both clear the execution count along with the output -- leaving =[In: 4]=
-beside an empty box would claim something had been run since -- and both
-touch only the buffer.  The notebook on the server keeps its outputs
-until you save, so clearing is not a way to lose results by accident.
-
-Clearing everything before committing is the usual reason to want this:
-it strips the outputs that make =.ipynb= diffs unreadable.
-
-** Editing while a cell runs
-
-A slow cell shows a marker where its execution count will go -- =[In: |]=,
-cycling -- so a cell that is running looks different from one that was
-never run.  =emjupy-running-indicator= sets the frames; a single-element
-vector like =["*"]= gives Jupyter's static marker instead.  The animation
-moves only overlay strings, never buffer text, so it cannot disturb what
-you are typing or land in the undo history.
-
-You can edit anywhere in the notebook while a cell runs.  Output
-arriving folds the buffer back into the cells before redrawing, so
-nothing typed in the meantime is lost -- earlier this silently reverted
-edits made while a long cell was working, which looked like the notebook
-scrambling itself.
-
-If the display ever does look wrong, =C-c C-x C-l= (=emjupy-re-render=)
-rebuilds it from the cells.  It keeps pending edits, and never touches
-the notebook on the server.
-
-** Exporting to a plain .py
-
-=C-c C-x C-e= (=emjupy-export-py=) writes the notebook out as Python in
-percent format: =# %%= before each code cell, and markdown cells carried
-across as commented =# %% [markdown]= blocks.  That is the format
-Jupytext, VS Code and Spyder already read, so the result opens as a
-notebook again elsewhere rather than being a one-way dump.
-
-The default destination is beside the notebook itself, *on the server it
-came from*.  The file is written through the same Contents API the
-notebook is read through, so this works for a remote kernel with no
-TRAMP and no configuration -- the =.py= lands next to the =.ipynb= on that
-machine.  With a prefix argument it writes to a local file instead, and
-a TRAMP file name works there if you want it somewhere else again.
-
-The buffer is synced first, so unsaved edits are included, and an
-existing file is never overwritten without asking.  Set
-=emjupy-export-markdown-cells= to nil to export code only.
-
-Note this is not the shadow buffer dumped to disk, although that is
-where the idea came from: the shadow buffer's markers carry emjupy's
-internal cell ids, which mean nothing outside emjupy, and it holds code
-cells only -- so exporting it directly would silently drop your prose.
-
-** ANSI colour in output
-
-Output from =termcolor=, =rich= or =colorama= arrives with ANSI escapes in
-it.  These are applied as real colours rather than shown as
-=\\033[33m=; set =emjupy-render-ansi-colors= to nil to strip them
-instead.
-
-** Editable regions
-
-Only cell source text is editable.  Rules, the gutters between cells and
-output boxes are read-only, because text entered there belongs to no
-cell and would be discarded at the next redraw.
-
-Editing at cell boundaries is unaffected: the end of a cell's last line
-and the start of the next cell are both within cells.
-
-Set =emjupy-protect-non-cell-regions= to nil to disable this.
-
-** Indentation, tracebacks, and finding your own code
-
-=TAB= indents as =python-mode= would, and offers the alternatives on
-repeat: after =def f():= the next line might be the body or back at the
-outer level, so pressing it again cycles.  emjupy asks python-mode
-rather than guessing, using the cell as the context.
-
-=C-$= opens the cell\='s full traceback in its own buffer, with Python
-highlighting and the colours the kernel sent -- the output box squeezes
-a deep stack into a few lines, which is where tracebacks become
-unreadable.
-
-=M-.= on a function from one of your own modules needs the shadow file to
-sit beside that module: a language server resolves =import mylib=
-relative to the directory of the file it is reading.
-
-emjupy puts it there by asking the kernel.  Kernels are started through
-a Jupyter /session/ bound to the notebook, which starts them in the
-notebook\='s own directory, so the kernel simply knows -- and for a kernel
-on this machine there is nothing to configure.
-
-** Notebooks on another machine
-
-The kernel answers with an absolute path on *its* filesystem, say
-=/srv/nb/analysis=.  That path means nothing on yours: Emacs would read
-it as a local one and write the shadow file into whatever =/srv/nb/analysis=
-happens to be on your own disk.  So emjupy uses a kernel-reported
-directory only when it can actually address it.
-
-Tell it how to reach that machine once:
-
-#+begin_src elisp
-(setq emjupy-shadow-host "/ssh:box:")
-#+end_src
-
-The directory still comes from the kernel, so this is a host, not a
-path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  Eglot then
-starts the language server on =box=, which has a second benefit worth
-knowing -- it sees the environment the kernel actually runs in, so
-completions and signatures describe the packages your code will really
-import, not the ones that happen to be installed locally.
-
-Leave it unset and a remote kernel falls back to a local temp directory:
-=M-.= will not find your own modules, but nothing is written to a path
-that means something else here.  That is the deliberate trade -- emjupy
-would rather lose a feature than write to the wrong file.
-
-| Kernel runs      | =emjupy-shadow-host= | Shadow file            | =M-.= into your modules |
-|------------------+--------------------+------------------------+-----------------------|
-| this machine     | unset              | beside the notebook    | works                 |
-| another machine  | set                | beside it, over TRAMP  | works                 |
-| another machine  | unset              | local temp directory   | no                    |
-
-=emjupy-shadow-directory= still overrides everything, and
-=emjupy-shadow-beside-notebook= turns the behaviour off.
-
-** Which version am I running?
-
-=M-x emjupy-version= reports the version, where the code was loaded from
-and, in a checkout, the revision.  In a notebook buffer it also names
-the kernel\='s working directory and the shadow file, which together
-decide whether the language server can see your own modules:
-
-#+begin_example
-emjupy 0.1.0, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
-kernel cwd /home/you/project; shadow /ssh:box:/home/you/project/localhost_9999__nb.ipynb.py
-#+end_example
-
-If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
-server is reading a local scratch file and =M-.= will not find your
-modules.
-
-** Cell outline artifacts
-
-A cell outline is drawn by an overlay property that is displayed even
-when the overlay has collapsed to zero width.  An overlay belonging to a
-cell that no longer exists therefore appears as a border with no cell.
-
-Every redraw deletes emjupy overlays that no live cell owns, so running
-a cell or =M-x emjupy-re-render= removes any that appear.
-
-** Diagnosing slowness
-
-=emjupy-language-support= set to nil disables every path that contacts a
-language server.  Notebooks, kernels, output and rendering are
-unaffected.  Use it to determine whether a delay originates in language
-support.
-
-=emjupy-report-slow-hooks=, set to a number of seconds, reports any
-per-command work exceeding that duration, naming the function
-responsible.
-
-If neither reports anything, use =M-x profiler-start=, reproduce the
-delay, and inspect =M-x profiler-report=.
-
-** Hiding output
-
-=C-c C-o= collapses the output of the cell at point, and restores it.  A
-collapsed cell shows its bottom rule marked:
-
-: └─ ▼ 3 outputs hidden ─────────────────────────────┘
-
-The marker is clickable: =mouse-1= on the triangle shows the output
-again.  Only the triangle is live -- it highlights under the pointer,
-and the rest of the rule is an ordinary line.  In a terminal this needs
-=xterm-mouse-mode=; the key binding works either way.
-
-Nothing is discarded.  The outputs stay on the cell, so restoring them
-is a redraw and never a re-run, and the kernel is not involved either
-way.  This is the difference between hiding output and clearing it.
-
-The state is kept at =metadata.jupyter.outputs_hidden=, where Jupyter
-keeps it, so it survives saving and means the same thing in other front
-ends.
-
-The binding is =C-c C-o= rather than =C-c h=: keys of the form
-=C-c <letter>= are reserved for users, and a package may not take them.
-
-** Output rendering
-
-Output is redrawn at most once per =emjupy-output-render-interval=
-seconds (0.15 by default), however many messages arrive.  Redrawing on
-each message is impractical: a progress bar sends one message per
-iteration, and each redraw of a notebook containing figures takes tens
-of milliseconds.
-
-=M-x emjupy-flush-output= forces a pending redraw.
-
-Consecutive stream output on the same channel is merged into a single
-output, as in Jupyter, and carriage returns are collapsed as in a
-terminal.  A progress bar therefore occupies one output rather than one
-per update.
-
-** Progress bars
-
-A progress bar redraws itself by returning to the start of the line with
-a carriage return and writing over what was there.  emjupy collapses
-those the way a terminal does, so a bar occupies one line and shows its
-latest state.
-
-What appears depends on what the program actually wrote, and =tqdm=
-writes a frame only every =mininterval= seconds, 0.1 by default.  A loop
-that finishes faster than that produces exactly two frames: the opening
-one, at 0%% with the bar area blank, and the closing one at 100%%.
-Nothing was lost -- nothing else was ever sent.
-
-Text written by something else while a bar is on screen lands on the
-bar's line, because the bar line has no newline of its own until the bar
-closes.  A warning raised mid-loop therefore appears appended to the
-frame that was current, which is what a terminal shows too.
-
-** Language server requests
-
-Requests are asynchronous.  eldoc runs after every command, so a
-blocking request would cost one round trip per keystroke.  Completion
-answers from the previous reply and requests the next in the background.
-
-The handshake is also asynchronous.  =jupyter-lsp= starts the language
-server on demand, so connecting may take several seconds; until it
-completes, no answers are available.  If the socket cannot be opened,
-another attempt is not made for =emjupy-lsp-retry-interval= seconds.
-
-Per-command cost, measured on a twelve-cell notebook containing figures:
-
-| Operation     | Time    |
-|---------------+---------|
-| cursor motion | 0.0 ms  |
-| completion    | 0.1 ms  |
-| eldoc         | 1.2 ms  |
-
-*** When a shadow file would describe the wrong machine
-
-If the kernel runs somewhere this Emacs cannot reach, and
-=emjupy-shadow-host= does not say how to get there, the shadow file --
-and so the language server -- is local.  What it describes is *this*
-machine: its interpreter, its packages, and none of the modules beside
-the notebook.  For ordinary Python that is mostly right and worth
-having, which is why it is the default; for anything that depends on the
-environment the code will actually run in, it is confidently wrong, so
-emjupy says so once per notebook.
-
-Set =emjupy-shadow-when-kernel-unreachable= to nil to have no language
-support at all in that case rather than approximate support.  Either
-way, =emjupy-shadow-host= or =jupyter-lsp= on the server gives answers
-from the right machine.
-
-That is also why the shadow path shows up under =/tmp= in
-=M-x emjupy-version= for a remote kernel: it is the only place emjupy can
-safely write when it cannot address the kernel's own filesystem.  Set
-=emjupy-shadow-host=, or install =jupyter-lsp= on the server and let the
-default transport handle it.
-
-** If it is still slow: profile it
-
-emjupy's own per-command work is small -- a cursor move costs well under
-a millisecond, and re-aligning the output boxes on a window change went
-from 10 ms to 0.7 ms.  What remains, on a notebook full of figures, is
-usually Emacs redisplay of large inline images rather than emjupy code.
-
-The way to tell is to measure rather than guess:
-
-#+begin_src
-M-x profiler-start RET cpu RET
-  ... move the point around until it feels slow ...
-M-x profiler-report
-#+end_src
-
-The top entries name the culprit.  If they are emjupy functions that is
-a bug worth reporting with the report attached; if they are
-=redisplay_internal= or image scaling, the notebook is asking Emacs to
-draw more than it comfortably can, and clearing some output
-(=emjupy-clear-all-outputs=) will confirm it in seconds.
-
-** When the language server cannot be reached
-
-Completion and eldoc ask for the shadow buffer after every command.  If
-the notebook is remote and the host is slow or unreachable, each attempt
-blocks Emacs while TRAMP waits -- so one failure repeated per keystroke
-is indistinguishable from a hang.
-
-emjupy gives setup =emjupy-shadow-timeout= seconds (2 by default) and, if
-it fails, stops trying for =emjupy-shadow-retry-interval= seconds (30),
-saying so once.  That covers both halves: creating the file, and
-starting the language server -- the second being the expensive one, and
-the one that otherwise repeats after every command when the host has no
-=pylsp=.  Editing and running cells never depend on the shadow
-buffer, so they keep working: only completion, eldoc and =M-.= are lost
-until the host answers again.
-
-** Language support: the server next to the kernel
-
-emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
-Jupyter server*, over that server's own WebSocket -- the same transport
-the notebook already uses, and the arrangement JupyterLab's
-=jupyterlab-lsp= uses.
-
-The consequences are worth stating plainly:
-
-- *No file.* The code is sent in-band with =didChange=, which is what LSP
-  is for.  Nothing is written to disk, locally or remotely.
-- *No second connection.* No TRAMP, no ssh, no directory probing.
-  Measured: completion, hover and =M-.= over this transport cost *zero*
-  filesystem operations, against 36 remote round trips to create the
-  old shadow file.
-- *The right environment.* The server runs beside the kernel, so
-  completions describe the packages the code will actually import, and
-  =M-.= finds your own modules because the server resolves them against
-  the notebook's own directory.
-
-*** Requirements
-
-Two packages must be installed in the Python environment that runs
-=jupyter server=:
-
-#+begin_src bash
-pip install jupyter-lsp 'python-lsp-server[all]'
-#+end_src
-
-In a conda environment file:
-
-#+begin_src yaml
-dependencies:
-  - jupyter-lsp
-  - python-lsp-server
-#+end_src
-
-They serve different purposes:
-
-| Package             | Purpose                                     |
-|---------------------+---------------------------------------------|
-| =jupyter-lsp=         | adds the =/lsp/= endpoints to Jupyter         |
-| =jupyterlab-lsp=      | JupyterLab front end; requires =jupyter-lsp=  |
-| =python-lsp-server=   | the Python language server                  |
-
-Installing =jupyterlab-lsp= does not install a language server.  An
-environment containing it alone provides the endpoints with no server
-behind them.
-
-*** Locating the language server
-
-=jupyter-lsp= detects a server by importing it:
-=importlib.util.find_spec("pylsp")=, evaluated in the interpreter running
-=jupyter server=, and started as =[sys.executable, "-m", "pylsp"]=.  The
-=PATH= variable is not consulted.
-
-A =pylsp= installed elsewhere on the machine is therefore not found.  It
-must be importable by the interpreter running =jupyter server=.
-
-This is a property of the Jupyter server, not of a project: one server
-requires one installation regardless of how many notebooks it serves.
-
-*** Checking it from the shell
-
-#+begin_src bash
-curl -s "http://localhost:9999/lsp/status?token=YOUR_REAL_TOKEN"
-#+end_src
-
-Substitute the real token; the string =YOUR_REAL_TOKEN= will be refused.
-The three answers mean three different things:
-
-| Answer                                   | Meaning                                  |
-|------------------------------------------+------------------------------------------|
-| =404= (an HTML page)                       | =jupyter-lsp= is not installed             |
-| ={"message": "Forbidden"}= (403)           | the token was wrong, nothing more         |
-| ={"version": 2, "sessions": {...}}=        | the plumbing works; read what it lists    |
-
-On a working setup =sessions= names the language servers actually
-installed:
-
-#+begin_example
-{"version": 2, "sessions": {"pylsp": {"status": "not_started", ...}}}
-#+end_example
-
-An *empty* =sessions= is the giveaway that the plumbing is there and the
-language server is not.  =emjupy-lsp-server= (default ="pylsp"=) names
-which of the listed servers to ask for.
-
-emjupy makes the same check for you: when it cannot reach a language
-server it asks =/lsp/status= itself and says which of these three
-situations it found, rather than failing silently.
-
-*** If the token is the problem
-
-A tunnelled server is still a server with a token.  emjupy already knows
-it -- =M-x emjupy-version= inside a notebook shows what it is connected
-to -- so this only bites when checking by hand from the shell.
-
-*** Falling back
-
-Set =emjupy-lsp-enabled= to nil to use the older Eglot shadow-file
-arrangement, which needs no server-side support but pays the costs
-described below, and describes the machine running Emacs rather than the
-one running the kernel.
-
-*** Timeouts
-
-Requests wait =emjupy-lsp-timeout= seconds (1) -- short, because
-completion and eldoc run after ordinary commands and a late answer is
-worth less than a responsive editor.  The first request after connecting
-gets =emjupy-lsp-first-timeout= (10), since =jupyter-lsp= starts the
-language server lazily and the first question waits for a process
-launch: measured cold, a completion that answers in milliseconds
-afterwards took seconds the first time.
-
-A request arriving while another is waiting is refused rather than
-nested.  Waiting uses =accept-process-output=, which runs Emacs's timers,
-so eldoc can fire inside a request -- and allowing that to nest is what
-made the file-based client recurse until Emacs ran out of stack.
-
-** Relative paths in cells
-
-Because kernels are now started through a session, a cell\='s working
-directory is the notebook\='s own folder, as it is in Jupyter, so
-=open("data.csv")= finds the file next to the notebook.  Previously the
-kernel started in the server root, so the same code needed the path
-spelled out from there.  If a notebook has been written to expect the
-old behaviour, its relative paths will need adjusting.
-
-** Known limitations
-
-*** Multicursor
+** Multicursor
 Multi-cursor: Works fine editing within one cell while nothing else is
 happening. =multiple-cursors.el= places its fake-cursor overlays on real
 buffer text and a normal edit session applies correctly to all cursor
@@ -1330,9 +1352,15 @@ at the start of the buffer, a stray ! landing inside unrelated text).
 
 For multi-cell multicursor use the shadow buffer with =C-'=.
 
-*** Python only
+** Python only
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
 - [ ] upon reshowing output, the background color is removed (for output/warnings/errors/figures)
+- [ ] first and last line numbers of cell is at the outline using
+  linenum mode, can we have them at the first line of code and last
+  line of output instead? Adding
+- [ ] Turn huge Reame.org into documentation in separate folder/file.
+  Add badge for docs, organize in UI, design, intercommunication,
+  logical sections
+- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

@@ -737,6 +737,30 @@ reverse, would silently reinterpret one of them."
               (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
           above)))))
 
+(defun emjupy--cell-at-point-including-output (&optional pos)
+  "Return the cell owning POS, counting its output box as part of it.
+
+`emjupy--cell-at-point\' answers for the source only, which is right for
+editing: output is not text the user is writing.  Commands about the
+output itself need the other answer -- with point in an output box, the
+cell meant is the one above, whose output that is."
+  (let ((pos (or pos (point))))
+    ;; The output box is asked about FIRST.  A position inside one lies
+    ;; between two cells as far as the source lookup is concerned, and that
+    ;; lookup answers with the cell below -- which has its own, usually
+    ;; empty, output, so the command reported nothing to hide while point
+    ;; sat in the very output meant.
+    (or (when emjupy--buffer-notebook
+          (cl-find-if
+           (lambda (cell)
+             (let ((out (emjupy-cell-output-ov cell)))
+               (and (overlayp out)
+                    (eq (overlay-buffer out) (current-buffer))
+                    (>= pos (overlay-start out))
+                    (<= pos (overlay-end out)))))
+           (append (emjupy-notebook-cells emjupy--buffer-notebook) nil)))
+        (emjupy--cell-at-point pos))))
+
 ;;;###autoload
 (defun emjupy-toggle-cell-output ()
   "Collapse or restore the output of the cell at point.
@@ -750,7 +774,7 @@ The state is kept in the cell's metadata where Jupyter keeps it, so it
 survives saving and means the same thing elsewhere."
   (interactive)
   (emjupy--sync-all-cells)
-  (let ((cell (emjupy--cell-at-point)))
+  (let ((cell (emjupy--cell-at-point-including-output)))
     (unless cell (user-error "Point is not in a cell"))
     (emjupy-toggle-output-of-cell cell)))
 
