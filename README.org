@@ -1066,6 +1066,24 @@ output, as in Jupyter, and carriage returns are collapsed as in a
 terminal.  A progress bar therefore occupies one output rather than one
 per update.
 
+** Progress bars
+
+A progress bar redraws itself by returning to the start of the line with
+a carriage return and writing over what was there.  emjupy collapses
+those the way a terminal does, so a bar occupies one line and shows its
+latest state.
+
+What appears depends on what the program actually wrote, and =tqdm=
+writes a frame only every =mininterval= seconds, 0.1 by default.  A loop
+that finishes faster than that produces exactly two frames: the opening
+one, at 0%% with the bar area blank, and the closing one at 100%%.
+Nothing was lost -- nothing else was ever sent.
+
+Text written by something else while a bar is on screen lands on the
+bar's line, because the bar line has no newline of its own until the bar
+closes.  A warning raised mid-loop therefore appears appended to the
+frame that was current, which is what a terminal shows too.
+
 ** Language server requests
 
 Requests are asynchronous.  eldoc runs after every command, so a
@@ -1292,6 +1310,9 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] =tqdm= does not draw progress bar anymore (but shows timer)
-- [ ]  =emjupy-interrupt-kernel= gives =emjupy--http-request: JSON Parse Error on /api/kernels/1ecbe90c-7ac9-4be7-9bf4-2ab5c260886f/interrupt: (json-end-of-file 1 0 0)=, fix
+- [ ] implement "hide cell output" feature that collapses the "output"
+  portion hiding the content and signaling in the output line that the
+  output is hidden. Suggest toggling with =C-c h= maybe. This makes it
+  easy to keep readable when inline figures or output is many lines.
+- [ ] =C-c l= should not erase the bottom border
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

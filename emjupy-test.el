@@ -5152,5 +5152,38 @@ reconnection should do it."
         (should (string-match-p "a = 1" (buffer-string)))
         (should-not (string-match-p "garbage" (buffer-string)))))))
 
+(ert-deftest emjupy-test-204-is-success-not-a-parse-error ()
+  "A 204 reply carries no body, and that is the answer.
+
+Interrupting a kernel replies 204 No Content with zero bytes -- measured
+against a running server.  Parsing that as JSON reported a syntax error
+for a request that had in fact succeeded."
+  (let ((server (make-emjupy-server :base-url "h:1" :token "t")))
+    ;; 204: no value, and no error
+    (should-not (emjupy--http-interpret server "POST" "/api/kernels/k/interrupt" 204 ""))
+    ;; ordinary success still parses
+    (let ((parsed (emjupy--http-interpret server "GET" "/api/kernels" 200 "{\"id\": \"k\"}")))
+      (should (equal (gethash "id" parsed) "k")))
+    ;; an empty body that is NOT 204 is not an answer: that is what a
+    ;; forwarded port gives when nothing is listening at the far end, and
+    ;; calling it malformed JSON points at the parser rather than the tunnel
+    (should (string-match-p
+             "returned nothing"
+             (condition-case err
+                 (progn (emjupy--http-interpret server "GET" "/api/kernels" 200 "") "no error")
+               (error (error-message-string err)))))
+    ;; and a real failure still reports its status
+    (should (string-match-p
+             "404"
+             (condition-case err
+                 (progn (emjupy--http-interpret server "GET" "/api/nope" 404 "{}") "no error")
+               (error (error-message-string err)))))
+    ;; malformed JSON is still malformed
+    (should (string-match-p
+             "JSON Parse Error"
+             (condition-case err
+                 (progn (emjupy--http-interpret server "GET" "/api/kernels" 200 "{oops") "no error")
+               (error (error-message-string err)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

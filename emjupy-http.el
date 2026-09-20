@@ -110,6 +110,32 @@ Only the headers matter."
     (when found (setf (emjupy-server-xsrf server) found))
     found))
 
+(defun emjupy--http-interpret (server method path status body)
+  "Turn a reply into a value, or signal.
+
+SERVER, METHOD and PATH identify the request; STATUS and BODY are what
+came back.  Separate from the request itself so that the decisions --
+which of these is success, and what each failure should say -- can be
+tested without a server."
+  (cond
+   ((>= status 400)
+    (error "[Jupyter HTTP %d] %s: %s" status method body))
+   ;; 204 No Content: there is nothing to say, and saying nothing is the
+   ;; answer.  Interrupting a kernel replies this way, and parsing it as
+   ;; JSON reported a syntax error for a request that had succeeded.
+   ((= status 204) nil)
+   ;; A success with an empty body that is not 204 is not an answer.  It is
+   ;; what a forwarded port gives when nothing is listening at the far end,
+   ;; and calling it malformed JSON points at the parser rather than at the
+   ;; tunnel.
+   ((string-empty-p (string-trim (or body "")))
+    (error "%s returned nothing for %s -- is it reachable?"
+           (emjupy--server-label server) path))
+   (t
+    (condition-case err
+        (json-parse-string body :object-type 'hash-table :array-type 'array)
+      (error (error "JSON Parse Error on %s: %s" path err))))))
+
 (defun emjupy--http-request (method server path &optional body callback retrying)
   "Send a request to SERVER and return the parsed JSON response.
 METHOD is an HTTP method string, PATH the API path, BODY an optional
@@ -195,12 +221,7 @@ cookie."
                   (if (emjupy--harvest-xsrf server)
                       (emjupy--http-request method server path body callback t)
                     (error "[Jupyter HTTP %d] %s: %s" status method json-str)))
-                 ((>= status 400)
-                  (error "[Jupyter HTTP %d] %s: %s" status method json-str))
-                 (t
-                  (condition-case err
-                      (json-parse-string json-str :object-type 'hash-table :array-type 'array)
-                    (error (error "JSON Parse Error on %s: %s" path err)))))))))))))
+                 (t (emjupy--http-interpret server method path status json-str)))))))))))
 
 (provide 'emjupy-http)
 ;;; emjupy-http.el ends here
