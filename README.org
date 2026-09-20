@@ -351,6 +351,18 @@ Tests call it after every operation.  It has caught overlays left
 overlapping after a split, and a sync that turned an empty cell into one
 containing a newline.
 
+** Recovering from a dropped connection
+
+Suspending the machine kills a tunnelled WebSocket.  A socket that dies
+during a render can leave the buffer showing something the cells do not
+hold.
+
+=M-x emjupy-reconnect-kernel= now checks the invariants and redraws if
+they fail, so the repair happens as part of reconnecting rather than
+being left to the user.  The cells are the notebook and the buffer is a
+drawing of them, so redrawing is free and correct.
+=M-x emjupy-re-render= still does the same thing by hand.
+
 ** Performance
 
 Three tests guard against regressions rather than measuring speed:
@@ -1281,7 +1293,5 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 - [ ] =tqdm= does not draw progress bar anymore (but shows timer)
-- [ ] after suspending the computer (disconnecting from remote), and
-  reopening it the notebook got scrambled. Fixable with =emjupy-re-draw=
-  but inelegant
+- [ ]  =emjupy-interrupt-kernel= gives =emjupy--http-request: JSON Parse Error on /api/kernels/1ecbe90c-7ac9-4be7-9bf4-2ab5c260886f/interrupt: (json-end-of-file 1 0 0)=, fix
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

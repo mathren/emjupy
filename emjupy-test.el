@@ -5127,5 +5127,30 @@ because the speed depends on a network that a test cannot rely on."
           (emjupy-flush-output buf))
         (should (equal remote-calls nil))))))
 
+(ert-deftest emjupy-test-reconnect-repairs-a-scrambled-buffer ()
+  "Reconnecting redraws when the buffer and the cells disagree.
+
+Suspending a machine kills a tunnelled socket, and one that dies during
+a render leaves the buffer showing something the cells do not hold.  The
+cells are the notebook and the buffer is a drawing of them, so redrawing
+is free and correct -- which is why doing it by hand worked, and why the
+reconnection should do it."
+  (let ((cell (emjupy-test--cell-like 'code "a = 1")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        ;; nothing wrong: nothing to report and nothing to redo
+        (should-not (emjupy--repair-if-scrambled nb))
+        ;; scramble it the way a half-finished render does
+        (let ((inhibit-read-only t))
+          (goto-char (overlay-start (emjupy-cell-overlay cell)))
+          (insert "garbage "))
+        (should (emjupy--check-invariants))
+        (let ((problems (emjupy--repair-if-scrambled nb)))
+          (should problems))
+        ;; and afterwards buffer and cells agree again
+        (should-not (emjupy--check-invariants))
+        (should (string-match-p "a = 1" (buffer-string)))
+        (should-not (string-match-p "garbage" (buffer-string)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -32,6 +32,7 @@
 (require 'emjupy-core)
 (declare-function emjupy--refresh-cell-output "emjupy-render" (cell))
 (declare-function emjupy--render-markdown-cell "emjupy-render" (cell))
+(declare-function emjupy--check-invariants "emjupy-cells" ())
 (declare-function emjupy--overlays-sane-p "emjupy-cells" ())
 (declare-function emjupy--sync-all-cells "emjupy-cells" ())
 (declare-function emjupy--refresh-kernel-cwd "emjupy-eglot" (nb))
@@ -590,6 +591,26 @@ Other open notebooks, and their kernels, are untouched."
       (message "Kernel %s restarting..." kernel-id)
       (emjupy-connect-kernel nb kernel-id name))))
 
+(defun emjupy--repair-if-scrambled (nb)
+  "Redraw NB if its buffer and cells have come out of step.
+
+A socket that dies mid-render -- which is what suspending the machine
+does to a tunnelled connection -- can leave the buffer showing something
+the cells do not hold.  The cells are the notebook; the buffer is a
+drawing of them, so redrawing costs nothing and fixes it.
+
+Returns the problems that were found, or nil if there were none.  This
+is why `emjupy-re-render' worked: it was doing by hand what the
+reconnection should have done itself."
+  (when-let ((buf (emjupy-notebook-buffer nb)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((problems (emjupy--check-invariants)))
+          (when problems
+            (emjupy--rerender-notebook)
+            (message "[emjupy] Buffer and cells were out of step after reconnecting; redrawn.")
+            problems))))))
+
 (defun emjupy-reconnect-kernel ()
   "Reopen this notebook's WebSocket to the SAME kernel.
 For when the tunnel dropped but the remote kernel kept running: the
@@ -603,6 +624,7 @@ kernel's state is intact, only Emacs's socket needs re-establishing."
           (name (emjupy-kernel-name kernel)))
       (emjupy--disconnect-kernel nb)
       (emjupy-connect-kernel nb id name)
+      (emjupy--repair-if-scrambled nb)
       (message "[emjupy] Reconnecting %s to kernel %s..." (emjupy-notebook-path nb) id))))
 
 (provide 'emjupy-kernel)
