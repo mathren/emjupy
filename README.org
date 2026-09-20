@@ -37,6 +37,7 @@ exceed cell border anymore.
   for =eglot= if =python-lsp-server= is listed in the environment)
 - resilient to connection drops (remote kernel keeps running,
   reconnect emacs)
+- toggle hide/show output without re-running cells
 - =ein=-like workflow and key bindings
 - notebook (open and available) and kernel list with =emjupy-list-*=,
   analogous to =ein:notebooklist=
@@ -91,8 +92,8 @@ release rather than the latest commit):
     (setq emjupy-render-latex t))
 #+END_SRC
 
-Alternatively, use =install-package-file= giving it the tarball created
-by gitHub actions.
+Alternatively, use =install-package-file= giving it the tarball you can
+create with =make package= (see [[*Building & development][Building & development]]).
 
 * Keybindings
 
@@ -107,7 +108,7 @@ by gitHub actions.
 | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                           |
 | =C-c C-l=     | =emjupy-clear-cell-output=          | Discard this cell's output                                         |
-| =C-c C-o=       | hide or show this cell's output             |
+| =C-c C-o=     |                                   | hide or show this cell's output (show also actionable with mouse)  |
 | =C-c C-u C-l= | =emjupy-clear-all-outputs=          | Discard every cell's output (asks first)                           |
 | =C-c C-s=     | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
 | =C-c C-j=     | =emjupy-join-cell-above=            | Merge this cell into the one above (clears both outputs)           |
@@ -195,7 +196,7 @@ they live:
 (setq emjupy-remote-root "/ssh:user@host:/home/user/notebooks")
 ;; or per server:
 (setq emjupy-remote-root
-      \='(("localhost:8888" . "~/notebooks")
+      '(("localhost:8888" . "~/notebooks")
         ("localhost:9999" . "/ssh:box:/srv/nb")))
 #+end_src
 
@@ -236,7 +237,7 @@ repeat: after =def f():= the next line might be the body or back at the
 outer level, so pressing it again cycles.  emjupy asks python-mode
 rather than guessing, using the cell as the context.
 
-=C-$= opens the cell\='s full traceback in its own buffer, with Python
+=C-$= opens the cell's full traceback in its own buffer, with Python
 highlighting and the colours the kernel sent -- the output box squeezes
 a deep stack into a few lines, which is where tracebacks become
 unreadable.
@@ -247,7 +248,7 @@ relative to the directory of the file it is reading.
 
 emjupy puts it there by asking the kernel.  Kernels are started through
 a Jupyter /session/ bound to the notebook, which starts them in the
-notebook\='s own directory, so the kernel simply knows -- and for a kernel
+notebook's own directory, so the kernel simply knows -- and for a kernel
 on this machine there is nothing to configure.
 
 ** Hiding output
@@ -270,8 +271,6 @@ The state is kept at =metadata.jupyter.outputs_hidden=, where Jupyter
 keeps it, so it survives saving and means the same thing in other front
 ends.
 
-The binding is =C-c C-o= rather than =C-c h=: keys of the form
-=C-c <letter>= are reserved for users, and a package may not take them.
 
 ** Clearing output
 
@@ -350,8 +349,8 @@ error is therefore accompanied by a usable =C-y=.
 
 ** Relative paths in cells
 
-Because kernels are now started through a session, a cell\='s working
-directory is the notebook\='s own folder, as it is in Jupyter, so
+Because kernels are now started through a session, a cell's working
+directory is the notebook's own folder, as it is in Jupyter, so
 =open("data.csv")= finds the file next to the notebook.  Previously the
 kernel started in the server root, so the same code needed the path
 spelled out from there.  If a notebook has been written to expect the
@@ -385,7 +384,7 @@ cells only -- so exporting it directly would silently drop your prose.
 
 =M-x emjupy-version= reports the version, where the code was loaded from
 and, in a checkout, the revision.  In a notebook buffer it also names
-the kernel\='s working directory and the shadow file, which together
+the kernel's working directory and the shadow file, which together
 decide whether the language server can see your own modules:
 
 #+begin_example
@@ -572,7 +571,7 @@ Tell it how to reach that machine once:
 #+end_src
 
 The directory still comes from the kernel, so this is a host, not a
-path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  Eglot then
+path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  =eglot= then
 starts the language server on =box=, which has a second benefit worth
 knowing -- it sees the environment the kernel actually runs in, so
 completions and signatures describe the packages your code will really
@@ -684,7 +683,7 @@ interpreter state, which is occasionally what you want and usually not.
 
 Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
 path can exist on two servers and one buffer cannot stand for both. The
-Eglot shadow file is qualified the same way, so two servers hosting
+=eglot= shadow file is qualified the same way, so two servers hosting
 =analysis.ipynb= don't clobber each other's code.
 
 
@@ -791,13 +790,13 @@ must be importable by the interpreter running =jupyter server=.
 This is a property of the Jupyter server, not of a project: one server
 requires one installation regardless of how many notebooks it serves.
 
-** Eglot over the Jupyter WebSocket
+** =eglot= over the Jupyter WebSocket
 
-Every Eglot command works against the language server running beside the
+Every =eglot= command works against the language server running beside the
 kernel -- rename, formatting, code actions, find-implementation, and
-whatever Eglot gains next.  Nothing is wired up per command.
+whatever =eglot= gains next.  Nothing is wired up per command.
 
-Eglot reaches a server through three =jsonrpc= generics, and
+=eglot= reaches a server through three =jsonrpc= generics, and
 =jsonrpc-connection-send= dispatches on the connection class, so a
 subclass can carry the traffic anywhere.  =emjupy-eglot-server= carries
 it over the same WebSocket the notebook already uses.
@@ -805,27 +804,27 @@ it over the same WebSocket the notebook already uses.
 stood up and then ignored: it satisfies the check and carries nothing.
 
 The document has two names -- the shadow file on this machine, which is
-what Eglot manages, and the path the kernel would see, which is what the
+what =eglot= manages, and the path the kernel would see, which is what the
 server knows -- so every message is rewritten in one direction or the
 other as it passes through.  That is the single place the two have to
 agree.
 
-Completion, eldoc, `\[xref-find-definitions]\=' and every other Eglot
-command go the same way: to the shadow buffer, where Eglot is attached.
+Completion, eldoc, =[xref-find-definitions]= and every other =eglot=
+command go the same way: to the shadow buffer, where =eglot= is attached.
 Nothing asks the language server directly any more -- the hand-rolled
 request path emjupy used before this is gone, along with the special
 case that made rename work and nothing else.
 
 The shadow file is therefore local again, and only ever local: it is
-something for Eglot to attach to, not something a language server reads.
+something for =eglot= to attach to, not something a language server reads.
 =emjupy-shadow-host= is no longer needed for this to work.
 
-** Eglot commands in a notebook
+** =eglot= commands in a notebook
 
 Completion and eldoc reach the language server through a hidden shadow
-buffer holding the notebook's code.  Eglot's own commands did not: they
+buffer holding the notebook's code.  =eglot='s own commands did not: they
 call =eglot--current-server-or-lose=, and the notebook buffer is not the
-one Eglot manages, so =M-x eglot-rename= failed with a bare "No current
+one =eglot= manages, so =M-x eglot-rename= failed with a bare "No current
 JSON-RPC connection".
 
 The commands in =emjupy-eglot-delegated-commands= -- =eglot-rename=,
@@ -840,7 +839,7 @@ emjupy-eglot-remove-advice= takes it off entirely.
 
 ** Jumping to definitions
 
-=M-.= works inside a notebook.  Eglot installs its xref backend in the
+=M-.= works inside a notebook.  =eglot= installs its xref backend in the
 buffer it manages -- the hidden shadow buffer, not the notebook -- so
 emjupy adds a backend that forwards there and maps the answer back.
 
@@ -867,13 +866,13 @@ handshake finished, whether anything has answered -- since from the
 outside a server that is never reached looks exactly like one with
 nothing to say.
 
-** If Eglot is missing
+** If =eglot= is missing
 
-Eglot ships with Emacs 29, which this package requires, so in practice it
+=eglot= ships with Emacs 29, which this package requires, so in practice it
 is always present.  Be aware, though, that the WebSocket transport
-inherits from Eglot\='s own connection class, so its absence would be a
+inherits from =eglot='s own connection class, so its absence would be a
 load error rather than a graceful degradation.  Supporting an Emacs
-without Eglot would mean guarding that section -- and a =featurep= check
+without =eglot= would mean guarding that section -- and a =featurep= check
 around it is not sufficient.
 
 ** Language support: the server next to the kernel
@@ -955,7 +954,7 @@ until the host answers again.
 
 ** Falling back
 
-Set =emjupy-lsp-enabled= to nil to use the older Eglot shadow-file
+Set =emjupy-lsp-enabled= to nil to use the older =eglot= shadow-file
 arrangement, which needs no server-side support but pays the costs
 described below, and describes the machine running Emacs rather than the
 one running the kernel.
@@ -984,11 +983,11 @@ curl -s "http://localhost:9999/lsp/status?token=YOUR_REAL_TOKEN"
 Substitute the real token; the string =YOUR_REAL_TOKEN= will be refused.
 The three answers mean three different things:
 
-| Answer                                   | Meaning                                  |
-|------------------------------------------+------------------------------------------|
-| =404= (an HTML page)                       | =jupyter-lsp= is not installed             |
-| ={"message": "Forbidden"}= (403)           | the token was wrong, nothing more         |
-| ={"version": 2, "sessions": {...}}=        | the plumbing works; read what it lists    |
+| Answer                            | Meaning                                |
+|-----------------------------------+----------------------------------------|
+| =404= (an HTML page)                | =jupyter-lsp= is not installed           |
+| ={"message": "Forbidden"}= (403)    | the token was wrong, nothing more      |
+| ={"version": 2, "sessions": {...}}= | the plumbing works; read what it lists |
 
 On a working setup =sessions= names the language servers actually
 installed:
@@ -1070,9 +1069,9 @@ position:
 
 - completion and eldoc, through
   =completion-at-point-functions= and =eldoc-documentation-functions=;
-- =M-.= and friends, through an xref backend that forwards to Eglot's own
+- =M-.= and friends, through an xref backend that forwards to =eglot='s own
   and maps the answers back onto cells;
-- =eglot-rename= and the other Eglot commands, advised to run in the
+- =eglot-rename= and the other =eglot= commands, advised to run in the
   shadow buffer and pull their edits back.
 
 Because the shadow buffer holds every cell at once, this is not merely a
