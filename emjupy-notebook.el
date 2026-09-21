@@ -235,6 +235,13 @@ Returns the notebook buffer."
           (setf (emjupy-notebook-buffer nb-struct) buf)
 
           (with-current-buffer buf
+            ;; `emjupy-mode' lives in emjupy.el, which this file cannot
+            ;; require at load time without a cycle -- emjupy.el requires
+            ;; this one.  Autoloading `emjupy-open-notebook' therefore
+            ;; pulled in every file EXCEPT the one defining the mode, and
+            ;; opening a notebook failed with the mode undefined.  Required
+            ;; here, where there is no cycle to create.
+            (require 'emjupy)
             (emjupy-mode)
             ;; Set the notebook BEFORE drawing, and draw through
             ;; `emjupy--rerender-notebook' rather than looping over the cells

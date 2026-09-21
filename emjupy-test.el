@@ -5456,5 +5456,25 @@ behind the output itself, which looked like a different bug and was not."
                (point-min)))
             (should (equal (kept) before))))))))
 
+(ert-deftest emjupy-test-opening-a-notebook-has-the-mode ()
+  "Opening a notebook does not depend on emjupy.el having been loaded.
+
+`emjupy-open-notebook\' is autoloaded from emjupy-notebook.el, which
+cannot require emjupy.el at load time -- emjupy.el requires it, and the
+cycle would not resolve.  So autoloading it pulled in every file except
+the one defining `emjupy-mode\', and opening a notebook failed with the
+mode undefined.  The require happens where the mode is used instead."
+  (should (fboundp 'emjupy-mode))
+  ;; the require is at the point of use, not at the top of the file
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "emjupy-notebook.el"
+                                            (file-name-directory
+                                             (or load-file-name buffer-file-name
+                                                 default-directory))))
+    (goto-char (point-min))
+    (should (re-search-forward "(require 'emjupy)" nil t))
+    ;; and it is inside a function, not at top level, or the cycle returns
+    (should (> (car (syntax-ppss (match-beginning 0))) 0))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
