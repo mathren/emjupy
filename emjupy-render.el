@@ -859,12 +859,28 @@ inside it lasted only until the next pass."
              (put-text-property from to 'font-lock-face f))))
         (setq i next)))))
 
+(defun emjupy--output-region-p (pos)
+  "Return non-nil if POS lies inside an output box."
+  (seq-find (lambda (ov) (eq (overlay-get ov 'emjupy-overlay) 'output))
+            (overlays-at pos)))
+
 (defun emjupy--without-pads (start end fn)
-  "Call FN on each run between START and END that is not output padding."
+  "Call FN on each run between START and END that is not output.
+
+Output is skipped whole -- its text as well as its padding.  Both are
+painted when the box is drawn, from the outputs themselves, and neither
+has anything to do with the source being re-highlighted; a region that
+reaches in here clears them and puts nothing back, because the source it
+copies from contains no output.  Skipping only the padding left the text
+beside it exposed to the same thing."
   (let ((pos start))
     (while (< pos end)
-      (let ((next (or (next-single-property-change pos 'emjupy-pad nil end) end)))
-        (unless (get-text-property pos 'emjupy-pad)
+      (let ((next (min end
+                       (or (next-property-change pos nil end) end)
+                       (or (next-overlay-change pos) end))))
+        (when (= next pos) (setq next (min end (1+ pos))))
+        (unless (or (get-text-property pos 'emjupy-pad)
+                    (emjupy--output-region-p pos))
           (funcall fn pos next))
         (setq pos next)))))
 

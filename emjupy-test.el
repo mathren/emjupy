@@ -5410,5 +5410,51 @@ is an output band whose background stops partway across the line."
           ;; the padding is untouched: it is not source and never was
           (should (equal (pad-faces) '(emjupy-output emjupy-output))))))))
 
+(ert-deftest emjupy-test-refontifying-leaves-the-output-box-alone ()
+  "Re-highlighting a cell cannot disturb anything in an output box.
+
+Highlighting is re-applied to a cell\='s SOURCE after an edit: the old
+faces are cleared over its region and new ones copied in from a
+fontified copy of the source.  Where that region reaches into an output
+box it clears what is there and puts nothing back, because the source it
+copies from contains no output.
+
+Both the padding and the text beside it are checked.  Protecting only
+the padding brought the band back in the margins and left it missing
+behind the output itself, which looked like a different bug and was not."
+  (let ((cell (emjupy-test--cell-like
+               'code "print(1)"
+               (vector (emjupy-test--stream-output "alpha\nbeta\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-flet ((kept ()
+                    ;; characters in the box still showing an output face,
+                    ;; counted separately for text and padding
+                    (let ((ov (emjupy-cell-output-ov cell)) (text 0) (pad 0))
+                      (save-excursion
+                        (goto-char (overlay-start ov))
+                        (while (< (point) (overlay-end ov))
+                          (unless (eq (char-after) ?\n)
+                            (when (string-match-p
+                                   "emjupy-output"
+                                   (format "%S" (get-text-property
+                                                 (point) 'font-lock-face)))
+                              (if (get-text-property (point) 'emjupy-pad)
+                                  (setq pad (1+ pad))
+                                (setq text (1+ text)))))
+                          (forward-char 1)))
+                      (cons text pad))))
+          (let ((before (kept)))
+            (should (> (car before) 0))
+            (should (> (cdr before) 0))
+            ;; a re-highlight whose region covers the whole buffer, output
+            ;; and all -- the worst case of a region being wrong
+            (let ((inhibit-read-only t))
+              (emjupy--apply-faces-from
+               (propertize (make-string (- (point-max) (point-min)) ?x)
+                           'face 'font-lock-keyword-face)
+               (point-min)))
+            (should (equal (kept) before))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
