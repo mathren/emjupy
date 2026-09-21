@@ -838,14 +838,35 @@ else painted here: font-lock removes `face' from the regions it
 refontifies, so the ANSI colours of a traceback and the highlighting
 inside it lasted only until the next pass."
   (let ((i 0) (len (length string)))
-    (remove-text-properties start (+ start len) '(face nil font-lock-face nil))
+    ;; Padding is never source.  This re-highlights a cell, and the faces it
+    ;; clears first are the ones it is about to replace -- but if it is ever
+    ;; asked about a region that reaches into an output box, the padding
+    ;; there loses its background and nothing puts it back, because the
+    ;; string being copied from has no padding in it.  The pads carry a mark
+    ;; of their own; it is cheaper to respect it than to rely on the region
+    ;; always being right.
+    (emjupy--without-pads start (+ start len)
+      (lambda (from to)
+        (remove-text-properties from to '(face nil font-lock-face nil))))
     (while (< i len)
       (let* ((next (or (next-single-property-change i 'face string) len))
              (f (get-text-property i 'face string)))
         (when f
-          (put-text-property (+ start i) (+ start next) 'face f)
-          (put-text-property (+ start i) (+ start next) 'font-lock-face f))
+          (emjupy--without-pads
+           (+ start i) (+ start next)
+           (lambda (from to)
+             (put-text-property from to 'face f)
+             (put-text-property from to 'font-lock-face f))))
         (setq i next)))))
+
+(defun emjupy--without-pads (start end fn)
+  "Call FN on each run between START and END that is not output padding."
+  (let ((pos start))
+    (while (< pos end)
+      (let ((next (or (next-single-property-change pos 'emjupy-pad nil end) end)))
+        (unless (get-text-property pos 'emjupy-pad)
+          (funcall fn pos next))
+        (setq pos next)))))
 
 (defun emjupy--refontify-cell (cell)
   "Re-highlight CELL's source in place, from its current buffer text."

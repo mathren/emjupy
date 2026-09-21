@@ -5376,5 +5376,39 @@ different code and fixing one of them is not fixing the others."
           (font-lock-fontify-region (point-min) (point-max))
           (should (= (uncoloured) 0)))))))
 
+(ert-deftest emjupy-test-refontifying-a-cell-leaves-output-padding-alone ()
+  "Re-highlighting a cell cannot disturb the padding of an output box.
+
+Highlighting is re-applied to a cell after an edit: the old faces are
+cleared and the new ones copied in from a fontified copy of the source.
+If that region ever reaches into an output box -- and it need only be
+off by a line -- the padding there is cleared and nothing puts it back,
+because the source being copied from has no padding in it.  The result
+is an output band whose background stops partway across the line."
+  (let ((cell (emjupy-test--cell-like
+               'code "print(1)"
+               (vector (emjupy-test--stream-output "alpha\nbeta\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-flet ((pad-faces ()
+                    (let (faces)
+                      (save-excursion
+                        (goto-char (point-min))
+                        (while (< (point) (point-max))
+                          (when (get-text-property (point) 'emjupy-pad)
+                            (push (get-text-property (point) 'font-lock-face) faces))
+                          (forward-char 1)))
+                      (nreverse faces))))
+          (should (equal (pad-faces) '(emjupy-output emjupy-output)))
+          ;; a re-highlight whose region covers the whole buffer, output and
+          ;; all -- the worst case of a region being wrong
+          (let ((inhibit-read-only t))
+            (emjupy--apply-faces-from
+             (propertize (make-string (- (point-max) (point-min)) ?x)
+                         'face 'font-lock-keyword-face)
+             (point-min)))
+          ;; the padding is untouched: it is not source and never was
+          (should (equal (pad-faces) '(emjupy-output emjupy-output))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
