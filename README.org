@@ -1355,11 +1355,9 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] upon reshowing output, the background color is removed (for output/warnings/errors/figures)
+- [ ] upon reshowing output, the background color is scrambled (for
+  output/warnings/errors/figures)
 - [ ] first and last line numbers of cell is at the outline using
   linenum mode, can we have them at the first line of code and last
   line of output instead? Adding
-- [ ] Turn huge Reame.org into documentation in separate folder/file.
-  Add badge for docs, organize in UI, design, intercommunication,
-  logical sections
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
