@@ -25,8 +25,7 @@ setup:
 #+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
 [[file:images/screenshot-dark-colored.png]]
 
-*N.B.:* Screenshot may be out of date, for instance colored lines do not
-exceed cell border anymore.
+*N.B.:* Screenshot may be out of date.
 
 * Features
 - persistent kernel session (to load large dataset once and re-use
