@@ -1354,9 +1354,18 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
+- [ ] when creating a new notebook, it should make a new cell and
+  start cursor there. Now it's only background and I cannot start typing
+- [ ] make the shadow file hidden on the remote, prepend =.emjupy_= to the name
+- [ ] =C-c C-c= on markdown cell should trigger latex rendering
+- [ ] make removing a cell an undo-able operation
+- [ ] make emjupy-notebook-list clickable with mouse too
+- [ ] when asking for port or url with (e.g., 8888) leaving empty
+  should use 8888 as the default
+** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
   output/warnings/errors/figures)
 - [ ] first and last line numbers of cell is at the outline using
   linenum mode, can we have them at the first line of code and last
-  line of output instead? Adding
+  line of output instead?
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
