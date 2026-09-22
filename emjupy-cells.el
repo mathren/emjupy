@@ -396,7 +396,48 @@ add: the render already running rebuilds from the same structs, which
 the caller has by then already updated."
   (unless (memq (current-buffer) emjupy--rendering-buffers)
     (let ((emjupy--rendering-buffers (cons (current-buffer) emjupy--rendering-buffers)))
-      (emjupy--rerender-notebook-1 target-cell))))
+      (if target-cell
+          ;; An explicit target is a request to move: honour it.
+          (emjupy--rerender-notebook-1 target-cell)
+        (emjupy--keeping-the-view
+         (lambda () (emjupy--rerender-notebook-1 nil)))))))
+
+(defun emjupy--keeping-the-view (thunk)
+  "Call THUNK, leaving point and the window scrolled where they were.
+
+Redrawing erases the buffer and rebuilds it, which moves point to the
+end and scrolls the window to follow.  Output arriving in a cell far
+from the one being read would therefore drag the view away from it --
+the reason a running notebook could not be read while it ran.
+
+Positions are remembered as line and column rather than as offsets:
+the rebuild changes how many characters precede a line, since output
+boxes grow and shrink, but the line a reader is looking at is still the
+line they were looking at."
+  (let* ((windows (get-buffer-window-list (current-buffer) nil t))
+         (point-line (line-number-at-pos (point)))
+         (point-col (current-column))
+         (starts (mapcar (lambda (w)
+                           (cons w (line-number-at-pos (window-start w))))
+                         windows)))
+    (unwind-protect
+        (funcall thunk)
+      (emjupy--goto-line-column point-line point-col)
+      (dolist (pair starts)
+        (let ((w (car pair)))
+          (when (window-live-p w)
+            (set-window-start
+             w (save-excursion (emjupy--goto-line-column (cdr pair) 0) (point))
+             t)
+            (set-window-point w (point))))))))
+
+(defun emjupy--goto-line-column (line column)
+  "Put point at COLUMN of LINE, or as near as the buffer allows."
+  (goto-char (point-min))
+  (forward-line (1- line))
+  (move-to-column column))
+
+
 
 (defcustom emjupy-protect-non-cell-regions t
   "When non-nil, make everything outside a cell\='s source read-only.

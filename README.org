@@ -1354,9 +1354,6 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] execution of cells/output arriving, etc should not jigger the view
-- [ ] why is parentesis autocompletion not active in emjupy? Should I
-  configure the relative package?
 ** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
   output/warnings/errors/figures)

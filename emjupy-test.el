@@ -5551,5 +5551,60 @@ hold literally -- so the way back is recorded as a function to call."
   ;; RET still works, for those who never touch the mouse
   (should (eq (lookup-key emjupy-list-mode-map (kbd "RET")) 'emjupy-list-open)))
 
+(ert-deftest emjupy-test-redraw-leaves-the-view-where-it-was ()
+  "A redraw does not drag the view away from what is being read.
+
+Redrawing erases the buffer and rebuilds it, which sent point to the end
+and scrolled the window after it -- so a notebook could not be read
+while it ran.  The line under point and the line at the top of the
+window are what must not change; their buffer positions may, since
+output boxes above grow and shrink."
+  (let ((cells (vconcat (cl-loop for i from 0 below 40
+                                 collect (emjupy-test--cell-like
+                                          'code (format "line_%d = %d" i i))))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        ;; the buffer has to be on screen for this to mean anything
+        (set-window-buffer (selected-window) buf)
+        (let ((w (selected-window)))
+          (cl-flet ((line-at (pos)
+                      (save-excursion
+                        (goto-char pos)
+                        (buffer-substring-no-properties
+                         (line-beginning-position) (line-end-position)))))
+            (goto-char (overlay-start
+                        (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 25))))
+            (recenter 0)
+            (redisplay t)
+            (let ((top (line-at (window-start w)))
+                  (here (line-at (point))))
+              (emjupy--rerender-notebook)
+              (redisplay t)
+              (should (equal (line-at (window-start w)) top))
+              (should (equal (line-at (point)) here)))))))))
+
+(ert-deftest emjupy-test-brackets-pair-in-cells ()
+  "Brackets pair as you type, as they would in a Python buffer.
+
+emjupy-mode derives from `fundamental-mode\=', which brings none of the
+editing conveniences, and nothing about a notebook suggests they have to
+be asked for separately."
+  (let ((cell (emjupy-test--cell-like 'code "x = 1")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (should electric-pair-mode)
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (end-of-line)
+        (let ((last-command-event ?\())
+          (call-interactively (key-binding "(")))
+        (should (equal (buffer-substring-no-properties
+                        (line-beginning-position) (line-end-position))
+                       "x = 1()")))))
+  ;; and it can be declined
+  (let ((emjupy-electric-pairs nil))
+    (with-temp-buffer
+      (emjupy-mode)
+      (should-not electric-pair-mode))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

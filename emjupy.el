@@ -263,10 +263,26 @@ the echo area, for pasting into a bug report."
     map)
   "Keymap for `emjupy-mode'.")
 
+(defcustom emjupy-electric-pairs t
+  "When non-nil, pair brackets and quotes as you type in cells.
+
+`electric-pair-mode\=' is global and off by default, and emjupy-mode
+derives from `fundamental-mode\=', so a notebook would otherwise behave
+less like a Python buffer than the code in it deserves.  Set to nil to
+leave the matter to your own configuration."
+  :type 'boolean
+  :group 'emjupy)
+
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
+  ;; Cells hold code, so the editing conveniences a programming mode would
+  ;; give apply here too.  emjupy-mode derives from `fundamental-mode', which
+  ;; brings none of them, and nothing about the buffer suggests to the user
+  ;; that they have to be asked for.
+  (when emjupy-electric-pairs
+    (electric-pair-local-mode 1))
   ;; Paint the page: the buffer's own background becomes the canvas, and the
   ;; cell overlays paint their interiors back to the theme's normal
   ;; background -- so the gaps between cells read as the page behind them.
