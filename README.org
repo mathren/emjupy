@@ -1112,15 +1112,16 @@ requires only =url.el= (built-in) and =websocket.el= (GNU ELPA).
 ** Undo
 
 Undo works within a cell, and survives output arriving, a cell being
-inserted, and a cell being deleted.  Every structural change now keeps it too: inserting, deleting, splitting
-and merging cells all redraw only the cells involved.
+inserted, and a cell being deleted. Every structural change now keeps
+it too: inserting, deleting, splitting and merging cells all redraw
+only the cells involved. Erasing a cell is an undoable action.
 
-Output and single-cell structural changes move only part of the buffer,
-by a known amount, so the undo entries before the change are untouched
-and those after it have their positions shifted to match.  A full
-rebuild moves everything while undo recording is off, and undo entries
-hold plain buffer positions rather than markers, so there is nothing
-left to adjust and the history is dropped.
+Output and single-cell structural changes move only part of the
+buffer, by a known amount, so the undo entries before the change are
+untouched and those after it have their positions shifted to match. /A
+full rebuild breaks the undo/. It moves everything while undo recording is
+off, and undo entries hold plain buffer positions rather than markers,
+so there is nothing left to adjust and the history is dropped.
 
 [[file:notes_undo.org][notes_undo.org]] has the measurements and what is left.
 
@@ -1338,7 +1339,7 @@ files above, and that the tar installs into an empty
 * Known limitations
 
 ** Multicursor
-Multi-cursor: Works fine editing within one cell while nothing else is
+It works fine editing within one cell while nothing else is
 happening. =multiple-cursors.el= places its fake-cursor overlays on real
 buffer text and a normal edit session applies correctly to all cursor
 positions. The catch: emjupy-mode rebuilds the entire buffer
