@@ -855,6 +855,41 @@ outputs until you save."
       (message "[emjupy] Cleared the output of %d cell%s."
                with-output (if (= with-output 1) "" "s"))))))
 
+(defun emjupy--reinsert-deleted-cell (index cell)
+  "Put CELL back at INDEX, for undo.
+
+Recorded in the undo list as an `apply' entry when a cell is deleted, so
+that plain \\[undo] brings it back.  The deletion itself cannot be undone
+the ordinary way: it is made with recording off, because a redraw moves
+buffer positions that undo entries hold literally."
+  (when emjupy--buffer-notebook
+    (let* ((cells (append (emjupy-notebook-cells emjupy--buffer-notebook) nil))
+           (at (min (max index 0) (length cells))))
+      (setf (emjupy-cell-overlay cell) nil)
+      (setf (emjupy-cell-output-ov cell) nil)
+      (unless (emjupy-insert-cell-at emjupy--buffer-notebook at cell)
+        (setf (emjupy-notebook-cells emjupy--buffer-notebook)
+              (vconcat (append (cl-subseq cells 0 at) (list cell) (cl-subseq cells at))))
+        (emjupy--rerender-notebook cell))
+      ;; and undoing the undo removes it again
+      (unless (eq buffer-undo-list t)
+        (push (list 'apply #'emjupy--redelete-cell cell) buffer-undo-list))
+      (emjupy--goto-cell cell 'start))))
+
+(defun emjupy--redelete-cell (cell)
+  "Remove CELL again, for redo after `emjupy--reinsert-deleted-cell'."
+  (when emjupy--buffer-notebook
+    (let ((index (cl-position cell (append (emjupy-notebook-cells emjupy--buffer-notebook)
+                                           nil))))
+      (unless (emjupy-delete-cell-at emjupy--buffer-notebook cell)
+        (setf (emjupy-notebook-cells emjupy--buffer-notebook)
+              (vconcat (remq cell (append (emjupy-notebook-cells emjupy--buffer-notebook)
+                                          nil))))
+        (emjupy--rerender-notebook))
+      (unless (eq buffer-undo-list t)
+        (push (list 'apply #'emjupy--reinsert-deleted-cell (or index 0) cell)
+              buffer-undo-list)))))
+
 (defun emjupy-delete-cell ()
   "Delete current cell at point."
   (interactive)
@@ -873,6 +908,13 @@ outputs until you save."
         (unless (emjupy-delete-cell-at nb curr-cell)
           (setf (emjupy-notebook-cells nb) (vconcat remaining))
           (emjupy--rerender-notebook next))
+        ;; An entry undo can act on.  The text deletion itself is made with
+        ;; recording off -- a redraw moves positions that undo entries hold
+        ;; literally -- so the way back is a function, not a region.
+        (unless (eq buffer-undo-list t)
+          (push (list 'apply #'emjupy--reinsert-deleted-cell idx curr-cell)
+                buffer-undo-list)
+          (undo-boundary))
         (when next (ignore-errors (emjupy--goto-cell next 'start)))))))
 
 (defun emjupy-cycle-cell-type ()

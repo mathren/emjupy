@@ -755,7 +755,16 @@ background is wider than the box."
 What running a markdown cell means in Jupyter: there is no code in it,
 so the result is the rendered form rather than anything from a kernel."
   (emjupy--sync-all-cells)
+  ;; Turn the preview on for this cell if it was off, so that running it
+  ;; renders rather than doing nothing visible.  Running a markdown cell
+  ;; means "show me this formatted", and the maths is the part that most
+  ;; needs showing.
+  (unless emjupy-render-latex
+    (setq-local emjupy-render-latex t))
   (emjupy--rerender-notebook cell)
+  (let ((ov (emjupy-cell-overlay cell)))
+    (when (overlayp ov)
+      (emjupy--preview-latex-in (overlay-start ov) (overlay-end ov))))
   (message "[emjupy] Rendered markdown cell.")
   cell)
 

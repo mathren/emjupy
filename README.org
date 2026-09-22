@@ -1354,14 +1354,9 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] when creating a new notebook, it should make a new cell and
-  start cursor there. Now it's only background and I cannot start typing
-- [ ] make the shadow file hidden on the remote, prepend =.emjupy_= to the name
-- [ ] =C-c C-c= on markdown cell should trigger latex rendering
-- [ ] make removing a cell an undo-able operation
-- [ ] make emjupy-notebook-list clickable with mouse too
-- [ ] when asking for port or url with (e.g., 8888) leaving empty
-  should use 8888 as the default
+- [ ] execution of cells/output arriving, etc should not jigger the view
+- [ ] why is parentesis autocompletion not active in emjupy? Should I
+  configure the relative package?
 ** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
   output/warnings/errors/figures)

@@ -4184,6 +4184,10 @@ shift.  This was the structural gap notes_undo.org described."
               ;; the typing is still there and still undoable
               (should (string-match-p "a = 1 \\+ 7" (buffer-string)))
               (undo)
+              ;; deleting a cell is undoable in its own right, so that step
+              ;; comes back first and the typing needs one more
+              (when (string-match-p "\\+ 7" (buffer-string))
+                (undo-more 1))
               (should-not (string-match-p "\\+ 7" (buffer-string)))
               (should (string-match-p "a = 1" (buffer-string))))
           (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))))
@@ -4884,7 +4888,16 @@ whether the first cell survived, :problems any invariant violations."
         (undo-boundary)
         (funcall operation nb buf)
         (goto-char (point-min))
-        (let ((worked (condition-case nil (progn (undo) t) (error nil))))
+        (let ((worked (condition-case nil
+                          (progn
+                            (undo)
+                            ;; Deleting a cell is itself undoable now, so the
+                            ;; first step puts the cell back and the typing
+                            ;; needs another.  Anything else is undone in one.
+                            (when (string-match-p "\\+ 7" (buffer-string))
+                              (undo-more 1))
+                            t)
+                        (error nil))))
           ;; Undo changes the buffer; the cells catch up at the next sync,
           ;; which every path that reads them -- saving included -- performs
           ;; first.  Syncing here is what a user's next action would do.
@@ -5475,6 +5488,68 @@ mode undefined.  The require happens where the mode is used instead."
     (should (re-search-forward "(require 'emjupy)" nil t))
     ;; and it is inside a function, not at top level, or the cycle returns
     (should (> (car (syntax-ppss (match-beginning 0))) 0))))
+
+(ert-deftest emjupy-test-empty-answer-means-the-default-port ()
+  "Answering nothing at the port prompt accepts the default.
+
+There is little point making someone type the number Jupyter would have
+used anyway, and the prompt says which it is."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "")))
+    (should (equal (emjupy--read-server-url) emjupy-default-port)))
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "   ")))
+    (should (equal (emjupy--read-server-url) emjupy-default-port)))
+  ;; and an answer is still an answer
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "9999")))
+    (should (equal (emjupy--read-server-url) "9999"))))
+
+(ert-deftest emjupy-test-shadow-file-is-hidden ()
+  "The shadow file is hidden.
+
+It belongs to emjupy rather than to the user, and it may sit in the
+directory they are working in, so it stays out of their listings."
+  (let ((nb (make-emjupy-notebook
+             :cells [] :path "analysis.ipynb"
+             :server (make-emjupy-server :base-url "box:8888" :token "t"))))
+    (let ((name (file-name-nondirectory (emjupy--shadow-file-path nb))))
+      (should (string-prefix-p ".emjupy_" name))
+      ;; still tells you which server and notebook it belongs to
+      (should (string-match-p "analysis" name))
+      (should (string-match-p "8888" name)))))
+
+(ert-deftest emjupy-test-deleting-a-cell-can-be-undone ()
+  "Undo brings a deleted cell back, in its place.
+
+The deletion cannot be undone the ordinary way -- it is made with
+recording off, because a redraw moves buffer positions that undo entries
+hold literally -- so the way back is recorded as a function to call."
+  (cl-flet ((mk (s) (emjupy-test--cell-like 'code s)))
+    (let* ((c1 (mk "a = 1")) (c2 (mk "b = 2")) (c3 (mk "c = 3"))
+           (cells (vector c1 c2 c3)))
+      (emjupy-test--with-notebook cells buf nb
+        (with-current-buffer buf
+          (buffer-enable-undo)
+          (setq buffer-undo-list nil)
+          (goto-char (overlay-start (emjupy-cell-overlay c2)))
+          (emjupy-delete-cell)
+          (should (= (length (emjupy-notebook-cells nb)) 2))
+          (should-not (string-match-p "b = 2" (buffer-string)))
+          (undo)
+          ;; back, and in the middle where it was
+          (should (= (length (emjupy-notebook-cells nb)) 3))
+          (should (string-match-p "b = 2" (buffer-string)))
+          (should (equal (mapcar #'emjupy-cell-source
+                                 (append (emjupy-notebook-cells nb) nil))
+                         '("a = 1" "b = 2" "c = 3")))
+          (should-not (emjupy--check-invariants)))))))
+
+(ert-deftest emjupy-test-notebook-list-is-clickable ()
+  "A row in the listing opens when clicked, as it would in any listing."
+  (should (eq (lookup-key emjupy-list-mode-map [mouse-1])
+              'emjupy-list-open-at-click))
+  (should (eq (lookup-key emjupy-list-mode-map [double-mouse-1])
+              'emjupy-list-open-at-click))
+  ;; RET still works, for those who never touch the mouse
+  (should (eq (lookup-key emjupy-list-mode-map (kbd "RET")) 'emjupy-list-open)))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

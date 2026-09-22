@@ -478,9 +478,14 @@ The server is folded into the name: two servers can both host
   (let* ((dir (emjupy--shadow-directory-for nb))
          (server (emjupy-notebook-server nb))
          (tag (if server (emjupy--server-label server) "local"))
-         (safe-name (replace-regexp-in-string
-                     "[^A-Za-z0-9._-]" "_"
-                     (format "%s__%s" tag (or (emjupy-notebook-path nb) "untitled")))))
+         ;; Leading dot: the file belongs to emjupy, not to the user, and it
+         ;; may well sit in the directory they are working in.  Hidden, it
+         ;; stays out of their listings and their completions.
+         (safe-name (concat ".emjupy_"
+                            (replace-regexp-in-string
+                             "[^A-Za-z0-9._-]" "_"
+                             (format "%s__%s" tag
+                                     (or (emjupy-notebook-path nb) "untitled"))))))
     ;; Deliberately no `make-directory' here: with a TRAMP
     ;; `emjupy-shadow-directory' that would open an ssh connection merely to
     ;; ask what the path is. The directory is created in

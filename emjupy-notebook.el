@@ -133,6 +133,26 @@ server with nothing running gets a fresh kernel."
     id))
 
 ;;;###autoload
+(defcustom emjupy-default-port "8888"
+  "Port assumed when none is given.
+
+Jupyter's own default, and the one a tunnel is usually pointed at."
+  :type 'string
+  :group 'emjupy)
+
+(defun emjupy--read-server-url ()
+  "Ask for a port or URL, returning `emjupy-default-port' if none is given.
+
+The prompt shows the default, and answering nothing accepts it -- there
+is little point making someone type the number Jupyter would have used
+anyway."
+  (let ((answer (read-string
+                 (format "Jupyter port or URL (default %s): " emjupy-default-port)
+                 nil 'emjupy--port-history)))
+    (if (string-empty-p (string-trim answer))
+        emjupy-default-port
+      answer)))
+
 (defun emjupy-login (url &optional token)
   "Connect to the Jupyter server at URL and open one of its notebooks.
 TOKEN, when given, is used instead of prompting.
@@ -152,8 +172,7 @@ own kernel, so several remote sessions can be live in one Emacs. Use
 \\[emjupy-connect-kernel-interactive] to give an individual notebook a
 different kernel. With a prefix argument, always prompt for the token."
   (interactive
-   (list (read-string "Jupyter port or URL (e.g. 8888): "
-                      nil 'emjupy--port-history)
+   (list (emjupy--read-server-url)
          (when current-prefix-arg (emjupy--read-token "Token: "))))
   (let* ((base-url (emjupy--normalize-url url))
          (token (emjupy--resolve-token base-url token))
@@ -672,6 +691,15 @@ the dashboard is for; the kernels are context."
                            tabulated-list-entries))))
     (tabulated-list-print t)))
 
+(defun emjupy-list-open-at-click (event)
+  "Open the row that was clicked.
+EVENT is the mouse event."
+  (interactive "e")
+  (let ((posn (event-end event)))
+    (with-current-buffer (window-buffer (posn-window posn))
+      (goto-char (posn-point posn))
+      (emjupy-list-open))))
+
 (defun emjupy-list-open ()
   "Open the notebook, or descend into the directory, at point."
   (interactive)
@@ -815,7 +843,22 @@ first act would always be to add one."
       (user-error "Not overwriting %s" path))
     (emjupy--http-request "PUT" server (concat "/api/contents/" path)
                           (json-serialize req))
-    (emjupy-open-notebook path server)))
+    (emjupy-open-notebook path server)
+    ;; Into the cell, not merely into the buffer.  A new notebook is made to
+    ;; be typed in, and landing at `point-min' leaves the caret against the
+    ;; outline with nothing to type into.
+    (let ((buf (emjupy--notebook-buffer-for path server)))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (let ((first (car (append (emjupy-notebook-cells emjupy--buffer-notebook) nil))))
+            (when (and first (overlayp (emjupy-cell-overlay first)))
+              (goto-char (overlay-start (emjupy-cell-overlay first)))
+              (when (get-buffer-window buf)
+                (set-window-point (get-buffer-window buf) (point))))))))))
+
+(defun emjupy--notebook-buffer-for (path server)
+  "Return the buffer showing PATH on SERVER, or nil."
+  (get-buffer (emjupy--notebook-buffer-name path server)))
 
 (define-obsolete-function-alias 'emjupy-list-new-notebook
   'emjupy-create-new-notebook "0.1.0")
@@ -837,6 +880,11 @@ first act would always be to add one."
 (defvar emjupy-list-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'emjupy-list-open)
+    ;; Clicking a row opens it, as it would in any listing.  The click moves
+    ;; point to the row first: `emjupy-list-open' reads the row at point,
+    ;; and a click elsewhere should act on what was clicked.
+    (define-key map [mouse-1] #'emjupy-list-open-at-click)
+    (define-key map [double-mouse-1] #'emjupy-list-open-at-click)
     (define-key map (kbd "^")   #'emjupy-list-open)
     (define-key map (kbd "g")   #'emjupy-list-refresh)
     (define-key map (kbd "k")   #'emjupy-list-kill-kernel)
