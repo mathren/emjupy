@@ -75,6 +75,7 @@
 (declare-function emjupy--shadow-cell-marker "emjupy-eglot" (id))
 (declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
 (declare-function emjupy--remote-root-for "emjupy-notebook" (server))
+(declare-function emjupy--redact-url "emjupy-http" (url))
 (declare-function emjupy--shadow-blocked-p "emjupy-eglot" ())
 
 (defcustom emjupy-lsp-enabled t
@@ -292,7 +293,10 @@ socket was working."
            (format "kernel cwd      %s" (or (emjupy-notebook-kernel-cwd nb)
                                             "unknown -- kernel has not answered"))
            (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
-           (format "lsp url         %s" (if server (emjupy--lsp-url server) "n/a"))
+           (format "lsp url         %s"
+                   ;; Redacted: this report is written to be pasted into a
+                   ;; bug report, and the URL carries the token.
+                   (if server (emjupy--redact-url (emjupy--lsp-url server)) "n/a"))
            (format "shadow file     %s"
                    (if (buffer-live-p shadow)
                        (or (buffer-local-value 'buffer-file-name shadow) "unnamed")

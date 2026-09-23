@@ -432,7 +432,7 @@ line they were looking at."
             (set-window-point w (point))))))))
 
 (defun emjupy--goto-line-column (line column)
-  "Put point at COLUMN of LINE, or as near as the buffer allows."
+  "Put point at COLUMN of LINE, or as near to it as the buffer permits."
   (goto-char (point-min))
   (forward-line (1- line))
   (move-to-column column))

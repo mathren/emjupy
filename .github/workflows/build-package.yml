@@ -4,46 +4,145 @@ on:
   # Creates the "Run workflow" button in the GitHub Actions tab
   workflow_dispatch:
 
-  # Triggers automatically on push if an Elisp file or Makefile changes
   push:
     paths:
       - '**/*.el'
       - 'Makefile'
+      - '.github/workflows/*.yml'
 
-  # Triggers automatically on pull requests if an Elisp file or Makefile changes
   pull_request:
     paths:
       - '**/*.el'
       - 'Makefile'
+      - '.github/workflows/*.yml'
 
 jobs:
+  # Unit tests and the package tar.  No server, so this is the job that has
+  # to stay fast and green.
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Installs Emacs on the runner (Required if your Makefile uses the 'emacs' command)
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
           version: '30.1'
 
-      - name: Clean and Check
+      # The one dependency.  Vendored rather than installed from an archive,
+      # so the build does not depend on MELPA being reachable.
+      - name: Fetch websocket.el
+        run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
+
+      - name: Compile and test
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: |
           make clean
-          make check
+          make compile
+          make test
 
       - name: Package
-        run: |
-          make package
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
+        run: make package
 
-      # Uploads the .tar file so you can download it from GitHub
       - name: Serve Package as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: emjupy
           path: '*.tar'
-          # Optional: How long GitHub keeps the file before deleting it (max 90 days)
-          # retention-days: 14
+
+  # What a MELPA review checks.  Separate from the tests, so a docstring
+  # complaint does not read as a broken build.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      - name: Fetch websocket.el
+        run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
+
+      - name: Install package-lint
+        run: |
+          emacs -batch -Q --eval "(progn \
+            (require 'package) \
+            (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t) \
+            (package-initialize) \
+            (package-refresh-contents) \
+            (package-install 'package-lint))"
+
+      - name: checkdoc and package-lint
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
+        run: make lint
+
+  # The tests that talk to a real server, a real kernel and a real language
+  # server: the ones most likely to catch a regression in the WebSocket,
+  # session or LSP paths.  Until now they ran only if someone remembered to
+  # run them by hand.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      - name: Fetch websocket.el
+        run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # jupyter-lsp is the plumbing; python-lsp-server is the language server
+      # itself.  Neither installs the other, and the LSP tests need both.
+      - name: Install Jupyter and a language server
+        run: |
+          python -m pip install --upgrade pip
+          pip install jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]' numpy matplotlib
+
+      - name: Start a Jupyter server
+        run: |
+          mkdir -p "$RUNNER_TEMP/nbroot"
+          nohup jupyter server --no-browser --port=8888 --ip=127.0.0.1 \
+            --IdentityProvider.token=emjupy-ci \
+            --ServerApp.root_dir="$RUNNER_TEMP/nbroot" \
+            > "$RUNNER_TEMP/jupyter.log" 2>&1 &
+          # Waited for rather than slept through: a slow runner would
+          # otherwise fail in a way that reads as a code fault.
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null "http://127.0.0.1:8888/api/status?token=emjupy-ci"; then
+              echo "server up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start"
+          cat "$RUNNER_TEMP/jupyter.log"
+          exit 1
+
+      - name: Unit and integration tests
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
+          EMJUPY_TEST_URL: 127.0.0.1:8888
+          EMJUPY_TEST_TOKEN: emjupy-ci
+          EMJUPY_TEST_ROOT: ${{ runner.temp }}/nbroot
+        run: |
+          make clean
+          make check
+
+      - name: Jupyter log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/jupyter.log"

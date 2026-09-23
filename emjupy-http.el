@@ -136,6 +136,24 @@ tested without a server."
         (json-parse-string body :object-type 'hash-table :array-type 'array)
       (error (error "JSON Parse Error on %s: %s" path err))))))
 
+(defconst emjupy--secret-query-keys '("token" "_xsrf" "password")
+  "Query parameters whose values must never be shown.")
+
+(defun emjupy--redact-url (url)
+  "Return URL with the value of any secret query parameter hidden.
+
+A URL carries the token and the XSRF cookie, and URLs end up in error
+messages, in diagnostics, and from there in bug reports and pasted
+terminal output.  What is useful in all of those is which server was
+being talked to, not the credential that authenticated it."
+  (if (not (stringp url))
+      url
+    (let ((out url))
+      (dolist (key emjupy--secret-query-keys out)
+        (setq out (replace-regexp-in-string
+                   (concat "\\([?&]" (regexp-quote key) "=\\)[^&]*")
+                   "\\1<redacted>" out t))))))
+
 (defun emjupy--http-request (method server path &optional body callback retrying)
   "Send a request to SERVER and return the parsed JSON response.
 METHOD is an HTTP method string, PATH the API path, BODY an optional
@@ -194,7 +212,8 @@ cookie."
         (url-retrieve full-url callback)
       (let ((buffer (url-retrieve-synchronously full-url t nil 5)))
         (if (not buffer)
-            (error "Network error: Could not reach %s" full-url)
+            (error "Network error: Could not reach %s"
+                   (emjupy--redact-url full-url))
           (with-current-buffer buffer
             (goto-char (point-min))
             (let ((status 200))

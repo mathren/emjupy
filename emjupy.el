@@ -260,6 +260,10 @@ the echo area, for pasting into a bug report."
     ;; kernel is the rarer act and moves one modifier away.
     (define-key map (kbd "C-c C-z") #'emjupy-interrupt-kernel)
     (define-key map (kbd "C-c M-z") #'emjupy-connect-kernel-interactive)
+    ;; The menu.  Not `C-c C-h': `C-h' after a prefix is reserved for the
+    ;; list of that prefix's bindings, which is the very thing this improves
+    ;; on, so taking the key would remove the fallback.
+    (define-key map (kbd "C-c C-v") #'emjupy-menu)
     map)
   "Keymap for `emjupy-mode'.")
 
@@ -272,6 +276,69 @@ less like a Python buffer than the code in it deserves.  Set to nil to
 leave the matter to your own configuration."
   :type 'boolean
   :group 'emjupy)
+
+(require 'transient)
+
+;;;###autoload (autoload 'emjupy-menu "emjupy" nil t)
+(transient-define-prefix emjupy-menu ()
+  "Show what emjupy can do, grouped by what you are trying to do.
+
+There are some forty bindings, and `C-h m' lists them in the order they
+were defined rather than the order anyone thinks in.  This groups them,
+and can be used as a menu in its own right: everything here runs from
+this buffer."
+  [:description
+   (lambda ()
+     (let ((nb (and (bound-and-true-p emjupy--buffer-notebook)
+                    emjupy--buffer-notebook)))
+       (if nb
+           (format "emjupy  %s"
+                   (or (emjupy-notebook-path nb) "unsaved"))
+         "emjupy")))
+   ["Run"
+    ("c" "this cell, then move on" emjupy-execute-cell-and-goto-next)
+    ("e" "this cell, stay here" emjupy-execute-cell-at-point)
+    ("z" "interrupt the kernel" emjupy-interrupt-kernel)
+    ("$" "show the last traceback" emjupy-show-traceback)]
+   ["Cells"
+    ("a" "new cell above" emjupy-insert-cell-above)
+    ("b" "new cell below" emjupy-insert-cell-below)
+    ("k" "delete this cell" emjupy-delete-cell)
+    ("s" "split here" emjupy-split-cell)
+    ("j" "join to the one above" emjupy-join-cell-above)
+    ("t" "code or markdown" emjupy-cycle-cell-type)
+    ("w" "copy this cell" emjupy-copy-cell)
+    ("y" "paste a cell" emjupy-yank-cell)]
+   ["Output"
+    ("o" "hide or show this output" emjupy-toggle-cell-output)
+    ("l" "clear this output" emjupy-clear-cell-output)
+    ("L" "clear every output" emjupy-clear-all-outputs)
+    ("r" "redraw the notebook" emjupy-re-render)]]
+  [["Moving"
+    ("n" "next cell" emjupy-next-cell)
+    ("p" "previous cell" emjupy-previous-cell)
+    ("<" "start of this cell" emjupy-beginning-of-cell)
+    (">" "end of this cell" emjupy-end-of-cell)
+    ("M-p" "start of the previous cell" emjupy-beginning-of-previous-cell)
+    ("M-n" "start of the next cell" emjupy-beginning-of-next-cell)
+    ("M-P" "end of the previous cell" emjupy-end-of-previous-cell)
+    ("M-N" "end of the next cell" emjupy-end-of-next-cell)
+    ("<up>" "move this cell up" emjupy-move-cell-up)
+    ("<down>" "move this cell down" emjupy-move-cell-down)]
+   ["Notebook"
+    ("S" "save to the server" emjupy-save-notebook)
+    ("B" "switch notebook" emjupy-switch-notebook)
+    ("X" "export as .py" emjupy-export-py)
+    ("'" "edit this cell in a buffer" emjupy-edit-cell-externally)]
+   ["Server"
+    ("g" "log in to a server" emjupy-login)
+    ("R" "restart the kernel" emjupy-restart-kernel)
+    ("C" "reconnect the kernel" emjupy-reconnect-kernel)
+    ("K" "choose a kernel" emjupy-connect-kernel-interactive)
+    ("?" "what is going on" emjupy-status)]
+   ["Language server"
+    ("d" "diagnose it" emjupy-lsp-diagnose)
+    ("v" "which emjupy is this" emjupy-version)]])
 
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."

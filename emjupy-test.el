@@ -5606,5 +5606,108 @@ be asked for separately."
       (emjupy-mode)
       (should-not electric-pair-mode))))
 
+(defconst emjupy-test--menu-exempt
+  '(emjupy-menu emjupy-indent-or-cycle emjupy-latex-unrender-or-delete)
+  "Commands that belong on a key but not in the menu.
+
+The menu itself; TAB, which indents and is not a thing one goes looking
+for; and DEL, which reveals a rendered formula and only makes sense with
+point already on one.")
+
+(defun emjupy-test--menu-commands ()
+  "Return the commands offered by `emjupy-menu\='."
+  (let (found)
+    (letrec ((walk (lambda (node)
+                     (cond
+                      ((vectorp node) (mapc walk (append node nil)))
+                      ((consp node)
+                       (let ((spec (plist-get node :command)))
+                         (when (and spec (symbolp spec)) (push spec found)))
+                       (mapc (lambda (x) (when (or (consp x) (vectorp x))
+                                           (funcall walk x)))
+                             node))))))
+      (funcall walk (get 'emjupy-menu 'transient--layout)))
+    found))
+
+(ert-deftest emjupy-test-menu-covers-what-is-bound ()
+  "Everything on a key is in the menu.
+
+The menu is the discovery aid: forty-odd bindings are more than anyone
+finds by reading `C-h m\', which lists them in definition order rather
+than by what they are for.  A command reachable by a key and absent from
+the menu is one nobody will find, so this fails rather than letting the
+two drift apart."
+  (let ((in-menu (emjupy-test--menu-commands))
+        (bound nil))
+    ;; Recursively: most of the bindings live under the C-c prefix, and
+    ;; `map-keymap\' does not descend into a prefix on its own -- an earlier
+    ;; version of this test enumerated only the handful of top-level keys
+    ;; and passed while missing everything it was written to check.
+    (letrec ((collect (lambda (km)
+                        (map-keymap
+                         (lambda (_event def)
+                           (cond
+                            ((keymapp def) (funcall collect def))
+                            ((and (symbolp def) (commandp def))
+                             (cl-pushnew def bound))))
+                         km))))
+      (funcall collect emjupy-mode-map))
+    (should in-menu)
+    (let ((missing (seq-remove (lambda (c) (or (memq c in-menu)
+                                               (memq c emjupy-test--menu-exempt)))
+                               bound)))
+      (should (equal missing nil)))
+    ;; and nothing in the menu that does not exist
+    (dolist (cmd in-menu)
+      (should (fboundp cmd)))))
+
+(ert-deftest emjupy-test-menu-is-reachable ()
+  "The menu is on a key, and not on a reserved one.
+
+`C-c C-h\' would have been the guessable choice, but `C-h\' after a prefix
+is reserved for the list of that prefix\='s bindings -- the fallback this
+menu improves on, and one worth keeping."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-v")) 'emjupy-menu))
+  (should-not (eq (lookup-key emjupy-mode-map (kbd "C-c C-h")) 'emjupy-menu))
+  (should (commandp 'emjupy-menu)))
+
+(ert-deftest emjupy-test-secrets-are-redacted-from-urls ()
+  "A URL shown to anyone has its credentials hidden.
+
+The token and the XSRF cookie travel in the query string, and URLs reach
+error messages and the diagnostic report -- which is written to be
+pasted into a bug report.  What is useful there is which server was
+being talked to, not what authenticated it."
+  (should (equal (emjupy--redact-url
+                  "ws://localhost:9999/lsp/ws/pylsp?token=s3cret")
+                 "ws://localhost:9999/lsp/ws/pylsp?token=<redacted>"))
+  (should (equal (emjupy--redact-url
+                  "http://localhost:8888/api/kernels?_xsrf=abc123&_t=1")
+                 "http://localhost:8888/api/kernels?_xsrf=<redacted>&_t=1"))
+  ;; the rest of the URL is left alone: it is the useful part
+  (should (equal (emjupy--redact-url "http://box:8888/api/contents/a.ipynb")
+                 "http://box:8888/api/contents/a.ipynb"))
+  ;; and the cache-buster is not a secret, so it stays legible
+  (should (string-match-p "_t=1"
+                          (emjupy--redact-url
+                           "http://h/api?token=x&_t=1"))))
+
+(ert-deftest emjupy-test-diagnose-does-not-print-the-token ()
+  "The language server report is safe to paste.
+
+It prints the WebSocket URL, which carries the token."
+  (let ((cell (emjupy-test--cell-like 'code "x = 1")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "localhost:9999" :token "s3cret"))
+        (cl-letf (((symbol-function 'display-buffer) #'ignore))
+          (emjupy-lsp-diagnose))
+        (with-current-buffer "*emjupy language server*"
+          (should-not (string-match-p "s3cret" (buffer-string)))
+          (should (string-match-p "<redacted>" (buffer-string)))
+          ;; still says which server, which is the point of the line
+          (should (string-match-p "localhost:9999" (buffer-string))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -7,6 +7,7 @@
 #   make compile   byte-compile everything (warnings are errors-ish: read them)
 #   make test      unit tests only (no server needed)
 #   make check     unit + integration tests (needs a live Jupyter server)
+#   make lint      checkdoc and, if installed, package-lint
 #   make package   build emjupy-VERSION.tar
 #   make install   install that tar into this Emacs via package-install-file
 #   make clean
@@ -26,7 +27,7 @@ SOURCES = emjupy-core.el emjupy-http.el emjupy-render.el emjupy-cells.el \
           emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el emjupy-notebook.el emjupy.el
 PKGFILES = $(SOURCES) emjupy-pkg.el README.org
 
-.PHONY: all compile test check check-version package install clean timestamps
+.PHONY: all compile test check lint check-version package install clean timestamps
 
 all: compile
 
@@ -39,8 +40,22 @@ test:
 	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
 
 # Integration tests are opt-in; see the README for the environment variables.
+# The command is the same as `test': what decides whether the integration
+# tests run is EMJUPY_TEST_URL, which they check themselves and skip without.
+# So `check' insists on it -- running `check' and silently getting only the
+# unit tests is how a suite comes to look green while the half most likely to
+# catch a regression never ran.
 check:
+ifndef EMJUPY_TEST_URL
+	$(error EMJUPY_TEST_URL is not set, so the integration tests would be \
+skipped.  Set EMJUPY_TEST_URL, EMJUPY_TEST_TOKEN and EMJUPY_TEST_ROOT, or \
+run `make test' if you only want the unit tests)
+endif
 	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
+
+# What a MELPA review checks, and what the code already follows by hand.
+lint:
+	$(EMACS) -batch -Q $(LOADPATH) -l lint.el
 
 # Called by the release workflow, which passes the tag being released.
 # Three things have to agree or a release ships claiming to be a version
