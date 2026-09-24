@@ -35,6 +35,7 @@
 (declare-function emjupy--check-invariants "emjupy-cells" ())
 (declare-function emjupy--overlays-sane-p "emjupy-cells" ())
 (declare-function emjupy--sync-all-cells "emjupy-cells" ())
+(declare-function emjupy--websocket-auth-headers "emjupy-lsp" (server))
 (declare-function emjupy--refresh-kernel-cwd "emjupy-eglot" (nb))
 (require 'emjupy-http)
 (require 'emjupy-cells)
@@ -426,12 +427,10 @@ several notebooks -- from several servers -- stay live at once."
                            (concat "?token=" (url-hexify-string token)))))
          ;; Belt and braces: some deployments (and some reverse proxies in
          ;; front of a tunnel) strip or ignore the query-string token but
-         ;; honour the Authorization header.
-         (headers (append
-                   (unless (string-empty-p token)
-                     `(("Authorization" . ,(format "token %s" token))))
-                   (when (emjupy-server-xsrf server)
-                     `(("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server)))))))
+         ;; honour the Authorization header.  Shared with the language
+         ;; server's socket, which lacked them and could not connect where
+         ;; this one could.
+         (headers (emjupy--websocket-auth-headers server))
          (kernel (make-emjupy-kernel
                   :id kernel-id :name kernel-name :server server
                   :pending (make-hash-table :test 'equal)

@@ -6214,5 +6214,44 @@ asked to produce it again for nothing."
           (should-not asked)
           (should (= (length (emjupy-cell-outputs cell)) 0)))))))
 
+(ert-deftest emjupy-test-both-websockets-authenticate-alike ()
+  "The language server\='s socket carries what the kernel\='s socket carries.
+
+A token in the query string is not accepted everywhere a token in a
+header is -- the kernel socket has always sent both, with a comment
+saying why: a proxy in front of a tunnel may strip the query.  The
+language server\='s socket sent neither, which is how a notebook could
+execute cells over a WebSocket while the language server on the same
+host refused to connect, and why the fallback to a LOCAL server kept
+happening."
+  (let ((server (make-emjupy-server :base-url "localhost:9999" :token "s3cret")))
+    (should (equal (emjupy--websocket-auth-headers server)
+                   '(("Authorization" . "token s3cret"))))
+    ;; the XSRF cookie travels too, where there is one
+    (setf (emjupy-server-xsrf server) "abc123")
+    (should (equal (emjupy--websocket-auth-headers server)
+                   '(("Authorization" . "token s3cret")
+                     ("Cookie" . "_xsrf=abc123"))))
+    ;; and a server with no token asks for nothing
+    (should-not (emjupy--websocket-auth-headers
+                 (make-emjupy-server :base-url "h" :token "")))))
+
+(ert-deftest emjupy-test-lsp-socket-sends-the-headers ()
+  "The headers reach `websocket-open\=', not merely exist."
+  (let ((sent 'unset)
+        (server (make-emjupy-server :base-url "localhost:9999" :token "s3cret")))
+    (cl-letf (((symbol-function 'websocket-open)
+               (lambda (_url &rest args)
+                 (setq sent (plist-get args :custom-header-alist))
+                 nil)))
+      (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server))
+            (buf (generate-new-buffer " *shadow*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer buf (setq buffer-file-name "/tmp/shadow.py"))
+              (ignore-errors (emjupy--eglot-connect nb buf)))
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+    (should (equal sent '(("Authorization" . "token s3cret"))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -130,6 +130,23 @@ than a responsive editor."
 
 ;; --- transport --------------------------------------------------------------
 
+(defun emjupy--websocket-auth-headers (server)
+  "Return the headers a WebSocket to SERVER should carry.
+
+The same ones the kernel socket sends, and for the same reason: a token
+in the query string is not accepted everywhere a token in a header is,
+and the XSRF cookie is checked on upgrade requests by some server
+versions.  The kernel socket has always sent both; this one sent
+neither, which is why a notebook could execute cells over a WebSocket
+while the language server on the same host refused to connect."
+  (let ((token (or (emjupy-server-token server) ""))
+        (xsrf (emjupy-server-xsrf server)))
+    (append
+     (unless (string-empty-p token)
+       (list (cons "Authorization" (format "token %s" token))))
+     (when xsrf
+       (list (cons "Cookie" (format "_xsrf=%s" xsrf)))))))
+
 (defun emjupy--lsp-url (server)
   "Return the `jupyter-lsp' WebSocket URL on SERVER."
   (let* ((parts (emjupy--server-parts server))
@@ -765,6 +782,8 @@ Returns the server, or nil."
          (local-file (buffer-local-value 'buffer-file-name buffer))
          (ws (condition-case err
                  (websocket-open (emjupy--lsp-url server)
+                                 :custom-header-alist
+                                 (emjupy--websocket-auth-headers server)
                                  :on-message (lambda (_ws _frame) nil)
                                  :on-error (lambda (&rest _) nil))
                (error (emjupy--lsp-explain-failure server)
