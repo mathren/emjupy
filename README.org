@@ -1369,7 +1369,7 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
     =M-.= works for python modules (e.g., =glob=) but cannot find the
     definition of function. Maybe there is a different emacs way to do this?
 - [ ] =C-e= in an output line does not go to the end of the line (say long output lines)
-
+- [ ] running a cell appear to break undo.
 
 ** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
