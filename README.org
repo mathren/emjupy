@@ -1357,6 +1357,13 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - Aim: editing a cell same experience as editing a python file and we
   do not want to fix/emulate commands one by one.
+  - [ ] =M-.= on a sibling module.  Diagnosed from an Eglot transcript:
+    emjupy had silently fallen back to a language server on the LOCAL
+    machine, which answers about the wrong files and the wrong Python --
+    stdlib lookups worked, the user's own modules did not.  That fallback
+    now warns, and the server beside the kernel is told where the
+    notebook's modules are.  Why the WebSocket fails, with a pylsp
+    session listed at =/lsp/status=, is still open.  Original report:
   - [ ] =M-.= fails again on remote with custom file. Example:
     file =library.py= contains the definition of =function.= In a notebook cell I have
     #+BEGIN_SRC python

@@ -5779,5 +5779,75 @@ untidy."
             ;; place in the buffer should not
             (should (= (line-number-at-pos (window-start w)) top))))))))
 
+(ert-deftest emjupy-test-server-is-told-where-modules-are ()
+  "The language server is told the notebook\='s own directory.
+
+A server finds `import mylib\=' by looking beside the file that imports
+it.  Beside a notebook there is no file -- only a shadow whose name the
+server is told -- so whether that directory can be read depends on how
+the notebook is reached.  Saying where the modules are does not depend
+on that.
+
+The message is built here rather than left to
+`eglot-workspace-configuration\=', which Eglot reads while connecting,
+before the buffer counts as one it manages: a value set there arrives as
+an empty settings object."
+  (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb"
+                                  :kernel-cwd "/srv/project"))
+        (sent nil))
+    (cl-letf (((symbol-function 'jsonrpc-notify)
+               (lambda (_server method params) (push (cons method params) sent))))
+      (emjupy--set-workspace-configuration nb 'a-server)
+      (should sent)
+      (let* ((msg (car sent))
+             (settings (plist-get (cdr msg) :settings))
+             (paths (thread-last settings
+                                 (funcall (lambda (s) (plist-get s :pylsp)))
+                                 (funcall (lambda (s) (plist-get s :plugins)))
+                                 (funcall (lambda (s) (plist-get s :jedi)))
+                                 (funcall (lambda (s) (plist-get s :extra_paths))))))
+        (should (eq (car msg) :workspace/didChangeConfiguration))
+        (should (equal (append paths nil) '("/srv/project")))))
+    ;; nothing is sent when there is nowhere to point at
+    (setq sent nil)
+    (cl-letf (((symbol-function 'jsonrpc-notify)
+               (lambda (&rest _) (push t sent))))
+      (emjupy--set-workspace-configuration
+       (make-emjupy-notebook :cells [] :path "n.ipynb") 'a-server)
+      (should-not sent)
+      ;; nor when it has been declined
+      (let ((emjupy-tell-server-where-modules-are nil))
+        (emjupy--set-workspace-configuration nb 'a-server)
+        (should-not sent)))))
+
+(ert-deftest emjupy-test-local-language-server-says-so ()
+  "Falling back to a language server here is announced, once.
+
+It reads this machine\='s files and this machine\='s Python, so it answers
+about neither the code nor the environment the notebook runs in.  The
+standard library still resolves, which is what makes it easy to miss --
+the imports that quietly come back empty are the user\='s own modules.
+Silence there cost a long diagnosis, and the transcript that settled it
+began with the words `Running language server: /usr/bin/pylsp\='."
+  (let ((cell (emjupy-test--cell-like 'code "x = 1"))
+        (said nil))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/elsewhere")
+        (setq emjupy--lsp-last-failure "Connection refused")
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (when fmt (push (apply #'format fmt args) said)))))
+          (emjupy--warn-local-language-server emjupy--buffer-notebook)
+          ;; says what it means, and why it happened
+          (let ((warning (seq-find (lambda (m) (string-match-p "THIS machine" m)) said)))
+            (should warning)
+            (should (string-match-p "Connection refused" warning))
+            (should (string-match-p "emjupy-lsp-diagnose" warning)))
+          ;; and does not repeat for this notebook
+          (setq said nil)
+          (emjupy--warn-local-language-server emjupy--buffer-notebook)
+          (should-not (seq-find (lambda (m) (string-match-p "THIS machine" m)) said)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

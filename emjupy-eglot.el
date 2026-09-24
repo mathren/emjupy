@@ -409,6 +409,35 @@ plainly not here.  A remote name is not here by definition."
            ;; still something to be done about it.
            (emjupy-start-language-support nb)))))))
 
+(defvar-local emjupy--warned-local-server nil
+  "Non-nil once this notebook has been told its language server is local.")
+
+(defun emjupy--warn-local-language-server (nb)
+  "Say that NB is about to get a language server on THIS machine.
+
+Starting one is the fallback when the server beside the kernel cannot be
+reached, and it is a poor one: it reads this machine\='s files and this
+machine\='s Python, so it answers about neither the code nor the
+environment the notebook runs in.  Standard library lookups still work,
+which is what makes it easy to miss -- imports of the user\='s own
+modules are the ones that quietly come back empty.
+
+Said once per notebook, with the reason the socket failed when there is
+one."
+  (let ((nb-buffer (or (and nb (emjupy-notebook-buffer nb)) (current-buffer))))
+    (when (buffer-live-p nb-buffer)
+      (with-current-buffer nb-buffer
+        (unless emjupy--warned-local-server
+          (setq emjupy--warned-local-server t)
+          (when (and nb (emjupy-notebook-kernel-cwd nb))
+            (message
+             "[emjupy] %s %s%s"
+             "Using a language server on THIS machine: it cannot see the"
+             "kernel\'s files or environment.  M-x emjupy-lsp-diagnose"
+             (if (bound-and-true-p emjupy--lsp-last-failure)
+                 (format " (%s)" emjupy--lsp-last-failure)
+               ""))))))))
+
 (defvar emjupy--suppress-plain-eglot nil
   "Non-nil while a WebSocket-backed Eglot is about to be attached.
 
@@ -697,7 +726,13 @@ automatically, with nothing for the user to run."
               (with-timeout (emjupy-shadow-timeout
                              (emjupy--shadow-block "language server did not start"
                                                    nb-buffer))
-                (apply #'eglot--connect (eglot--guess-contact))))
+                (apply #'eglot--connect (eglot--guess-contact))
+                ;; It started, and it is on this machine.  Say so: this is
+                ;; the fallback, and a silent one answers about the wrong
+                ;; files and the wrong Python while looking like it works.
+                ;; Wrapped, because a warning must never be able to break
+                ;; the thing it warns about.
+                (ignore-errors (emjupy--warn-local-language-server nb))))
           (error
            (emjupy--shadow-block (error-message-string err) nb-buffer)))))
     buf))

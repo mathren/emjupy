@@ -716,6 +716,45 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
       (ignore-errors (websocket-close ws))))
   (setf (emjupy-eglot-server-ws server) nil))
 
+(defvar emjupy--lsp-last-failure nil
+  "Why the WebSocket to the language server could not be opened.
+
+Kept so the warning about falling back can say what went wrong, rather
+than leaving the user to find out that anything did.")
+
+(defcustom emjupy-tell-server-where-modules-are t
+  "When non-nil, name the notebook\='s own directory to the language server.
+
+A language server finds `import mylib\=' by looking beside the file that
+imports it.  Beside a notebook there is no file: there is a shadow whose
+name the server is told and whose contents it is sent, and whether it
+can be read from that directory is a question of how the notebook is
+reached.  Saying where the modules are does not depend on that.
+
+Written for `python-lsp-server\='.  Set to nil if your server takes its
+settings from elsewhere and would rather not be told."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--set-workspace-configuration (nb server)
+  "Tell SERVER where NB\='s own modules are.
+
+Sent directly rather than through `eglot-workspace-configuration\='.
+Eglot reads that variable while connecting, before the buffer counts as
+one it manages, so a value set there arrives as an empty settings object
+-- measured on the wire, not assumed."
+  (when-let ((cwd (and emjupy-tell-server-where-modules-are
+                       server
+                       (emjupy-notebook-kernel-cwd nb))))
+    (ignore-errors
+      (jsonrpc-notify
+       server :workspace/didChangeConfiguration
+       (list :settings
+             (list :pylsp
+                   (list :plugins
+                         (list :jedi
+                               (list :extra_paths (vector cwd))))))))))
+
 (defun emjupy--eglot-connect (nb buffer)
   "Attach Eglot to BUFFER, talking to NB's server over its WebSocket.
 
@@ -729,7 +768,7 @@ Returns the server, or nil."
                                  :on-message (lambda (_ws _frame) nil)
                                  :on-error (lambda (&rest _) nil))
                (error (emjupy--lsp-explain-failure server)
-                      (ignore err)
+                      (setq emjupy--lsp-last-failure (error-message-string err))
                       nil))))
     (when (and ws local-file)
       (let* ((emjupy--eglot-pending
@@ -759,12 +798,15 @@ Returns the server, or nil."
              (project (cons 'transient (file-name-directory local-file))))
         (with-current-buffer buffer
           (condition-case err
-              (eglot--connect (list major-mode) project
-                              'emjupy-eglot-server
-                              ;; A process must exist for the base class;
-                              ;; this one is never written to or read from.
-                              (list emjupy-eglot-idle-command)
-                              "python")
+              (let ((connected
+                     (eglot--connect (list major-mode) project
+      'emjupy-eglot-server
+      ;; A process must exist for the base class;
+      ;; this one is never written to or read from.
+      (list emjupy-eglot-idle-command)
+      "python")))
+                (emjupy--set-workspace-configuration nb connected)
+                connected)
             (error
              (ignore-errors (websocket-close ws))
              (message "[emjupy] Could not attach Eglot over the WebSocket: %s"
