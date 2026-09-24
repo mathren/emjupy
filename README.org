@@ -1355,12 +1355,16 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
+- [ ] =M-.= fails again on remote
+- [ ] =C-c C-t=, also =TAB= moves the view, they should not
+- [ ] =C-e= in an output line does not go to the end of the line
+- [ ] dynamic expansion with =M-/= are not found (even when the
+  expansion is in the notebook or library file)
+
+
 ** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
   output/warnings/errors/figures)
-
-- [ ] =M-.= fails again
-
 - [ ] first and last line numbers of cell is at the outline using
   linenum mode, can we have them at the first line of code and last
   line of output instead?
