@@ -427,9 +427,18 @@ one."
   (let ((nb-buffer (or (and nb (emjupy-notebook-buffer nb)) (current-buffer))))
     (when (buffer-live-p nb-buffer)
       (with-current-buffer nb-buffer
+        ;; Marked as said only when something is actually said.  Setting
+        ;; it first meant the earliest call -- before the kernel has
+        ;; reported where it runs, when there is nothing useful to say --
+        ;; silenced the one that mattered.
         (unless emjupy--warned-local-server
-          (setq emjupy--warned-local-server t)
-          (when (and nb (emjupy-notebook-kernel-cwd nb))
+          ;; Not conditional on the kernel having said where it runs.  A
+          ;; local server is started the first time anything asks for a
+          ;; completion, which is before the kernel has answered -- so
+          ;; requiring the directory kept the warning silent in exactly the
+          ;; case it was written for.
+          (progn
+            (setq emjupy--warned-local-server t)
             (message
              "[emjupy] %s %s%s"
              "Using a language server on THIS machine: it cannot see the"

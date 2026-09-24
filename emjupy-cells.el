@@ -608,10 +608,18 @@ separate entity, the output always travels with its cell automatically."
          (idx (cl-position cell cells)))
     (if (or (not idx) (= idx 0))
         (message "[emjupy] Cell is already at the top.")
-      (let ((above (aref cells (1- idx))))
+      (let* ((above (aref cells (1- idx)))
+             (sane (emjupy--overlays-sane-p)))
         (aset cells (1- idx) cell)
-        (aset cells idx above))
-      (emjupy--rerender-notebook cell))))
+        (aset cells idx above)
+        ;; Only the two cells swapped change, so only they are redrawn --
+        ;; a rebuild moves every buffer position that an undo entry holds,
+        ;; and takes the history with it.
+        (unless (and sane
+                     (emjupy--redraw-cells-in-place (list above cell)
+                                                    (list cell above) t))
+          (emjupy--rerender-notebook cell))
+        (emjupy--goto-cell cell 'start)))))
 
 (defun emjupy-move-cell-down ()
   "Move the cell at point down, swapping it with the cell below."
@@ -622,10 +630,16 @@ separate entity, the output always travels with its cell automatically."
          (idx (cl-position cell cells)))
     (if (or (not idx) (= idx (1- (length cells))))
         (message "[emjupy] Cell is already at the bottom.")
-      (let ((below (aref cells (1+ idx))))
+      (let* ((below (aref cells (1+ idx)))
+             (sane (emjupy--overlays-sane-p)))
         (aset cells (1+ idx) cell)
-        (aset cells idx below))
-      (emjupy--rerender-notebook cell))))
+        (aset cells idx below)
+        ;; As for moving up: two cells change, so two cells are redrawn.
+        (unless (and sane
+                     (emjupy--redraw-cells-in-place (list cell below)
+                                                    (list below cell) t))
+          (emjupy--rerender-notebook cell))
+        (emjupy--goto-cell cell 'start)))))
 
 (defun emjupy--rerender-preserving-point ()
   "Re-render the notebook without disturbing where the user is typing.
@@ -866,6 +880,28 @@ moving point or guessing from a buffer position."
     (message "[emjupy] Output %s." (if hidden "hidden" "shown"))
     hidden))
 
+(defcustom emjupy-confirm-clear-output t
+  "When non-nil, ask before discarding a cell\='s output.
+
+Output can represent a long run, and the kernel cannot be asked to
+produce it again for nothing.  The question costs a keystroke; the
+mistake costs the run."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--confirm-clearing (cell)
+  "Return non-nil if CELL\='s output may be discarded.
+
+The prompt names what would go -- how many outputs, and the execution
+count that produced them -- so the answer is about this cell rather than
+about clearing in general."
+  (or (not emjupy-confirm-clear-output)
+      (let* ((n (length (or (emjupy-cell-outputs cell) [])))
+             (count (emjupy-cell-exec-count cell)))
+        (yes-or-no-p (format "Clear %d output%s%s? "
+                             n (if (= n 1) "" "s")
+                             (if count (format " from [%s]" count) ""))))))
+
 (defun emjupy-clear-cell-output ()
   "Discard the output of the cell at point.
 
@@ -874,22 +910,28 @@ source, and the execution count is cleared too: nothing has been run
 since, so leaving [In: 4] beside no output would claim otherwise.
 
 Only the buffer is touched.  The notebook on the server keeps its
-outputs until you save."
+outputs until you save.
+
+Asks first, since the output may have taken a long time to produce and
+clearing it is not something the kernel can be asked to repeat cheaply.
+`emjupy-confirm-clear-output\=' turns the question off."
   (interactive)
   (emjupy--sync-all-cells)
   (let ((cell (emjupy--cell-at-point)))
     (unless cell (user-error "Point is not in a cell"))
     (if (zerop (length (or (emjupy-cell-outputs cell) [])))
         (message "[emjupy] This cell has no output.")
+      (if (not (emjupy--confirm-clearing cell))
+          (message "[emjupy] Left it alone.")
       (setf (emjupy-cell-outputs cell) [])
       (setf (emjupy-cell-exec-count cell) nil)
       ;; Only this cell's box goes, so only this cell need be redrawn -- and
       ;; redrawing just it keeps the undo history, where rebuilding the
       ;; notebook threw it away.  Nothing was lost even then, but an edit
       ;; made before clearing could not be undone afterwards.
-      (unless (emjupy--refresh-cell-output cell)
-        (emjupy--rerender-notebook cell))
-      (message "[emjupy] Cleared this cell's output."))))
+        (unless (emjupy--refresh-cell-output cell)
+          (emjupy--rerender-notebook cell))
+        (message "[emjupy] Cleared this cell's output.")))))
 
 (defun emjupy-clear-all-outputs ()
   "Discard the output of every cell in the notebook.
@@ -1032,13 +1074,16 @@ The new cell has no output and no execution count."
                     :source (cdr emjupy--cell-clipboard)
                     :outputs []
                     :metadata (make-hash-table :test 'equal))))
-    (setf (emjupy-notebook-cells nb)
-          (vconcat (if idx
-                       (append (cl-subseq cells 0 (1+ idx))
+    ;; Inserting one cell moves only what follows it, by a known amount,
+    ;; so the history survives -- the same path `emjupy-insert-cell-below'
+    ;; takes.  Rebuilding for it lost the history.
+    (let ((at (if idx (1+ idx) (length cells))))
+      (unless (emjupy-insert-cell-at nb at new-cell)
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (append (cl-subseq cells 0 at)
                                (list new-cell)
-                               (cl-subseq cells (1+ idx)))
-                     (append cells (list new-cell)))))
-    (emjupy--rerender-notebook new-cell)
+                               (cl-subseq cells at))))
+        (emjupy--rerender-notebook new-cell)))
     new-cell))
 
 (defvar-local emjupy--indent-cycling nil

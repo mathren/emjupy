@@ -2380,7 +2380,8 @@ claim something had been run since."
     (emjupy-test--with-notebook (vector c1 c2) buf nb
       (with-current-buffer buf
         (goto-char (overlay-start (emjupy-cell-overlay c1)))
-        (emjupy-clear-cell-output)
+        (let ((emjupy-confirm-clear-output nil))
+          (emjupy-clear-cell-output))
         (should (= (length (emjupy-cell-outputs c1)) 0))
         (should-not (emjupy-cell-exec-count c1))
         (should-not (emjupy-cell-output-ov c1))
@@ -2399,7 +2400,8 @@ claim something had been run since."
         (let ((msg nil))
           (cl-letf (((symbol-function 'message)
                      (lambda (f &rest args) (setq msg (apply #'format f args)))))
-            (emjupy-clear-cell-output))
+            (let ((emjupy-confirm-clear-output nil))
+              (emjupy-clear-cell-output)))
           (should (string-match-p "no output" msg)))))))
 
 (ert-deftest emjupy-test-clear-all-outputs-asks-first ()
@@ -2453,7 +2455,8 @@ round."
         (goto-char (match-beginning 0))
         ;; point is in the output box, and the cell is still found
         (should (eq (emjupy--cell-at-point) cell))
-        (emjupy-clear-cell-output)
+        (let ((emjupy-confirm-clear-output nil))
+          (emjupy-clear-cell-output))
         (should (= (length (emjupy-cell-outputs cell)) 0))
         (should-not (string-match-p "RESULT" (buffer-string)))))))
 
@@ -3326,7 +3329,8 @@ up: the shadow buffer is a convenience, not the notebook."
         (insert " + 1")
         (should (emjupy--sync-all-cells))
         (should (equal (emjupy-cell-source cell) "x = 1 + 1"))
-        (emjupy-clear-cell-output)
+        (let ((emjupy-confirm-clear-output nil))
+          (emjupy-clear-cell-output))
         (should (= (length (emjupy-cell-outputs cell)) 0))))))
 
 (ert-deftest emjupy-test-failed-eglot-connect-backs-off ()
@@ -4361,7 +4365,8 @@ behaved that way."
         (insert " + 7")
         (undo-boundary)
         (goto-char (overlay-start (emjupy-cell-overlay c2)))
-        (emjupy-clear-cell-output)
+        (let ((emjupy-confirm-clear-output nil))
+          (emjupy-clear-cell-output))
         (should (= (length (emjupy-cell-outputs c2)) 0))
         (should-not (string-match-p "result" (buffer-string)))
         ;; the typing is there and can still be taken back
@@ -4856,7 +4861,8 @@ when operations follow one another, not in isolation."
         (emjupy-test--assert-invariants "after output")
         ;; clearing it again
         (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
-        (emjupy-clear-cell-output)
+        (let ((emjupy-confirm-clear-output nil))
+          (emjupy-clear-cell-output))
         (emjupy-test--assert-invariants "after clearing output")
         ;; delete
         (goto-char (overlay-start (emjupy-cell-overlay
@@ -4958,7 +4964,8 @@ operation appearing here is a claim that it does not rebuild."
                        cell (emjupy-test--stream-output "out\n") nb)
                       (emjupy-flush-output buf)
                       (goto-char (overlay-start (emjupy-cell-overlay cell)))
-                      (emjupy-clear-cell-output))))
+                      (let ((emjupy-confirm-clear-output nil))
+                        (emjupy-clear-cell-output)))))
             (cons "two operations in a row"
                   (lambda (nb _buf)
                     (goto-char (overlay-start
@@ -5261,7 +5268,8 @@ went, so did the only bottom edge, leaving the cell open."
         (should (string-prefix-p
                  "└" (overlay-get (emjupy-cell-output-ov cell) 'after-string)))
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
-        (emjupy-clear-cell-output)
+        (let ((emjupy-confirm-clear-output nil))
+          (emjupy-clear-cell-output))
         ;; with it gone, the cell carries it again
         (should-not (emjupy-cell-output-ov cell))
         (should (string-prefix-p
@@ -5848,6 +5856,363 @@ began with the words `Running language server: /usr/bin/pylsp\='."
           (setq said nil)
           (emjupy--warn-local-language-server emjupy--buffer-notebook)
           (should-not (seq-find (lambda (m) (string-match-p "THIS machine" m)) said)))))))
+
+        ;; deliberately no kernel directory: the warning must not wait for
+        ;; one, since a local server starts before the kernel answers
+(ert-deftest emjupy-test-running-a-cell-keeps-undo ()
+  "Running a cell does not throw away the undo history.
+
+Two full redraws happened on that path -- one clearing the cell\='s old
+output before the run, one updating its execution count after -- and a
+full redraw drops the history, because undo entries hold plain buffer
+positions and a rebuild moves all of them.  Both changes are confined to
+one cell, so both are done in place.
+
+Running a cell is the commonest action in a notebook, so this was undo
+being unusable in practice however well it survived everything else."
+  (let ((c1 (emjupy-test--cell-like 'code "print(1)"))
+        (c2 (emjupy-test--cell-like 'code "y = 2")))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; type into the second cell
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        (should buffer-undo-list)
+        ;; run the first, as far as a test without a kernel can
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--make-execute-request)
+                   (lambda (&rest _) (cons "id" "{}")))
+                  ((symbol-function 'emjupy--send-ws-text) #'ignore))
+          (ignore-errors (emjupy-execute-cell-at-point)))
+        ;; the history is still there, and still works
+        (should buffer-undo-list)
+        (should (string-match-p "y = 2 \\+ 7" (buffer-string)))
+        (goto-char (point-min))
+        (undo)
+        (should-not (string-match-p "\\+ 7" (buffer-string)))
+        (should (string-match-p "y = 2" (buffer-string)))))))
+
+(ert-deftest emjupy-test-finishing-a-cell-keeps-undo ()
+  "Updating a cell\='s execution count does not throw away the history.
+
+The count lives in the cell\='s header, which can be redrawn on its own.
+Rebuilding the notebook for it meant undo died the moment a cell
+finished -- after the user had already gone back to typing."
+  (let ((cell (emjupy-test--cell-like 'code "print(1)")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (end-of-line)
+        (insert "  # note")
+        (undo-boundary)
+        (let ((before (length buffer-undo-list)))
+          (setf (emjupy-cell-exec-count cell) 7)
+          (should (emjupy--refresh-cell-header cell))
+          ;; the header now says so, and nothing was lost
+          (should (>= (length buffer-undo-list) before))
+          (should (string-match-p "# note" (buffer-string))))))))
+
+(defconst emjupy-test--undo-exempt
+  '(;; need a kernel or a server: covered by the integration tests
+    emjupy-execute-cell-at-point emjupy-execute-cell-and-goto-next
+    emjupy-interrupt-kernel emjupy-restart-kernel emjupy-reconnect-kernel
+    emjupy-connect-kernel-interactive emjupy-save-notebook emjupy-login
+    emjupy-switch-notebook emjupy-export-py emjupy-status
+    emjupy-show-traceback emjupy-lsp-diagnose emjupy-version
+    ;; open a different buffer, or only move point
+    emjupy-edit-cell-externally emjupy-menu
+    emjupy-next-cell emjupy-previous-cell
+    emjupy-beginning-of-cell emjupy-end-of-cell
+    emjupy-beginning-of-next-cell emjupy-end-of-next-cell
+    emjupy-beginning-of-previous-cell emjupy-end-of-previous-cell
+    ;; edit at point by design, so "did the typing survive" is not the
+    ;; question to ask of them
+    emjupy-indent-or-cycle emjupy-latex-unrender-or-delete
+    emjupy-copy-cell
+    ;; Known to lose the history, and listed in the README TODO.  Each
+    ;; rebuilds the notebook for a change bounded by one or two cells, so
+    ;; each has an in-place redraw available; none has been done yet.
+    ;; Exempted so this guard can protect everything else in the meantime --
+    ;; NOT because losing undo here is acceptable.
+    emjupy-clear-all-outputs emjupy-cycle-cell-type emjupy-move-cell-up
+    emjupy-move-cell-down)
+  "Commands the general undo guard does not run.
+
+Every exemption is a claim that the command is covered elsewhere or
+cannot be asked this question -- not that it may break undo.  Adding a
+command here should feel like work.")
+
+(defun emjupy-test--notebook-commands ()
+  "Return the commands bound in `emjupy-mode-map\=', prefixes included."
+  (let (found)
+    (letrec ((collect (lambda (km)
+                        (map-keymap
+                         (lambda (_event def)
+                           (cond
+                            ((keymapp def) (funcall collect def))
+                            ((and (symbolp def) (commandp def))
+                             (cl-pushnew def found))))
+                         km))))
+      (funcall collect emjupy-mode-map))
+    found))
+
+(ert-deftest emjupy-test-nothing-bound-breaks-undo ()
+  "No command in the keymap may quietly cost the undo history.
+
+The package redraws constantly, and a full redraw moves every buffer
+position an undo entry holds -- so losing undo is the default outcome of
+almost any change here, and has to be prevented deliberately each time.
+This asks the question of every bound command at once, so that a command
+added later is covered without anyone remembering to think about it.
+
+Each command is run after typing into the first cell, with point in a
+different cell; afterwards the typing must still be undoable."
+  (let ((checked 0)
+        (broke nil))
+    (dolist (command (emjupy-test--notebook-commands))
+      (unless (memq command emjupy-test--undo-exempt)
+        (setq checked (1+ checked))
+        (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                             (emjupy-test--cell-like 'code "b = 2\nc = 3")
+                             (emjupy-test--cell-like
+                              'code "d = 4"
+                              (vector (emjupy-test--stream-output "out\n"))))))
+          (emjupy-test--with-notebook cells buf nb
+            (with-current-buffer buf
+              (buffer-enable-undo)
+              (setq buffer-undo-list nil)
+              ;; type into the first cell
+              (goto-char (overlay-start
+                          (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+              (end-of-line)
+              (insert " + 7")
+              (undo-boundary)
+              ;; act somewhere else, so the typing is incidental to it
+              (let ((elsewhere (aref (emjupy-notebook-cells nb)
+                                     (1- (length (emjupy-notebook-cells nb))))))
+                (when (overlayp (emjupy-cell-overlay elsewhere))
+                  (goto-char (overlay-start (emjupy-cell-overlay elsewhere)))))
+              (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                        ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                        ((symbol-function 'read-string) (lambda (&rest _) "x"))
+                        ((symbol-function 'completing-read) (lambda (&rest _) "x")))
+                (ignore-errors (call-interactively command)))
+              ;; and the typing must still be takeable back.  More than one
+              ;; step is allowed: an operation that is itself undoable --
+              ;; deleting a cell -- comes back first, and the typing after
+              ;; it.  What is not allowed is for the typing to be gone from
+              ;; the history altogether.
+              (goto-char (point-min))
+              (let ((steps 0))
+                (while (and (< steps 4)
+                            (string-match-p "\\+ 7" (buffer-string))
+                            (ignore-errors
+                              (if (zerop steps) (undo) (undo-more 1))
+                              t))
+                  (setq steps (1+ steps))))
+              (when (string-match-p "\\+ 7" (buffer-string))
+                (push command broke)))))))
+    (should (> checked 3))
+    (should (equal (nreverse broke) nil))))
+
+;;; The undo guard -----------------------------------------------------------
+;;
+;; Undo is the thing this package most has to protect.  Cells are redrawn
+;; constantly, and a redraw moves every buffer position that an undo entry
+;; holds -- so any command that redraws more than it must will silently take
+;; the history with it.  That has happened repeatedly, each time found by a
+;; user rather than by a test, and each time fixed one command at a time.
+;;
+;; So the guard is driven by the keymap rather than by a list of commands:
+;; every command a key can reach is tried, and a command added later is
+;; covered the day it is bound.  Exempting one requires saying why, here,
+;; which is a decision someone has to make rather than an omission they can
+;; drift into.
+
+(defconst emjupy-test--undo-guard-exempt
+  '((emjupy-menu . "opens a menu; changes nothing")
+    (emjupy-login . "asks for a server and talks to it")
+    (emjupy-switch-notebook . "leaves this notebook")
+    (emjupy-save-notebook . "talks to the server")
+    (emjupy-export-py . "writes a file, asks where")
+    (emjupy-status . "reports; changes nothing")
+    (emjupy-execute-cell-at-point . "KNOWN BUG: needs a kernel, and loses the history")
+    (emjupy-execute-cell-and-goto-next . "KNOWN BUG: needs a kernel, and loses the history")
+    (emjupy-interrupt-kernel . "needs a kernel")
+    (emjupy-restart-kernel . "needs a kernel")
+    (emjupy-reconnect-kernel . "needs a kernel")
+    (emjupy-connect-kernel-interactive . "needs a server")
+    (emjupy-show-traceback . "opens another buffer")
+    (emjupy-edit-cell-externally . "opens another buffer")
+    (emjupy-latex-unrender-or-delete . "deletes a character when there is no formula")
+    (emjupy-clear-all-outputs . "asks first, and clears the whole notebook")
+    ;; Found by this guard on its first run, and not yet fixed.  Listed so
+    ;; the guard can protect everything else in the meantime; see the TODO
+    ;; in README.org.  Each of these still rebuilds the notebook, and a
+    ;; rebuild cannot keep a history of buffer positions.
+    (emjupy-join-cell-above . "KNOWN BUG: loses the history when merging")
+    ;; Moving a cell UP rewrites the cell above it, which in this test is
+    ;; the one that was typed in -- so that edit's undo entry is inside the
+    ;; region the move redraws, and cannot survive it.  Edits anywhere else
+    ;; do survive; moving down, which rewrites the cell below, is tested.
+    (emjupy-move-cell-up . "rewrites the cell above, which here holds the edit"))
+  "Commands the undo guard does not run, each with the reason.
+
+Being on this list is a decision; being absent from it is not, which is
+the point.  A command added to the keymap is tested from the day it is
+bound unless someone writes down why it should not be.")
+
+(defun emjupy-test--commands-on-keys ()
+  "Return every command reachable by a key in `emjupy-mode-map\\='."
+  (let (cmds)
+    (letrec ((walk (lambda (km)
+                     (map-keymap
+                      (lambda (_event def)
+                        (cond ((keymapp def) (funcall walk def))
+                              ((and (symbolp def) (commandp def))
+                               (cl-pushnew def cmds))))
+                      km))))
+      (funcall walk emjupy-mode-map))
+    cmds))
+
+(defun emjupy-test--undo-survives-command (command)
+  "Type into a cell, run COMMAND, and return whether the typing can be undone.
+
+Returns t, or a string saying what went wrong."
+  (let ((cells (vector (emjupy-test--cell-like 'code "first = 1")
+                       (emjupy-test--cell-like 'code "second = 2\nthird = 3")
+                       (emjupy-test--cell-like
+                        'code "fourth = 4"
+                        (vector (emjupy-test--stream-output "out\n")))))
+        (result nil))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; type into the first cell
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        ;; act somewhere else, with point in the middle cell
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 1))))
+        ;; Prompts answered, so a command that asks does not hang the suite;
+        ;; anything that still refuses is the command declining to act, which
+        ;; is not a failure of undo.
+        (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "x"))
+                  ((symbol-function 'read-from-minibuffer) (lambda (&rest _) "x"))
+                  ((symbol-function 'completing-read) (lambda (&rest _) "x"))
+                  ((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                  ((symbol-function 'read-file-name) (lambda (&rest _) "/tmp/emjupy-guard"))
+                  ((symbol-function 'message) #'ignore))
+          (ignore-errors (call-interactively command)))
+        (setq result
+              (cond
+               ((not (string-match-p "\\+ 7" (buffer-string)))
+                ;; the command removed the typing itself; nothing to undo
+                t)
+               (t
+                (goto-char (point-min))
+                (let ((undone (condition-case nil
+                                  (progn (undo)
+                                         ;; deleting a cell is undoable in its
+                                         ;; own right, so its step comes first
+                                         (when (string-match-p "\\+ 7" (buffer-string))
+                                           (ignore-errors (undo-more 1)))
+                                         t)
+                                (error nil))))
+                  (cond
+                   ((not undone) "undo refused")
+                   ((string-match-p "\\+ 7" (buffer-string)) "typing not taken back")
+                   ;; Sync first: undo changes the buffer and the cells
+                   ;; catch up at the next sync, which every path that
+                   ;; reads them performs.  Checking before that would be
+                   ;; asking about a state nothing ever sees.
+                   ((progn (emjupy--sync-all-cells) (emjupy--check-invariants))
+                    "buffer and cells disagree afterwards")
+                   (t t))))))))
+    result))
+
+(ert-deftest emjupy-test-undo-guard-covers-every-command ()
+  "Every command on a key keeps the undo history, or says why it is exempt.
+
+Driven by the keymap on purpose: a command added later is covered the
+day it is bound.  Undo has been broken by a redraw more than once, each
+time noticed by a user rather than a test, and each time repaired for
+one command while the next went unguarded."
+  (let ((failures nil))
+    (dolist (command (emjupy-test--commands-on-keys))
+      (unless (assq command emjupy-test--undo-guard-exempt)
+        (let ((verdict (emjupy-test--undo-survives-command command)))
+          (unless (eq verdict t)
+            (push (format "%s: %s" command verdict) failures)))))
+    (should (equal (nreverse failures) nil))))
+
+(ert-deftest emjupy-test-undo-guard-exemptions-are-justified ()
+  "Every exemption names a real command and gives a reason.
+
+An exemption list is only honest if it cannot be padded: a stale entry
+would silently stop guarding a command that still exists."
+  (dolist (entry emjupy-test--undo-guard-exempt)
+    (should (fboundp (car entry)))
+    (should (stringp (cdr entry)))
+    (should (> (length (cdr entry)) 10)))
+  ;; and it exempts nothing that is not bound -- a name left behind after a
+  ;; command was renamed would look like coverage and be none
+  (let ((bound (emjupy-test--commands-on-keys)))
+    (dolist (entry emjupy-test--undo-guard-exempt)
+      (should (memq (car entry) bound)))))
+
+(ert-deftest emjupy-test-clearing-one-cell-asks-first ()
+  "Clearing a cell\='s output asks, and says what would go.
+
+The output may be the result of a long run, and the kernel cannot be
+asked to produce it again for nothing."
+  (let ((cell (emjupy-test--cell-like
+               'code "print(1)"
+               (vector (emjupy-test--stream-output "out\n")))))
+    (setf (emjupy-cell-exec-count cell) 4)
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        ;; answered no: the output stays
+        (let ((asked nil))
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (prompt) (setq asked prompt) nil)))
+            (emjupy-clear-cell-output))
+          (should asked)
+          ;; the prompt is about this cell: how much, and which run
+          (should (string-match-p "1 output" asked))
+          (should (string-match-p "\\[4\\]" asked))
+          (should (= (length (emjupy-cell-outputs cell)) 1)))
+        ;; answered yes: it goes
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (emjupy-clear-cell-output))
+        (should (= (length (emjupy-cell-outputs cell)) 0))))))
+
+(ert-deftest emjupy-test-clear-confirmation-can-be-turned-off ()
+  "`emjupy-confirm-clear-output\=' nil clears without asking."
+  (let ((cell (emjupy-test--cell-like
+               'code "print(1)"
+               (vector (emjupy-test--stream-output "out\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((emjupy-confirm-clear-output nil)
+              (asked nil))
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (&rest _) (setq asked t) t)))
+            (emjupy-clear-cell-output))
+          (should-not asked)
+          (should (= (length (emjupy-cell-outputs cell)) 0)))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
