@@ -1355,16 +1355,32 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- [ ] =M-.= fails again on remote
-- [ ] =C-c C-t=, also =TAB= moves the view, they should not
-- [ ] =C-e= in an output line does not go to the end of the line
-- [ ] dynamic expansion with =M-/= are not found (even when the
-  expansion is in the notebook or library file)
+- Aim: editing a cell same experience as editing a python file and we
+  do not want to fix/emulate commands one by one.
+  - [ ] =M-.= fails again on remote with custom file. Example:
+    file =library.py= contains the definition of =function.= In a notebook cell I have
+    #+BEGIN_SRC python
+      from library import function
+    #+END_SRC
+    and in a cell later:
+    #+BEGIN_SRC python
+      x = function()
+    #+END_SRC
+    =M-.= works for python modules (e.g., =glob=) but cannot find the
+    definition of function. Maybe there is a different emacs way to do this?
+  - [ ] dynamic expansion with =M-/= are not found (even when the
+    expansion is in the notebook or library file)
+  - [ ] =M-;= says it doesn't know which comment sign to use
+- [ ] =C-c C-t=, also =TAB= moves the view, they should not. Both put the
+  cursor at the bottom of the buffer on the last line visible. These
+  jumps make it unusable.
+- [ ] =C-e= in an output line does not go to the end of the line (say long output lines)
 
 
 ** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
-  output/warnings/errors/figures)
+  output/warnings/errors/figures), and output is highlighted in python
+  (even if it was plain text)
 - [ ] first and last line numbers of cell is at the outline using
   linenum mode, can we have them at the first line of code and last
   line of output instead?
