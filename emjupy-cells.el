@@ -397,10 +397,33 @@ the caller has by then already updated."
   (unless (memq (current-buffer) emjupy--rendering-buffers)
     (let ((emjupy--rendering-buffers (cons (current-buffer) emjupy--rendering-buffers)))
       (if target-cell
-          ;; An explicit target is a request to move: honour it.
-          (emjupy--rerender-notebook-1 target-cell)
+          ;; A target says where POINT should end up, not that the window
+          ;; should jump.  Cycling a cell's type or re-indenting it both
+          ;; redraw with the cell they are working on as the target, and
+          ;; both threw the window to the bottom of the buffer.
+          (emjupy--keeping-the-window
+           (lambda () (emjupy--rerender-notebook-1 target-cell)))
         (emjupy--keeping-the-view
          (lambda () (emjupy--rerender-notebook-1 nil)))))))
+
+(defun emjupy--keeping-the-window (thunk)
+  "Call THUNK, leaving each window scrolled where it was.
+
+Point is left wherever THUNK put it: this is for redraws that do mean to
+move point, and only the scroll position has to survive."
+  (let* ((windows (get-buffer-window-list (current-buffer) nil t))
+         (starts (mapcar (lambda (w)
+                           (cons w (line-number-at-pos (window-start w))))
+                         windows)))
+    (unwind-protect
+        (funcall thunk)
+      (dolist (pair starts)
+        (let ((w (car pair)))
+          (when (window-live-p w)
+            (set-window-start
+             w (save-excursion (emjupy--goto-line-column (cdr pair) 0) (point))
+             t)
+            (set-window-point w (point))))))))
 
 (defun emjupy--keeping-the-view (thunk)
   "Call THUNK, leaving point and the window scrolled where they were.

@@ -340,10 +340,52 @@ this buffer."
     ("d" "diagnose it" emjupy-lsp-diagnose)
     ("v" "which emjupy is this" emjupy-version)]])
 
+(defcustom emjupy-language-mode 'python-mode
+  "The major mode whose settings a notebook borrows for its cells.
+
+Cells hold code in that language, so the buffer should behave as a
+buffer of it does.  Set to nil to leave the buffer with
+`fundamental-mode\\='s settings."
+  :type '(choice (const :tag "None" nil) function)
+  :group 'emjupy)
+
+(defun emjupy--adopt-language-settings ()
+  "Take the syntax and comment settings of `emjupy-language-mode\\='.
+
+The aim is that editing a cell is editing that language, without
+emulating one command at a time.  Most of what a programming mode gives
+is not commands at all: it is the syntax table, which decides what
+counts as a word or a symbol and so what \\[dabbrev-expand] will find
+and where \\[forward-word] stops; and the comment variables, without
+which \\[comment-dwim] has no comment syntax to use and says so.
+
+Taken by running the mode in a scratch buffer and copying what it set,
+rather than by listing the variables here.  A list would be a second
+place to keep up to date, and would be wrong the moment the mode changed
+-- which is the same trap as emulating the commands."
+  (when emjupy-language-mode
+    (let (table vars)
+      (with-temp-buffer
+        (delay-mode-hooks (funcall emjupy-language-mode))
+        (setq table (syntax-table))
+        (setq vars
+              (mapcar (lambda (v) (cons v (and (boundp v) (symbol-value v))))
+                      '(comment-start comment-end comment-start-skip
+                        comment-end-skip comment-use-syntax comment-column
+                        parse-sexp-ignore-comments
+                        forward-sexp-function
+                        electric-indent-chars
+                        beginning-of-defun-function
+                        end-of-defun-function))))
+      (set-syntax-table table)
+      (pcase-dolist (`(,var . ,value) vars)
+        (set (make-local-variable var) value)))))
+
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
+  (emjupy--adopt-language-settings)
   ;; Cells hold code, so the editing conveniences a programming mode would
   ;; give apply here too.  emjupy-mode derives from `fundamental-mode', which
   ;; brings none of them, and nothing about the buffer suggests to the user

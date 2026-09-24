@@ -5709,5 +5709,75 @@ It prints the WebSocket URL, which carries the token."
           ;; still says which server, which is the point of the line
           (should (string-match-p "localhost:9999" (buffer-string))))))))
 
+(ert-deftest emjupy-test-cells-behave-like-the-language ()
+  "A cell edits like a buffer of the language it holds.
+
+Not by emulating commands one at a time: most of what a programming mode
+gives is the syntax table, which decides what counts as a symbol and so
+what \\[dabbrev-expand] finds and where \\[forward-word] stops, and the
+comment variables, without which \\[comment-dwim] has no comment syntax
+and says so.  emjupy-mode derives from `fundamental-mode\=', which has
+neither."
+  (let ((cell (emjupy-test--cell-like
+               'code "from library import my_function\nx = my_function()")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        ;; the comment syntax is there, so M-; has something to insert
+        (should (equal comment-start "# "))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (forward-line 1)
+        (end-of-line)
+        (comment-dwim nil)
+        (should (string-match-p "#" (buffer-substring-no-properties
+                                     (line-beginning-position)
+                                     (line-end-position))))
+        ;; an underscore is part of a symbol, or every symbol is cut short
+        (should (= (char-syntax ?_) ?_))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (should (search-forward "my_fun" nil t))
+        (should (equal (thing-at-point 'symbol t) "my_function"))))))
+
+(ert-deftest emjupy-test-dabbrev-expands-across-cells ()
+  "\\[dabbrev-expand] finds a word defined in another cell.
+
+It searches the buffer, and the buffer holds every cell -- so this works
+as soon as the syntax table agrees about what a word is."
+  (require 'dabbrev)
+  (let ((c1 (emjupy-test--cell-like 'code "def compute_everything(x):\n    return x"))
+        (c2 (emjupy-test--cell-like 'code "y = comp")))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (end-of-line)
+        (dabbrev-expand nil)
+        (should (equal (buffer-substring-no-properties
+                        (line-beginning-position) (line-end-position))
+                       "y = compute_everything"))))))
+
+(ert-deftest emjupy-test-redraw-with-a-target-keeps-the-scroll ()
+  "A redraw aimed at a cell moves point, not the window.
+
+Cycling a cell\='s type and re-indenting both redraw with the cell they
+are working on as the target, and both threw the window to the bottom of
+the buffer -- which is what made them unusable rather than merely
+untidy."
+  (let ((cells (vconcat (cl-loop for i from 0 below 40
+                                 collect (emjupy-test--cell-like
+                                          'code (format "line_%d = %d" i i))))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (set-window-buffer (selected-window) buf)
+        (let* ((w (selected-window))
+               (target (aref (emjupy-notebook-cells nb) 25)))
+          (goto-char (overlay-start (emjupy-cell-overlay target)))
+          (recenter 0)
+          (redisplay t)
+          (let ((top (line-number-at-pos (window-start w))))
+            (emjupy-cycle-cell-type)
+            (redisplay t)
+            ;; compared by line number: the line\='s text may change, its
+            ;; place in the buffer should not
+            (should (= (line-number-at-pos (window-start w)) top))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
