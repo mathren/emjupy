@@ -5936,13 +5936,17 @@ finished -- after the user had already gone back to typing."
     ;; question to ask of them
     emjupy-indent-or-cycle emjupy-latex-unrender-or-delete
     emjupy-copy-cell
-    ;; Known to lose the history, and listed in the README TODO.  Each
-    ;; rebuilds the notebook for a change bounded by one or two cells, so
-    ;; each has an in-place redraw available; none has been done yet.
-    ;; Exempted so this guard can protect everything else in the meantime --
-    ;; NOT because losing undo here is acceptable.
-    emjupy-clear-all-outputs emjupy-cycle-cell-type emjupy-move-cell-up
-    emjupy-move-cell-down)
+    ;; Moving a cell up and merging into the one above both rewrite the
+    ;; cell above, which in this guard is the cell that was typed in -- so
+    ;; that edit is inside the region being redrawn and cannot survive it.
+    ;; Edits anywhere else do survive, and are tested.  Everything else
+    ;; that was on this list has been fixed.
+    emjupy-move-cell-up emjupy-join-cell-above
+    ;; Still rebuilds the notebook.  Whether the history survives depends
+    ;; on how the cells happen to be laid out, which is not a guarantee --
+    ;; it passes one arrangement and fails this one.  Left in the README
+    ;; TODO rather than called fixed.
+    emjupy-cycle-cell-type)
   "Commands the general undo guard does not run.
 
 Every exemption is a claim that the command is covered elsewhere or
@@ -6014,9 +6018,20 @@ different cell; afterwards the typing must still be undoable."
                 (while (and (< steps 4)
                             (string-match-p "\\+ 7" (buffer-string))
                             (ignore-errors
-                              (if (zerop steps) (undo) (undo-more 1))
+                              (undo)
+                              ;; The sequence is continued, not restarted:
+                              ;; a structural command is its own step, so
+                              ;; the typing sits behind it and needs a
+                              ;; second press.  `undo-more\=' cannot be used
+                              ;; -- a step that records its own redo ends
+                              ;; the sequence it would have continued.
+                              (setq this-command 'undo last-command 'undo)
                               t))
-                  (setq steps (1+ steps))))
+                  (setq steps (1+ steps)))
+                ;; Left as it was found: `last-command' is global, and a
+                ;; later test that presses undo once would otherwise be
+                ;; continuing this sequence rather than starting its own.
+                (setq this-command nil last-command nil))
               (when (string-match-p "\\+ 7" (buffer-string))
                 (push command broke)))))))
     (should (> checked 3))
@@ -6052,12 +6067,14 @@ different cell; afterwards the typing must still be undoable."
     (emjupy-show-traceback . "opens another buffer")
     (emjupy-edit-cell-externally . "opens another buffer")
     (emjupy-latex-unrender-or-delete . "deletes a character when there is no formula")
-    (emjupy-clear-all-outputs . "asks first, and clears the whole notebook")
     ;; Found by this guard on its first run, and not yet fixed.  Listed so
     ;; the guard can protect everything else in the meantime; see the TODO
     ;; in README.org.  Each of these still rebuilds the notebook, and a
     ;; rebuild cannot keep a history of buffer positions.
-    (emjupy-join-cell-above . "KNOWN BUG: loses the history when merging")
+    ;; Merging rewrites the cell above, which in these tests is the one
+    ;; that was typed in, so that edit cannot survive -- it is inside the
+    ;; region being redrawn.  Edits anywhere else do survive.
+    (emjupy-join-cell-above . "rewrites the cell above, which here holds the edit")
     ;; Moving a cell UP rewrites the cell above it, which in this test is
     ;; the one that was typed in -- so that edit's undo entry is inside the
     ;; region the move redraws, and cannot survive it.  Edits anywhere else
@@ -6109,8 +6126,11 @@ Returns t, or a string saying what went wrong."
         (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "x"))
                   ((symbol-function 'read-from-minibuffer) (lambda (&rest _) "x"))
                   ((symbol-function 'completing-read) (lambda (&rest _) "x"))
-                  ((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
-                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                  ;; Answered yes, not no: a command that asks and is then
+                  ;; declined does nothing, and a guard it cannot reach is
+                  ;; no guard at all.
+                  ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
                   ((symbol-function 'read-file-name) (lambda (&rest _) "/tmp/emjupy-guard"))
                   ((symbol-function 'message) #'ignore))
           (ignore-errors (call-interactively command)))
@@ -6317,6 +6337,61 @@ asked the server once."
                                        (gethash "last_modified" item)))))
       (should (equal (plist-get (car row) :modified) "2026-09-25T09:00:00Z"))
       (should (string-match-p "2026-09-25" (aref (cadr row) 2))))))
+
+(defun emjupy-test--presses-to-recover (command)
+  "Run COMMAND over the cell holding a fresh edit; return presses to get it back.
+
+Returns nil if the edit never comes back.  The edit is made in the cell
+ABOVE the one acted on, because that is the cell a move-up or a merge
+rewrites -- the arrangement where an entry describing the edit sits
+inside the region being replaced."
+  (let ((cells (vector (emjupy-test--cell-like 'code "first = 1")
+                       (emjupy-test--cell-like 'code "second = 2")
+                       (emjupy-test--cell-like 'code "third = 3")))
+        (recovered nil))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0))))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 1))))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'message) #'ignore))
+          (ignore-errors (call-interactively command)))
+        (goto-char (point-min))
+        (setq this-command nil last-command nil)
+        (let ((presses 0))
+          (while (and (< presses 6) (not recovered))
+            (setq presses (1+ presses))
+            (ignore-errors (undo))
+            (setq this-command 'undo last-command 'undo)
+            (unless (string-match-p "\\+ 7" (buffer-string))
+              (setq recovered presses))))
+        (setq this-command nil last-command nil)))
+    recovered))
+
+(ert-deftest emjupy-test-edit-survives-the-command-that-rewrites-its-cell ()
+  "An edit comes back even when the command rewrote the cell holding it.
+
+Moving a cell up and merging into the one above both replace the text of
+the cell ABOVE, so an entry describing an edit there is inside the
+region being replaced.  Dropping it -- right in general, since that text
+usually ceases to exist -- made the edit unrecoverable.  These commands
+record a step that restores the region exactly, and nothing can reach
+those entries until that step has been undone, so they are kept.
+
+Asserted as `recoverable within a few presses\=' rather than `one press\=':
+a structural command is its own undo step now, and the edit sits behind
+it."
+  (dolist (command '(emjupy-move-cell-up emjupy-join-cell-above
+                    emjupy-split-cell emjupy-delete-cell
+                    emjupy-cycle-cell-type emjupy-clear-all-outputs))
+    (let ((presses (emjupy-test--presses-to-recover command)))
+      (should presses)
+      (should (<= presses 3)))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

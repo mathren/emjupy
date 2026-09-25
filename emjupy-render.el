@@ -1135,6 +1135,13 @@ text.  The shapes are those Emacs documents for `buffer-undo-list'."
             (nthcdr 4 entry)))
    (t entry)))
 
+(defvar emjupy--undo-region-is-restorable nil
+  "Non-nil when the caller records a step restoring the region it replaces.
+
+Entries describing text inside that region are then kept rather than
+dropped: the step\='s own undo puts the text back, and nothing can reach
+those entries until it has.")
+
 (defun emjupy--undo-adjust (start old-end delta)
   "Keep the undo history usable across a replacement of START..OLD-END.
 
@@ -1162,7 +1169,17 @@ entry shape is handled explicitly rather than by pattern-guessing."
                      (cond
                       ((null p) entry)
                       ((< p start) entry)
-                      ((< p old-end) :emjupy-drop)
+                      ((< p old-end)
+                       ;; Text inside the region is normally gone, so an
+                       ;; entry describing it must go too.  Unless the
+                       ;; caller is recording a step that restores this
+                       ;; region exactly -- swapping two cells, merging
+                       ;; two into one -- in which case the entry can
+                       ;; only ever be replayed after that step has been
+                       ;; undone and the text is back.  Dropping it there
+                       ;; is what made an edit vanish for good when the
+                       ;; cell holding it was moved.
+                       (if emjupy--undo-region-is-restorable entry :emjupy-drop))
                       (t (emjupy--undo-map-positions
                           entry (lambda (x) (if (>= x old-end) (+ x delta) x)))))))
                  buffer-undo-list)))))

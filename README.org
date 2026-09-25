@@ -1401,22 +1401,8 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
     definition of function. Maybe there is a different emacs way to do this?
 - [ ] =C-e= in an output line does not go to the end of the line (say long output lines)
 
-- [ ] three commands still lose the undo history, found by the general
-  guard in =emjupy-test-nothing-bound-breaks-undo= and exempted there
-  until fixed: =emjupy-clear-all-outputs=, =emjupy-cycle-cell-type=,
-  =emjupy-move-cell-up= / =-down=.  Each rebuilds the notebook for a
-  change bounded by one or two cells, so each has an in-place redraw
-  available -- the same treatment insert, delete, split and merge got.
 
-- [ ] running a cell loses the undo history: on completion the notebook
-  is rebuilt because the execution count changed.  A first fix -- refresh
-  the header and the output in place instead -- keeps undo but breaks
-  the rendering of =execute_result= outputs, so it is not in the tree.
-  Whatever replaces it has to satisfy both.
-- [ ] undo is lost by =emjupy-join-cell-above=.  Move, yank, insert,
-  delete, split and output now redraw only the cells involved;
-  merging still rebuilds, and a rebuild cannot keep a history of
-  buffer positions.
+
 
 ** Hold
 - [ ] upon reshowing output, the background color is scrambled (for
