@@ -324,7 +324,13 @@ socket was working."
                          (alive "running")
                          (t "attached but not running")))
            (format "back-off        %s"
-                   (if (ignore-errors (emjupy--shadow-blocked-p)) "in effect" "none")))))
+                   (if (ignore-errors (emjupy--shadow-blocked-p)) "in effect" "none"))
+           ;; The reason the WebSocket route was not taken, if it was tried
+           ;; and failed.  Without this the report said everything was well
+           ;; and a local server was running anyway.
+           (format "socket failure  %s"
+                   (or (bound-and-true-p emjupy--lsp-last-failure)
+                       "none recorded")))))
     (with-current-buffer (get-buffer-create "*emjupy language server*")
       (let ((inhibit-read-only t))
         (erase-buffer)
@@ -772,6 +778,21 @@ one it manages, so a value set there arrives as an empty settings object
                          (list :jedi
                                (list :extra_paths (vector cwd))))))))))
 
+(defun emjupy--ensure-managed-by (server)
+  "Make the current buffer one that SERVER manages, if it is not already.
+
+`eglot--maybe-activate-editing-mode\=' is what Eglot calls from its own
+hooks; calling it here says so directly rather than relying on the
+buffer being noticed."
+  (when server
+    (unless (and (fboundp 'eglot-current-server)
+                 (ignore-errors (eq (eglot-current-server) server)))
+      (setq-local eglot--cached-server server)
+      (when (fboundp 'eglot--maybe-activate-editing-mode)
+        (ignore-errors (eglot--maybe-activate-editing-mode))))
+    (and (fboundp 'eglot-current-server)
+         (ignore-errors (eq (eglot-current-server) server)))))
+
 (defun emjupy--eglot-connect (nb buffer)
   "Attach Eglot to BUFFER, talking to NB's server over its WebSocket.
 
@@ -825,9 +846,23 @@ Returns the server, or nil."
       (list emjupy-eglot-idle-command)
       "python")))
                 (emjupy--set-workspace-configuration nb connected)
+                ;; Make sure this buffer is one the server manages.  Eglot
+                ;; activates that through hooks tied to the project a buffer
+                ;; belongs to, and a shadow buffer in a transient project is
+                ;; not always recognised -- on Emacs 30 the connection
+                ;; succeeded and the buffer was left unmanaged, so every
+                ;; request fell through to a local server instead.
+                (emjupy--ensure-managed-by connected)
                 connected)
             (error
              (ignore-errors (websocket-close ws))
+             ;; Recorded, not just said.  A message in the echo area during
+             ;; startup is gone by the time anyone asks what happened, and
+             ;; this branch -- the socket opened and Eglot then refused to
+             ;; attach to it -- left the diagnostic reporting no failure at
+             ;; all while a local server quietly took over.
+             (setq emjupy--lsp-last-failure
+                   (format "Eglot would not attach: %s" (error-message-string err)))
              (message "[emjupy] Could not attach Eglot over the WebSocket: %s"
                       (error-message-string err))
              nil)))))))

@@ -6253,5 +6253,70 @@ happening."
           (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
     (should (equal sent '(("Authorization" . "token s3cret"))))))
 
+(ert-deftest emjupy-test-diagnose-reports-why-the-socket-was-not-used ()
+  "The report says why the WebSocket route was not taken.
+
+Without it the report described a healthy notebook -- lsp enabled, no
+back-off -- while a local language server was running, because the
+branch where the socket opens and Eglot then refuses to attach recorded
+nothing.  A message in the echo area during startup is gone by the time
+anyone asks."
+  (let ((cell (emjupy-test--cell-like 'code "x = 1")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "h:1" :token "t"))
+        (cl-letf (((symbol-function 'display-buffer) #'ignore))
+          (let ((emjupy--lsp-last-failure nil))
+            (emjupy-lsp-diagnose)
+            (with-current-buffer "*emjupy language server*"
+              (should (string-match-p "socket failure  none recorded" (buffer-string)))))
+          (let ((emjupy--lsp-last-failure "Eglot would not attach: wrong number of arguments"))
+            (emjupy-lsp-diagnose)
+            (with-current-buffer "*emjupy language server*"
+              (should (string-match-p "wrong number of arguments" (buffer-string))))))))))
+
+(ert-deftest emjupy-test-listing-sorts-by-recency-within-a-kind ()
+  "Each group in the dashboard reads most recently modified first.
+
+The notebook worked on this morning is the one wanted, and alphabetical
+order buries it among however many others share its prefix.  Grouping is
+unchanged -- directories, notebooks, then other files -- because what is
+being looked for is usually known by kind."
+  (cl-flet ((entry (kind name modified)
+              (list (list :kind kind :path name :modified modified)
+                    (vector kind name modified))))
+    (let* ((rows (list (entry 'notebook "alpha.ipynb" "2026-09-25T06:00:00Z")
+                       (entry 'notebook "zulu.ipynb" "2026-09-25T09:00:00Z")
+                       (entry 'notebook "middle.ipynb" "2026-09-25T07:00:00Z")))
+           (sorted (sort (copy-sequence rows)
+                         (lambda (a b)
+                           (let ((ta (or (plist-get (car a) :modified) ""))
+                                 (tb (or (plist-get (car b) :modified) "")))
+                             (if (equal ta tb)
+                                 (string-lessp (aref (cadr a) 1) (aref (cadr b) 1))
+                               (string-greaterp ta tb)))))))
+      ;; newest first, regardless of name
+      (should (equal (mapcar (lambda (r) (aref (cadr r) 1)) sorted)
+                     '("zulu.ipynb" "middle.ipynb" "alpha.ipynb"))))))
+
+(ert-deftest emjupy-test-listing-row-carries-its-modification-time ()
+  "A row remembers when its item was modified, so it can be sorted on.
+
+Read back from the row rather than re-fetched: the dashboard already
+asked the server once."
+  (let* ((item (make-hash-table :test 'equal)))
+    (puthash "type" "notebook" item)
+    (puthash "name" "a.ipynb" item)
+    (puthash "path" "a.ipynb" item)
+    (puthash "last_modified" "2026-09-25T09:00:00Z" item)
+    ;; the shape `emjupy--list-entries\=' builds
+    (let ((row (list (list :kind 'notebook :path "a.ipynb"
+                           :modified (gethash "last_modified" item))
+                     (emjupy--list-row 'notebook "notebook" "a.ipynb"
+                                       (gethash "last_modified" item)))))
+      (should (equal (plist-get (car row) :modified) "2026-09-25T09:00:00Z"))
+      (should (string-match-p "2026-09-25" (aref (cadr row) 2))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

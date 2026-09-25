@@ -882,5 +882,69 @@ in the notebook buffer rather than in the shadow file."
       (let ((kill-buffer-query-functions nil))
         (when (buffer-live-p dash) (kill-buffer dash))))))
 
+(ert-deftest emjupy-int-websocket-server-manages-the-shadow ()
+  "Connecting over the WebSocket leaves the shadow buffer managed by it.
+
+Connecting is not enough.  Eglot decides which buffers a server manages
+through hooks tied to the project a buffer belongs to, and a shadow
+buffer in a transient project is not always recognised -- on Emacs 30
+the connection succeeded and the buffer was left unmanaged, so every
+request fell through to a language server started on the local machine,
+which answers about the wrong files.
+
+The class of the attached server is what is asserted, not merely that
+one is attached: a local server is still a server, and that is exactly
+the state this is here to catch."
+  (emjupy-int--skip-unless-live)
+  (emjupy-int--with-live-kernel
+   (with-current-buffer emjupy-int--buffer
+     (let ((nb (emjupy--notebook)))
+       ;; the kernel reports its directory a moment after connecting
+       (emjupy-int--pump 10 (lambda () (emjupy-notebook-kernel-cwd nb)))
+       (should (emjupy-notebook-kernel-cwd nb))
+       (emjupy-start-language-support nb)
+       (emjupy-int--pump
+        20 (lambda ()
+             (let ((sb (emjupy-notebook-shadow-buffer nb)))
+               (and (buffer-live-p sb)
+                    (with-current-buffer sb
+                      (ignore-errors (eglot-current-server)))))))
+       (let ((sb (emjupy-notebook-shadow-buffer nb)))
+         (should (buffer-live-p sb))
+         (with-current-buffer sb
+           (let ((attached (ignore-errors (eglot-current-server))))
+             (should attached)
+             (should (object-of-class-p attached 'emjupy-eglot-server)))))))))
+
+(ert-deftest emjupy-int-listing-is-sorted-by-recency ()
+  "The dashboard, against a real server, lists newest first per kind."
+  (emjupy-int--skip-unless-live)
+  (let* ((dir "emjupy-int-sort")
+         (server emjupy--current-server))
+    (cl-flet ((put-file (name body)
+                (let ((payload (make-hash-table :test 'equal)))
+                  (puthash "type" "file" payload)
+                  (puthash "format" "text" payload)
+                  (puthash "content" body payload)
+                  (emjupy--http-request "PUT" server
+                                        (concat "/api/contents/" dir "/" name)
+                                        (json-serialize payload)))))
+      ;; a directory, then three files written oldest to newest
+      (let ((mk (make-hash-table :test 'equal)))
+        (puthash "type" "directory" mk)
+        (ignore-errors
+          (emjupy--http-request "PUT" server (concat "/api/contents/" dir)
+                                (json-serialize mk))))
+      (dolist (name '("zulu.py" "middle.py" "alpha.py"))
+        (put-file name "x = 1\n")
+        (sleep-for 1.1))
+      ;; alpha was written last, so it comes first despite the name
+      (let* ((rows (emjupy--list-entries server dir))
+             (files (seq-filter (lambda (r) (eq (plist-get (car r) :kind) 'file)) rows))
+             (names (mapcar (lambda (r) (substring-no-properties (aref (cadr r) 1)))
+                            files)))
+        (should (member "alpha.py" names))
+        (should (equal (seq-take names 3) '("alpha.py" "middle.py" "zulu.py")))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

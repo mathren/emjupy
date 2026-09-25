@@ -8,11 +8,21 @@
 #   make test      unit tests only (no server needed)
 #   make check     unit + integration tests (needs a live Jupyter server)
 #   make lint      checkdoc and, if installed, package-lint
+#   make versions  which Emacs this is, against the one we target
 #   make package   build emjupy-VERSION.tar
 #   make install   install that tar into this Emacs via package-install-file
 #   make clean
 
 EMACS   ?= emacs
+
+# Development targets Emacs 30.1, which is what CI runs and what most
+# users are on.  The package still declares 29.1 as its minimum and is
+# tested against it, but 29 is not the version to develop in: Eglot
+# manages buffers differently there, and a bug that made every language
+# server request go to a local process was invisible on 29 for weeks
+# because that is where it was being tested.  `make versions' says which
+# Emacs this is.
+EMACS_TARGET = 30.1
 VERSION := $(shell sed -n 's/^;; Version: \(.*\)/\1/p' emjupy.el)
 PKG     := emjupy-$(VERSION)
 TAR     := $(PKG).tar
@@ -27,7 +37,7 @@ SOURCES = emjupy-core.el emjupy-http.el emjupy-render.el emjupy-cells.el \
           emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el emjupy-notebook.el emjupy.el
 PKGFILES = $(SOURCES) emjupy-pkg.el README.org
 
-.PHONY: all compile test check lint check-version package install clean timestamps
+.PHONY: all compile test check lint versions check-version package install clean timestamps
 
 all: compile
 
@@ -54,6 +64,11 @@ endif
 	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
 
 # What a MELPA review checks, and what the code already follows by hand.
+# Which Emacs is this, and is it the one development targets?
+versions:
+	@$(EMACS) -batch -Q --eval '(message "emacs %s (development targets $(EMACS_TARGET))" emacs-version)'
+	@$(EMACS) -batch -Q --eval '(if (version< emacs-version "$(EMACS_TARGET)") (message "  older than the target: test on $(EMACS_TARGET) before trusting a result") (message "  ok"))'
+
 lint:
 	$(EMACS) -batch -Q $(LOADPATH) -l lint.el
 

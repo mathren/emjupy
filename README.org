@@ -629,6 +629,14 @@ TRAMP cannot reuse the tunnel itself.  A tunnel forwards the Jupyter
 HTTP port; connecting TRAMP to that port would reach the HTTP server,
 not an SSH server.
 
+** How the listing is ordered
+
+Directories first, then notebooks, then other files, then the kernels
+running on the server.  Within each group, most recently modified
+first: the notebook worked on this morning is the one wanted, and
+alphabetical order buries it among however many share its prefix.
+Kernels have no modification time and stay sorted by name.
+
 ** Opening files from the listing
 
 =RET= on a file in the server dashboard opens it.  The route depends on
@@ -1153,6 +1161,17 @@ The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
 required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
 without any =require=.
 
+** Which Emacs to develop against
+
+Development targets Emacs 30.1: what CI runs, and what most users are
+on.  The package declares 29.1 as its minimum and is tested there too,
+but 29 is not the version to develop in.  Eglot manages buffers
+differently on the two, and a bug that sent every language server
+request to a local process -- answering about the wrong machine's files
+-- was invisible for weeks because 29 was where it was being tested.
+
+=make versions= says which Emacs is in use and whether it is the target.
+
 ** Source layout
 
 | File               | Contains                                                |
@@ -1357,13 +1376,11 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 * TODO list of improvements
 - Aim: editing a cell same experience as editing a python file and we
   do not want to fix/emulate commands one by one.
-  - [ ] =M-.= on a sibling module.  The language server's WebSocket now
-    sends the same Authorization header and XSRF cookie as the kernel's,
-    which it did not before -- a proxy or tunnel that strips the
-    query-string token would refuse it while letting the kernel through,
-    and emjupy then fell back to a LOCAL server that cannot see the
-    remote's files.  Reported as fixed or not yet confirmed.  Original
-    report:
+  - [ ] =M-.= on a sibling module.  On Emacs 30 the WebSocket connected
+    and Eglot left the shadow buffer unmanaged, so every request fell
+    through to a language server on the local machine, which answers
+    about the wrong files.  Fixed by activating Eglot's editing mode in
+    that buffer explicitly.  Original report:
   - [ ] =M-.= on a sibling module.  Diagnosed from an Eglot transcript:
     emjupy had silently fallen back to a language server on the LOCAL
     machine, which answers about the wrong files and the wrong Python --

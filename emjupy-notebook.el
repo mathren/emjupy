@@ -635,10 +635,15 @@ Propertized by kind so the row is identifiable at a glance."
 (defun emjupy--list-entries (server path)
   "Return `tabulated-list-entries\' for PATH on SERVER.
 
-Grouped rather than interleaved, and sorted within each group:
-directories, then notebooks, then other files, then the kernels running
-on the server.  Notebooks sit above kernels because opening one is what
-the dashboard is for; the kernels are context."
+Grouped rather than interleaved: directories, then notebooks, then
+other files, then the kernels running on the server.  Notebooks sit
+above kernels because opening one is what the dashboard is for; the
+kernels are context.
+
+Within each group, most recently modified first -- the notebook worked
+on this morning is the one wanted, and alphabetical order buries it
+among however many others share its prefix.  Kernels have no
+modification time and stay sorted by name."
   (let* ((contents (emjupy--http-request
                     "GET" server (concat "/api/contents/" path)))
          (items (and contents (gethash "content" contents)))
@@ -649,9 +654,10 @@ the dashboard is for; the kernels are context."
              for type = (gethash "type" item)
              for name = (gethash "name" item)
              for ipath = (gethash "path" item)
-             for row = (list (list :kind (intern type) :path ipath)
-                             (emjupy--list-row (intern type) type name
-                                               (or (gethash "last_modified" item) "")))
+             for modified = (or (gethash "last_modified" item) "")
+             for row = (list (list :kind (intern type) :path ipath
+                                   :modified modified)
+                             (emjupy--list-row (intern type) type name modified))
              do (pcase type
                   ("directory" (push row dirs))
                   ("notebook" (push row notebooks))
@@ -667,13 +673,27 @@ the dashboard is for; the kernels are context."
                       kernel-rows))
     (cl-flet ((by-name (rows)
                 (sort rows (lambda (a b)
-                             (string-lessp (aref (cadr a) 1) (aref (cadr b) 1))))))
+                             (string-lessp (aref (cadr a) 1) (aref (cadr b) 1)))))
+              (by-recent (rows)
+                ;; Most recently touched first.  The server reports the time
+                ;; as ISO-8601 in UTC, which sorts correctly as text, so
+                ;; nothing needs parsing -- and an entry with no time falls
+                ;; to the bottom rather than to an arbitrary place.  Ties
+                ;; break by name, so a directory of files written in the
+                ;; same second still reads in a settled order.
+                (sort rows
+                      (lambda (a b)
+                        (let ((ta (or (plist-get (car a) :modified) ""))
+                              (tb (or (plist-get (car b) :modified) "")))
+                          (if (equal ta tb)
+                              (string-lessp (aref (cadr a) 1) (aref (cadr b) 1))
+                            (string-greaterp ta tb)))))))
       (append
        (unless (string-empty-p path)
          (list (list (list :kind 'up) (emjupy--list-row 'up "dir" ".." ""))))
-       (by-name dirs)
-       (by-name notebooks)
-       (by-name files)
+       (by-recent dirs)
+       (by-recent notebooks)
+       (by-recent files)
        (by-name kernel-rows)))))
 
 (defun emjupy-list-refresh ()

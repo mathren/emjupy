@@ -121,7 +121,8 @@ comes."
 (defun emjupy--collapse-carriage-returns (text)
   "Return TEXT with everything before a carriage return on a line dropped.
 
-What a terminal does, and what a progress bar relies on: `\r\' returns to
+What a terminal does, and what a progress bar relies on: a carriage
+return takes the cursor to
 the start of the line and the next write covers what was there."
   (mapconcat (lambda (line)
                (let ((parts (split-string line "\r")))
