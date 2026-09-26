@@ -110,7 +110,9 @@ jobs:
           for f in glob.glob('html-content/*.html'):
               page = open(f).read()
               for href in re.findall(r'(?:href|src)="([^"#][^"]*)"', page):
-                  if href.startswith(('http:', 'https:', 'mailto:', 'data:')):
+                  # Anything that is not a path to a file in the site:
+                  # a scheme (javascript: drives the menu), or an anchor.
+                  if ':' in href.split('/')[0] or href.startswith('#'):
                       continue
                   target = os.path.normpath(os.path.join('html-content', href))
                   if not os.path.exists(target):

@@ -19,6 +19,7 @@
   (setq org-html-htmlize-output-type nil)
   (message "htmlize unavailable: source blocks export as plain text"))
 
+(require 'cl-lib)
 (require 'ox-publish)
 
 (defun mr/org-html-src-block-with-meta (orig-fun src-block contents info)
@@ -60,19 +61,46 @@
 (defun mr/read-file (file)
   "Read contents of FILE to string"
   (with-temp-buffer (insert-file-contents file) (buffer-string)))
+;; Dynamically make footer with pointers to previous and next page
+(defun mr/get-html-link (org-file publishing-directory)
+  "Convert ORG-FILE to the corresponding HTML file in PUBLISHING-DIRECTORY."
+  (when org-file
+    (let* ((file-name (file-name-sans-extension org-file))
+           (html-file (concat file-name ".html")))
+      html-file)))
+
+(defun mr/read-navigation-keywords ()
+  "Read the keywords #+PREVIOUS_PAGE and #+NEXT_PAGE from the current Org file.
+Return them as two values: previous-page and next-page."
+  (let* ((keywords (org-element-map (org-element-parse-buffer) 'keyword
+                                   (lambda (el) (cons (org-element-property :key el)
+                                                      (org-element-property :value el)))))
+         (previous (cdr (assoc "PREVIOUS_PAGE" keywords)))
+         (next (cdr (assoc "NEXT_PAGE" keywords))))
+    (list previous next)))
+
+(defun mr/site-html-postamble (info)
+  "Generate a dynamic HTML footer for the Org export.
+Substitute placeholders PREVIOUS_PAGE and NEXT_PAGE with corresponding links.
+INFO is the export plist."
+  (let* ((publishing-directory (plist-get info :publishing-directory))
+         (nav (mr/read-navigation-keywords))
+         (previous-page (mr/get-html-link (car nav) publishing-directory))
+         (next-page (mr/get-html-link (cadr nav) publishing-directory))
+         (footer-template (mr/read-file "../html-content/html-templates/postamble.html"))
+         (footer (format footer-template
+                         (format-time-string "%-d %B %Y")
+                         emacs-version
+                         org-version)))
+    (setq footer (replace-regexp-in-string "PREVIOUS_PAGE" (or previous-page "#") footer t t))
+    (setq footer (replace-regexp-in-string "NEXT_PAGE" (or next-page "#") footer t t))
+    ))
 
 (defconst mr/site-html-head
-  (mr/read-file "./html-content/html-templates/html_head.html"))
+  (mr/read-file "html-content/html-templates/html_head.html"))
 
 (defconst mr/site-html-preamble
-  (mr/read-file "./html-content/html-templates/preamble.html"))
-
-(defconst mr/html-postamble
-  (format (mr/read-file "./html-content/html-templates/postamble.html")
-	  (format-time-string "%-d %B %Y")
-	  emacs-version
-	  org-version
-	  ))
+  (mr/read-file "html-content/html-templates/preamble.html"))
 
 
 ;; fix timestamps for html and latex exports
@@ -175,7 +203,7 @@ All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
       user-full-name "Mathieu Renzo"          ;; for creator
       org-html-head mr/site-html-head
       org-html-preamble mr/site-html-preamble
-      org-html-postamble mr/html-postamble
+      org-html-postamble #'mr/site-html-postamble
       org-display-custom-times t
       )
 
