@@ -30,7 +30,7 @@ jobs:
         run: make check-version TAG="${GITHUB_REF_NAME}"
 
       - name: Check
-        run: make check
+        run: make test
 
       - name: Package
         run: make package
