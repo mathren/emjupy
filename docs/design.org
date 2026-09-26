@@ -2,8 +2,6 @@
 #+PREVIOUS_PAGE: development.org
 #+NEXT_PAGE: troubleshooting.org
 
-Why emjupy is built the way it is.
-
 * =emjupy= design
 
 ** The shadow buffer
@@ -80,18 +78,3 @@ untouched and those after it have their positions shifted to match. /A
 full rebuild breaks the undo/. It moves everything while undo recording is
 off, and undo entries hold plain buffer positions rather than markers,
 so there is nothing left to adjust and the history is dropped.
-
-[[https://github.com/mathren/emjupy/blob/main/notes_undo.org][notes_undo.org]] has the measurements and what is left.
-
-* Landscape of other emacs/jupyter packages
-
-| Package       | Approach          | Limitations                                                                                           |
-|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
-| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
-| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
-| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
-
-=ein= was my working tool for more than a decade, but it is
-[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
-need to share code with non-emacs users, so =ob-jupyter= isn't an
-option, and =emacs-jupyter= doesn't seem the right tool for me.

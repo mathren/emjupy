@@ -22,3 +22,17 @@ standard =*.ipynb= for sharing with non-emacs users.
 - [[file:development.org][Building and development]]
 - [[file:limitations.org][Known limitations]]
 - [[file:todo.org][TODO list of improvements]]
+
+
+* Landscape of other emacs/jupyter packages
+
+| Package       | Approach          | Limitations                                                                                           |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
+| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
+| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
+
+=ein= was my working tool for more than a decade, but it is
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
+need to share code with non-emacs users, so =ob-jupyter= isn't an
+option, and =emacs-jupyter= doesn't seem the right tool for me.

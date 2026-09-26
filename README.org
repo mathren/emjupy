@@ -2,6 +2,8 @@
 #+author: Mathieu Renzo w/ Claude:Opus 5
 
 [[https://github.com/mathren/emjupy/actions/workflows/build-package.yml][https://github.com/mathren/emjupy/actions/workflows/build-package.yml/badge.svg]]
+[[https://mathren.github.io/emjupy/][https://img.shields.io/badge/docs-mathren.github.io%2Femjupy-blue]]
+
 
 #+CAPTION: Python Jupyter Notebook in Emacs.
 #+ATTR_HTML: :width 50%
