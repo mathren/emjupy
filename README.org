@@ -1375,13 +1375,10 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 
-- [ ] although eldoc works perfectly, doing =M-.= on a function says "No
-  definition found" or tries local files.
-
 - [ ] upon reshowing output, background is ok, but text get python
   highlighted (including removing background)
+- [ ] add =C-n= for add cell above, this should not break undo
 
-- [ ] add =C-v= for create cell above. This also should not break undo.
 
 ** Hold
 - [ ] first and last line numbers of cell is at the outline using

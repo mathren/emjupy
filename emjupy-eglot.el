@@ -870,20 +870,28 @@ name is worse than a local one."
                   (or (ignore-errors (xref-file-location-column loc)) 0))))))
 
 (defun emjupy--remote-name-for (nb file)
-  "Return FILE as a name on NB\='s server, or nil to leave it alone."
+  "Return FILE as a name on NB\='s server, or nil to leave it alone.
+
+Every absolute path the language server reports belongs to the machine
+running the kernel, not only the ones under the notebook\'s directory.
+A standard library path is the clearest case: /usr/lib/python3.13/ast.py
+exists on both machines and they are different files, so opening the
+local one shows the wrong source with no hint that anything is amiss.
+
+Nothing is rewritten unless that machine is known to be another one."
   (let* ((server (emjupy-notebook-server nb))
-         (root (and server (emjupy--server-side-root-for server)))
          ;; A root set by hand first: a tunnelled server answers at
          ;; localhost and nothing in the conversation names the machine
          ;; behind it, so the configured value is the only thing that can
          ;; say where the files really are.
          (tramp (and server (or (emjupy--remote-root-for-files server)
-                                (emjupy--tramp-root-for server)))))
-    (when (and root tramp
-               (file-remote-p tramp)
-               (string-prefix-p (file-name-as-directory root) file))
-      (concat (file-name-as-directory tramp)
-              (substring file (length (file-name-as-directory root)))))))
+                                (emjupy--tramp-root-for server))))
+         (prefix (and tramp (file-remote-p tramp))))
+    (when (and prefix
+               (stringp file)
+               (file-name-absolute-p file)
+               (not (file-remote-p file)))
+      (concat prefix file))))
 
 (defun emjupy--xref-remap (nb items)
   "Rewrite ITEMS pointing into NB's shadow file so they point at its cells.

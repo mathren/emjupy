@@ -6440,8 +6440,13 @@ quoting from."
     ;; a file under the server\='s root is renamed onto the remote
     (should (equal (emjupy--remote-name-for nb "/home/me/project/library.py")
                    "/ssh:box:/home/me/project/library.py"))
-    ;; anything outside it is left alone: a wrong remote name is worse
-    (should-not (emjupy--remote-name-for nb "/usr/lib/python3.13/glob.py"))
+    ;; the standard library too: /usr/lib/python3.13/glob.py exists on both
+    ;; machines and they are different files, so opening the local one shows
+    ;; the wrong source with nothing to say so
+    (should (equal (emjupy--remote-name-for nb "/usr/lib/python3.13/glob.py")
+                   "/ssh:box:/usr/lib/python3.13/glob.py"))
+    ;; a name already on another machine is left alone
+    (should-not (emjupy--remote-name-for nb "/ssh:elsewhere:/x/y.py"))
     ;; and the xref item carries the new name, keeping line and column
     (let* ((item (xref-make "def f" (xref-make-file-location
                                      "/home/me/project/library.py" 12 4)))
@@ -6551,6 +6556,29 @@ machine\"."
                    (item2 (xref-make "def f" (xref-make-file-location here 1 0))))
               (should (emjupy--xref-on-the-right-machine nb2 item2))))
         (ignore-errors (delete-file here))))))
+
+(ert-deftest emjupy-test-tunnel-line-as-typed-is-enough ()
+  "A tunnel written the ordinary way gives a host, a root and a name.
+
+The line is the one a user reported: no user@, no options, the
+destination an alias from ~/.ssh/config.  Every step from that line to a
+file name is checked here, because the failure it caused was invisible
+-- M-. opened a plausible local path rather than saying anything."
+  (let ((emjupy-probe-environment t)
+        (emjupy-remote-root nil)
+        (emjupy-ssh-host nil)
+        (line "ssh -L 9999:localhost:9999 ua_w"))
+    (cl-letf (((symbol-function 'shell-command-to-string)
+               (lambda (&rest _) (concat line "\n")))
+              ((symbol-function 'executable-find) (lambda (&rest _) "/bin/ps")))
+      (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                         :root "/home/me/scripts"))
+             (nb (make-emjupy-notebook :cells [] :path "t.ipynb" :server server
+                                       :kernel-cwd "/home/me/scripts")))
+        (should (equal (emjupy--ssh-host-forwarding 9999) "ua_w"))
+        (should (equal (emjupy--tramp-root-for server) "/ssh:ua_w:/home/me/scripts"))
+        (should (equal (emjupy--remote-name-for nb "/home/me/scripts/plot_aux.py")
+                       "/ssh:ua_w:/home/me/scripts/plot_aux.py"))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
