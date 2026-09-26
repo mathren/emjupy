@@ -76,7 +76,7 @@ release rather than the latest commit):
 #+END_SRC
 
 Alternatively, use =install-package-file= giving it the tarball you can
-create with =make package= (see [[file:docs/development.org::+TITLE: Building and development][Building & development]]).
+create with =make package=.
 
 * Landscape of other emacs/jupyter packages
 
