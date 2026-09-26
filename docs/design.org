@@ -1,0 +1,97 @@
+#+TITLE: How it works
+#+PREVIOUS_PAGE: development.org
+#+NEXT_PAGE: troubleshooting.org
+
+Why emjupy is built the way it is.
+
+* =emjupy= design
+
+** The shadow buffer
+
+A notebook is not valid python, but rather a JSON containing blocks.
+There are *n* python fragments with prose between them, and a name
+defined in, say, cell 3 is used in cell 7. A language server handed
+one cell at a time would see seven unrelated files. So instead, =emjupy=
+keeps a hidden *shadow buffer*: one ordinary python file holding every
+code cell concatenated, each preceded by a marker comment naming its
+cell. =eglot= attaches to that file and sees exactly what it expects --
+one module, in order, with all the definitions in it.
+
+The shadow buffer is never displayed, it only exists so that a
+language server has a well-formed document to read. It can be open
+with =C-c '= for multi-cell editing.
+
+Everything that needs the server is delegated there at the matching
+position:
+
+- completion and eldoc, through
+  =completion-at-point-functions= and =eldoc-documentation-functions=;
+- =M-.= and friends, through an xref backend that forwards to =eglot='s own
+  and maps the answers back onto cells;
+- =eglot-rename= and the other =eglot= commands, advised to run in the
+  shadow buffer and pull their edits back.
+
+Because the shadow buffer holds every cell at once, this is not merely a
+workaround: a rename fixes references in *all* cells, and =M-.= on a call
+in one cell lands on the definition in another.
+
+The shadow file lives in a temporary directory by default. When the
+kernel is on another machine, point =emjupy-shadow-directory= at it and
+=eglot= starts the server there over =tramp=, so the completions come from
+the environment the code actually runs in.
+
+** Mapping positions
+
+Point in a cell maps to a position in the shadow buffer by finding
+that cell's marker and adding the offset within the cell; results
+coming back map the other way. Everything the server returns is in
+shadow-file coordinates, so =xref= results are rewritten into buffer
+positions in the notebook - with locations pointing anywhere *else*,
+into a library say, left alone, because the real file is the right
+destination.
+
+** Use the browser's transport, not ZMQ
+
+When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
+
+- =GET  /api/kernels=          \rightarrow list running kernels
+- =POST /api/kernels=          \rightarrow start a kernel
+- =GET  /api/sessions=         \rightarrow list sessions (kernel ↔ notebook pairs)
+- =POST /api/sessions=         \rightarrow create/attach session
+- =GET  /api/contents=         \rightarrow list notebooks
+- =GET  /api/contents/<path>=  \rightarrow fetch notebook JSON
+- =PUT  /api/contents/<path>=  \rightarrow save notebook JSON
+- =WS   /api/kernels/<id>/channels= \rightarrow Jupyter wire protocol over WebSocket
+
+This is exactly what every browser-based client (JupyterLab, Classic Notebook)
+uses. It works transparently through an =ssh= tunnel, survives reconnects, and
+requires only =url.el= (built-in) and =websocket.el= (GNU ELPA).
+
+* Undo
+
+Undo works within a cell, and survives output arriving, a cell being
+inserted, and a cell being deleted. Every structural change now keeps
+it too: inserting, deleting, splitting and merging cells all redraw
+only the cells involved. Erasing a cell is an undoable action.
+
+Output and single-cell structural changes move only part of the
+buffer, by a known amount, so the undo entries before the change are
+untouched and those after it have their positions shifted to match. /A
+full rebuild breaks the undo/. It moves everything while undo recording is
+off, and undo entries hold plain buffer positions rather than markers,
+so there is nothing left to adjust and the history is dropped.
+
+[[https://github.com/mathren/emjupy/blob/main/notes_undo.org][notes_undo.org]] has the measurements and what is left.
+
+* Landscape of other emacs/jupyter packages
+
+| Package       | Approach          | Limitations                                                                                           |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
+| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
+| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
+
+=ein= was my working tool for more than a decade, but it is
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
+need to share code with non-emacs users, so =ob-jupyter= isn't an
+option, and =emacs-jupyter= doesn't seem the right tool for me.

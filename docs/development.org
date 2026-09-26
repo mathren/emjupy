@@ -1,0 +1,210 @@
+#+TITLE: Building & development
+#+PREVIOUS_PAGE: design.org
+#+NEXT_PAGE: limitations.org
+
+=emjupy= is a multi-file Emacs package. To build a tar and install it:
+
+#+begin_src bash
+make package                 # -> emjupy-0.1.0.tar
+make install                 # package-install-file into your Emacs
+#+end_src
+
+and install from Emacs: =M-x package-install-file RET emjupy-0.1.0.tar RET=.
+
+The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
+required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
+without any =require=.
+
+* Which Emacs to develop against
+
+Development targets Emacs 30.1: what CI runs, and what most users are
+on.  The package declares 29.1 as its minimum and is tested there too,
+but 29 is not the version to develop in.  Eglot manages buffers
+differently on the two, and a bug that sent every language server
+request to a local process -- answering about the wrong machine's files
+-- was invisible for weeks because 29 was where it was being tested.
+
+=make versions= says which Emacs is in use and whether it is the target.
+
+* Source layout
+
+| File               | Contains                                                |
+|--------------------+---------------------------------------------------------|
+| =emjupy.el=          | major mode, keymap, entry point                         |
+| =emjupy-core.el=     | structs, state, server registry, lookups                |
+| =emjupy-http.el=     | REST transport, URL/scheme/base-path parsing            |
+| =emjupy-render.el=   | faces, page colours, cell outlines, syntax highlighting |
+| =emjupy-cells.el=    | buffer<->struct syncing and cell editing commands       |
+| =emjupy-kernel.el=   | kernel WebSocket, execution, message routing            |
+| =emjupy-notebook.el= | login/session management, .ipynb parse and serialize    |
+| =emjupy-eglot.el=    | shadow buffer, completion, eldoc                        |
+| =emjupy-pkg.el=      | package metadata                                        |
+
+Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
+=eglot= on top of =cells=. The two genuine cycles (=emjupy-mode= and
+=emjupy--rerender-notebook=) are runtime-only and marked with
+=declare-function=.
+
+* Makefile targets
+
+| Target       | Effect                                                  |
+|--------------+---------------------------------------------------------|
+| =make compile= | byte-compile all sources in dependency order            |
+| =make test=    | run the suite (integration tests skip without a server) |
+| =make check=   | same, with the integration environment set              |
+| =make package= | build =emjupy-VERSION.tar=                                |
+| =make install= | install that tar via =package-install-file=               |
+| =make clean=   | remove =.elc= files and the tar                           |
+
+* Unit tests
+
+The self-contained suite requires only =websocket=:
+
+#+begin_src bash
+emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+=websocket= is resolved from =load-path= first, then from
+=EMJUPY_WEBSOCKET_DIR=, and only then from GNU ELPA -- so the suite
+also runs offline / in CI:
+
+#+begin_src bash
+EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket \
+  emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+* Integration tests (real server, real kernel, real LSP)
+
+=emjupy-integration-test.el= talks to a live Jupyter server and runs
+real Python in a real kernel. These are opt-in and =ert-skip= unless
+the environment points at a running server, so the default run stays
+fast and hermetic.
+
+Some things only break against a live server -- an image arriving that
+this Emacs cannot display, a WebSocket URL that drops its base path, a
+saved notebook no other tool will open -- so they are worth running
+before trusting a change.
+
+| Variable           | Meaning                                                   |
+|--------------------+-----------------------------------------------------------|
+| =EMJUPY_TEST_URL=    | =host:port= of a running server (the LOCAL end of a tunnel) |
+| =EMJUPY_TEST_TOKEN=  | its token                                                 |
+| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test         |
+| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests               |
+| =EMJUPY_TEST_TOKEN2= | its token (defaults to =EMJUPY_TEST_TOKEN=)                 |
+
+To exercise the *remote* path, point =EMJUPY_TEST_URL= at the local end
+of an ssh tunnel rather than at the server directly:
+
+#+begin_src bash
+# server side: jupyter listens only on loopback
+jupyter server --no-browser --port=8888 --ip=127.0.0.1 --IdentityProvider.token=abc
+
+# client side: forward a local port through ssh
+ssh -N -L 18888:127.0.0.1:8888 user@remote-host &
+
+EMJUPY_TEST_URL=127.0.0.1:18888 EMJUPY_TEST_TOKEN=abc \
+EMJUPY_TEST_ROOT=/path/to/notebook/root \
+  emacs -batch -Q -L . -l emjupy-run-tests.el
+#+end_src
+
+The eglot tests additionally need a Python language server on =PATH=
+(=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
+none is found.
+
+* Test hygiene
+
+A unit test must give the same answer on every machine.  Two things in
+emjupy make that easy to lose: the host of an SSH tunnel is found by
+reading the process list, and whether LaTeX can be rendered is decided
+by looking for the programs that render it.  Both are correct in use and
+wrong in a test.
+
+=emjupy-probe-environment= governs both, and the unit test runner binds it
+to nil.  A test that needs the detection tested -- as opposed to merely
+used -- binds it back to t and stubs what it examines.
+
+This is not hypothetical: two tests asking what a tunnelled server
+resolves to passed here and failed on a machine that happened to be
+forwarding that port, and a LaTeX test depended on whether LaTeX was
+installed.
+
+Other rules worth following, each learned from a test that passed while
+the thing it covered was broken:
+
+- Test the key binding, not only the function behind it.  A command
+  bound to =DEL= alone is not reached in a graphical Emacs that sends
+  =<backspace>=.
+- Do not wrap the action under test in =ignore-errors=.  A test that
+  guards against remote connections passed because the connection it
+  should have caught raised an error which was then swallowed.
+- When a stub replaces a function used by Emacs itself, call through for
+  the cases the test is not about.
+- Prefer asserting an invariant over asserting a mechanism; mechanisms
+  differ between Emacs versions, invariants do not.
+
+* Invariants
+
+=M-x emjupy-debug-check-invariants= reports how a buffer and its cells
+disagree: which cell, and whether its overlay is missing, overlapping,
+out of order, detached from its output box, or showing text the cell
+does not hold.  The last means what is displayed and what would be saved
+have come apart.
+
+Tests call it after every operation.  It has caught overlays left
+overlapping after a split, and a sync that turned an empty cell into one
+containing a newline.
+
+* Performance
+
+Three tests guard against regressions rather than measuring speed:
+
+- work done after every command does not grow with the notebook;
+- redrawing output does not grow with the notebook, since only the cell
+  concerned is redrawn;
+- nothing on a path that runs after a command touches a remote file.
+
+The last matters most.  A remote operation costs a round trip, TRAMP
+blocks Emacs while it waits, and anything on the per-command path pays
+that on every keystroke.  The test asserts the absence of such calls
+rather than a duration, since a duration would depend on a network.
+
+Measured on a twelve-cell notebook with figures, over the WebSocket
+transport:
+
+| Operation     | Time   |
+|---------------+--------|
+| cursor motion | 0.0 ms |
+| completion    | 0.1 ms |
+| eldoc         | 1.2 ms |
+
+* Submitting to MELPA
+
+The recipe must list the files explicitly.  A recipe without =:files=
+takes every =.el= in the repository, which here would ship the tests to
+users and include =emjupy-run-tests.el=, a script with no =provide= form
+that =package-lint= rejects.
+
+The recipe used is kept at =.github/melpa-recipe=:
+
+#+begin_src elisp
+(emjupy :fetcher github
+        :repo "mathren/emjupy"
+        :files ("emjupy.el" "emjupy-core.el" "emjupy-http.el"
+                "emjupy-render.el" "emjupy-cells.el" "emjupy-kernel.el"
+                "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-notebook.el"))
+#+end_src
+
+It matches what =make package= builds, so the tar produced locally is the
+package MELPA would produce.
+
+Before submitting, check all four:
+
+#+begin_src bash
+make check                 # tests
+make package               # builds the tar
+#+end_src
+
+and, with =package-lint= available, that it reports nothing for the nine
+files above, and that the tar installs into an empty
+=package-user-dir= and =M-x emjupy-mode= works there.

@@ -1,0 +1,173 @@
+#+TITLE: Appearance
+#+PREVIOUS_PAGE: keybindings.org
+#+NEXT_PAGE: remote.org
+
+* Screenshots
+
+On a plain emacs installation, you should see something like:
+#+CAPTION: [[./test_notebook/test.ipynb][Simple notebook]] rendering in a fresh emacs with no customization. Screenshot may be out of date.
+#+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
+#+ATTR_HTML: :width 50%
+[[file:./images/screenshot-default-colored.png]]
+
+This is what the same notebook looks like with =wombat= theme in my
+setup:
+#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme.
+#+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
+#+ATTR_HTML: :width 50%
+[[file:./images/screenshot-dark-colored.png]]
+
+*N.B.:* Screenshot may be out of date.
+
+
+* Cell appearance
+
+Cells are marked out by their horizontal rules alone -- the buffer keeps
+its normal background throughout.  The one exception is a cell's
+*output*, which gets a faint background band so results are
+distinguishable from the code that produced them.  The band lives on the
+output overlay, so when the outputs are cleared and the box shrinks the
+background goes with them.
+
+=emjupy-output-color= sets that band.  It defaults to ='auto=, which
+blends the buffer background =emjupy-output-blend= (8%) of the way
+toward the foreground: darker on a light theme, lighter on a dark one,
+and tinted by the theme rather than a flat neutral grey.  Theme switches
+are followed automatically.
+
+#+begin_src elisp
+(setq emjupy-output-color "#f0f0f0")   ;; pin a colour
+(setq emjupy-output-color nil)         ;; no band at all
+#+end_src
+
+The band fills each output line edge to edge -- the =emjupy-output= face
+sets =:extend t=, without which a face's background stops at the last
+character and short lines look ragged beside long ones.
+
+=M-x emjupy-refresh-appearance= re-derives the colour and redraws.  The
+faces are =emjupy-output= (the band) and =emjupy-box-line= (the rules).
+
+* Editing a rendered formula
+
+A rendered fragment is an image displayed over its source text.  The
+source remains in the buffer and remains editable, but is not visible
+while the image is displayed.
+
+=DEL= with point at the end of a rendered fragment removes the image and
+leaves point after the last character of the source.  A second =DEL=
+deletes as usual.  =M-x emjupy-toggle-latex-preview= renders it again.
+
+* Scrolling past figures
+
+A tall inline image occupies a single screen line, so line-based
+scrolling passes over it in one step.  Two options:
+
+#+begin_src elisp
+(pixel-scroll-precision-mode 1)          ; built in, Emacs 29 and later
+#+end_src
+
+or the =ultra-scroll= package, which handles tall images and mixed line
+heights more smoothly and is recommended for notebooks containing
+figures:
+
+#+begin_src elisp
+(use-package ultra-scroll
+  :config (ultra-scroll-mode 1))
+#+end_src
+
+emjupy enables neither: both are global and affect every buffer.
+
+* Inspecting the cell outlines
+
+The rule above an output box is an overlay string rather than buffer
+text, so point cannot be placed in it and \[describe-char] cannot be
+used on its columns.  =M-x emjupy-report-box-geometry= reports the width
+the rules are drawn at, the width of the rule in place, and the column
+the output background is aligned to.
+
+* Cell outlines
+
+The rule that outlines each cell is sized by =emjupy-box-width=. The
+default, ='window=, fits it to the window, so the outline spans a wide
+frame instead of stopping short at a fixed 80 columns. Set it to an
+integer for a fixed width, and =emjupy-box-min-width= is the floor when
+fitting.
+
+Outlines follow the window as it changes: splitting, dragging a mode
+line or toggling full screen all redraw the rules at the new width, so
+they never wrap onto a second line. Only the overlay strings are
+rebuilt, not the buffer text, so point, markers and the undo history
+are untouched. When the buffer is shown in two windows at once the
+*narrower* one wins, since a rule sized for the wide window would wrap
+in the narrow one.
+
+* Cell outline artifacts
+
+A cell outline is drawn by an overlay property that is displayed even
+when the overlay has collapsed to zero width.  An overlay belonging to a
+cell that no longer exists therefore appears as a border with no cell.
+
+Every redraw deletes emjupy overlays that no live cell owns, so running
+a cell or =M-x emjupy-re-render= removes any that appear.
+
+* LaTeX in markdown cells
+
+Off by default.  Turn it on with =M-x emjupy-toggle-latex-preview=, or:
+
+#+begin_src elisp
+(setq emjupy-render-latex t)
+#+end_src
+
+Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then replaced
+*on screen* by a rendered image.  The buffer text is untouched -- the
+image is an overlay -- so the cell still holds, and saves, the LaTeX you
+wrote, and hovering shows the source.
+
+The rendering is done by org, which ships with Emacs, so the only
+requirement is a LaTeX installation:
+
+#+begin_src bash
+sudo apt install texlive-latex-base dvipng
+#+end_src
+
+No extra Emacs package is needed.  =math-preview= is used instead if that
+is what you have installed -- it works well, but it wants nodejs and npm
+on top of everything else, which is why it is not the default.  Choose
+explicitly with =emjupy-latex-backend=; size the images with
+=emjupy-latex-scale=.
+
+Formulae are drawn in the theme's foreground colour on a transparent
+background, so they are dark on a light theme and light on a dark one.
+Set =emjupy-latex-foreground= to a colour to override that, and
+=emjupy-latex-scale= to size them.
+
+Images are cached by content /and colour/, so redrawing a notebook full
+of formulae does not re-run LaTeX, and switching theme regenerates
+them rather than serving back black glyphs on a dark background.
+=emjupy= uses a minimal preamble (amsmath and amssymb) rather than org's
+full default package list, which pulls in packages a small TeX install
+does not have.
+
+* Inline images need a graphical Emacs
+
+Images are only drawn when the running Emacs can actually display them
+(=display-graphic-p= *and* =image-type-available-p=). On a terminal
+frame or an image-less build (=emacs-nox= is the common case),
+=create-image= *signals* rather than degrading, and because rendering
+happens inside the WebSocket callback -- where =websocket.el= swallows
+errors -- the old behaviour was a silently blank output box. =emjupy= now
+falls back to the bundle's own =text/plain= repr plus a short note
+saying why there is no picture.
+
+Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
+=image/svg+xml=.
+
+* Duplicate figures
+
+A cell whose last expression is a figure receives the same picture
+twice from the kernel: once as the =execute_result= repr and again as
+the inline backend's =display_data=. That is kernel-side behaviour, so
+emjupy drops the repeat at *render* time only -- the cell's outputs, and
+the =.ipynb= written back, still contain exactly what the kernel sent,
+keeping the file faithful for other clients. Set
+=emjupy-deduplicate-image-outputs= to =nil= to draw both.

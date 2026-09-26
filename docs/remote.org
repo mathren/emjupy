@@ -1,0 +1,200 @@
+#+TITLE: Working with a remote server
+#+PREVIOUS_PAGE: appearance.org
+#+NEXT_PAGE: language-server.org
+
+Running notebooks on another machine, over a tunnel or otherwise.
+
+* Notebooks on another machine
+
+The kernel answers with an absolute path on *its* filesystem, say
+=/srv/nb/analysis=.  That path means nothing on yours: Emacs would read
+it as a local one and write the shadow file into whatever =/srv/nb/analysis=
+happens to be on your own disk.  So emjupy uses a kernel-reported
+directory only when it can actually address it.
+
+Tell it how to reach that machine once:
+
+#+begin_src elisp
+(setq emjupy-shadow-host "/ssh:box:")
+#+end_src
+
+The directory still comes from the kernel, so this is a host, not a
+path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  =eglot= then
+starts the language server on =box=, which has a second benefit worth
+knowing -- it sees the environment the kernel actually runs in, so
+completions and signatures describe the packages your code will really
+import, not the ones that happen to be installed locally.
+
+Leave it unset and a remote kernel falls back to a local temp directory:
+=M-.= will not find your own modules, but nothing is written to a path
+that means something else here.  That is the deliberate trade -- emjupy
+would rather lose a feature than write to the wrong file.
+
+| Kernel runs      | =emjupy-shadow-host= | Shadow file            | =M-.= into your modules |
+|------------------+--------------------+------------------------+-----------------------|
+| this machine     | unset              | beside the notebook    | works                 |
+| another machine  | set                | beside it, over TRAMP  | works                 |
+| another machine  | unset              | local temp directory   | no                    |
+
+=emjupy-shadow-directory= still overrides everything, and
+=emjupy-shadow-beside-notebook= turns the behaviour off.
+
+* Tunnelled servers
+
+A server reached through an SSH tunnel answers at =localhost=:
+
+#+begin_src bash
+ssh -L 9999:localhost:9999 box
+#+end_src
+
+The address therefore does not name the machine the files are on.
+emjupy determines it in this order:
+
+1. =emjupy-remote-root=, if set.  A complete path, used as given.
+2. The address, if it names a host other than =localhost=.
+3. =emjupy-ssh-host=, if set.
+4. The command line of the =ssh= process forwarding the port.
+
+Cases 2 to 4 supply only the host name.  The directory is taken from the
+kernel, which reports the notebook's own directory, so notebooks in
+different directories on one machine resolve to different roots without
+further configuration.
+
+Set =emjupy-ssh-host= when no =ssh= process can be found, for instance when
+the tunnel was established outside Emacs by other means:
+
+#+begin_src elisp
+(setq emjupy-ssh-host "box")
+#+end_src
+
+For several servers, use an alist keyed by server label:
+
+#+begin_src elisp
+(setq emjupy-ssh-host '(("localhost:9999" . "box")
+                       ("localhost:8888" . "other")))
+#+end_src
+
+TRAMP cannot reuse the tunnel itself.  A tunnel forwards the Jupyter
+HTTP port; connecting TRAMP to that port would reach the HTTP server,
+not an SSH server.
+
+* How the listing is ordered
+
+Directories first, then notebooks, then other files, then the kernels
+running on the server.  Within each group, most recently modified
+first: the notebook worked on this morning is the one wanted, and
+alphabetical order buries it among however many share its prefix.
+Kernels have no modification time and stay sorted by name.
+
+* Opening files from the listing
+
+=RET= on a file in the server dashboard opens it.  The route depends on
+what emjupy can address:
+
+| Condition                          | Result                     |
+|------------------------------------+----------------------------|
+| =emjupy-remote-root= set             | the file, writable         |
+| host known (see below)             | the file over TRAMP, writable |
+| server runs on this machine        | the file, writable         |
+| none of the above                  | read-only copy over HTTP   |
+
+The last case uses the Contents API and requires no configuration.  The
+buffer is read-only and its header line gives the originating path.
+
+* Multiple notebooks & multiple servers
+
+Each server owns its token and its XSRF cookie; a notebook owns its
+kernel; a kernel owns its WebSocket and its table of in-flight
+requests. So you can keep several notebooks open at once, from several
+servers at once -- typically several =ssh= tunnels on different local
+ports.
+
+Run =emjupy-login= once per tunnel:
+
+#+begin_src
+M-x emjupy-login RET 8888 RET     ;; tunnel to machine A
+M-x emjupy-login RET 9999 RET     ;; tunnel to machine B
+#+end_src
+
+The typical workflow this is built around:
+
+1. On the remote host, start a notebook kernel on port X.
+2. Locally, =ssh -L X:localhost:X user@remote=.
+3. =M-x emjupy-login RET X RET=.
+
+=emjupy= adopts the kernel already running behind that port rather than
+spawning a second one next to it, so opening a notebook puts you in the
+REPL you started. A port with nothing running gets a fresh kernel; a
+port with several asks which one.
+
+Each port keeps its own kernel, so several remote sessions stay live in
+one Emacs. Use =C-c C-z= to give an individual notebook a different
+kernel. Logging in again to a server you already know updates its token
+and keeps the same object, so notebooks already pointing at it stay
+valid.
+
+=C-c C-z= marks kernels already driving another open notebook as =[in
+use]=: attaching two notebooks to one kernel makes them share
+interpreter state, which is occasionally what you want and usually not.
+
+Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
+path can exist on two servers and one buffer cannot stand for both. The
+=eglot= shadow file is qualified the same way, so two servers hosting
+=analysis.ipynb= don't clobber each other's code.
+
+
+If a tunnel drops and the remote kernel keeps running,
+use =emjupy-reconnect-kernel= to re-establish emacs's
+socket and your session state survives.
+
+* Access tokens
+The token is resolved without bothering you where possible: an explicit
+argument, else the token already registered for that server, else no
+token at all (common for tunnelled servers started with
+=--IdentityProvider.token=), and only then a prompt. =C-u M-x emjupy-login=
+always prompts.
+
+* If the token is the problem
+
+A tunnelled server is still a server with a token.  emjupy already knows
+it -- =M-x emjupy-version= inside a notebook shows what it is connected
+to -- so this only bites when checking by hand from the shell.
+
+* Where the server's files are
+
+Jupyter does not publish its root directory, and that is deliberate -- it
+is not something a client should be handed.  emjupy works it out instead,
+from two things it does know: the kernel reports the directory it is
+running in, which is the notebook's own folder, and the Contents API
+gives the notebook's path relative to the root.  Take the second off the
+end of the first:
+
+: kernel cwd     /home/you/project/analysis
+: notebook path  analysis/run.ipynb
+: root           /home/you/project
+
+So =emjupy-remote-root= usually need not be set at all: open a notebook,
+let its kernel start, and browsing that server's files works.  Set it by
+hand when the derived answer is not the one you want -- a local mirror,
+or a path that has to go through a TRAMP hop emjupy cannot infer -- and
+the value you set takes precedence.
+
+If the kernel was started somewhere other than the notebook's folder the
+two will not line up, and emjupy says it cannot tell rather than
+inventing a path.
+
+In the dashboard, =d= opens whatever the cursor is on: a directory is
+opened in Dired, a notebook or file opens its containing directory with
+point on it.
+
+* Recovering from a dropped connection
+
+Suspending the machine kills a tunnelled WebSocket.  A socket that dies
+during a render can leave the buffer showing something the cells do not
+hold.
+
+=M-x emjupy-reconnect-kernel= now checks the invariants and redraws if
+they fail, so the repair happens as part of reconnecting rather than
+being left to the user.  The cells are the notebook and the buffer is a
+drawing of them, so redrawing is free and correct.
+=M-x emjupy-re-render= still does the same thing by hand.

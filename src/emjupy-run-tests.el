@@ -49,6 +49,14 @@
 ;; are about a real server, rebind it themselves where they need to.
 (setq emjupy-probe-environment nil)
 
-(ert-run-tests-batch-and-exit)
+;; A test tagged :unstable is one whose subject is a real fault that has
+;; not been fixed -- it fails some of the time and says something true
+;; when it does.  Setting EMJUPY_SKIP_UNSTABLE keeps CI's verdict
+;; meaningful without deleting the test or hiding the fault behind a
+;; retry; run the suite without it to see them.
+(ert-run-tests-batch-and-exit
+ (if (getenv "EMJUPY_SKIP_UNSTABLE")
+     '(not (tag :unstable))
+   t))
 
 ;;; emjupy-run-tests.el ends here

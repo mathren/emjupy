@@ -8,6 +8,7 @@
 #   make test      unit tests only (no server needed)
 #   make check     unit + integration tests (needs a live Jupyter server)
 #   make lint      checkdoc and, if installed, package-lint
+#   make docs      export docs/*.org to docs/html/
 #   make versions  which Emacs this is, against the one we target
 #   make package   build emjupy-VERSION.tar
 #   make install   install that tar into this Emacs via package-install-file
@@ -37,7 +38,7 @@ SOURCES = emjupy-core.el emjupy-http.el emjupy-render.el emjupy-cells.el \
           emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el emjupy-notebook.el emjupy.el
 PKGFILES = $(SOURCES) emjupy-pkg.el README.org
 
-.PHONY: all compile test check lint versions check-version package install clean timestamps
+.PHONY: all compile test check lint docs versions check-version package install clean timestamps
 
 all: compile
 
@@ -68,6 +69,11 @@ endif
 versions:
 	@$(EMACS) -batch -Q --eval '(message "emacs %s (development targets $(EMACS_TARGET))" emacs-version)'
 	@$(EMACS) -batch -Q --eval '(if (version< emacs-version "$(EMACS_TARGET)") (message "  older than the target: test on $(EMACS_TARGET) before trusting a result") (message "  ok"))'
+
+# Export docs/*.org to docs/html/, which is what GitHub Pages serves when
+# a site is set to publish from the docs/ folder.
+docs:
+	$(EMACS) -batch -Q -l docs/publish.el
 
 lint:
 	$(EMACS) -batch -Q $(LOADPATH) -l lint.el

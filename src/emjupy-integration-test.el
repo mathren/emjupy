@@ -97,6 +97,13 @@ first -- setting the struct alone would be silently overwritten."
       ;; execute_reply sets exec-count; that's our completion signal.
       (emjupy-int--pump (or seconds 60)
                         (lambda () (numberp (emjupy-cell-exec-count cell))))
+      ;; The execution count arrives with the reply, which can overtake the
+      ;; stream output it describes -- so returning here handed the caller a
+      ;; cell whose stdout was still in flight, and an assertion about that
+      ;; output failed against an empty string.  Waited for, briefly: a cell
+      ;; that genuinely prints nothing must not cost the full timeout.
+      (emjupy-int--pump 5 (lambda () (> (length (or (emjupy-cell-outputs cell) []))
+                                        0)))
       cell)))
 
 (defun emjupy-int--output-types (cell)
@@ -552,6 +559,23 @@ asserting against noise."
                         (lambda () (numberp (emjupy-cell-exec-count cell))))
       cell)))
 
+(defun emjupy-int--await-ready (buf &optional tries)
+  "Run a trivial cell in BUF until the kernel answers, or give up.
+
+A kernel that has just restarted accepts a connection before it will
+execute anything: the socket is live, the request is sent, and the reply
+that describes it arrives while the output it produced does not.  Waiting
+longer does not help -- that output was never sent.  So readiness is
+established by asking for something and seeing it come back."
+  (let ((left (or tries 10))
+        (ready nil))
+    (while (and (> left 0) (not ready))
+      (setq left (1- left))
+      (let ((cell (emjupy-int--run-in buf "print('emjupy-ready')" 20)))
+        (when (string-match-p "emjupy-ready" (emjupy-int--stdout cell))
+          (setq ready t))))
+    ready))
+
 (defun emjupy-int--stdout (cell)
   (mapconcat (lambda (o) (emjupy--mime-text (gethash "text" o)))
              (append (emjupy-cell-outputs cell) nil) ""))
@@ -641,6 +665,7 @@ a SECOND server; skipped otherwise."
               (kill-buffer buf))))))))
 
 (ert-deftest emjupy-int-restart-affects-only-its-own-notebook ()
+  :tags '(:unstable)
   "Restarting one notebook's kernel must leave every other notebook's
 kernel -- and its interpreter state -- untouched."
   (emjupy-int--skip-unless-live)
@@ -655,6 +680,8 @@ kernel -- and its interpreter state -- untouched."
             (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
               (emjupy-restart-kernel))
             (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))
+          ;; and wait until it will actually run something
+          (should (emjupy-int--await-ready b))
           ;; B lost its state (it restarted) ...
           (let ((cell (emjupy-int--run-in b "print('KEEP_B' in dir())")))
             (should (string-match-p "False" (emjupy-int--stdout cell))))

@@ -1,0 +1,19 @@
+#+TITLE: Known limitations
+#+PREVIOUS_PAGE: development.org
+#+NEXT_PAGE: todo.org
+
+* Multicursor
+It works fine editing within one cell while nothing else is
+happening. =multiple-cursors.el= places its fake-cursor overlays on real
+buffer text and a normal edit session applies correctly to all cursor
+positions. The catch: emjupy-mode rebuilds the entire buffer
+(erase-buffer + reinsert) any time a cell executes, gets
+inserted/deleted/moved, or — critically — any time another cell's
+output streams in. Fake-cursor overlays collapsed to buffer position
+1, and the next multi-cursor edit produced genuinely garbled text (!!
+at the start of the buffer, a stray ! landing inside unrelated text).
+
+For multi-cell multicursor use the shadow buffer with =C-'=.
+
+* Python only
+Other kernels (e.g., R or julia) have never been tested, but may work.

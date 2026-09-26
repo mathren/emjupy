@@ -1,0 +1,24 @@
+#+TITLE: emjupy documentation
+#+PREVIOUS_PAGE: index.org
+#+NEXT_PAGE:     usage.org
+
+Emjupy is a package to run Jupyter notebooks in emacs aiming at
+retaining the native emacs editing experience and the convenience of
+notebooks for data exploration.
+
+By design, it works with remote kernels using emacs built-ins (=eglot=
+and =tramp=, completion framework the way you like and configured, e.g.,
+=vertico= + =corfu= + =orderless=) while maintaining compatibility with
+standard =*.ipynb= for sharing with non-emacs users.
+
+* Table of contents
+- [[file:usage.org][Using a notebook]]
+- [[file:keybindings.org][Keybindings]]
+- [[file:appearance.org][Appearance]]
+- [[file:remote.org][Working with a remote server]]
+- [[file:language-server.org][Language server support]]
+- [[file:troubleshooting.org][Troubleshooting]]
+- [[file:design.org][How it works]]
+- [[file:development.org][Building and development]]
+- [[file:limitations.org][Known limitations]]
+- [[file:todo.org][TODO list of improvements]]

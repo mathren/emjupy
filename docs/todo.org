@@ -1,0 +1,11 @@
+#+TITLE: TODO list of improvements
+#+PREVIOUS_PAGE: limitations.org
+#+NEXT_PAGE: index.org
+
+* TODO list on hold
+- [ ] upon reshowing output, background is ok, but text get python
+  highlighted (including removing background)
+- [ ] first and last line numbers of cell is at the outline using
+  linenum mode, can we have them at the first line of code and last
+  line of output instead?
+- [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]

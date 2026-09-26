@@ -6580,5 +6580,40 @@ file name is checked here, because the failure it caused was invisible
         (should (equal (emjupy--remote-name-for nb "/home/me/scripts/plot_aux.py")
                        "/ssh:ua_w:/home/me/scripts/plot_aux.py"))))))
 
+(ert-deftest emjupy-test-inserting-above-keeps-the-edit ()
+  "Adding a cell above keeps an edit made elsewhere undoable.
+
+Inserting moves everything below it by a known amount, so the entries
+survive; this pins that down for the cell-above direction, which the
+matrix covers only downward."
+  (let ((cells (vector (emjupy-test--cell-like 'code "first = 1")
+                       (emjupy-test--cell-like 'code "second = 2"))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        (goto-char (overlay-start (emjupy-cell-overlay
+                                   (aref (emjupy-notebook-cells nb) 0))))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        (goto-char (overlay-start (emjupy-cell-overlay
+                                   (aref (emjupy-notebook-cells nb) 1))))
+        (emjupy-insert-cell-above)
+        (should (= (length (emjupy-notebook-cells nb)) 3))
+        (goto-char (point-min))
+        (setq this-command nil last-command nil)
+        (let ((presses 0) (recovered nil))
+          (while (and (< presses 4) (not recovered))
+            (setq presses (1+ presses))
+            (ignore-errors (undo))
+            (setq this-command 'undo last-command 'undo)
+            (unless (string-match-p "\\+ 7" (buffer-string))
+              (setq recovered presses)))
+          (setq this-command nil last-command nil)
+          (should recovered))
+        (emjupy--sync-all-cells)
+        (should-not (emjupy--check-invariants))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

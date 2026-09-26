@@ -84,6 +84,46 @@ jobs:
           EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make lint
 
+  # The documentation is Org, and Org export is the thing most likely to
+  # break silently: a stale link renders fine on GitHub and 404s in the
+  # exported site.  Built here so that cannot happen unnoticed.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      - name: Export the docs
+        run: make docs
+
+      - name: Check every internal link resolves
+        run: |
+          python3 - <<'PY'
+          import glob, os, re, sys
+          bad = []
+          for f in glob.glob('docs/html/*.html'):
+              for href in re.findall(r'href="([^"#][^"]*)"', open(f).read()):
+                  if href.startswith(('http:', 'https:', 'mailto:')):
+                      continue
+                  target = os.path.normpath(os.path.join('docs/html', href))
+                  if not os.path.exists(target):
+                      bad.append((os.path.basename(f), href))
+          for f, h in bad:
+              print(f"broken: {f} -> {h}")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Keep the exported site
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/html
+
   # The tests that talk to a real server, a real kernel and a real language
   # server: the ones most likely to catch a regression in the WebSocket,
   # session or LSP paths.  Until now they ran only if someone remembered to
@@ -139,6 +179,11 @@ jobs:
           EMJUPY_TEST_URL: 127.0.0.1:8888
           EMJUPY_TEST_TOKEN: emjupy-ci
           EMJUPY_TEST_ROOT: ${{ runner.temp }}/nbroot
+          # Tests whose subject is a known, unfixed fault are tagged
+          # :unstable and left out here.  They fail some of the time and
+          # say something true when they do, so they stay in the suite --
+          # but a job that fails at random teaches people to ignore it.
+          EMJUPY_SKIP_UNSTABLE: '1'
         run: |
           make clean
           make check

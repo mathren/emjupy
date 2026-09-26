@@ -1,0 +1,231 @@
+#+TITLE: Using a notebook
+#+PREVIOUS_PAGE: index.org
+#+NEXT_PAGE: keybindings.org
+
+How a notebook behaves once it is open.
+
+* Server dashboard
+
+=M-x emjupy-server-dashboard= (also =emjupy-notebook-list=) opens one buffer
+per server showing what it has: the kernels running on it and the
+notebooks stored on it, browsable into subdirectories.
+
+| Key | Effect                                                            |
+|-----+-------------------------------------------------------------------|
+| =RET= | open the notebook, or descend into the folder                     |
+| =^=   | up a directory (the =..= row)                                       |
+| =g=   | re-fetch from the server                                          |
+| =k=   | shut down the kernel on this line                                 |
+| =K=   | shut down every kernel on this server                             |
+| =n=   | create a notebook in the folder being shown (with one empty cell) |
+| =d=   | hand this directory to Dired                                      |
+
+It is built on =tabulated-list-mode=, so sorting and navigation are
+Emacs's own.  It is deliberately *not* a file manager: =d= hands the
+directory to Dired, over TRAMP when the server is remote.  The Contents
+API says what notebooks exist but not how to reach them as files -- and a
+tunnelled server looks like localhost from here -- so tell =emjupy= where
+they live:
+
+#+begin_src elisp
+(setq emjupy-remote-root "/ssh:user@host:/home/user/notebooks")
+;; or per server:
+(setq emjupy-remote-root
+      '(("localhost:8888" . "~/notebooks")
+        ("localhost:9999" . "/ssh:box:/srv/nb")))
+#+end_src
+
+* Editing while a cell runs
+
+A slow cell shows a marker where its execution count will go -- =[In: |]=,
+cycling -- so a cell that is running looks different from one that was
+never run.  =emjupy-running-indicator= sets the frames; a single-element
+vector like =["*"]= gives Jupyter's static marker instead.  The animation
+moves only overlay strings, never buffer text, so it cannot disturb what
+you are typing or land in the undo history.
+
+You can edit anywhere in the notebook while a cell runs.  Output
+arriving folds the buffer back into the cells before redrawing, so
+nothing typed in the meantime is lost -- earlier this silently reverted
+edits made while a long cell was working, which looked like the notebook
+scrambling itself.
+
+If the display ever does look wrong, =C-c C-x C-l= (=emjupy-re-render=)
+rebuilds it from the cells.  It keeps pending edits, and never touches
+the notebook on the server.
+
+* Editable regions
+
+Only cell source text is editable.  Rules, the gutters between cells and
+output boxes are read-only, because text entered there belongs to no
+cell and would be discarded at the next redraw.
+
+Editing at cell boundaries is unaffected: the end of a cell's last line
+and the start of the next cell are both within cells.
+
+Set =emjupy-protect-non-cell-regions= to nil to disable this.
+
+* Indentation, tracebacks, and finding your own code
+
+=TAB= indents as =python-mode= would, and offers the alternatives on
+repeat: after =def f():= the next line might be the body or back at the
+outer level, so pressing it again cycles.  emjupy asks python-mode
+rather than guessing, using the cell as the context.
+
+=C-$= opens the cell's full traceback in its own buffer, with Python
+highlighting and the colours the kernel sent -- the output box squeezes
+a deep stack into a few lines, which is where tracebacks become
+unreadable.
+
+=M-.= on a function from one of your own modules needs the shadow file to
+sit beside that module: a language server resolves =import mylib=
+relative to the directory of the file it is reading.
+
+emjupy puts it there by asking the kernel.  Kernels are started through
+a Jupyter /session/ bound to the notebook, which starts them in the
+notebook's own directory, so the kernel simply knows -- and for a kernel
+on this machine there is nothing to configure.
+
+* Hiding output
+
+=C-c C-o= collapses the output of the cell at point, and restores it.  A
+collapsed cell shows its bottom rule marked:
+
+: └─ ▼ 3 outputs hidden ─────────────────────────────┘
+
+The marker is clickable: =mouse-1= on the triangle shows the output
+again.  Only the triangle is live -- it highlights under the pointer,
+and the rest of the rule is an ordinary line.  In a terminal this needs
+=xterm-mouse-mode=; the key binding works either way.
+
+Nothing is discarded.  The outputs stay on the cell, so restoring them
+is a redraw and never a re-run, and the kernel is not involved either
+way.  This is the difference between hiding output and clearing it.
+
+The state is kept at =metadata.jupyter.outputs_hidden=, where Jupyter
+keeps it, so it survives saving and means the same thing in other front
+ends.
+
+* Clearing output
+
+=C-c C-l= discards the output of the cell at point; =C-c C-u C-l= does it
+for the whole notebook, asking first, since re-running everything is not
+always cheap.
+
+Both clear the execution count along with the output -- leaving =[In: 4]=
+beside an empty box would claim something had been run since -- and both
+touch only the buffer.  The notebook on the server keeps its outputs
+until you save, so clearing is not a way to lose results by accident.
+
+Clearing everything before committing is the usual reason to want this:
+it strips the outputs that make =.ipynb= diffs unreadable.
+
+* Output rendering
+
+Output is redrawn at most once per =emjupy-output-render-interval=
+seconds (0.15 by default), however many messages arrive.  Redrawing on
+each message is impractical: a progress bar sends one message per
+iteration, and each redraw of a notebook containing figures takes tens
+of milliseconds.
+
+=M-x emjupy-flush-output= forces a pending redraw.
+
+Consecutive stream output on the same channel is merged into a single
+output, as in Jupyter, and carriage returns are collapsed as in a
+terminal.  A progress bar therefore occupies one output rather than one
+per update.
+
+* Progress bars
+
+A progress bar redraws itself by returning to the start of the line with
+a carriage return and writing over what was there.  emjupy collapses
+those the way a terminal does, so a bar occupies one line and shows its
+latest state.
+
+What appears depends on what the program actually wrote, and =tqdm=
+writes a frame only every =mininterval= seconds, 0.1 by default.  A loop
+that finishes faster than that produces exactly two frames: the opening
+one, at 0%% with the bar area blank, and the closing one at 100%%.
+Nothing was lost -- nothing else was ever sent.
+
+Text written by something else while a bar is on screen lands on the
+bar's line, because the bar line has no newline of its own until the bar
+closes.  A warning raised mid-loop therefore appears appended to the
+frame that was current, which is what a terminal shows too.
+
+* ANSI colour in output
+
+Output from =termcolor=, =rich= or =colorama= arrives with ANSI escapes in
+it.  These are applied as real colours rather than shown as
+=\\033[33m=; set =emjupy-render-ansi-colors= to nil to strip them
+instead.
+
+* Markdown highlighting
+
+Markdown cells are highlighted out of the box -- headings, emphasis,
+inline code and fences, links, list markers and blockquotes -- with no
+external package. =markdown-mode= and =markdown-ts-mode= are MELPA
+packages =emjupy= does not depend on; when one of them IS installed it is
+used in preference to the built-in approximation.
+
+* Copying between cells
+
+Text copied out of a cell carries its faces but none of emjupy's own
+properties.  That matters because one of them, =emjupy-cell=, holds the
+cell structure itself: killed text used to reference a whole cell --
+outputs, overlay and all -- as a snapshot that stopped being true as
+soon as the cell changed, and yanking it elsewhere left the pasted text
+claiming to belong to a cell it had nothing to do with.
+
+A kill whose region extends past the end of a cell is refused, but the
+text still reaches the kill ring: Emacs copies before deleting.  The
+error is therefore accompanied by a usable =C-y=.
+
+* Relative paths in cells
+
+Because kernels are now started through a session, a cell's working
+directory is the notebook's own folder, as it is in Jupyter, so
+=open("data.csv")= finds the file next to the notebook.  Previously the
+kernel started in the server root, so the same code needed the path
+spelled out from there.  If a notebook has been written to expect the
+old behaviour, its relative paths will need adjusting.
+
+* Exporting to a plain .py
+
+=C-c C-x C-e= (=emjupy-export-py=) writes the notebook out as Python in
+percent format: =# %%= before each code cell, and markdown cells carried
+across as commented =# %% [markdown]= blocks.  That is the format
+Jupytext, VS Code and Spyder already read, so the result opens as a
+notebook again elsewhere rather than being a one-way dump.
+
+The default destination is beside the notebook itself, *on the server it
+came from*.  The file is written through the same Contents API the
+notebook is read through, so this works for a remote kernel with no
+TRAMP and no configuration -- the =.py= lands next to the =.ipynb= on that
+machine.  With a prefix argument it writes to a local file instead, and
+a TRAMP file name works there if you want it somewhere else again.
+
+The buffer is synced first, so unsaved edits are included, and an
+existing file is never overwritten without asking.  Set
+=emjupy-export-markdown-cells= to nil to export code only.
+
+Note this is not the shadow buffer dumped to disk, although that is
+where the idea came from: the shadow buffer's markers carry emjupy's
+internal cell ids, which mean nothing outside emjupy, and it holds code
+cells only -- so exporting it directly would silently drop your prose.
+
+* Which version am I running?
+
+=M-x emjupy-version= reports the version, where the code was loaded from
+and, in a checkout, the revision.  In a notebook buffer it also names
+the kernel's working directory and the shadow file, which together
+decide whether the language server can see your own modules:
+
+#+begin_example
+emjupy 0.1.0, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
+kernel cwd /home/you/project; shadow /ssh:box:/home/you/project/localhost_9999__nb.ipynb.py
+#+end_example
+
+If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
+server is reading a local scratch file and =M-.= will not find your
+modules.

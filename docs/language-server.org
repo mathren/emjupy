@@ -1,0 +1,262 @@
+#+TITLE: Language server support
+#+PREVIOUS_PAGE: remote.org
+#+NEXT_PAGE: troubleshooting.org
+
+Completion, documentation, definitions and the rest, from a language
+server that sees the environment the code will run in.
+
+* Requirements
+
+Two packages must be installed in the Python environment that runs
+=jupyter server=:
+
+#+begin_src bash
+pip install jupyter-lsp 'python-lsp-server[all]'
+#+end_src
+
+In a conda environment file:
+
+#+begin_src yaml
+dependencies:
+  - jupyter-lsp
+  - python-lsp-server
+#+end_src
+
+They serve different purposes:
+
+| Package             | Purpose                                     |
+|---------------------+---------------------------------------------|
+| =jupyter-lsp=         | adds the =/lsp/= endpoints to Jupyter         |
+| =jupyterlab-lsp=      | JupyterLab front end; requires =jupyter-lsp=  |
+| =python-lsp-server=   | the Python language server                  |
+
+Installing =jupyterlab-lsp= does not install a language server.  An
+environment containing it alone provides the endpoints with no server
+behind them.
+
+* Locating the language server
+
+=jupyter-lsp= detects a server by importing it:
+=importlib.util.find_spec("pylsp")=, evaluated in the interpreter running
+=jupyter server=, and started as =[sys.executable, "-m", "pylsp"]=.  The
+=PATH= variable is not consulted.
+
+A =pylsp= installed elsewhere on the machine is therefore not found.  It
+must be importable by the interpreter running =jupyter server=.
+
+This is a property of the Jupyter server, not of a project: one server
+requires one installation regardless of how many notebooks it serves.
+
+* =eglot= over the Jupyter WebSocket
+
+Every =eglot= command works against the language server running beside the
+kernel -- rename, formatting, code actions, find-implementation, and
+whatever =eglot= gains next.  Nothing is wired up per command.
+
+=eglot= reaches a server through three =jsonrpc= generics, and
+=jsonrpc-connection-send= dispatches on the connection class, so a
+subclass can carry the traffic anywhere.  =emjupy-eglot-server= carries
+it over the same WebSocket the notebook already uses.
+=jsonrpc-process-connection= type-checks for a process object, so one is
+stood up and then ignored: it satisfies the check and carries nothing.
+
+The document has two names -- the shadow file on this machine, which is
+what =eglot= manages, and the path the kernel would see, which is what the
+server knows -- so every message is rewritten in one direction or the
+other as it passes through.  That is the single place the two have to
+agree.
+
+Completion, eldoc, =[xref-find-definitions]= and every other =eglot=
+command go the same way: to the shadow buffer, where =eglot= is attached.
+Nothing asks the language server directly any more -- the hand-rolled
+request path emjupy used before this is gone, along with the special
+case that made rename work and nothing else.
+
+The shadow file is therefore local again, and only ever local: it is
+something for =eglot= to attach to, not something a language server reads.
+=emjupy-shadow-host= is no longer needed for this to work.
+
+* =eglot= commands in a notebook
+
+Completion and eldoc reach the language server through a hidden shadow
+buffer holding the notebook's code.  =eglot='s own commands did not: they
+call =eglot--current-server-or-lose=, and the notebook buffer is not the
+one =eglot= manages, so =M-x eglot-rename= failed with a bare "No current
+JSON-RPC connection".
+
+The commands in =emjupy-eglot-delegated-commands= -- =eglot-rename=,
+=eglot-code-actions=, =eglot-format= and the =eglot-find-*= family -- now run
+in the shadow buffer at the position matching point, with any edits
+pulled back into the cells.  Because that buffer holds every cell at
+once, a rename fixes references in *all* of them, not only the cell
+point was in.
+
+The advice does nothing outside =emjupy-mode=; =M-x
+emjupy-eglot-remove-advice= takes it off entirely.
+
+* Jumping to definitions
+
+=M-.= works inside a notebook.  =eglot= installs its xref backend in the
+buffer it manages -- the hidden shadow buffer, not the notebook -- so
+emjupy adds a backend that forwards there and maps the answer back.
+
+Because the shadow buffer holds every cell at once, a jump crosses
+cells: =M-.= on a call in one cell lands on the definition in another.
+Locations pointing anywhere else, into a library say, are left alone,
+because the real file is the right destination there.
+
+* Jumping into modules beside a remote notebook
+
+\[xref-find-definitions] on a function from one of your own modules
+opens that module, even when it lives on another machine.  The language
+server runs beside the kernel and answers with a path on *its*
+filesystem, so emjupy fetches the file through the Contents API -- the
+same connection the notebook came down -- and shows it read-only, with a
+header line saying where it came from.
+
+No TRAMP, no mirror, nothing configured.  Read-only because it is a copy
+fetched over HTTP: reading it is a different job from writing it back.
+
+=M-x emjupy-lsp-diagnose= says which transport a notebook is actually
+using and how far it got -- whether the socket opened, whether the
+handshake finished, whether anything has answered -- since from the
+outside a server that is never reached looks exactly like one with
+nothing to say.
+
+* If =eglot= is missing
+
+=eglot= ships with Emacs 29, which this package requires, so in practice it
+is always present.  Be aware, though, that the WebSocket transport
+inherits from =eglot='s own connection class, so its absence would be a
+load error rather than a graceful degradation.  Supporting an Emacs
+without =eglot= would mean guarding that section -- and a =featurep= check
+around it is not sufficient.
+
+* Language support: the server next to the kernel
+
+emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
+Jupyter server*, over that server's own WebSocket -- the same transport
+the notebook already uses, and the arrangement JupyterLab's
+=jupyterlab-lsp= uses.
+
+The consequences are worth stating plainly:
+
+- *No file.* The code is sent in-band with =didChange=, which is what LSP
+  is for.  Nothing is written to disk, locally or remotely.
+- *No second connection.* No TRAMP, no ssh, no directory probing.
+  Measured: completion, hover and =M-.= over this transport cost *zero*
+  filesystem operations, against 36 remote round trips to create the
+  old shadow file.
+- *The right environment.* The server runs beside the kernel, so
+  completions describe the packages the code will actually import, and
+  =M-.= finds your own modules because the server resolves them against
+  the notebook's own directory.
+
+* Language server requests
+
+Requests are asynchronous.  eldoc runs after every command, so a
+blocking request would cost one round trip per keystroke.  Completion
+answers from the previous reply and requests the next in the background.
+
+The handshake is also asynchronous.  =jupyter-lsp= starts the language
+server on demand, so connecting may take several seconds; until it
+completes, no answers are available.  If the socket cannot be opened,
+another attempt is not made for =emjupy-lsp-retry-interval= seconds.
+
+Per-command cost, measured on a twelve-cell notebook containing figures:
+
+| Operation     | Time    |
+|---------------+---------|
+| cursor motion | 0.0 ms  |
+| completion    | 0.1 ms  |
+| eldoc         | 1.2 ms  |
+
+* When a shadow file would describe the wrong machine
+
+If the kernel runs somewhere this Emacs cannot reach, and
+=emjupy-shadow-host= does not say how to get there, the shadow file --
+and so the language server -- is local.  What it describes is *this*
+machine: its interpreter, its packages, and none of the modules beside
+the notebook.  For ordinary Python that is mostly right and worth
+having, which is why it is the default; for anything that depends on the
+environment the code will actually run in, it is confidently wrong, so
+emjupy says so once per notebook.
+
+Set =emjupy-shadow-when-kernel-unreachable= to nil to have no language
+support at all in that case rather than approximate support.  Either
+way, =emjupy-shadow-host= or =jupyter-lsp= on the server gives answers
+from the right machine.
+
+That is also why the shadow path shows up under =/tmp= in
+=M-x emjupy-version= for a remote kernel: it is the only place emjupy can
+safely write when it cannot address the kernel's own filesystem.  Set
+=emjupy-shadow-host=, or install =jupyter-lsp= on the server and let the
+default transport handle it.
+
+* When the language server cannot be reached
+
+Completion and eldoc ask for the shadow buffer after every command.  If
+the notebook is remote and the host is slow or unreachable, each attempt
+blocks Emacs while TRAMP waits -- so one failure repeated per keystroke
+is indistinguishable from a hang.
+
+emjupy gives setup =emjupy-shadow-timeout= seconds (2 by default) and, if
+it fails, stops trying for =emjupy-shadow-retry-interval= seconds (30),
+saying so once.  That covers both halves: creating the file, and
+starting the language server -- the second being the expensive one, and
+the one that otherwise repeats after every command when the host has no
+=pylsp=.  Editing and running cells never depend on the shadow
+buffer, so they keep working: only completion, eldoc and =M-.= are lost
+until the host answers again.
+
+* Falling back
+
+Set =emjupy-lsp-enabled= to nil to use the older =eglot= shadow-file
+arrangement, which needs no server-side support but pays the costs
+described below, and describes the machine running Emacs rather than the
+one running the kernel.
+
+* Timeouts
+
+Requests wait =emjupy-lsp-timeout= seconds (1) -- short, because
+completion and eldoc run after ordinary commands and a late answer is
+worth less than a responsive editor.  The first request after connecting
+gets =emjupy-lsp-first-timeout= (10), since =jupyter-lsp= starts the
+language server lazily and the first question waits for a process
+launch: measured cold, a completion that answers in milliseconds
+afterwards took seconds the first time.
+
+A request arriving while another is waiting is refused rather than
+nested.  Waiting uses =accept-process-output=, which runs Emacs's timers,
+so eldoc can fire inside a request -- and allowing that to nest is what
+made the file-based client recurse until Emacs ran out of stack.
+
+* Checking it from the shell
+
+#+begin_src bash
+curl -s "http://localhost:9999/lsp/status?token=YOUR_REAL_TOKEN"
+#+end_src
+
+Substitute the real token; the string =YOUR_REAL_TOKEN= will be refused.
+The three answers mean three different things:
+
+| Answer                            | Meaning                                |
+|-----------------------------------+----------------------------------------|
+| =404= (an HTML page)                | =jupyter-lsp= is not installed           |
+| ={"message": "Forbidden"}= (403)    | the token was wrong, nothing more      |
+| ={"version": 2, "sessions": {...}}= | the plumbing works; read what it lists |
+
+On a working setup =sessions= names the language servers actually
+installed:
+
+#+begin_example
+{"version": 2, "sessions": {"pylsp": {"status": "not_started", ...}}}
+#+end_example
+
+An *empty* =sessions= is the giveaway that the plumbing is there and the
+language server is not.  =emjupy-lsp-server= (default ="pylsp"=) names
+which of the listed servers to ask for.
+
+emjupy makes the same check for you: when it cannot reach a language
+server it asks =/lsp/status= itself and says which of these three
+situations it found, rather than failing silently.
