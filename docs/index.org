@@ -11,18 +11,72 @@ and =tramp=, completion framework the way you like and configured, e.g.,
 =vertico= + =corfu= + =orderless=) while maintaining compatibility with
 standard =*.ipynb= for sharing with non-emacs users.
 
-* Table of contents
-- [[file:usage.org][Using a notebook]]
-- [[file:keybindings.org][Keybindings]]
-- [[file:appearance.org][Appearance]]
-- [[file:remote.org][Working with a remote server]]
-- [[file:language-server.org][Language server support]]
-- [[file:troubleshooting.org][Troubleshooting]]
-- [[file:design.org][How it works]]
-- [[file:development.org][Building and development]]
-- [[file:limitations.org][Known limitations]]
-- [[file:todo.org][TODO list of improvements]]
+* Features
+- persistent kernel session (to load large dataset once and re-use
+  them)
+- remote or local kernel (just needs port and token)
+- in-line rendering of output including images
+- automatic loading of kernel from port, python environment (including
+  for =eglot= if =python-lsp-server= is listed in the environment)
+- resilient to connection drops (remote kernel keeps running,
+  reconnect emacs)
+- toggle hide/show output without re-running cells
+- =ein=-like workflow and key bindings
+- notebook (open and available) and kernel list with =emjupy-list-*=,
+  analogous to =ein:notebooklist=
 
+* Try it with =emacs -Q=
+To test this in an isolated environment without touching your current config:
+
+1. Launch a =jupyter-notebook= on a known =<PORT>=:
+   #+begin_src bash
+     jupyter-notebook --port=<PORT> --no-browser  --IdentityProvider.token=abc
+   #+end_src
+   This can optionally be done on a remote machine.
+
+2. *Optional*: if the server is on a remote machine, create a tunnel to
+   it running on your local machine:
+   #+begin_src bash
+     ssh -L <PORT>:localhost:<PORT> <remote machine>
+   #+end_src
+
+3. Launch Emacs with:
+   #+begin_src bash
+     emacs -Q -L . -l quicktry.el --eval '(emjupy-login)'
+   #+end_src
+   where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
+   requirements (to not clutter your emacs installation).
+
+4. Follow the prompt in the minibuffer (bottom) area. The
+   token/password is =abc= provided in 1., only asked if the server
+   actually needs one. =emjupy= adopts the kernel already running behind
+   that port and shows you the notebook list; picking one drops you
+   straight into the live REPL (see screenshots above).
+
+* Installation
+
+Clone this repo, add to =load-path=, and load it with these lines in
+your =init.el= or similar:
+
+#+BEGIN_SRC elisp
+  (add-to-list 'load-path "/path/to/emjupy")
+  (require 'emjupy)
+#+END_SRC
+
+Or with =use-package= (remove the =:rev :newest= line to use the latest
+release rather than the latest commit):
+
+#+BEGIN_SRC elisp
+  (use-package emjupy
+    :vc (:url "https://github.com/mathren/emjupy"
+         :rev :newest ;; latest commit, if commented, latest release
+         )
+    :config
+    (setq emjupy-render-latex t))
+#+END_SRC
+
+Alternatively, use =install-package-file= giving it the tarball you can
+create with =make package= (see [[file:docs/development.org::+TITLE: Building and development][Building & development]]).
 
 * Landscape of other emacs/jupyter packages
 
@@ -36,3 +90,15 @@ standard =*.ipynb= for sharing with non-emacs users.
 [[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
 need to share code with non-emacs users, so =ob-jupyter= isn't an
 option, and =emacs-jupyter= doesn't seem the right tool for me.
+
+* Rest of these docs
+- [[file:usage.org][Using a notebook]]
+- [[file:keybindings.org][Keybindings]]
+- [[file:appearance.org][Appearance]]
+- [[file:remote.org][Working with a remote server]]
+- [[file:language-server.org][Language server support]]
+- [[file:troubleshooting.org][Troubleshooting]]
+- [[file:design.org][How it works]]
+- [[file:development.org][Building and development]]
+- [[file:limitations.org][Known limitations]]
+- [[file:todo.org][TODO list of improvements]]
