@@ -6496,5 +6496,61 @@ temp directory does the same job without inventing directories."
              (emjupy-remote-root here))
         (should (string-prefix-p here (emjupy--shadow-directory-for nb-here)))))))
 
+(ert-deftest emjupy-test-tunnel-detected-however-ssh-was-invoked ()
+  "A tunnel is recognised whether or not the command line begins \"ssh\".
+
+Matching only a line starting with `ssh\=' missed /usr/bin/ssh and
+autossh -- between them most tunnels that were not typed by hand a
+moment ago.  A missed tunnel means no host, so no remote name, so
+\\[xref-find-definitions] lands on a local path that is not there."
+  (let ((emjupy-probe-environment t))
+    (dolist (line '("ssh -N -L 9999:localhost:9999 me@box"
+                    "/usr/bin/ssh -o ControlMaster=auto -f -N -L 9999:localhost:9999 me@box"
+                    "autossh -M 0 -N -L 9999:localhost:9999 me@box"))
+      (cl-letf (((symbol-function 'shell-command-to-string)
+                 (lambda (&rest _) (concat line "\n")))
+                ((symbol-function 'executable-find) (lambda (&rest _) "/bin/ps")))
+        (should (equal (emjupy--ssh-host-forwarding 9999) "me@box"))))
+    ;; and something that merely mentions ssh is not a tunnel
+    (cl-letf (((symbol-function 'shell-command-to-string)
+               (lambda (&rest _) "emacs --eval (ssh -L 9999:localhost:9999)\n"))
+              ((symbol-function 'executable-find) (lambda (&rest _) "/bin/ps")))
+      (should-not (emjupy--ssh-host-forwarding 9999)))))
+
+(ert-deftest emjupy-test-definition-elsewhere-says-so-rather-than-inventing ()
+  "A definition on the kernel\='s machine that cannot be reached says so.
+
+With no way to build a remote name -- a tunnelled server and nothing
+configured -- the local name is a file this machine has not got.
+Opening it created an empty buffer at a plausible path, which reads as
+\"the definition is here and is blank\" rather than \"I cannot reach that
+machine\"."
+  (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                     :root "/home/me/project"))
+         (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
+                                   :kernel-cwd "/home/me/project"))
+         (emjupy-remote-root nil)
+         (emjupy-ssh-host nil)
+         (emjupy-probe-environment nil)
+         (item (xref-make "def f" (xref-make-file-location
+                                   "/home/me/project/library.py" 3 0))))
+    (let ((err (should-error (emjupy--xref-on-the-right-machine nb item)
+                             :type 'user-error)))
+      (should (string-match-p "emjupy-remote-root" (error-message-string err))))
+    ;; a file that IS here is opened, not refused: the kernel may be local
+    ;; or the directory shared
+    (let* ((here (expand-file-name "emjupy-here.py" temporary-file-directory)))
+      (unwind-protect
+          (progn
+            (write-region "x = 1\n" nil here nil 'silent)
+            (let* ((server2 (make-emjupy-server
+                             :base-url "localhost:9999" :token "t"
+                             :root (directory-file-name temporary-file-directory)))
+                   (nb2 (make-emjupy-notebook :cells [] :path "n.ipynb"
+                                              :server server2))
+                   (item2 (xref-make "def f" (xref-make-file-location here 1 0))))
+              (should (emjupy--xref-on-the-right-machine nb2 item2))))
+        (ignore-errors (delete-file here))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

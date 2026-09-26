@@ -822,6 +822,19 @@ the right character of the right cell."
        (let ((backend (run-hook-with-args-until-success 'xref-backend-functions)))
          (when backend (funcall fn backend)))))))
 
+(defun emjupy--names-a-file-elsewhere-p (nb file)
+  "Non-nil when FILE belongs to NB\='s kernel and is not on this machine.
+
+Both halves matter.  A path under the kernel\='s root that also exists
+here is the same file -- the kernel is local, or a directory is shared --
+and opening it is right.  A path under that root with nothing here is a
+file on the other machine wearing a local name."
+  (let* ((server (emjupy-notebook-server nb))
+         (root (and server (emjupy--server-side-root-for server))))
+    (and root
+         (string-prefix-p (file-name-as-directory root) file)
+         (not (file-exists-p file)))))
+
 (defun emjupy--xref-on-the-right-machine (nb item)
   "Return ITEM with its file named on the machine of NB\='s kernel.
 
@@ -840,6 +853,14 @@ name is worse than a local one."
          (remote (and file
                       (not (file-remote-p file))
                       (emjupy--remote-name-for nb file))))
+    (when (and file (not remote) (emjupy--names-a-file-elsewhere-p nb file))
+      ;; Nothing to build a remote name from, and the local name is a file
+      ;; this machine has not got.  Opening it would create an empty buffer
+      ;; at a plausible path -- which reads as "the definition is here and
+      ;; is blank" rather than "I cannot reach that machine".
+      (user-error
+       "%s is on the machine running the kernel; set `emjupy-remote-root' to reach it"
+       (abbreviate-file-name file)))
     (if (not remote)
         item
       (xref-make (xref-item-summary item)

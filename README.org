@@ -1375,33 +1375,13 @@ Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
 
-- [ ] although eldoc works perfectly, doing =M-.= on a function
-  created a local path and file (the path would be correct on remote,
-  instead of opening the existing remote file that eldoc previews.
-  Upon trying it on a module function it created a file again in the
-  right path but on the wrong machine
-  =emjupy-lsp-diagnose= shows only remote paths.
-  #+BEGIN_SRC
-notebook        test.ipynb
-server          localhost:9999
-server root     /home/mrenzo/Runs/LMXRB/scripts
-kernel cwd      /home/mrenzo/Runs/LMXRB/scripts
-lsp enabled     yes
-lsp url         ws://localhost:9999/lsp/ws/pylsp?token=<redacted>
-shadow file     /home/mrenzo/Runs/LMXRB/scripts/.emjupy_localhost_9999__test.ipynb.py
-language server over the Jupyter WebSocket
-connection      running
-back-off        none
-socket failure  none recorded
-
-If no language server is attached, ask the Jupyter server directly:
-  curl -s 'http://localhost:9999/lsp/status?token=TOKEN'
-  404 no jupyter-lsp   403 wrong token   sessions {} no language server
-#+END_SRC
+- [ ] although eldoc works perfectly, doing =M-.= on a function says "No
+  definition found" or tries local files.
 
 - [ ] upon reshowing output, background is ok, but text get python
   highlighted (including removing background)
 
+- [ ] add =C-v= for create cell above. This also should not break undo.
 
 ** Hold
 - [ ] first and last line numbers of cell is at the outline using

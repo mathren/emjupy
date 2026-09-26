@@ -537,8 +537,12 @@ is how emjupy learns a name nobody told it."
           (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))
           (found nil))
       (dolist (line lines found)
+        ;; The command may be a full path, and may be a wrapper that keeps
+        ;; a tunnel alive.  Matching only a line beginning "ssh" missed
+        ;; /usr/bin/ssh and autossh, which is most tunnels that were not
+        ;; typed by hand a moment ago.
         (when (and (not found)
-                   (string-match-p "\\`ssh\\b" line)
+                   (string-match-p "\\`\\(?:[^ ]*/\\)?\\(?:auto\\)?ssh\\(?: \\|\\'\\)" line)
                    (string-match-p pattern line))
           (setq found (emjupy--ssh-destination line)))))))
 
