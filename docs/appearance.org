@@ -7,14 +7,14 @@
 On a plain emacs installation, you should see something like:
 #+CAPTION: [[./test_notebook/test.ipynb][Simple notebook]] rendering in a fresh emacs with no customization. Screenshot may be out of date.
 #+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
-#+ATTR_HTML: :width 50%
+#+ATTR_HTML: :width 75%
 [[file:./images/screenshot-default-colored.png]]
 
 This is what the same notebook looks like with =wombat= theme in my
 setup:
 #+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme.
 #+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
-#+ATTR_HTML: :width 50%
+#+ATTR_HTML: :width 75%
 [[file:./images/screenshot-dark-colored.png]]
 
 *N.B.:* Screenshot may be out of date.

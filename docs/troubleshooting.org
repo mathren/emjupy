@@ -1,6 +1,6 @@
 #+TITLE: Troubleshooting
 #+PREVIOUS_PAGE: language-server.org
-#+NEXT_PAGE: design.org
+#+NEXT_PAGE: todo.org
 
 When something behaves unexpectedly.
 

@@ -190,7 +190,7 @@ kernel started in the server root, so the same code needed the path
 spelled out from there.  If a notebook has been written to expect the
 old behaviour, its relative paths will need adjusting.
 
-* Exporting to a plain .py
+* Exporting to a plain =.py=
 
 =C-c C-x C-e= (=emjupy-export-py=) writes the notebook out as Python in
 percent format: =# %%= before each code cell, and markdown cells carried
@@ -221,10 +221,10 @@ and, in a checkout, the revision.  In a notebook buffer it also names
 the kernel's working directory and the shadow file, which together
 decide whether the language server can see your own modules:
 
-#+begin_example
+#+begin_src
 emjupy 0.1.0, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
 kernel cwd /home/you/project; shadow /ssh:box:/home/you/project/localhost_9999__nb.ipynb.py
-#+end_example
+#+end_src
 
 If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
 server is reading a local scratch file and =M-.= will not find your

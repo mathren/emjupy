@@ -169,9 +169,11 @@ running in, which is the notebook's own folder, and the Contents API
 gives the notebook's path relative to the root.  Take the second off the
 end of the first:
 
-: kernel cwd     /home/you/project/analysis
-: notebook path  analysis/run.ipynb
-: root           /home/you/project
+#+BEGIN_SRC
+ kernel cwd     /home/you/project/analysis
+ notebook path  analysis/run.ipynb
+ root           /home/you/project
+#+END_SRC
 
 So =emjupy-remote-root= usually need not be set at all: open a notebook,
 let its kernel start, and browsing that server's files works.  Set it by
