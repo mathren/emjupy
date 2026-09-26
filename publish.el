@@ -79,6 +79,12 @@ Return them as two values: previous-page and next-page."
          (next (cdr (assoc "NEXT_PAGE" keywords))))
     (list previous next)))
 
+(defconst mr/site-html-head
+  (mr/read-file "html-content/html-templates/html_head.html"))
+
+(defconst mr/site-html-preamble
+  (mr/read-file "html-content/html-templates/preamble.html"))
+
 (defun mr/site-html-postamble (info)
   "Generate a dynamic HTML footer for the Org export.
 Substitute placeholders PREVIOUS_PAGE and NEXT_PAGE with corresponding links.
@@ -87,21 +93,24 @@ INFO is the export plist."
          (nav (mr/read-navigation-keywords))
          (previous-page (mr/get-html-link (car nav) publishing-directory))
          (next-page (mr/get-html-link (cadr nav) publishing-directory))
-         (footer-template (mr/read-file "../html-content/html-templates/postamble.html"))
-         (footer (format footer-template
-                         (format-time-string "%-d %B %Y")
-                         emacs-version
-                         org-version)))
-    (setq footer (replace-regexp-in-string "PREVIOUS_PAGE" (or previous-page "#") footer t t))
-    (setq footer (replace-regexp-in-string "NEXT_PAGE" (or next-page "#") footer t t))
-    ))
-
-(defconst mr/site-html-head
-  (mr/read-file "html-content/html-templates/html_head.html"))
-
-(defconst mr/site-html-preamble
-  (mr/read-file "html-content/html-templates/preamble.html"))
-
+         (footer-template
+          (mr/read-file "../html-content/html-templates/postamble.html"))
+         (emjupy-version
+          (with-temp-buffer
+            (insert-file-contents "../src/emjupy-pkg.el")
+            (nth 2 (read (current-buffer)))))
+         (footer
+          (format footer-template
+                  emjupy-version
+                  (format-time-string "%-d %B %Y")
+                  emacs-version
+                  org-version)))
+    (setq footer
+          (replace-regexp-in-string
+           "PREVIOUS_PAGE" (or previous-page "#") footer t t))
+    (setq footer
+          (replace-regexp-in-string
+           "NEXT_PAGE" (or next-page "#") footer t t))))
 
 ;; fix timestamps for html and latex exports
 (defun mr/filter-timestamp (trans back _comm)
