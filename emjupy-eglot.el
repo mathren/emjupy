@@ -25,6 +25,9 @@
 
 (require 'cl-lib)
 (require 'emjupy-core)
+(declare-function emjupy--server-side-root-for "emjupy-notebook" (server))
+(declare-function emjupy--tramp-root-for "emjupy-notebook" (server))
+(declare-function emjupy--remote-root-for-files "emjupy-notebook" (server))
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-lsp)
@@ -313,7 +316,12 @@ answers \"No definition found\".
 The directory is worked out from `emjupy-remote-root\', which maps a
 server to where its files actually live.  Without that mapping there is
 nothing to derive -- a tunnelled server looks like localhost -- so the
-temp directory is used and this quietly has no effect."
+temp directory is used and this quietly has no effect.
+
+It also has no effect when the shadow has to stay on this machine and
+the notebook is on another: \"beside\" would then name a LOCAL directory
+after a REMOTE path, and emjupy would create it here.  The WebSocket
+transport does not read the file anyway."
   :type 'boolean
   :group 'emjupy)
 
@@ -327,6 +335,15 @@ costs everything -- building it over TRAMP is slow, can time out, and
 when it does the attach that was waiting on it never happens.  That is
 how the socket came to be reported as never opened.")
 
+(defun emjupy--shadow-must-stay-here-p (nb)
+  "Non-nil when NB\='s shadow belongs on this machine but its files do not.
+
+True exactly when the WebSocket transport is in use and the notebook is
+somewhere this machine cannot reach as a plain path."
+  (and emjupy--force-local-shadow
+       (let ((dir (emjupy--notebook-directory nb)))
+         (and dir (not (emjupy--local-directory-p dir))))))
+
 (defun emjupy--shadow-directory-for (nb)
   "Return the directory NB\='s shadow file belongs in."
   ;; Forcing local rejects REMOTE candidates only.  A directory set by hand
@@ -337,8 +354,16 @@ how the socket came to be reported as never opened.")
                    dir)))
     (let* ((explicit (usable (and emjupy-shadow-directory
                                   (file-name-as-directory emjupy-shadow-directory))))
+           ;; Not beside the notebook when the shadow must stay here and the
+           ;; notebook lives elsewhere: "beside" would mean a LOCAL directory
+           ;; named after a remote path, so emjupy would create
+           ;; /home/you/project/ on this machine and put the shadow in it.
+           ;; The socket transport never reads the file anyway -- it rewrites
+           ;; the paths it reports -- so a temp directory does the same job
+           ;; without inventing directories on the wrong machine.
            (beside (and (not explicit)
                         emjupy-shadow-beside-notebook
+                        (not (emjupy--shadow-must-stay-here-p nb))
                         (usable (emjupy--notebook-directory nb)))))
       (or explicit beside
           (file-name-as-directory
@@ -797,6 +822,48 @@ the right character of the right cell."
        (let ((backend (run-hook-with-args-until-success 'xref-backend-functions)))
          (when backend (funcall fn backend)))))))
 
+(defun emjupy--xref-on-the-right-machine (nb item)
+  "Return ITEM with its file named on the machine of NB\='s kernel.
+
+The language server answers with paths as it sees them, and it sees the
+kernel\='s filesystem.  Taken literally here those name files on this
+machine -- usually files that do not exist, which is why jumping to a
+definition created an empty buffer at a plausible path instead of
+opening the file.
+
+Rewritten to a remote name when the kernel is elsewhere and one can be
+built; left alone when the kernel is local, when it already is remote,
+or when there is nothing to build a name from, since a wrong remote
+name is worse than a local one."
+  (let* ((loc (ignore-errors (xref-item-location item)))
+         (file (ignore-errors (xref-location-group loc)))
+         (remote (and file
+                      (not (file-remote-p file))
+                      (emjupy--remote-name-for nb file))))
+    (if (not remote)
+        item
+      (xref-make (xref-item-summary item)
+                 (xref-make-file-location
+                  remote
+                  (or (ignore-errors (xref-location-line loc)) 1)
+                  (or (ignore-errors (xref-file-location-column loc)) 0))))))
+
+(defun emjupy--remote-name-for (nb file)
+  "Return FILE as a name on NB\='s server, or nil to leave it alone."
+  (let* ((server (emjupy-notebook-server nb))
+         (root (and server (emjupy--server-side-root-for server)))
+         ;; A root set by hand first: a tunnelled server answers at
+         ;; localhost and nothing in the conversation names the machine
+         ;; behind it, so the configured value is the only thing that can
+         ;; say where the files really are.
+         (tramp (and server (or (emjupy--remote-root-for-files server)
+                                (emjupy--tramp-root-for server)))))
+    (when (and root tramp
+               (file-remote-p tramp)
+               (string-prefix-p (file-name-as-directory root) file))
+      (concat (file-name-as-directory tramp)
+              (substring file (length (file-name-as-directory root)))))))
+
 (defun emjupy--xref-remap (nb items)
   "Rewrite ITEMS pointing into NB's shadow file so they point at its cells.
 
@@ -817,7 +884,7 @@ right destination there."
                 (same (and file (equal (file-truename file)
                                        (file-truename shadow-file)))))
            (if (not same)
-               item
+               (emjupy--xref-on-the-right-machine nb item)
              (let* ((line (ignore-errors (xref-location-line loc)))
                     (col (or (ignore-errors (xref-file-location-column loc)) 0))
                     (spos (when line

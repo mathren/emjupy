@@ -594,7 +594,10 @@ the whole of it."
               (setf (emjupy-cell-output-ov cell) nil))
             (append snapshot nil))
       (setf (emjupy-notebook-cells emjupy--buffer-notebook) snapshot)
-      (emjupy--rerender-notebook-1)
+      ;; Held still: this runs during an undo, and a rebuild that leaves
+      ;; point at the end of the buffer throws the reader to the bottom of
+      ;; the notebook just as they are trying to take something back.
+      (emjupy--keeping-the-view (lambda () (emjupy--rerender-notebook-1)))
       ;; and the redo
       (unless (eq buffer-undo-list t)
         (push (list 'apply #'emjupy--restore-cells-snapshot now) buffer-undo-list)))))

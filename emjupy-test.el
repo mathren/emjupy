@@ -6393,5 +6393,108 @@ it."
       (should presses)
       (should (<= presses 3)))))
 
+(ert-deftest emjupy-test-undoing-a-rebuild-does-not-move-the-view ()
+  "Undoing a redraw leaves the reader where they were.
+
+The restore redraws the notebook, and a redraw leaves point at the end
+of the buffer unless held -- so taking something back threw the view to
+the bottom, at the moment someone is least expecting to be moved."
+  (let ((cells (vconcat (cl-loop for i from 0 below 30
+                                 collect (emjupy-test--cell-like
+                                          'code (format "line_%d = %d" i i))))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (set-window-buffer (selected-window) buf)
+        (let* ((w (selected-window))
+               (target (aref (emjupy-notebook-cells nb) 20)))
+          (buffer-enable-undo)
+          (setq buffer-undo-list nil)
+          (goto-char (overlay-start (emjupy-cell-overlay target)))
+          (end-of-line)
+          (insert " + 7")
+          (undo-boundary)
+          (recenter 0)
+          (redisplay t)
+          (let ((top (line-number-at-pos (window-start w))))
+            ;; a rebuild, then undo it
+            (emjupy--rerender-notebook)
+            (setq this-command nil last-command nil)
+            (ignore-errors (undo))
+            (redisplay t)
+            (should (= (line-number-at-pos (window-start w)) top))
+            (should-not (eobp))))))))
+
+(ert-deftest emjupy-test-definitions-point-at-the-kernels-machine ()
+  "A definition outside the notebook is named on the machine that has it.
+
+The language server sees the kernel\='s filesystem and answers with paths
+as it sees them.  Taken literally here they name files on this machine,
+usually files that do not exist -- so jumping to a definition opened an
+empty buffer at a plausible path instead of the file eldoc had just been
+quoting from."
+  (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                     :root "/home/me/project"))
+         (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
+                                   :kernel-cwd "/home/me/project"))
+         (emjupy-remote-root "/ssh:box:/home/me/project"))
+    ;; a file under the server\='s root is renamed onto the remote
+    (should (equal (emjupy--remote-name-for nb "/home/me/project/library.py")
+                   "/ssh:box:/home/me/project/library.py"))
+    ;; anything outside it is left alone: a wrong remote name is worse
+    (should-not (emjupy--remote-name-for nb "/usr/lib/python3.13/glob.py"))
+    ;; and the xref item carries the new name, keeping line and column
+    (let* ((item (xref-make "def f" (xref-make-file-location
+                                     "/home/me/project/library.py" 12 4)))
+           (loc (xref-item-location (emjupy--xref-on-the-right-machine nb item))))
+      (should (equal (xref-location-group loc) "/ssh:box:/home/me/project/library.py"))
+      (should (= (xref-location-line loc) 12)))))
+
+(ert-deftest emjupy-test-definitions-left-alone-when-the-kernel-is-here ()
+  "No rewriting when the kernel runs on this machine."
+  (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                     :root "/home/me/project"))
+         (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
+                                   :kernel-cwd "/home/me/project"))
+         (emjupy-remote-root nil))
+    (should-not (emjupy--remote-name-for nb "/home/me/project/library.py"))))
+
+(ert-deftest emjupy-test-shadow-does-not-invent-a-local-directory ()
+  "The shadow goes to a temp directory rather than a made-up local path.
+
+Keeping it beside the notebook is what lets a language server resolve
+`import mylib\=' by looking next to the file.  But when the shadow must
+stay on this machine and the notebook is on another, \"beside\" names a
+LOCAL directory after a REMOTE path -- so emjupy created
+/home/you/project/ here and put the shadow in it, which is how a
+definition lookup came to open an empty buffer at a plausible path on
+the wrong machine.
+
+The socket transport never reads the file: it rewrites the paths it
+reports, and the server is told separately where the modules are.  A
+temp directory does the same job without inventing directories."
+  (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb"
+                                  :kernel-cwd "/srv/somewhere-else"
+                                  :server (make-emjupy-server :base-url "h" :token "t"))))
+    (let ((emjupy-shadow-host "/ssh:box:")
+          (emjupy-remote-root "/ssh:box:~/")
+          (emjupy-shadow-beside-notebook t))
+      ;; with the socket attaching, neither remote nor a local look-alike
+      (let* ((emjupy--force-local-shadow t)
+             (dir (emjupy--shadow-directory-for nb)))
+        (should-not (file-remote-p dir))
+        (should-not (string-match-p "somewhere-else" dir))
+        (should (string-prefix-p (file-name-as-directory
+                                  (expand-file-name "emjupy-shadow"
+                                                    temporary-file-directory))
+                                 dir)))
+      ;; and a directory that really is here is still used
+      (let* ((emjupy--force-local-shadow t)
+             (here (file-name-as-directory temporary-file-directory))
+             (nb-here (make-emjupy-notebook
+                       :cells [] :path "n.ipynb" :kernel-cwd here
+                       :server (make-emjupy-server :base-url "h" :token "t")))
+             (emjupy-remote-root here))
+        (should (string-prefix-p here (emjupy--shadow-directory-for nb-here)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

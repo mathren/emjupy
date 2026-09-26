@@ -552,6 +552,15 @@ is how emjupy learns a name nobody told it."
         (emjupy--ssh-host-forwarding
          (plist-get (emjupy--server-parts server) :port)))))
 
+(defun emjupy--remote-root-for-files (server)
+  "Return the configured file-name root for SERVER, if it names another machine.
+
+`emjupy-remote-root\=' is what the user sets when the server is reached
+through a tunnel, which is exactly when nothing else can say where the
+files are."
+  (let ((root (emjupy--configured-root-for server)))
+    (and root (file-remote-p root) root)))
+
 (defun emjupy--tramp-root-for (server)
   "Return a TRAMP path to SERVER\='s files, or nil if one cannot be built.
 
