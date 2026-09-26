@@ -2,9 +2,25 @@
 #+PREVIOUS_PAGE: limitations.org
 #+NEXT_PAGE: index.org
 
-* TODO list on hold
+* TODO list
 - [ ] upon reshowing output, background is ok, but text get python
   highlighted (including removing background)
+- [ ] possibly related to the above: =tqdm= does not show the bar
+  correctly. Here is what I see (copy is accurate, no glyphs missing)
+  when there is a print statement in the loop with integer and path
+  #+BEGIN_SRC
+0it [00:00, ?it/s] 0 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/high_kappa_floor/energy_5.0d50/
+1it [00:01,  1.79s/it] 1 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/high_kappa_floor/energy_7.0d50/
+2it [00:03,  1.80s/it] 2 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/high_kappa_floor/energy_8.0d50/
+3it [00:05,  1.80s/it] 3 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/high_kappa_floor/energy_1.0d51/
+4it [00:07,  1.80s/it]
+0it [00:00, ?it/s] 0 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/energy_0.0d0/
+1it [00:00,  1.07it/s] 1 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/energy_5.0d50/
+2it [00:02,  1.44s/it] 2 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/energy_7.0d50/
+3it [00:04,  1.62s/it] 3 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/energy_8.0d50/
+4it [00:06,  1.69s/it] 4 ../SNEC_expl/farmer23_re-run/expl_energy/7d_infall/energy_1.0d51/
+5it [00:08,  1.64s/it]
+#+END_SRC
 - [ ] first and last line numbers of cell is at the outline using
   linenum mode, can we have them at the first line of code and last
   line of output instead?
