@@ -1374,32 +1374,35 @@ For multi-cell multicursor use the shadow buffer with =C-'=.
 Other kernels (e.g., R or julia) have never been tested, but may work.
 
 * TODO list of improvements
-- Aim: editing a cell same experience as editing a python file and we
-  do not want to fix/emulate commands one by one.
-  - [ ] =M-.= on a sibling module.  On Emacs 30 the WebSocket connected
-    and Eglot left the shadow buffer unmanaged, so every request fell
-    through to a language server on the local machine, which answers
-    about the wrong files.  Fixed by activating Eglot's editing mode in
-    that buffer explicitly.  Original report:
-  - [ ] =M-.= on a sibling module.  Diagnosed from an Eglot transcript:
-    emjupy had silently fallen back to a language server on the LOCAL
-    machine, which answers about the wrong files and the wrong Python --
-    stdlib lookups worked, the user's own modules did not.  That fallback
-    now warns, and the server beside the kernel is told where the
-    notebook's modules are.  Why the WebSocket fails, with a pylsp
-    session listed at =/lsp/status=, is still open.  Original report:
-  - [ ] =M-.= fails again on remote with custom file. Example:
-    file =library.py= contains the definition of =function.= In a notebook cell I have
-    #+BEGIN_SRC python
-      from library import function
-    #+END_SRC
-    and in a cell later:
-    #+BEGIN_SRC python
-      x = function()
-    #+END_SRC
-    =M-.= works for python modules (e.g., =glob=) but cannot find the
-    definition of function. Maybe there is a different emacs way to do this?
-- [ ] =C-e= in an output line does not go to the end of the line (say long output lines)
+
+- [ ] although eldoc works perfectly, doing =M-.= on a function
+  created a local path and file (the path would be correct on remote,
+  instead of opening the existing remote file that eldoc previews.
+  Upon trying it on a module function it created a file again in the
+  right path but on the wrong machine
+  =emjupy-lsp-diagnose= shows
+  #+BEGIN_SRC
+notebook        test.ipynb
+server          localhost:9999
+server root     /home/mrenzo/Runs/LMXRB/scripts
+kernel cwd      /home/mrenzo/Runs/LMXRB/scripts
+lsp enabled     yes
+lsp url         ws://localhost:9999/lsp/ws/pylsp?token=<redacted>
+shadow file     /home/mrenzo/Runs/LMXRB/scripts/.emjupy_localhost_9999__test.ipynb.py
+language server over the Jupyter WebSocket
+connection      running
+back-off        none
+socket failure  none recorded
+
+If no language server is attached, ask the Jupyter server directly:
+  curl -s 'http://localhost:9999/lsp/status?token=TOKEN'
+  404 no jupyter-lsp   403 wrong token   sessions {} no language server
+#+END_SRC
+
+- [ ] undo fails on executing cell and the cursor jumps to the
+bottom. It shouldn't fail, and if it does the cursor should not move
+and maybe use the bell? But the important thing is preventing the
+failure
 
 
 
