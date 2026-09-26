@@ -9,7 +9,7 @@
 
 (define-package "emjupy" "0.1.0"
   "Interactive Jupyter notebooks in Emacs"
-  '((emacs "29.1")
+  '((emacs "30.1")
     (websocket "1.15"))
   :keywords '("languages" "tools" "python" "jupyter")
   :url "https://github.com/mathren/emjupy")
