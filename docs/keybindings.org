@@ -2,8 +2,6 @@
 #+PREVIOUS_PAGE: usage.org
 #+NEXT_PAGE: appearance.org
 
-[[file:index.org][Documentation index]] | [[https://github.com/mathren/emjupy][emjupy on GitHub]]
-
 * =emjupy-mode= (notebook buffers)
 
 | Key         | Command                           | Effect                                                             |

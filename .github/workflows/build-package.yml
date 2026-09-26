@@ -86,7 +86,8 @@ jobs:
 
   # The documentation is Org, and Org export is the thing most likely to
   # break silently: a stale link renders fine on GitHub and 404s in the
-  # exported site.  Built here so that cannot happen unnoticed.
+  # exported site.  Built here so that cannot happen unnoticed, and
+  # published so the site is whatever main says it is.
   docs:
     runs-on: ubuntu-latest
     steps:
@@ -106,23 +107,42 @@ jobs:
           python3 - <<'PY'
           import glob, os, re, sys
           bad = []
-          for f in glob.glob('docs/html/*.html'):
-              for href in re.findall(r'href="([^"#][^"]*)"', open(f).read()):
-                  if href.startswith(('http:', 'https:', 'mailto:')):
+          for f in glob.glob('html-content/*.html'):
+              page = open(f).read()
+              for href in re.findall(r'(?:href|src)="([^"#][^"]*)"', page):
+                  if href.startswith(('http:', 'https:', 'mailto:', 'data:')):
                       continue
-                  target = os.path.normpath(os.path.join('docs/html', href))
+                  target = os.path.normpath(os.path.join('html-content', href))
                   if not os.path.exists(target):
                       bad.append((os.path.basename(f), href))
           for f, h in bad:
               print(f"broken: {f} -> {h}")
+          print(f"{len(glob.glob('html-content/*.html'))} pages checked, {len(bad)} broken")
           sys.exit(1 if bad else 0)
           PY
 
-      - name: Keep the exported site
-        uses: actions/upload-artifact@v4
+      - name: Package the site for Pages
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: docs-html
-          path: docs/html
+          path: html-content
+
+  # Publishing is a job of its own so a failed export never replaces a
+  # working site, and so it only runs for main -- a pull request builds
+  # the docs and stops there.
+  deploy-docs:
+    needs: docs
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   # The tests that talk to a real server, a real kernel and a real language
   # server: the ones most likely to catch a regression in the WebSocket,

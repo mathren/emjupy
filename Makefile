@@ -24,19 +24,21 @@ EMACS   ?= emacs
 # because that is where it was being tested.  `make versions' says which
 # Emacs this is.
 EMACS_TARGET = 30.1
-VERSION := $(shell sed -n 's/^;; Version: \(.*\)/\1/p' emjupy.el)
+SRC     := src
+VERSION := $(shell sed -n 's/^;; Version: \(.*\)/\1/p' $(SRC)/emjupy.el)
 PKG     := emjupy-$(VERSION)
 TAR     := $(PKG).tar
 
 # websocket is the only external dependency. Point this at a checkout to run
 # offline, otherwise it is resolved from your package dir.
 WEBSOCKET ?= $(EMJUPY_WEBSOCKET_DIR)
-LOADPATH  := -L . $(if $(WEBSOCKET),-L $(WEBSOCKET),)
+LOADPATH  := -L $(SRC) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
-SOURCES = emjupy-core.el emjupy-http.el emjupy-render.el emjupy-cells.el \
-          emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el emjupy-notebook.el emjupy.el
-PKGFILES = $(SOURCES) emjupy-pkg.el README.org
+SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
+            emjupy-cells.el emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el \
+            emjupy-notebook.el emjupy.el)
+PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el README.org
 
 .PHONY: all compile test check lint docs versions check-version package install clean timestamps
 
@@ -48,7 +50,7 @@ compile:
 	done
 
 test:
-	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
+	$(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el
 
 # Integration tests are opt-in; see the README for the environment variables.
 # The command is the same as `test': what decides whether the integration
@@ -62,7 +64,7 @@ ifndef EMJUPY_TEST_URL
 skipped.  Set EMJUPY_TEST_URL, EMJUPY_TEST_TOKEN and EMJUPY_TEST_ROOT, or \
 run `make test' if you only want the unit tests)
 endif
-	$(EMACS) -batch -Q $(LOADPATH) -l emjupy-run-tests.el
+	$(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el
 
 # What a MELPA review checks, and what the code already follows by hand.
 # Which Emacs is this, and is it the one development targets?
@@ -73,21 +75,21 @@ versions:
 # Export docs/*.org to docs/html/, which is what GitHub Pages serves when
 # a site is set to publish from the docs/ folder.
 docs:
-	$(EMACS) -batch -Q -l docs/publish.el
+	$(EMACS) -batch -Q -l publish.el all
 
 lint:
-	$(EMACS) -batch -Q $(LOADPATH) -l lint.el
+	cd $(SRC) && $(EMACS) -batch -Q -L . $(if $(WEBSOCKET),-L $(abspath $(WEBSOCKET)),) -l lint.el
 
 # Called by the release workflow, which passes the tag being released.
 # Three things have to agree or a release ships claiming to be a version
 # it is not: the Version: header, the emjupy-version constant that
 # M-x emjupy-version reports, and the tag itself.
 check-version:
-	@version=$$(sed -n 's/^;; Version: *//p' emjupy.el | head -1); \
-	constant=$$(sed -n 's/^(defconst emjupy-version "\([^"]*\)".*/\1/p' emjupy.el | head -1); \
+	@version=$$(sed -n 's/^;; Version: *//p' $(SRC)/emjupy.el | head -1); \
+	constant=$$(sed -n 's/^(defconst emjupy-version "\([^"]*\)".*/\1/p' $(SRC)/emjupy.el | head -1); \
 	tag=$$(echo "$(TAG)" | sed 's/^v//'); \
 	if [ -z "$$version" ]; then \
-	  echo "check-version: no ';; Version:' header in emjupy.el" >&2; exit 1; \
+	  echo "check-version: no ';; Version:' header in $(SRC)/emjupy.el" >&2; exit 1; \
 	fi; \
 	if [ "$$constant" != "$$version" ]; then \
 	  echo "check-version: emjupy-version is $$constant but the header says $$version" >&2; \
@@ -116,5 +118,5 @@ timestamps:
 	@echo "timestamps reset to now"
 
 clean:
-	rm -f *.elc $(TAR)
+	rm -f $(SRC)/*.elc *.elc $(TAR)
 	rm -rf $(PKG)

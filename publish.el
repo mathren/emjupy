@@ -8,9 +8,16 @@
 
 ;; Initialize the package system and install dependencies
 (package-initialize)
-(unless package-archive-contents
-  (package-refresh-contents))
-(package-install 'htmlize)
+;; htmlize only colours the source blocks: without it they export as plain
+;; text and everything else is identical.  Not worth failing the build for,
+;; so a refresh that cannot reach an archive is survived rather than fatal.
+(unless (package-installed-p 'htmlize)
+  (ignore-errors
+    (unless package-archive-contents (package-refresh-contents))
+    (package-install 'htmlize)))
+(unless (require 'htmlize nil t)
+  (setq org-html-htmlize-output-type nil)
+  (message "htmlize unavailable: source blocks export as plain text"))
 
 (require 'ox-publish)
 

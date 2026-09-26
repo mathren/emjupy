@@ -1,0 +1,17 @@
+(emjupy
+ :fetcher github
+ :repo "mathren/emjupy"
+ ;; The sources live in src/; everything else in the tree -- the docs, the
+ ;; site assets, the test notebook, the development tools -- is not part of
+ ;; the package.  Listed explicitly rather than by wildcard so a new file
+ ;; does not ship by accident.
+ :files ("src/emjupy-core.el"
+         "src/emjupy-http.el"
+         "src/emjupy-render.el"
+         "src/emjupy-cells.el"
+         "src/emjupy-kernel.el"
+         "src/emjupy-lsp.el"
+         "src/emjupy-eglot.el"
+         "src/emjupy-notebook.el"
+         "src/emjupy.el"
+         "src/emjupy-pkg.el"))

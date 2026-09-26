@@ -1,0 +1,96 @@
+<div class="header">
+  <div class="site-name">
+    <a href="./index.html"><img width="100vw" src="./images/emjupy-logo.png"/></a>&emsp;<a href="#light-dark-toggle"><i id="light-dark-toggle"
+    style="font-size:16px" class="fa-solid fa-circle-half-stroke"></i></a>
+  </div>
+  <div class="hamburger">
+    <div id="myLinks" class="menu">
+      <a href="./index.html">Home</a>
+    </div>
+    <a href="javascript:void(0);" class="icon" onclick="HamburgerMenuFunction()">
+      <i class="fa fa-bars"></i>
+    </a>
+  </div>
+  <div class="navbar">
+    <a href="./keybindings.html">Shortcuts</a>
+    <a href="./usage.html">Usage</a>
+    <a href="./appearance.html">Looks</a>
+    <a href="./remote.html">Remote</a>
+    <a href="./troubleshooting.html">Debug</a>
+    <a href="./design.html">Design</a>
+    <a href="./development.html">Dev</a>
+    <a href="./limitations.html">Issues</a>
+    <a href="./todo.html">TODO</a>
+  </div>
+</div>
+
+<script>
+  function HamburgerMenuFunction() {
+      var x = document.getElementById("myLinks");
+      if (x.style.display === "block") {
+	  x.style.display = "none";
+      } else {
+	  x.style.display = "block";
+      }
+  }
+</script>
+
+<script>
+  window.onload = () => {
+      const toggleButton = document.getElementById("light-dark-toggle");
+      const body = document.body;
+      const html = document.documentElement;
+
+      // Check localStorage for user preference
+      if (localStorage.getItem("theme") === "dark") {
+          body.classList.add("dark-mode");
+	  html.classList.toggle("dark-mode");
+      }
+
+      // Toggle theme on click
+      toggleButton.addEventListener("click", () => {
+          body.classList.toggle("dark-mode");
+	  html.classList.toggle("dark-mode");
+
+          // Save user preference
+          if (body.classList.contains("dark-mode")) {
+              localStorage.setItem("theme", "dark");
+          } else {
+              localStorage.setItem("theme", "light");
+          }
+      });
+  };
+</script>
+
+<!-- toggle drawers -->
+<script>
+  function toggleDrawer(id) {
+      const drawer = document.getElementById(id);
+      drawer.style.display = drawer.style.display === "none" ? "block" : "none";
+  }
+</script>
+
+
+
+<script>
+function mrCopyCode(btn) {
+  var pre = btn.closest('.src-block-wrapper').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(function () {
+    btn.classList.add('copy-btn--done');
+    setTimeout(function () { btn.classList.remove('copy-btn--done'); }, 2000);
+  }).catch(function (err) { console.error('Copy failed:', err); });
+}function mrCopyCode(btn) {
+  var pre = btn.closest('.src-block-wrapper').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(function () {
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copy-btn--done');
+    setTimeout(function () {
+      btn.textContent = orig;
+      btn.classList.remove('copy-btn--done');
+    }, 2000);
+  }).catch(function (err) {
+    console.error('Copy failed:', err);
+  });
+}
+</script>
