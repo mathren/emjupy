@@ -4,7 +4,7 @@
 [[https://github.com/mathren/emjupy/actions/workflows/build-package.yml][https://github.com/mathren/emjupy/actions/workflows/build-package.yml/badge.svg]]
 [[https://mathren.github.io/emjupy/][https://img.shields.io/badge/docs-online-green.svg]]
 [[https://www.gnu.org/licenses/gpl-3.0][https://img.shields.io/badge/License-GPL%20v3-blue.svg]]
-[[http://melpa.milkbox.net/emjupy/use-package][http://melpa.milkbox.net/packages/use-package-badge.svg]]
+[[https://melpa.org/#/emjupy][https://melpa.org/packages/emjupy-badge.svg]]
 
 
 
