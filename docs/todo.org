@@ -9,5 +9,12 @@
   linenum mode, can we have them at the first line of code and last
   line of output instead?
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
+- [ ] "Error running timer: Selecting deleted buffer", three times in a
+  unit-test run.  The timer is jsonrpc's, dispatching a message that the
+  WebSocket transport handed it just before the test tore the connection
+  down; the frame arrives while the socket is open, so checking the
+  connection at our end does not stop it.  In use, the same order --
+  a frame in flight as a notebook closes -- would show the message once.
+  Harmless, but it should not happen.
 ** Melpa cleanup
 - [X] melpazoid check succeeds

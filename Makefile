@@ -40,7 +40,7 @@ SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el README.org
 
-.PHONY: all compile test check lint docs versions check-version package install clean timestamps
+.PHONY: all compile test check lint docs coverage versions check-version package install clean timestamps
 
 all: compile
 
@@ -65,6 +65,21 @@ skipped.  Set EMJUPY_TEST_URL, EMJUPY_TEST_TOKEN and EMJUPY_TEST_ROOT, or \
 run `make test' if you only want the unit tests)
 endif
 	$(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el
+
+# Line coverage of the test suite, as lcov in coverage/lcov.info.  Uses
+# whichever tests can run: set the integration variables, as for `check',
+# and the server-facing code is covered too.  Needs undercover.el and its
+# dependencies (dash, shut-up) -- installed, or named in
+# EMJUPY_UNDERCOVER_PATH.  Runs from .el files: instrumentation happens at
+# load time, and a compiled file would be loaded instead.
+coverage:
+	@rm -f $(SRC)/*.elc
+	@mkdir -p coverage
+	@status=0; \
+	EMJUPY_COVERAGE=$(abspath coverage/lcov.info) \
+	  $(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el || status=$$?; \
+	python3 tools/coverage-summary.py coverage/lcov.info; \
+	exit $$status
 
 # What a MELPA review checks, and what the code already follows by hand.
 # Which Emacs is this, and is it the one development targets?

@@ -32,7 +32,13 @@
 | =C-c C-p=     | =emjupy-previous-cell=              | Move point to the previous cell                                    |
 | =C-c '=       | =emjupy-edit-cell-externally=       | Edit the cell in the shadow buffer in a real major mode            |
 | =C-x C-s=     | =emjupy-save-notebook=              | Write the notebook back to the server as nbformat v4               |
-| =C-c C-z=     | =emjupy-connect-kernel-interactive= | Pick a running kernel or spawn one, for this notebook only         |
+| =C-c C-z=     | =emjupy-interrupt-kernel=           | Interrupt the running cell; the kernel and its state survive       |
+| =C-c M-z=     | =emjupy-connect-kernel-interactive= | Pick a running kernel or spawn one, for this notebook only         |
+| =C-c C-o=     | =emjupy-toggle-cell-output=         | Hide or show this cell's output; nothing is discarded              |
+| =C-$=         | =emjupy-show-traceback=             | Show the last traceback in its own buffer                          |
+| =C-c C-v=     | =emjupy-menu=                       | A menu of every command, grouped by what it is for                 |
+| =TAB=         | =emjupy-indent-or-cycle=            | Indent as Python does; repeated, cycle through indentations        |
+| =DEL=         | =emjupy-latex-unrender-or-delete=   | On a rendered formula, show its source; elsewhere, delete          |
 | =C-c C-x C-r= | =emjupy-restart-kernel=             | Restart this notebook's kernel; other notebooks are untouched      |
 | =C-c C-x C-c= | =emjupy-reconnect-kernel=           | Reopen the socket to the same kernel after a drop; state survives  |
 | =C-c C-x b=   | =emjupy-switch-notebook=            | Switch to another open notebook, labelled by server                |

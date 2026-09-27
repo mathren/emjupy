@@ -28,10 +28,6 @@
 (require 'subr-x)
 (require 'emjupy-core)
 
-;; Defined in emjupy-cells.el, which requires this file. Only called at
-;; runtime (from the interactive `emjupy-refresh-appearance'), so the
-;; cycle never bites at load time.
-
 ;; --- Page colours ----------------------------------------------------------
 ;; Cells are marked out by their horizontal rules alone -- the buffer keeps
 ;; its normal background throughout.  The one exception is a cell's OUTPUT,

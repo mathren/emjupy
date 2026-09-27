@@ -16,8 +16,10 @@
 
 ;;; Commentary:
 
-;; Syncing buffer text back into cell structs, and the cell-level editing
-;; commands: insert, delete, move, change type, and navigation.
+;; Syncing buffer text back into cell structs, the cell-level editing
+;; commands -- insert, delete, move, split, merge, change type, navigation
+;; -- and the commands that act on a cell's display: hiding and showing its
+;; output, rendering markdown and LaTeX, showing a traceback.
 
 ;;; Code:
 

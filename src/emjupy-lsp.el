@@ -46,6 +46,10 @@
 ;;
 ;; The document URI is a path on the SERVER's filesystem, not this one.
 ;; That is the point: the server resolves it, we never open it.
+;;
+;; The text of that document -- every code cell, each under a marker naming
+;; its cell -- is built here too, and parsed back into positions, since both
+;; this transport and the Eglot layer above it need it.
 
 ;;; Code:
 

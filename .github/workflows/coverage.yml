@@ -1,0 +1,100 @@
+name: Coverage
+
+# Line coverage of the whole suite -- unit and integration tests, against a
+# real server with a real kernel and language server, since that is where
+# the WebSocket, session and LSP code runs.  The per-file table lands in
+# the job summary; the lcov file is kept as an artifact for any tool that
+# reads it.  Tests tagged :timing are left out: they assert on elapsed time,
+# which means nothing when every function is instrumented.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/**'
+      - 'Makefile'
+      - 'tools/coverage-summary.py'
+      - '.github/workflows/coverage.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'Makefile'
+      - 'tools/coverage-summary.py'
+      - '.github/workflows/coverage.yml'
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      # Fetched from their repositories rather than an archive, as the other
+      # jobs fetch websocket: the run does not depend on MELPA being up.
+      - name: Fetch websocket.el and undercover.el
+        run: |
+          git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
+          git clone --depth 1 https://github.com/undercover-el/undercover.el.git "$RUNNER_TEMP/undercover"
+          git clone --depth 1 https://github.com/magnars/dash.el.git "$RUNNER_TEMP/dash"
+          git clone --depth 1 https://github.com/rejeep/shut-up.el.git "$RUNNER_TEMP/shut-up"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Jupyter and a language server
+        run: |
+          python -m pip install --upgrade pip
+          pip install jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]' numpy matplotlib tqdm
+
+      - name: Start a Jupyter server
+        run: |
+          mkdir -p "$RUNNER_TEMP/nbroot"
+          nohup jupyter server --no-browser --port=8888 --ip=127.0.0.1 \
+            --IdentityProvider.token=emjupy-ci \
+            --ServerApp.root_dir="$RUNNER_TEMP/nbroot" \
+            > "$RUNNER_TEMP/jupyter.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null "http://127.0.0.1:8888/api/status?token=emjupy-ci"; then
+              echo "server up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start"
+          cat "$RUNNER_TEMP/jupyter.log"
+          exit 1
+
+      - name: Measure coverage
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
+          EMJUPY_UNDERCOVER_PATH: ${{ runner.temp }}/undercover:${{ runner.temp }}/dash:${{ runner.temp }}/shut-up
+          EMJUPY_TEST_URL: 127.0.0.1:8888
+          EMJUPY_TEST_TOKEN: emjupy-ci
+          EMJUPY_TEST_ROOT: ${{ runner.temp }}/nbroot
+          EMJUPY_SKIP_UNSTABLE: '1'
+        run: |
+          # without this a failing test is hidden by the pipe into tee
+          set -o pipefail
+          make coverage | tee coverage-output.txt
+          # the table the target prints, into the job summary
+          {
+            echo "## Test coverage"
+            echo
+            grep '^|' coverage-output.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the lcov report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+
+      - name: Jupyter log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/jupyter.log"

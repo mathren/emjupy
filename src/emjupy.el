@@ -35,9 +35,11 @@
 ;; One port = one kernel: log in once per ssh tunnel and each port keeps its
 ;; own kernel, so several remote sessions stay live in one Emacs.
 ;;
-;; This file defines the major mode and keymap; the implementation lives in
-;; emjupy-core, emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel,
-;; emjupy-notebook and emjupy-eglot.
+;; This file carries the package header and version, and loads the rest.
+;; The mode, its keymap and menu are in emjupy-mode; the implementation is
+;; layered, each file requiring only the ones before it: emjupy-core,
+;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-remote,
+;; emjupy-lsp, emjupy-eglot, emjupy-mode and emjupy-notebook.
 
 ;;; Code:
 

@@ -12,18 +12,18 @@ make package                 # generates emjupy-i.j.k.tar
 and install from Emacs: =M-x package-install-file RET emjupy-i.j.k.tar
 RET= with =i.j.k= the current version.
 
-The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
+The only external dependency is =websocket= (1.15+); Emacs 30.1+ is
 required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
 without any =require=.
 
 * Which Emacs to develop against
 
-Development targets Emacs 30.1: what CI runs, and what most users are
-on.  The package declares 29.1 as its minimum and is tested there too,
-but 29 is not the version to develop in.  Eglot manages buffers
-differently on the two, and a bug that sent every language server
-request to a local process -- answering about the wrong machine's files
--- was invisible for weeks because 29 was where it was being tested.
+Development targets Emacs 30.1, which is also the minimum the package
+declares: what CI runs, and what most users are on.  29 was supported
+until Eglot's differences there became a source of bugs -- one sent every
+language server request to a local process, answering about the wrong
+machine's files, and stayed invisible for weeks because 29 was where it
+was being tested.
 
 =make versions= says which Emacs is in use and whether it is the target.
 
@@ -100,6 +100,7 @@ done nothing for months looks exactly like one that works.
 | =make docs=          | export =docs/*.org= to the site in =html-content/=             |
 | =make package=       | build =emjupy-VERSION.tar=                                     |
 | =make install=       | install that tar via =package-install-file=                    |
+| =make coverage=      | line coverage of the suite, as lcov, with a per-file table     |
 | =make check-version= | the version header, =emjupy-version= and the pkg file agree    |
 | =make versions=      | which Emacs this is, against the one development targets       |
 | =make clean=         | remove =.elc= files and the tar                                |
@@ -157,6 +158,23 @@ Then melpazoid, reading the same recipe MELPA will be sent:
 #+begin_src bash
 RECIPE="$(cat .github/melpa-recipe)" LOCAL_REPO="$PWD" make -C ~/melpazoid
 #+end_src
+
+Coverage, when you want to see what the tests leave untouched.  It needs
+=undercover.el= and its two dependencies, installed or checked out:
+
+#+begin_src bash
+git clone https://github.com/undercover-el/undercover.el ~/src/undercover
+git clone https://github.com/magnars/dash.el ~/src/dash
+git clone https://github.com/rejeep/shut-up.el ~/src/shut-up
+export EMJUPY_UNDERCOVER_PATH=~/src/undercover:~/src/dash:~/src/shut-up
+
+make coverage               # prints a per-file table; lcov in coverage/
+#+end_src
+
+With the integration variables set it covers the server-facing code as
+well, which is how CI runs it.  Tests tagged =:timing= are left out: they
+assert on elapsed time, and every function is several times slower when
+instrumented.
 
 And the documentation, which CI also link-checks:
 

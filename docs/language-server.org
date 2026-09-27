@@ -123,14 +123,13 @@ handshake finished, whether anything has answered -- since from the
 outside a server that is never reached looks exactly like one with
 nothing to say.
 
-* If =eglot= is missing
+* Eglot is part of the package
 
-=eglot= ships with Emacs 29, which this package requires, so in practice it
-is always present.  Be aware, though, that the WebSocket transport
-inherits from =eglot='s own connection class, so its absence would be a
-load error rather than a graceful degradation.  Supporting an Emacs
-without =eglot= would mean guarding that section -- and a =featurep= check
-around it is not sufficient.
+=eglot= ships with Emacs 30.1, which this package requires, and it is
+loaded with emjupy: the WebSocket transport inherits from Eglot's own
+connection class.  Loaded is not started -- nothing connects to a
+language server until a notebook asks for completion or documentation,
+and emjupy works without one.
 
 * Language support: the server next to the kernel
 

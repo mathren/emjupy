@@ -3529,6 +3529,7 @@ The request is asserted to have been SENT, not only to have returned
 quickly.  An earlier version of this test called a function that no
 longer existed, inside `ignore-errors\=', so it failed at once and the
 timing passed without anything having been asked."
+  :tags '(:timing)
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "os.pa"
                                 :outputs [] :metadata (make-hash-table)))
         (requests 0))
@@ -5046,6 +5047,7 @@ kept out of the history entirely."
 eldoc and completion run on every keystroke.  Anything proportional to
 the whole notebook there is felt directly, and anything that touches the
 network is felt tenfold."
+  :tags '(:timing)
   (let ((cells (emjupy-test--big-notebook 60 20)))
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
@@ -5069,6 +5071,7 @@ network is felt tenfold."
   "Output arriving redraws its own cell, so its cost does not grow with
 the notebook.  Rebuilding everything for one cell's output is what made
 a progress bar unusable."
+  :tags '(:timing)
   (let* ((small (emjupy-test--big-notebook 5 5))
          (large (emjupy-test--big-notebook 80 20))
          (time-for

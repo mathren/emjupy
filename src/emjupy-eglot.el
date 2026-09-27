@@ -34,11 +34,10 @@
 (require 'emjupy-kernel)
 (require 'emjupy-remote)
 
-;; Eglot ships with Emacs (29.1+) but is pulled in at COMPILE time
-;; only: emjupy is fully usable without a language server, so nothing
-;; here loads Eglot until a shadow buffer actually asks for it -- see
-;; the runtime `require' in `emjupy--ensure-shadow-buffer'.
-(eval-when-compile (require 'eglot nil t))
+;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it, because the
+;; WebSocket transport inherits from Eglot's own server class.  It is
+;; loaded, not started: nothing connects to a language server until a
+;; shadow buffer asks, and emjupy works without one.
 
 ;; Eglot's private API. Every call site below is already guarded by `fboundp'
 ;; or a runtime `require', but the compiler cannot see that and reports each
@@ -663,53 +662,51 @@ automatically, with nothing for the user to run."
         ;; The disk copy is a bootstrap, not the record: the cells are.  Say
         ;; unmodified either way, or Emacs offers to save a scratch file.
         (set-buffer-modified-p nil))
-      (if (not (require 'eglot nil t))
-          (message "[emjupy] Eglot isn't available in this Emacs (needs Emacs 29+).")
-        (condition-case err
-            ;; NOT eglot-ensure: it defers connecting to `post-command-hook',
-            ;; added *buffer-locally* to whatever buffer was current at call
-            ;; time. This shadow buffer is deliberately never the user's
-            ;; focused buffer -- that's the whole point of automatic,
-            ;; no-switching completion -- so that hook would never fire.
-            ;; This replicates eglot-ensure's own deferred callback body
-            ;; (see `eglot-ensure' in eglot.el) but runs it immediately;
-            ;; that's safe here because, unlike a mode-hook, this buffer is
-            ;; already fully set up (real python-mode, real file) by the
-            ;; time we reach this call.
-            ;;
-            ;; `require' (not just `fboundp' on `eglot-ensure') matters here:
-            ;; on a fresh Emacs, `eglot-ensure' exists only as an autoload
-            ;; stub until something actually calls it, which loads the real
-            ;; file and only then defines `eglot--guess-contact' et al. Since
-            ;; we deliberately never call `eglot-ensure' itself, relying on
-            ;; `fboundp' would leave those internals void the first time a
-            ;; notebook is opened in a session that never ran Eglot before.
-            ;; Connecting is the expensive half, and it is retried whenever
-            ;; the server is not attached -- which, if the server cannot be
-            ;; started at all, is after every command.  Over TRAMP that means
-            ;; guessing the contact and launching a remote process each time,
-            ;; so a host without pylsp, or one that is merely slow, brings
-            ;; Emacs to a crawl at exactly the moment the user is running
-            ;; cells.  Same treatment as the file: a short leash, then leave
-            ;; it alone for a while.
-            ;; The flag lives in the NOTEBOOK buffer -- that is where the
-            ;; next request comes from -- and this runs with the shadow
-            ;; buffer current, where it would always read nil.
-            (unless (or emjupy--suppress-plain-eglot
-                        (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
-                        (and (boundp 'eglot--managed-mode) eglot--managed-mode))
-              (with-timeout (emjupy-shadow-timeout
-                             (emjupy--shadow-block "language server did not start"
-                                                   nb-buffer))
-                (apply #'eglot--connect (eglot--guess-contact))
-                ;; It started, and it is on this machine.  Say so: this is
-                ;; the fallback, and a silent one answers about the wrong
-                ;; files and the wrong Python while looking like it works.
-                ;; Wrapped, because a warning must never be able to break
-                ;; the thing it warns about.
-                (emjupy--warn-local-language-server nb)))
-          (error
-           (emjupy--shadow-block (error-message-string err) nb-buffer)))))
+      (condition-case err
+          ;; NOT eglot-ensure: it defers connecting to `post-command-hook',
+          ;; added *buffer-locally* to whatever buffer was current at call
+          ;; time. This shadow buffer is deliberately never the user's
+          ;; focused buffer -- that's the whole point of automatic,
+          ;; no-switching completion -- so that hook would never fire.
+          ;; This replicates eglot-ensure's own deferred callback body
+          ;; (see `eglot-ensure' in eglot.el) but runs it immediately;
+          ;; that's safe here because, unlike a mode-hook, this buffer is
+          ;; already fully set up (real python-mode, real file) by the
+          ;; time we reach this call.
+          ;;
+          ;; `require' (not just `fboundp' on `eglot-ensure') matters here:
+          ;; on a fresh Emacs, `eglot-ensure' exists only as an autoload
+          ;; stub until something actually calls it, which loads the real
+          ;; file and only then defines `eglot--guess-contact' et al. Since
+          ;; we deliberately never call `eglot-ensure' itself, relying on
+          ;; `fboundp' would leave those internals void the first time a
+          ;; notebook is opened in a session that never ran Eglot before.
+          ;; Connecting is the expensive half, and it is retried whenever
+          ;; the server is not attached -- which, if the server cannot be
+          ;; started at all, is after every command.  Over TRAMP that means
+          ;; guessing the contact and launching a remote process each time,
+          ;; so a host without pylsp, or one that is merely slow, brings
+          ;; Emacs to a crawl at exactly the moment the user is running
+          ;; cells.  Same treatment as the file: a short leash, then leave
+          ;; it alone for a while.
+          ;; The flag lives in the NOTEBOOK buffer -- that is where the
+          ;; next request comes from -- and this runs with the shadow
+          ;; buffer current, where it would always read nil.
+          (unless (or emjupy--suppress-plain-eglot
+                      (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
+                      (and (boundp 'eglot--managed-mode) eglot--managed-mode))
+            (with-timeout (emjupy-shadow-timeout
+                           (emjupy--shadow-block "language server did not start"
+                                                 nb-buffer))
+              (apply #'eglot--connect (eglot--guess-contact))
+              ;; It started, and it is on this machine.  Say so: this is
+              ;; the fallback, and a silent one answers about the wrong
+              ;; files and the wrong Python while looking like it works.
+              ;; Wrapped, because a warning must never be able to break
+              ;; the thing it warns about.
+              (emjupy--warn-local-language-server nb)))
+        (error
+         (emjupy--shadow-block (error-message-string err) nb-buffer))))
     buf))
 
 (defun emjupy--shadow-position-to-cell (nb shadow-pos)
@@ -1133,8 +1130,7 @@ transport Eglot found underneath it."
        (let ((buf (emjupy-notebook-shadow-buffer emjupy--buffer-notebook)))
          (and (buffer-live-p buf)
               (with-current-buffer buf
-                (let ((server (and (fboundp 'eglot-current-server)
-                                   (eglot-current-server))))
+                (let ((server (eglot-current-server)))
                   (and server
                        (object-of-class-p server 'emjupy-eglot-server))))))))
 

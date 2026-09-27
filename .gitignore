@@ -22,3 +22,6 @@ __pycache__/*
 # belong in the tree, and a global rule kept them out of it.
 /html-content/*.html
 .packages/*
+
+# Written by `make coverage`
+/coverage/

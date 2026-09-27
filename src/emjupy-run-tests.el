@@ -31,6 +31,33 @@
     (package-refresh-contents)
     (package-install 'websocket)))
 
+;; Coverage, when asked for.  undercover instruments a file as it is
+;; loaded, so it has to be set up here, before the package is required, and
+;; the sources must load as .el rather than .elc -- hence `make clean' first
+;; in the coverage target.  EMJUPY_COVERAGE names the lcov file to write;
+;; undercover itself comes from EMJUPY_UNDERCOVER_PATH, a colon-separated
+;; list of directories holding undercover.el and what it requires.
+(when-let* ((report (getenv "EMJUPY_COVERAGE")))
+  (dolist (dir (split-string (or (getenv "EMJUPY_UNDERCOVER_PATH") "") ":" t))
+    (add-to-list 'load-path dir))
+  (require 'undercover)
+  ;; undercover only reports under a recognised CI unless forced; forced
+  ;; always, so the report is the same locally and on GitHub
+  (setq undercover-force-coverage t)
+;; The patterns are resolved against the directory Emacs was started in,
+  ;; which is the repository root under make; absolute names avoid the
+  ;; question.  The tests and these scripts are not measured.
+  (let ((src (file-name-directory (or load-file-name buffer-file-name))))
+    (eval `(undercover
+            ,@(mapcar (lambda (f) (expand-file-name f src))
+                      '("emjupy-core.el" "emjupy-http.el" "emjupy-render.el"
+                        "emjupy-cells.el" "emjupy-kernel.el" "emjupy-remote.el"
+                        "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-mode.el"
+                        "emjupy-notebook.el" "emjupy.el"))
+            (:report-format 'lcov)
+            (:report-file ,report)
+            (:send-report nil)))))
+
 (require 'emjupy)
 (require 'emjupy-test)
 
@@ -54,9 +81,15 @@
 ;; when it does.  Setting EMJUPY_SKIP_UNSTABLE keeps CI's verdict
 ;; meaningful without deleting the test or hiding the fault behind a
 ;; retry; run the suite without it to see them.
-(ert-run-tests-batch-and-exit
- (if (getenv "EMJUPY_SKIP_UNSTABLE")
-     '(not (tag :unstable))
-   t))
+;; Tests tagged :timing assert on how long something takes, which means
+;; nothing under coverage instrumentation -- every function is several times
+;; slower there -- so they are left out of a coverage run.  They measure the
+;; code, not an instrumented copy of it.
+(let ((excluded (append (and (getenv "EMJUPY_SKIP_UNSTABLE") '(:unstable))
+                        (and (getenv "EMJUPY_COVERAGE") '(:timing)))))
+  (ert-run-tests-batch-and-exit
+   (if excluded
+       `(not (or ,@(mapcar (lambda (tag) `(tag ,tag)) excluded)))
+     t)))
 
 ;;; emjupy-run-tests.el ends here

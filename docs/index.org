@@ -41,9 +41,10 @@ To test this in an isolated environment without touching your current config:
      ssh -L <PORT>:localhost:<PORT> <remote machine>
    #+end_src
 
-3. Launch Emacs with:
+3. Launch Emacs from within the =src/= directory with:
    #+begin_src bash
-     emacs -Q -L . -l quicktry.el --eval '(emjupy-login)'
+     cd src/
+     emacs -Q -L . -l quicktry.el
    #+end_src
    where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
