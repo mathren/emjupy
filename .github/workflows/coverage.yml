@@ -1,19 +1,22 @@
 name: Coverage
 
-# Line coverage of the whole suite -- unit and integration tests, against a
-# real server with a real kernel and language server, since that is where
-# the WebSocket, session and LSP code runs.  The per-file table lands in
-# the job summary; the lcov file is kept as an artifact for any tool that
-# reads it.  Tests tagged :timing are left out: they assert on elapsed time,
-# which means nothing when every function is instrumented.
+# Line coverage of the whole suite -- unit and integration tests,
+# against a real server with a real kernel and language server, since
+# that is where the WebSocket, session and LSP code runs.
+#
+# Tests tagged :timing are left out: they assert on elapsed time, which
+# means nothing when every function is instrumented.
+
 on:
   workflow_dispatch:
+
   push:
     paths:
       - 'src/**'
       - 'Makefile'
       - 'tools/coverage-summary.py'
       - '.github/workflows/coverage.yml'
+
   pull_request:
     paths:
       - 'src/**'
@@ -24,6 +27,11 @@ on:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,38 +41,66 @@ jobs:
         with:
           version: '30.1'
 
-      # Fetched from their repositories rather than an archive, as the other
-      # jobs fetch websocket: the run does not depend on MELPA being up.
+      # Fetched from their repositories rather than an archive, as the
+      # other jobs fetch websocket: the run does not depend on MELPA
+      # being up.
       - name: Fetch websocket.el and undercover.el
         run: |
-          git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
-          git clone --depth 1 https://github.com/undercover-el/undercover.el.git "$RUNNER_TEMP/undercover"
-          git clone --depth 1 https://github.com/magnars/dash.el.git "$RUNNER_TEMP/dash"
-          git clone --depth 1 https://github.com/rejeep/shut-up.el.git "$RUNNER_TEMP/shut-up"
+          git clone --depth 1 \
+            https://github.com/ahyatt/emacs-websocket.git \
+            "$RUNNER_TEMP/websocket"
 
-      - uses: actions/setup-python@v5
+          git clone --depth 1 \
+            https://github.com/undercover-el/undercover.el.git \
+            "$RUNNER_TEMP/undercover"
+
+          git clone --depth 1 \
+            https://github.com/magnars/dash.el.git \
+            "$RUNNER_TEMP/dash"
+
+          git clone --depth 1 \
+            https://github.com/rejeep/shut-up.el.git \
+            "$RUNNER_TEMP/shut-up"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Jupyter and a language server
         run: |
           python -m pip install --upgrade pip
-          pip install jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]' numpy matplotlib tqdm
+          python -m pip install \
+            jupyter-server \
+            ipykernel \
+            jupyter-lsp \
+            'python-lsp-server[all]' \
+            numpy \
+            matplotlib \
+            tqdm
 
       - name: Start a Jupyter server
         run: |
           mkdir -p "$RUNNER_TEMP/nbroot"
-          nohup jupyter server --no-browser --port=8888 --ip=127.0.0.1 \
+
+          nohup jupyter server \
+            --no-browser \
+            --port=8888 \
+            --ip=127.0.0.1 \
             --IdentityProvider.token=emjupy-ci \
             --ServerApp.root_dir="$RUNNER_TEMP/nbroot" \
             > "$RUNNER_TEMP/jupyter.log" 2>&1 &
+
           for i in $(seq 1 60); do
-            if curl -sf -o /dev/null "http://127.0.0.1:8888/api/status?token=emjupy-ci"; then
+            if curl -sf -o /dev/null \
+              "http://127.0.0.1:8888/api/status?token=emjupy-ci"
+            then
               echo "server up after ${i}s"
               exit 0
             fi
             sleep 1
           done
+
           echo "server did not start"
           cat "$RUNNER_TEMP/jupyter.log"
           exit 1
@@ -78,27 +114,30 @@ jobs:
           EMJUPY_TEST_ROOT: ${{ runner.temp }}/nbroot
           EMJUPY_SKIP_UNSTABLE: '1'
         run: |
-          # without this a failing test is hidden by the pipe into tee
+          # Without this a failing test is hidden by the pipe into tee.
           set -o pipefail
+
           make coverage | tee coverage-output.txt
-          # the table the target prints, into the job summary
+
+          # Put the table produced by the target into the job summary.
           {
             echo "## Test coverage"
-            echo
             grep '^|' coverage-output.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # - name: Keep the lcov report
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: coverage-lcov
-      #     path: coverage/lcov.info
+      - name: Keep the lcov report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           use_oidc: true
+          files: coverage/lcov.info
+          fail_ci_if_error: true
 
       - name: Jupyter log on failure
         if: failure()
