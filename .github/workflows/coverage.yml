@@ -30,7 +30,6 @@ jobs:
 
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout repository
@@ -135,8 +134,9 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
+          disable_search: true
           fail_ci_if_error: true
 
       - name: Jupyter log on failure
