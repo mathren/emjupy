@@ -14,8 +14,9 @@
 
 Jupyter notebooks with remote kernel execution using emacs built-ins
 (=eglot= and =tramp=, completion framework the way you like and
-configured, e.g., =vertico= + =corfu= + =orderless=) while maintaining
-compatibility with standard =*.ipynb= for sharing with non-emacs users.
+configured, e.g., =vertico= + =corfu= + =orderless= + =xref= + =eldoc=) while
+maintaining compatibility with standard =*.ipynb= for sharing with
+non-emacs users.
 
 * Screenshots
 

@@ -8,9 +8,9 @@ notebooks for data exploration.
 
 By design, it works with remote kernels using emacs built-ins (=eglot=
 and =tramp=, completion framework the way you like and configured, e.g.,
-=vertico= + =corfu= + =orderless=) while maintaining compatibility with
-standard =*.ipynb= for sharing with non-emacs users. See
-[[./appearance.org][Looks tab]] for screenshots.
+=vertico= + =corfu= + =orderless= + =xref= + =eldoc=) while maintaining
+compatibility with standard =*.ipynb= for sharing with non-emacs users.
+See [[./appearance.org]["Looks" tab]] for screenshots.
 
 * Features
 - persistent kernel session (to load large dataset once and re-use
@@ -79,7 +79,7 @@ release rather than the latest commit):
 Alternatively, use =install-package-file= giving it the tarball you can
 create with =make package=.
 
-Soon to be submitted to MELPA.
+Pending on MELPA.
 
 * Landscape of other emacs/jupyter packages
 
