@@ -5,7 +5,7 @@
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 ;; Maintainer: Mathieu Renzo <mrenzo@arizona.edu>
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Package-Requires: ((emacs "30.1") (websocket "1.15"))
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
@@ -121,7 +121,7 @@ DELETE is passed through to `buffer-substring--filter'."
 
 (defvar emjupy--buffer-notebook)
 
-(defconst emjupy-version "0.1.0"
+(defconst emjupy-version "0.1.1"
   "Version of emjupy, kept in step with the Version: header above.")
 
 (defun emjupy--source-directory ()
