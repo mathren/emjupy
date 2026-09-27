@@ -1,5 +1,11 @@
 ;;; quicktry.el --- Isolated test harness for emjupy -*- lexical-binding: t; -*-
 
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+
+;; This file is not part of the package: it is a development tool, and the
+;; MELPA recipe lists the files that ship.
+
 ;; Run with: emacs -Q --batch -l quicktry.el
 
 (require 'package)

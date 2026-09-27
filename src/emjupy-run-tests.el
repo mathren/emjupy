@@ -1,7 +1,7 @@
 ;;; emjupy-run-tests.el --- Batch test runner for emjupy -*- lexical-binding: t; -*-
 
-;; Author: Mathieu Renzo <mathren90@gmail.com>
-;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 
 ;; Run with: emacs -batch -Q -L . -l emjupy-run-tests.el
 ;;

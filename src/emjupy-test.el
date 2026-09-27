@@ -1,7 +1,7 @@
 ;;; emjupy-test.el --- Tests for emjupy.el -*- lexical-binding: t; -*-
 
-;; Author: Mathieu Renzo <mathren90@gmail.com>
-;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 
 ;; Kept separate from emjupy.el on purpose: implementation and tests are
 ;; different files, this one requires the other.

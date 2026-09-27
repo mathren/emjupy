@@ -2,8 +2,8 @@
 
 ;; Copyright (C) 2026 Mathieu Renzo
 
-;; Author: Mathieu Renzo <mathren90@gmail.com>
-;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
