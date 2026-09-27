@@ -79,6 +79,8 @@ release rather than the latest commit):
 Alternatively, use =install-package-file= giving it the tarball you can
 create with =make package=.
 
+Soon to be submitted to MELPA.
+
 * Landscape of other emacs/jupyter packages
 
 | Package       | Approach          | Limitations                                                                                           |

@@ -27,6 +27,7 @@
 (require 'color)
 (require 'subr-x)
 (require 'emjupy-core)
+(declare-function emjupy--collapse-carriage-returns "emjupy-kernel" (text))
 
 ;; Defined in emjupy-cells.el, which requires this file. Only called at
 ;; runtime (from the interactive `emjupy-refresh-appearance'), so the
@@ -1029,8 +1030,13 @@ and restarted fontification from scratch each time."
                           (piece-start (point)))
                       (cond
                        ((string= out-type "stream")
+                        ;; Carriage returns applied here as well as on
+                        ;; arrival: a notebook saved by Jupyter stores the
+                        ;; stream exactly as written, so a progress bar comes
+                        ;; back as every one of its updates joined by ^M.
                         (insert (emjupy--ansi-render
-                                 (emjupy--mime-text (gethash "text" out)))))
+                                 (emjupy--collapse-carriage-returns
+                                  (emjupy--mime-text (gethash "text" out))))))
                        ((or (string= out-type "execute_result")
                             (string= out-type "display_data"))
                         (emjupy--insert-rich-output (gethash "data" out)))

@@ -130,22 +130,53 @@ the start of the line and the next write covers what was there."
              (split-string text "\n" )
              "\n"))
 
+(defun emjupy--stream-p (output &optional name)
+  "Non-nil if OUTPUT is stream output, on stream NAME when that is given."
+  (and output
+       (equal (gethash "output_type" output) "stream")
+       (or (null name) (equal (gethash "name" output) name))))
+
+(defun emjupy--open-stream-output (existing name)
+  "Return the output in EXISTING that new text on stream NAME continues, or nil.
+
+The last output, if it is on NAME: consecutive output on one stream is
+one stream, as in Jupyter.  Otherwise the most recent output on NAME,
+provided its last line is still open -- it did not end with a newline.
+
+That second case is a progress bar.  `tqdm\=' writes to stderr, and each
+update begins with a carriage return: go back to the start of the line I
+am on and overwrite it.  A `print\=' in the loop writes to stdout between
+those updates, so they were never consecutive, never merged, and every
+update became an output of its own -- a column of bars, each showing its
+carriage return as a literal ^M, instead of one bar being redrawn.  A
+terminal keeps each stream\='s line open until a newline closes it, and
+this does the same.  A line that has been closed is left alone, so text
+that genuinely came later is not moved above what came before it."
+  (let ((last (car (last existing))))
+    (if (emjupy--stream-p last name)
+        last
+      (let ((recent (seq-find (lambda (o) (emjupy--stream-p o name))
+                              (reverse existing))))
+        (and recent
+             (not (string-suffix-p "\n" (emjupy--mime-text (gethash "text" recent))))
+             recent)))))
+
 (defun emjupy--merge-stream-output (existing output-hash)
   "Return EXISTING with OUTPUT-HASH merged in, or nil if it cannot be.
 
-Consecutive stream output on the same channel is one stream, as it is in
-Jupyter.  Keeping each message separately is what let a `tqdm\' bar leave
-thousands of entries behind -- every one of them walked on every redraw,
-so the notebook got slower for the rest of the session."
-  (let ((last (car (last existing))))
-    (when (and last
-               (equal (gethash "output_type" last) "stream")
-               (equal (gethash "output_type" output-hash) "stream")
-               (equal (gethash "name" last) (gethash "name" output-hash)))
-      (let ((merged (emjupy--collapse-carriage-returns
-                     (concat (emjupy--mime-text (gethash "text" last))
-                             (emjupy--mime-text (gethash "text" output-hash))))))
-        (puthash "text" merged last)
+Stream text continues the output it belongs to rather than starting a
+new one -- see `emjupy--open-stream-output\=' for which that is.  Keeping
+each message separately is what let a `tqdm\=' bar leave thousands of
+entries behind, every one walked on every redraw, so the notebook got
+slower for the rest of the session."
+  (when (emjupy--stream-p output-hash)
+    (let ((target (emjupy--open-stream-output existing (gethash "name" output-hash))))
+      (when target
+        (puthash "text"
+                 (emjupy--collapse-carriage-returns
+                  (concat (emjupy--mime-text (gethash "text" target))
+                          (emjupy--mime-text (gethash "text" output-hash))))
+                 target)
         existing))))
 
 (defun emjupy-flush-output (&optional buffer)
@@ -189,6 +220,15 @@ since patching one region only makes sense while the rest still matches."
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
+    ;; Stream text that starts an output of its own still has its carriage
+    ;; returns applied.  The first update of a progress bar arrives like
+    ;; that -- nothing before it to merge into -- and rendering it as it came
+    ;; put a literal ^M at the start of the line.
+    (when (and (not merged) (emjupy--stream-p output-hash))
+      (puthash "text"
+               (emjupy--collapse-carriage-returns
+                (emjupy--mime-text (gethash "text" output-hash)))
+               output-hash))
     (setf (emjupy-cell-outputs cell)
           (vconcat (or merged (append existing (list output-hash)))))
     (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))

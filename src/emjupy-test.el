@@ -6615,5 +6615,80 @@ matrix covers only downward."
         (emjupy--sync-all-cells)
         (should-not (emjupy--check-invariants))))))
 
+(defun emjupy-test--stream-on (name text)
+  "Return a stream output on NAME carrying TEXT."
+  (let ((o (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" o)
+    (puthash "name" name o)
+    (puthash "text" text o)
+    o))
+
+(ert-deftest emjupy-test-tqdm-bar-with-prints-is-one-bar ()
+  "A progress bar with a print in the loop stays one bar, redrawn in place.
+
+The messages are the ones ipykernel sends for tqdm over three items with
+a print each, captured from a real kernel.  Each update of the bar is on
+stderr and begins with a carriage return; the prints are on stdout and
+fall between them, so the updates were never consecutive, never merged,
+and each became an output of its own -- a column of bars, every one
+showing its carriage return as a literal ^M."
+  (let ((cell (make-emjupy-cell :id "t" :type 'code :source "" :outputs []
+                                :metadata (make-hash-table :test 'equal))))
+    (dolist (m '(("stderr" "\r0it [00:00, ?it/s]")
+                ("stdout" "0 a/x\n")
+                ("stderr" "\r1it [00:00,  3.33it/s]")
+                ("stdout" "1 b/y\n")
+                ("stderr" "\r2it [00:00,  3.33it/s]")
+                ("stdout" "2 c/z\n")
+                ("stderr" "\r3it [00:00,  3.32it/s]")
+                ("stderr" "\r3it [00:00,  3.32it/s]")
+                ("stderr" "\n")))
+      (emjupy--append-output-to-cell cell (emjupy-test--stream-on (car m) (cadr m))))
+    (let ((outs (append (emjupy-cell-outputs cell) nil)))
+      ;; two outputs, not nine: the bar, and the prints
+      (should (= (length outs) 2))
+      ;; the bar shows only its final state, where it first appeared
+      (should (equal (gethash "name" (nth 0 outs)) "stderr"))
+      (should (equal (gethash "text" (nth 0 outs)) "3it [00:00,  3.32it/s]\n"))
+      ;; the prints, in order and together
+      (should (equal (gethash "text" (nth 1 outs)) "0 a/x\n1 b/y\n2 c/z\n"))
+      ;; and no carriage return survives anywhere
+      (dolist (o outs)
+        (should-not (string-match-p "\r" (gethash "text" o)))))))
+
+(ert-deftest emjupy-test-closed-stream-lines-keep-their-order ()
+  "Output that genuinely came later is not moved above what came before.
+
+Only a line still open -- no newline yet -- is continued across another
+stream\'s output.  A warning that ends its line is finished, and the
+next warning is a new line after whatever came in between."
+  (let ((cell (make-emjupy-cell :id "o" :type 'code :source "" :outputs []
+                                :metadata (make-hash-table :test 'equal))))
+    (dolist (m '(("stderr" "warning one\n") ("stdout" "a\n") ("stderr" "warning two\n")))
+      (emjupy--append-output-to-cell cell (emjupy-test--stream-on (car m) (cadr m))))
+    (should (equal (mapcar (lambda (o) (list (gethash "name" o) (gethash "text" o)))
+                           (append (emjupy-cell-outputs cell) nil))
+                   '(("stderr" "warning one\n")
+                     ("stdout" "a\n")
+                     ("stderr" "warning two\n"))))))
+
+(ert-deftest emjupy-test-saved-progress-bar-renders-its-last-state ()
+  "A notebook saved by Jupyter shows the bar as it ended, not every update.
+
+Jupyter stores the stream exactly as written, so the bar comes back as
+all of its updates joined by carriage returns, and none of that passes
+through the path that handles output as it arrives."
+  (let ((cell (emjupy-test--cell-like
+               'code "x"
+               (vector (emjupy-test--stream-on
+                        "stderr" "\r0it [00:00]\r1it [00:01]\r2it [00:02]\n")))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let* ((ov (emjupy-cell-output-ov cell))
+               (text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))
+          (should (string-match-p "2it \\[00:02\\]" text))
+          (should-not (string-match-p "0it" text))
+          (should-not (string-match-p "\r" text)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
