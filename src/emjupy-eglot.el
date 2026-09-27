@@ -25,20 +25,14 @@
 
 (require 'cl-lib)
 (require 'emjupy-core)
-(declare-function emjupy--server-side-root-for "emjupy-notebook" (server))
-(declare-function emjupy--tramp-root-for "emjupy-notebook" (server))
-(declare-function emjupy--remote-root-for-files "emjupy-notebook" (server))
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-lsp)
-(defvar emjupy-language-support)
-(declare-function emjupy--remember-server-root "emjupy-notebook" (nb))
-(declare-function emjupy-open-server-file "emjupy-notebook" (path &optional server line))
-(declare-function emjupy--kernel-eval "emjupy-kernel" (kernel code callback))
-(declare-function emjupy--ws-live-p "emjupy-kernel" (&optional kernel))
 
 (defvar python-indent-guess-indent-offset-verbose)
 (require 'xref)
+(require 'emjupy-kernel)
+(require 'emjupy-remote)
 
 ;; Eglot ships with Emacs (29.1+) but is pulled in at COMPILE time
 ;; only: emjupy is fully usable without a language server, so nothing
@@ -55,17 +49,6 @@
 ;; stability promise, and one of them has already been renamed once
 ;; (`eglot--server-capable' -> `eglot-server-capable' in Emacs 30), which is
 ;; why `emjupy--eglot-capable-p' probes for both.
-(declare-function eglot--connect "eglot")
-(declare-function eglot--guess-contact "eglot")
-(declare-function eglot--current-server-or-lose "eglot")
-(declare-function eglot--TextDocumentPositionParams "eglot")
-(declare-function eglot--hover-info "eglot")
-(declare-function eglot--server-capable "eglot")
-(declare-function eglot-server-capable "eglot")
-(declare-function eglot-current-server "eglot")
-(declare-function eglot-ensure "eglot")
-(declare-function eglot-hover-eldoc-function "eglot")
-(declare-function jsonrpc-request "jsonrpc")
 
 ;; emjupy-mode is a single fundamental-mode-derived buffer mixing code cells,
 ;; markdown cells, box-drawing decoration, and output text all interleaved --
@@ -169,60 +152,6 @@ Opened by
 buffer like any ordinary Python file."
   :lighter " emjupy-shadow")
 
-(defun emjupy--shadow-cell-marker (id)
-  "Return the `# %% [emjupy:ID]' section-header line text for cell ID."
-  (format "# %%%% [emjupy:%d]" id))
-
-(defun emjupy--sanitize-for-lsp (string)
-  "Return STRING with undecodable raw bytes replaced by U+FFFD.
-
-A byte that never decoded cleanly (Emacs holds these as characters in
-the #x3FFF80..#x3FFFFF range) is not valid UTF-8, and the whole shadow
-document is handed to the language server as a JSON string: `jsonrpc'
-rejects it with `wrong-type-argument utf-8-string-p' and the connection
-never gets off the ground.
-
-The replacement is one character for one character, so every offset in
-the shadow buffer still lines up with the cell source it came from --
-which is what the completion and hover position mapping relies on.  The
-notebook itself is untouched; only the copy the server sees is cleaned."
-  (if (not (stringp string))
-      string
-    (apply #'string
-           (mapcar (lambda (ch)
-                     (if (and (>= ch #x3FFF80) (<= ch #x3FFFFF))
-                         ?\uFFFD
-                       ch))
-                   (append string nil)))))
-
-(defun emjupy--build-shadow-content (nb)
-  "Concatenate every code cell in NB into one Python source, section-marked."
-  (mapconcat
-   (lambda (cell) (concat (emjupy--shadow-cell-marker (emjupy-cell-id cell))
-                          "\n"
-                          (emjupy--sanitize-for-lsp (emjupy-cell-source cell))
-                          "\n"))
-   (cl-remove-if-not (lambda (c) (eq (emjupy-cell-type c) 'code))
-                      (append (emjupy-notebook-cells nb) nil))
-   "\n"))
-
-(defun emjupy--parse-shadow-sections (text)
-  "Return an alist of (ID . SOURCE) parsed from TEXT's `# %% [emjupy:ID]' markers."
-  (let (sections current-id current-lines)
-    (dolist (line (split-string text "\n"))
-      (if (string-match "\\`# %% \\[emjupy:\\([0-9]+\\)\\]\\'" line)
-          (progn
-            (when current-id
-              (push (cons current-id (string-trim (mapconcat #'identity (nreverse current-lines) "\n")))
-                    sections))
-            (setq current-id (string-to-number (match-string 1 line)))
-            (setq current-lines nil))
-        (when current-id (push line current-lines))))
-    (when current-id
-      (push (cons current-id (string-trim (mapconcat #'identity (nreverse current-lines) "\n")))
-            sections))
-    (nreverse sections)))
-
 (defcustom emjupy-shadow-directory nil
   "Directory holding the Eglot shadow files, or nil for a local temp dir.
 
@@ -260,12 +189,8 @@ process has since died, and calling into Eglot with one of those raises
 \"No current JSON-RPC connection\" out of the completion machinery, where
 it surfaces to the user as a raw jsonrpc-error."
   (with-current-buffer (or buffer (current-buffer))
-    (and (fboundp 'eglot-current-server)
-         (let ((server (ignore-errors (eglot-current-server))))
-           (and server
-                (or (not (fboundp 'jsonrpc-running-p))
-                    (ignore-errors (jsonrpc-running-p server)))
-                server)))))
+    (let ((server (eglot-current-server)))
+      (and server (jsonrpc-running-p server) server))))
 
 (defcustom emjupy-shadow-sync-to-disk 'lazy
   "When to write the shadow file to disk.
@@ -483,6 +408,17 @@ in a temp directory, which resolves symbols in the notebook and nothing
 beside it.  Every cross-file lookup came back empty for that reason, and
 looked like a fault in the transport that was not being used.")
 
+(defcustom emjupy-language-support t
+  "When non-nil, offer completion, eldoc and \\[xref-find-definitions].
+
+A single switch over every path that talks to a language server, on
+either transport.  Set it to nil to find out whether a slowdown comes
+from language support or from somewhere else: the notebook keeps
+working -- cells run, output arrives, everything renders -- and nothing
+runs after each command except emjupy\='s own bookkeeping."
+  :type 'boolean
+  :group 'emjupy)
+
 (defun emjupy-start-language-support (&optional nb)
   "Begin language support for NB, without waiting for it.
 
@@ -504,7 +440,11 @@ hand.  Reports what it found rather than failing quietly."
              ;; Keep it local when the socket is what will read it -- which
              ;; is to say, when nothing will read it.
              (emjupy--force-local-shadow want-socket)
-             (buffer (ignore-errors (emjupy--ensure-shadow-buffer nb))))
+             (buffer (condition-case err
+                         (emjupy--ensure-shadow-buffer nb)
+                       (file-error
+                        (emjupy--shadow-block (error-message-string err))
+                        nil))))
         (when (buffer-live-p buffer)
           (or (and want-socket
                    (emjupy--claim-shadow-for-websocket buffer)
@@ -525,13 +465,14 @@ which is the arrangement the WebSocket transport exists to avoid.
 Skipping when any server is attached was therefore wrong: what matters
 is whether the attached one is ours.  One that is not is shut down."
   (with-current-buffer buffer
-    (let ((server (and (fboundp 'eglot-current-server)
-                       (ignore-errors (eglot-current-server)))))
+    (let ((server (eglot-current-server)))
       (cond
        ((null server) t)
        ((object-of-class-p server 'emjupy-eglot-server) nil)
        (t
-        (ignore-errors (eglot-shutdown server))
+        (condition-case nil
+            (eglot-shutdown server)
+          (jsonrpc-error nil))
         t)))))
 
 (defun emjupy--shadow-file-path (nb)
@@ -632,7 +573,7 @@ automatically, with nothing for the user to run."
         (set-buffer-modified-p nil))
       (let ((kill-buffer-query-functions nil)
             (kill-buffer-hook nil))
-        (ignore-errors (kill-buffer buf)))
+        (when (buffer-live-p buf) (kill-buffer buf)))
       (setq buf nil)
       (setf (emjupy-notebook-shadow-buffer nb) nil))
     ;; Building the buffer is remote I/O when the notebook is remote, and
@@ -766,18 +707,10 @@ automatically, with nothing for the user to run."
                 ;; files and the wrong Python while looking like it works.
                 ;; Wrapped, because a warning must never be able to break
                 ;; the thing it warns about.
-                (ignore-errors (emjupy--warn-local-language-server nb))))
+                (emjupy--warn-local-language-server nb)))
           (error
            (emjupy--shadow-block (error-message-string err) nb-buffer)))))
     buf))
-
-(defun emjupy--goto-shadow-section (buf cell-id)
-  "Move point in BUF to the start of CELL-ID's marked section."
-  (with-current-buffer buf
-    (goto-char (point-min))
-    (if (search-forward (emjupy--shadow-cell-marker cell-id) nil t)
-        (forward-line 1)
-      (goto-char (point-min)))))
 
 (defun emjupy--shadow-position-to-cell (nb shadow-pos)
   "Map SHADOW-POS in NB\='s shadow buffer to (CELL . NOTEBOOK-POS).
@@ -793,8 +726,7 @@ the right character of the right cell."
       (cl-loop for cell across (emjupy-notebook-cells nb)
                until found
                when (eq (emjupy-cell-type cell) 'code)
-               do (let* ((start (ignore-errors
-                                  (emjupy--shadow-section-start buf (emjupy-cell-id cell))))
+               do (let* ((start (emjupy--shadow-section-start buf (emjupy-cell-id cell)))
                          (len (length (emjupy-cell-source cell)))
                          (ov (emjupy-cell-overlay cell)))
                     (when (and start (overlayp ov)
@@ -848,8 +780,8 @@ Rewritten to a remote name when the kernel is elsewhere and one can be
 built; left alone when the kernel is local, when it already is remote,
 or when there is nothing to build a name from, since a wrong remote
 name is worse than a local one."
-  (let* ((loc (ignore-errors (xref-item-location item)))
-         (file (ignore-errors (xref-location-group loc)))
+  (let* ((loc (xref-item-location item))
+         (file (and (xref-file-location-p loc) (xref-location-group loc)))
          (remote (and file
                       (not (file-remote-p file))
                       (emjupy--remote-name-for nb file))))
@@ -866,8 +798,8 @@ name is worse than a local one."
       (xref-make (xref-item-summary item)
                  (xref-make-file-location
                   remote
-                  (or (ignore-errors (xref-location-line loc)) 1)
-                  (or (ignore-errors (xref-file-location-column loc)) 0))))))
+                  (or (xref-location-line loc) 1)
+                  (xref-file-location-column loc))))))
 
 (defun emjupy--remote-name-for (nb file)
   "Return FILE as a name on NB\='s server, or nil to leave it alone.
@@ -909,13 +841,13 @@ right destination there."
       (mapcar
        (lambda (item)
          (let* ((loc (xref-item-location item))
-                (file (ignore-errors (xref-location-group loc)))
+                (file (and (xref-file-location-p loc) (xref-location-group loc)))
                 (same (and file (equal (file-truename file)
                                        (file-truename shadow-file)))))
            (if (not same)
                (emjupy--xref-on-the-right-machine nb item)
-             (let* ((line (ignore-errors (xref-location-line loc)))
-                    (col (or (ignore-errors (xref-file-location-column loc)) 0))
+             (let* ((line (xref-location-line loc))
+                    (col (xref-file-location-column loc))
                     (spos (when line
                             (with-current-buffer buf
                               (save-excursion
@@ -937,60 +869,6 @@ right destination there."
 (cl-defmethod xref-backend-identifier-completion-table ((_backend (eql emjupy)))
   "Return the completion table Eglot provides for identifiers."
   (emjupy--xref-in-shadow #'xref-backend-identifier-completion-table))
-
-(defun emjupy--lsp-xrefs ()
-  "Return xrefs for point from the Jupyter-server language server, or nil.
-
-The locations name paths on the SERVER's filesystem.  A definition
-inside the notebook's own code comes back as the synthetic document and
-is mapped onto the cell it came from; anything else is left as a file
-name, which is right when the server and the kernel share a machine and
-honest when they do not."
-  (when (and (bound-and-true-p emjupy-lsp-enabled)
-             (bound-and-true-p emjupy--buffer-notebook)
-             (fboundp 'emjupy--lsp-definitions))
-    (let ((nb emjupy--buffer-notebook))
-      (delq nil
-            (mapcar
-             (lambda (loc)
-               (pcase-let ((`(,uri ,line ,col) loc))
-                 (let ((file (if (string-prefix-p "file://" uri)
-                                 (substring uri (length "file://"))
-                               uri)))
-                   (if (string-suffix-p ".emjupy.py" file)
-                       ;; inside the notebook: map back to the cell
-                       (when-let ((mapped (emjupy--lsp-line-to-cell nb line col)))
-                         (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
-                                    (xref-make-buffer-location
-                                     (emjupy-notebook-buffer nb) mapped)))
-                     ;; The path is absolute on the machine the language
-                     ;; server runs on.  Handing it to
-                     ;; `xref-make-file-location' opened it as if it were
-                     ;; local, which for a remote notebook means a file that
-                     ;; is not there -- so a jump that the server answered
-                     ;; correctly still went nowhere.  Fetch it instead.
-                     (let ((server (emjupy-notebook-server nb)))
-                       (if (and server (file-name-absolute-p file)
-                                (not (file-exists-p file)))
-                           (xref-make
-                            (format "%s:%s" (file-name-nondirectory file) (1+ line))
-                            (xref-make-buffer-location
-                             (emjupy-open-server-file file server (1+ line))
-                             (with-current-buffer
-                                 (emjupy-open-server-file file server (1+ line))
-                               (point))))
-                         (xref-make (format "%s:%s" (file-name-nondirectory file) (1+ line))
-                                    (xref-make-file-location file (1+ line) (or col 0)))))))))
-             (ignore-errors (emjupy--lsp-definitions)))))))
-
-(defun emjupy--lsp-line-to-cell (nb line col)
-  "Map LINE and COL in NB's synthetic document to a notebook position."
-  (let* ((text (emjupy--build-shadow-content nb))
-         (lines (split-string text "\n"))
-         (abs (+ (apply #'+ (mapcar (lambda (l) (1+ (length l)))
-                                    (seq-take lines (max 0 line))))
-                 (or col 0))))
-    (car (last (emjupy--shadow-offset-to-cell nb abs)))))
 
 (defun emjupy--shadow-offset-to-cell (nb offset)
   "Return (CELL . POSITION) for OFFSET in NB's synthetic document."
@@ -1198,11 +1076,6 @@ LSP awareness doesn't apply to prose."
 ;; Emacs 30's completion-preview-mode, ...) picks this up automatically, the
 ;; same way it would for a normal, single-file Eglot-managed buffer.
 
-(defun emjupy--shadow-section-start (buf cell-id)
-  "Return the position where CELL-ID's source begins in shadow buffer BUF."
-  (emjupy--goto-shadow-section buf cell-id)
-  (with-current-buffer buf (point)))
-
 (defcustom emjupy-shadow-when-kernel-unreachable t
   "Whether to run a local language server when the kernel is elsewhere.
 
@@ -1342,10 +1215,8 @@ cell in the notebook, automatically."
 `eglot--server-capable' was renamed `eglot-server-capable' in Emacs
 30, so guarding on the old private name alone silently disables eldoc
 on newer Emacs."
-  (cond
-   ((fboundp 'eglot-server-capable) (apply #'eglot-server-capable capabilities))
-   ((fboundp 'eglot--server-capable) (apply #'eglot--server-capable capabilities))
-   (t nil)))
+  (and (eglot-current-server)
+       (apply #'eglot-server-capable capabilities)))
 
 (defun emjupy--cell-eldoc-function (callback)
   "Report hover documentation for the cell at point to CALLBACK.
@@ -1361,10 +1232,8 @@ is the whole point.  `jsonrpc-request' (blocking) bypasses that gate."
   (emjupy--cell-shadow-delegate
    (lambda (_cell-start _shadow-start _buf)
      (when (and (emjupy--eglot-live-server)
-                (fboundp 'jsonrpc-request)
-                (ignore-errors (emjupy--eglot-capable-p :hoverProvider)))
-       (ignore-errors
-         (let ((server (emjupy--eglot-live-server)))
+                (emjupy--eglot-capable-p :hoverProvider))
+       (let ((server (emjupy--eglot-live-server)))
            ;; Asked for, not waited for.  This runs after every command, so
            ;; a blocking request costs a round trip per keystroke -- which
            ;; went unnoticed while the server was a local process and did
@@ -1376,13 +1245,77 @@ is the whole point.  `jsonrpc-request' (blocking) bypasses that gate."
             (lambda (resp)
               (let ((contents (plist-get resp :contents)))
                 (unless (seq-empty-p contents)
-                  (ignore-errors
-                    (funcall callback
-                             (eglot--hover-info contents
-                                                (plist-get resp :range)))))))
+                  (funcall callback
+                           (eglot--hover-info contents
+                                              (plist-get resp :range))))))
             :error-fn #'ignore
-            :timeout-fn #'ignore)))
+            :timeout-fn #'ignore))
        t))))
+
+;;;###autoload
+(defun emjupy-lsp-diagnose ()
+  "Report which language server this notebook is using, and how it got there.
+
+Reads the server Eglot has attached to the shadow buffer, which is where
+the answer lives.  It used to read a slot filled in by an earlier,
+hand-written client; once that client was replaced the slot stayed
+empty, and this reported a socket that had never opened however well the
+socket was working."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (shadow (emjupy-notebook-shadow-buffer nb))
+         (attached (and (buffer-live-p shadow)
+                        (with-current-buffer shadow
+                          (eglot-current-server))))
+         (kind (cond
+                ((null attached) "none")
+                ((object-of-class-p attached 'emjupy-eglot-server)
+                 "over the Jupyter WebSocket")
+                (t "a local process")))
+         (alive (and attached (jsonrpc-running-p attached)))
+         (lines
+          (list
+           (format "notebook        %s" (or (emjupy-notebook-path nb) "?"))
+           (format "server          %s" (if server (emjupy--server-label server) "none"))
+           (format "server root     %s" (or (and server (emjupy--remote-root-for server))
+                                            "unknown -- no kernel has reported in"))
+           (format "kernel cwd      %s" (or (emjupy-notebook-kernel-cwd nb)
+                                            "unknown -- kernel has not answered"))
+           (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
+           (format "lsp url         %s"
+                   ;; Redacted: this report is written to be pasted into a
+                   ;; bug report, and the URL carries the token.
+                   (if server (emjupy--redact-url (emjupy--lsp-url server)) "n/a"))
+           (format "shadow file     %s"
+                   (if (buffer-live-p shadow)
+                       (or (buffer-local-value 'buffer-file-name shadow) "unnamed")
+                     "not created"))
+           (format "language server %s" kind)
+           (format "connection      %s"
+                   (cond ((null attached) "not attached")
+                         (alive "running")
+                         (t "attached but not running")))
+           (format "back-off        %s"
+                   (if (emjupy--shadow-blocked-p) "in effect" "none"))
+           ;; The reason the WebSocket route was not taken, if it was tried
+           ;; and failed.  Without this the report said everything was well
+           ;; and a local server was running anyway.
+           (format "socket failure  %s"
+                   (or (bound-and-true-p emjupy--lsp-last-failure)
+                       "none recorded")))))
+    (with-current-buffer (get-buffer-create "*emjupy language server*")
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (string-join lines "\n") "\n\n")
+        (insert "If no language server is attached, ask the Jupyter server directly:\n")
+        (insert (format "  curl -s 'http://%s/lsp/status?token=TOKEN'\n"
+                        (and server (emjupy-server-base-url server))))
+        (insert "  404 no jupyter-lsp   403 wrong token   sessions {} no language server\n")
+        (goto-char (point-min)))
+      (setq buffer-read-only t)
+      (display-buffer (current-buffer)))))
+
 
 (provide 'emjupy-eglot)
 ;;; emjupy-eglot.el ends here

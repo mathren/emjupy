@@ -54,29 +54,15 @@
 (require 'emjupy-core)
 (require 'emjupy-http)
 (require 'jsonrpc)
-;; Eglot ships with Emacs 29, which this package requires, so it is always
-;; there in practice.  Required softly all the same, as the rest of emjupy
-;; does -- though note the WebSocket transport below inherits from Eglot's
-;; own class, so its absence is a load error rather than a graceful
-;; degradation.  If emjupy ever supports an Emacs without Eglot, that
-;; section needs guarding, and a `featurep' check around it is not enough.
-(require 'eglot nil t)
+(require 'emjupy-cells)
+(require 'emjupy-remote)
+;; Eglot and websocket.el are hard requirements: Eglot ships with the
+;; Emacs this package requires, websocket is a declared dependency, and
+;; the transport below inherits from Eglot's own server class, so a
+;; missing Eglot was always a load error rather than a degradation.
+(require 'eglot)
+(require 'websocket)
 
-(declare-function websocket-open "websocket")
-(declare-function websocket-send-text "websocket")
-(declare-function websocket-openp "websocket")
-(declare-function websocket-close "websocket")
-(declare-function websocket-frame-text "websocket")
-(declare-function websocket-on-message "websocket" (ws))
-(declare-function emjupy--build-shadow-content "emjupy-eglot" (nb))
-(declare-function emjupy--parse-shadow-sections "emjupy-eglot" (text))
-(declare-function emjupy--rerender-notebook "emjupy-cells" (&optional cell))
-(declare-function emjupy--shadow-section-start "emjupy-eglot" (buf id))
-(declare-function emjupy--shadow-cell-marker "emjupy-eglot" (id))
-(declare-function emjupy--cell-at-point "emjupy-cells" (&optional pos))
-(declare-function emjupy--remote-root-for "emjupy-notebook" (server))
-(declare-function emjupy--redact-url "emjupy-http" (url))
-(declare-function emjupy--shadow-blocked-p "emjupy-eglot" ())
 
 (defcustom emjupy-lsp-enabled t
   "When non-nil, use the language server run by `jupyter-lsp\='.
@@ -130,23 +116,6 @@ than a responsive editor."
 
 ;; --- transport --------------------------------------------------------------
 
-(defun emjupy--websocket-auth-headers (server)
-  "Return the headers a WebSocket to SERVER should carry.
-
-The same ones the kernel socket sends, and for the same reason: a token
-in the query string is not accepted everywhere a token in a header is,
-and the XSRF cookie is checked on upgrade requests by some server
-versions.  The kernel socket has always sent both; this one sent
-neither, which is why a notebook could execute cells over a WebSocket
-while the language server on the same host refused to connect."
-  (let ((token (or (emjupy-server-token server) ""))
-        (xsrf (emjupy-server-xsrf server)))
-    (append
-     (unless (string-empty-p token)
-       (list (cons "Authorization" (format "token %s" token))))
-     (when xsrf
-       (list (cons "Cookie" (format "_xsrf=%s" xsrf)))))))
-
 (defun emjupy--lsp-url (server)
   "Return the `jupyter-lsp' WebSocket URL on SERVER."
   (let* ((parts (emjupy--server-parts server))
@@ -166,7 +135,9 @@ while the language server on the same host refused to connect."
 Frames are plain JSON, one message each -- `jupyter-lsp' has already
 stripped the Content-Length framing LSP uses over a pipe."
   (let* ((text (websocket-frame-text frame))
-         (msg (ignore-errors (json-parse-string text :object-type 'hash-table))))
+         (msg (condition-case nil
+                  (json-parse-string text :object-type 'hash-table)
+                (json-parse-error nil))))
     (when (hash-table-p msg)
       (let ((id (gethash "id" msg)))
         ;; Responses only.  Server-initiated requests and notifications --
@@ -180,9 +151,8 @@ stripped the Content-Length framing LSP uses over a pipe."
                 (progn
                   (remhash id (emjupy-lsp-callbacks session))
                   (setf (emjupy-lsp-warmed session) t)
-                  (ignore-errors
-                    (funcall callback (and (not (gethash "error" msg))
-                                           (gethash "result" msg)))))
+                  (funcall callback (and (not (gethash "error" msg))
+                                          (gethash "result" msg))))
               (puthash id msg (emjupy-lsp-pending session)))))))))
 
 (defun emjupy--lsp-async (session method params callback)
@@ -237,8 +207,8 @@ ran out of stack."
 (defun emjupy--lsp-live-p (session)
   "Return non-nil if SESSION's socket is open."
   (and session
-       (emjupy-lsp-ws session)
-       (ignore-errors (websocket-openp (emjupy-lsp-ws session)))))
+       (websocket-p (emjupy-lsp-ws session))
+       (websocket-openp (emjupy-lsp-ws session))))
 
 ;; --- session ----------------------------------------------------------------
 
@@ -277,71 +247,6 @@ and the answer collected on the first request that needs it."
        (ignore err)
        (emjupy--lsp-explain-failure server)
        nil))))
-
-;;;###autoload
-(defun emjupy-lsp-diagnose ()
-  "Report which language server this notebook is using, and how it got there.
-
-Reads the server Eglot has attached to the shadow buffer, which is where
-the answer lives.  It used to read a slot filled in by an earlier,
-hand-written client; once that client was replaced the slot stayed
-empty, and this reported a socket that had never opened however well the
-socket was working."
-  (interactive)
-  (let* ((nb (emjupy--notebook))
-         (server (emjupy-notebook-server nb))
-         (shadow (emjupy-notebook-shadow-buffer nb))
-         (attached (and (buffer-live-p shadow)
-                        (with-current-buffer shadow
-                          (and (fboundp 'eglot-current-server)
-                               (ignore-errors (eglot-current-server))))))
-         (kind (cond
-                ((null attached) "none")
-                ((ignore-errors (object-of-class-p attached 'emjupy-eglot-server))
-                 "over the Jupyter WebSocket")
-                (t "a local process")))
-         (alive (and attached (ignore-errors (jsonrpc-running-p attached))))
-         (lines
-          (list
-           (format "notebook        %s" (or (emjupy-notebook-path nb) "?"))
-           (format "server          %s" (if server (emjupy--server-label server) "none"))
-           (format "server root     %s" (or (and server (emjupy--remote-root-for server))
-                                            "unknown -- no kernel has reported in"))
-           (format "kernel cwd      %s" (or (emjupy-notebook-kernel-cwd nb)
-                                            "unknown -- kernel has not answered"))
-           (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
-           (format "lsp url         %s"
-                   ;; Redacted: this report is written to be pasted into a
-                   ;; bug report, and the URL carries the token.
-                   (if server (emjupy--redact-url (emjupy--lsp-url server)) "n/a"))
-           (format "shadow file     %s"
-                   (if (buffer-live-p shadow)
-                       (or (buffer-local-value 'buffer-file-name shadow) "unnamed")
-                     "not created"))
-           (format "language server %s" kind)
-           (format "connection      %s"
-                   (cond ((null attached) "not attached")
-                         (alive "running")
-                         (t "attached but not running")))
-           (format "back-off        %s"
-                   (if (ignore-errors (emjupy--shadow-blocked-p)) "in effect" "none"))
-           ;; The reason the WebSocket route was not taken, if it was tried
-           ;; and failed.  Without this the report said everything was well
-           ;; and a local server was running anyway.
-           (format "socket failure  %s"
-                   (or (bound-and-true-p emjupy--lsp-last-failure)
-                       "none recorded")))))
-    (with-current-buffer (get-buffer-create "*emjupy language server*")
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert (string-join lines "\n") "\n\n")
-        (insert "If no language server is attached, ask the Jupyter server directly:\n")
-        (insert (format "  curl -s 'http://%s/lsp/status?token=TOKEN'\n"
-                        (and server (emjupy-server-base-url server))))
-        (insert "  404 no jupyter-lsp   403 wrong token   sessions {} no language server\n")
-        (goto-char (point-min)))
-      (setq buffer-read-only t)
-      (display-buffer (current-buffer)))))
 
 (defun emjupy--lsp-explain-failure (server)
   "Say why SERVER has no language server, distinguishing the three causes.
@@ -470,7 +375,7 @@ the nil here means \"not yet\", not \"never\"."
   (let* ((nb (or nb (emjupy--notebook)))
          (session (emjupy-notebook-lsp nb)))
     (when (emjupy--lsp-live-p session)
-      (ignore-errors (websocket-close (emjupy-lsp-ws session))))
+      (websocket-close (emjupy-lsp-ws session)))
     (setf (emjupy-notebook-lsp nb) nil)
     (when (called-interactively-p 'interactive)
       (message "[emjupy] Language-server session closed."))))
@@ -571,6 +476,73 @@ nonsense that still looks plausible."
           found))))))
 
 
+(defun emjupy--sanitize-for-lsp (string)
+  "Return STRING with undecodable raw bytes replaced by U+FFFD.
+
+A byte that never decoded cleanly (Emacs holds these as characters in
+the #x3FFF80..#x3FFFFF range) is not valid UTF-8, and the whole shadow
+document is handed to the language server as a JSON string: `jsonrpc'
+rejects it with `wrong-type-argument utf-8-string-p' and the connection
+never gets off the ground.
+
+The replacement is one character for one character, so every offset in
+the shadow buffer still lines up with the cell source it came from --
+which is what the completion and hover position mapping relies on.  The
+notebook itself is untouched; only the copy the server sees is cleaned."
+  (if (not (stringp string))
+      string
+    (apply #'string
+           (mapcar (lambda (ch)
+                     (if (and (>= ch #x3FFF80) (<= ch #x3FFFFF))
+                         ?\uFFFD
+                       ch))
+                   (append string nil)))))
+
+(defun emjupy--shadow-cell-marker (id)
+  "Return the `# %% [emjupy:ID]' section-header line text for cell ID."
+  (format "# %%%% [emjupy:%d]" id))
+
+(defun emjupy--build-shadow-content (nb)
+  "Concatenate every code cell in NB into one Python source, section-marked."
+  (mapconcat
+   (lambda (cell) (concat (emjupy--shadow-cell-marker (emjupy-cell-id cell))
+                          "\n"
+                          (emjupy--sanitize-for-lsp (emjupy-cell-source cell))
+                          "\n"))
+   (cl-remove-if-not (lambda (c) (eq (emjupy-cell-type c) 'code))
+                      (append (emjupy-notebook-cells nb) nil))
+   "\n"))
+
+(defun emjupy--parse-shadow-sections (text)
+  "Return an alist of (ID . SOURCE) parsed from TEXT's `# %% [emjupy:ID]' markers."
+  (let (sections current-id current-lines)
+    (dolist (line (split-string text "\n"))
+      (if (string-match "\\`# %% \\[emjupy:\\([0-9]+\\)\\]\\'" line)
+          (progn
+            (when current-id
+              (push (cons current-id (string-trim (mapconcat #'identity (nreverse current-lines) "\n")))
+                    sections))
+            (setq current-id (string-to-number (match-string 1 line)))
+            (setq current-lines nil))
+        (when current-id (push line current-lines))))
+    (when current-id
+      (push (cons current-id (string-trim (mapconcat #'identity (nreverse current-lines) "\n")))
+            sections))
+    (nreverse sections)))
+
+(defun emjupy--goto-shadow-section (buf cell-id)
+  "Move point in BUF to the start of CELL-ID's marked section."
+  (with-current-buffer buf
+    (goto-char (point-min))
+    (if (search-forward (emjupy--shadow-cell-marker cell-id) nil t)
+        (forward-line 1)
+      (goto-char (point-min)))))
+
+(defun emjupy--shadow-section-start (buf cell-id)
+  "Return the position where CELL-ID's source begins in shadow buffer BUF."
+  (emjupy--goto-shadow-section buf cell-id)
+  (with-current-buffer buf (point)))
+
 (provide 'emjupy-lsp)
 ;;; Eglot over the Jupyter WebSocket ----------------------------------------
 
@@ -590,16 +562,18 @@ nonsense that still looks plausible."
 (defcustom emjupy-eglot-idle-command "cat"
   "Program stood up to satisfy Eglot's requirement for a process.
 
-Eglot builds its connection on `jsonrpc-process-connection', which type
-checks for a process object.  Nothing is written to this one and nothing
-is read from it -- the traffic goes over the WebSocket -- so the
-requirement is met by the most inert program available."
+Eglot builds its connection on the class named by the symbol
+`jsonrpc-process-connection', which insists on a process object.
+Nothing is written to this one and nothing is read from it -- the
+traffic goes over the WebSocket -- so the most inert program available
+meets the requirement."
   :type 'string
   :group 'emjupy)
 
 (defvar emjupy--eglot-pending nil
-  "Plist handed to the next `emjupy-eglot-server' as it is constructed.
+  "Plist for the next server to be built.
 
+The server's class is named by the symbol `emjupy-eglot-server'.
 `eglot--connect' decides the initargs, so there is no way to pass the
 WebSocket in.  It is left here instead and collected on the way past.")
 
@@ -709,9 +683,11 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
 (defun emjupy--eglot-receive (server frame)
   "Hand the message in FRAME to SERVER, as if it had come from a process."
   (let* ((text (websocket-frame-text frame))
-         (msg (ignore-errors (json-parse-string text :object-type 'plist
-                                                :null-object nil
-                                                :false-object :json-false))))
+         (msg (condition-case nil
+                  (json-parse-string text :object-type 'plist
+                                     :null-object nil
+                                     :false-object :json-false)
+                (json-parse-error nil))))
     (when msg
       (jsonrpc-connection-receive
        server
@@ -730,13 +706,13 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
 (cl-defmethod jsonrpc-running-p ((server emjupy-eglot-server))
   "Return non-nil while SERVER's WebSocket is open."
   (let ((ws (emjupy-eglot-server-ws server)))
-    (and ws (ignore-errors (websocket-openp ws)) t)))
+    (and (websocket-p ws) (websocket-openp ws) t)))
 
 (cl-defmethod jsonrpc-shutdown ((server emjupy-eglot-server) &optional _cleanup)
   "Close SERVER's WebSocket."
   (let ((ws (emjupy-eglot-server-ws server)))
-    (when (and ws (ignore-errors (websocket-openp ws)))
-      (ignore-errors (websocket-close ws))))
+    (when (and (websocket-p ws) (websocket-openp ws))
+      (websocket-close ws)))
   (setf (emjupy-eglot-server-ws server) nil))
 
 (defvar emjupy--lsp-last-failure nil
@@ -766,10 +742,10 @@ Sent directly rather than through `eglot-workspace-configuration\='.
 Eglot reads that variable while connecting, before the buffer counts as
 one it manages, so a value set there arrives as an empty settings object
 -- measured on the wire, not assumed."
-  (when-let ((cwd (and emjupy-tell-server-where-modules-are
+  (when-let* ((cwd (and emjupy-tell-server-where-modules-are
                        server
                        (emjupy-notebook-kernel-cwd nb))))
-    (ignore-errors
+    (when (jsonrpc-running-p server)
       (jsonrpc-notify
        server :workspace/didChangeConfiguration
        (list :settings
@@ -785,13 +761,13 @@ one it manages, so a value set there arrives as an empty settings object
 hooks; calling it here says so directly rather than relying on the
 buffer being noticed."
   (when server
-    (unless (and (fboundp 'eglot-current-server)
-                 (ignore-errors (eq (eglot-current-server) server)))
+    (unless (eq (eglot-current-server) server)
       (setq-local eglot--cached-server server)
-      (when (fboundp 'eglot--maybe-activate-editing-mode)
-        (ignore-errors (eglot--maybe-activate-editing-mode))))
-    (and (fboundp 'eglot-current-server)
-         (ignore-errors (eq (eglot-current-server) server)))))
+      ;; Activating announces the buffer with didOpen, which goes out over
+      ;; this server's connection -- so only while that connection is up.
+      (when (jsonrpc-running-p server)
+        (eglot--maybe-activate-editing-mode)))
+    (eq (eglot-current-server) server)))
 
 (defun emjupy--eglot-connect (nb buffer)
   "Attach Eglot to BUFFER, talking to NB's server over its WebSocket.
@@ -855,7 +831,7 @@ Returns the server, or nil."
                 (emjupy--ensure-managed-by connected)
                 connected)
             (error
-             (ignore-errors (websocket-close ws))
+             (when (websocket-openp ws) (websocket-close ws))
              ;; Recorded, not just said.  A message in the echo area during
              ;; startup is gone by the time anyone asks what happened, and
              ;; this branch -- the socket opened and Eglot then refused to

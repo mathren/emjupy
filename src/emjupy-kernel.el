@@ -30,13 +30,6 @@
 (require 'json)
 (require 'websocket)
 (require 'emjupy-core)
-(declare-function emjupy--refresh-cell-output "emjupy-render" (cell))
-(declare-function emjupy--render-markdown-cell "emjupy-render" (cell))
-(declare-function emjupy--check-invariants "emjupy-cells" ())
-(declare-function emjupy--overlays-sane-p "emjupy-cells" ())
-(declare-function emjupy--sync-all-cells "emjupy-cells" ())
-(declare-function emjupy--websocket-auth-headers "emjupy-lsp" (server))
-(declare-function emjupy--refresh-kernel-cwd "emjupy-eglot" (nb))
 (require 'emjupy-http)
 (require 'emjupy-cells)
 
@@ -117,18 +110,6 @@ comes."
                        (error
                         (message "[emjupy] Failed to render cell output: %s"
                                  (error-message-string err)))))))))))))
-
-(defun emjupy--collapse-carriage-returns (text)
-  "Return TEXT with everything before a carriage return on a line dropped.
-
-What a terminal does, and what a progress bar relies on: a carriage
-return takes the cursor to
-the start of the line and the next write covers what was there."
-  (mapconcat (lambda (line)
-               (let ((parts (split-string line "\r")))
-                 (car (last parts))))
-             (split-string text "\n" )
-             "\n"))
 
 (defun emjupy--stream-p (output &optional name)
   "Non-nil if OUTPUT is stream output, on stream NAME when that is given."
@@ -231,7 +212,7 @@ since patching one region only makes sense while the rest still matches."
                output-hash))
     (setf (emjupy-cell-outputs cell)
           (vconcat (or merged (append existing (list output-hash)))))
-    (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
+    (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
       (when (buffer-live-p buf)
         (with-current-buffer buf
           (cl-pushnew cell emjupy--cells-awaiting-output)))
@@ -352,9 +333,9 @@ kernels never cross-talk."
                (count (gethash "execution_count" content)))
           (setf (emjupy-cell-exec-count cell) count)
           (remhash parent-id pending)
-          (when-let ((b (and notebook (emjupy-notebook-buffer notebook))))
+          (when-let* ((b (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p b) (emjupy--mark-done cell b)))
-          (when-let ((buf (and notebook (emjupy-notebook-buffer notebook))))
+          (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p buf)
               (with-current-buffer buf
                 (emjupy--rerender-preserving-point))))
@@ -446,6 +427,13 @@ stepping over overlays mid-flight lands in the output box."
   (let ((kernel (or kernel (emjupy--kernel))))
     (websocket-send-text (emjupy-kernel-ws kernel) payload)))
 
+(defvar emjupy-kernel-connected-functions nil
+  "Functions called with a notebook once a kernel is attached to it.
+
+Run a moment after the connection, when the socket is up.  Layers above
+this one hang their start-up work here -- asking the kernel where it
+runs, for instance -- rather than this file calling into them.")
+
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
 KERNEL-NAME, when given, is the kernelspec name to record.
@@ -490,10 +478,12 @@ several notebooks -- from several servers -- stay live at once."
            :on-error (lambda (_ws type err)
                        (message "[emjupy] %s WebSocket error (%s): %s" label type err))))
     (setf (emjupy-notebook-kernel notebook) kernel)
-    ;; Ask where it is running, so the shadow file can sit beside the
-    ;; notebook and imports of your own modules resolve.  Asynchronous: the
-    ;; answer arrives on the socket and is used by the next shadow refresh.
-    (run-with-timer 0.5 nil (lambda () (ignore-errors (emjupy--refresh-kernel-cwd notebook))))
+    ;; Tell whoever wants to know that a kernel is now attached -- the
+    ;; language-server layer asks it where it runs.  A hook rather than a
+    ;; call: that layer sits above this one, and naming it here would make
+    ;; each depend on the other.  Deferred so the socket is up first.
+    (run-with-timer 0.5 nil #'run-hook-with-args
+                    'emjupy-kernel-connected-functions notebook)
     kernel))
 
 (defun emjupy--start-kernel-session (notebook)
@@ -582,7 +572,7 @@ attaching two notebooks to one kernel makes them share state."
 
 (defun emjupy--disconnect-kernel (notebook)
   "Close NOTEBOOK's WebSocket, if any, and drop its in-flight requests."
-  (when-let ((kernel (emjupy-notebook-kernel notebook)))
+  (when-let* ((kernel (emjupy-notebook-kernel notebook)))
     (when (emjupy--ws-live-p kernel)
       (websocket-close (emjupy-kernel-ws kernel)))
     (when (emjupy-kernel-pending kernel)
@@ -642,7 +632,7 @@ drawing of them, so redrawing costs nothing and fixes it.
 Returns the problems that were found, or nil if there were none.  This
 is why `emjupy-re-render' worked: it was doing by hand what the
 reconnection should have done itself."
-  (when-let ((buf (emjupy-notebook-buffer nb)))
+  (when-let* ((buf (emjupy-notebook-buffer nb)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (let ((problems (emjupy--check-invariants)))

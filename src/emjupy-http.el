@@ -85,7 +85,10 @@ Only the headers matter."
          (found nil))
     (cl-loop for path in emjupy--xsrf-endpoints
              until found
-             do (ignore-errors
+             do (condition-case nil
+                  ;; An endpoint that is not there, or a server that has
+                  ;; gone, fails to connect -- `file-error' -- and the next
+                  ;; is tried.  Anything else is a fault, and is not hidden.
                   (let* ((url-request-method "GET")
                          (url-request-data nil)
                          ;; Do not chase redirects: /tree answers 302 to
@@ -106,9 +109,39 @@ Only the headers matter."
                         (when (re-search-forward
                                "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
                           (setq found (match-string 1))))
-                      (kill-buffer buffer)))))
+                      (kill-buffer buffer)))
+                (file-error nil)))
     (when found (setf (emjupy-server-xsrf server) found))
     found))
+
+(define-error 'emjupy-http-error "Jupyter server request failed" 'file-error)
+(define-error 'emjupy-http-status "Jupyter server refused the request" 'emjupy-http-error)
+
+;; Why a type of its own, and why under `file-error'.  Every failure used to
+;; be a bare `error', so a caller could not tell a missing file from a dead
+;; server from a bug in emjupy, and the only way to tolerate the first two
+;; was to swallow all three.  With a type, a caller catches exactly the
+;; failure it expects and lets the rest through.  `file-error' is the
+;; family Emacs itself uses for a resource that cannot be reached -- url.el
+;; and TRAMP both signal it -- and its messages read as plain text, where
+;; any other custom error prints its strings in quotes.
+
+(defun emjupy--http-status-of (err)
+  "Return the HTTP status carried by ERR, an `emjupy-http-status\=', or nil."
+  (let ((msg (cadr err)))
+    (and (stringp msg)
+         (string-match "\\`\\[Jupyter HTTP \\([0-9]+\\)\\]" msg)
+         (string-to-number (match-string 1 msg)))))
+
+(defun emjupy--http-exists-p (server path)
+  "Return non-nil if PATH exists in SERVER\='s contents.
+
+Nil for a 404, which is the answer to the question; any other failure
+is not an answer, and is signalled."
+  (condition-case err
+      (progn (emjupy--http-request "GET" server (concat "/api/contents/" path)) t)
+    (emjupy-http-status
+     (if (eql (emjupy--http-status-of err) 404) nil (signal (car err) (cdr err))))))
 
 (defun emjupy--http-interpret (server method path status body)
   "Turn a reply into a value, or signal.
@@ -119,7 +152,8 @@ which of these is success, and what each failure should say -- can be
 tested without a server."
   (cond
    ((>= status 400)
-    (error "[Jupyter HTTP %d] %s: %s" status method body))
+    (signal 'emjupy-http-status
+            (list (format "[Jupyter HTTP %d] %s" status method) body)))
    ;; 204 No Content: there is nothing to say, and saying nothing is the
    ;; answer.  Interrupting a kernel replies this way, and parsing it as
    ;; JSON reported a syntax error for a request that had succeeded.
@@ -129,12 +163,17 @@ tested without a server."
    ;; and calling it malformed JSON points at the parser rather than at the
    ;; tunnel.
    ((string-empty-p (string-trim (or body "")))
-    (error "%s returned nothing for %s -- is it reachable?"
-           (emjupy--server-label server) path))
+    (signal 'emjupy-http-error
+            (list (format "%s returned nothing for %s"
+                          (emjupy--server-label server) path)
+                  "is it reachable?")))
    (t
     (condition-case err
         (json-parse-string body :object-type 'hash-table :array-type 'array)
-      (error (error "JSON Parse Error on %s: %s" path err))))))
+      (json-parse-error
+       (signal 'emjupy-http-error
+               (list (format "JSON Parse Error on %s" path)
+                     (error-message-string err))))))))
 
 (defconst emjupy--secret-query-keys '("token" "_xsrf" "password")
   "Query parameters whose values must never be shown.")
@@ -212,8 +251,9 @@ cookie."
         (url-retrieve full-url callback)
       (let ((buffer (url-retrieve-synchronously full-url t nil 5)))
         (if (not buffer)
-            (error "Network error: Could not reach %s"
-                   (emjupy--redact-url full-url))
+            (signal 'emjupy-http-error
+                    (list "Network error: Could not reach"
+                          (emjupy--redact-url full-url)))
           (with-current-buffer buffer
             (goto-char (point-min))
             (let ((status 200))
@@ -239,8 +279,27 @@ cookie."
                   (setf (emjupy-server-xsrf server) nil)
                   (if (emjupy--harvest-xsrf server)
                       (emjupy--http-request method server path body callback t)
-                    (error "[Jupyter HTTP %d] %s: %s" status method json-str)))
+                    (signal 'emjupy-http-status
+                            (list (format "[Jupyter HTTP %d] %s" status method)
+                                  json-str))))
                  (t (emjupy--http-interpret server method path status json-str)))))))))))
+
+(defun emjupy--websocket-auth-headers (server)
+  "Return the headers a WebSocket to SERVER should carry.
+
+The same ones the kernel socket sends, and for the same reason: a token
+in the query string is not accepted everywhere a token in a header is,
+and the XSRF cookie is checked on upgrade requests by some server
+versions.  The kernel socket has always sent both; this one sent
+neither, which is why a notebook could execute cells over a WebSocket
+while the language server on the same host refused to connect."
+  (let ((token (or (emjupy-server-token server) ""))
+        (xsrf (emjupy-server-xsrf server)))
+    (append
+     (unless (string-empty-p token)
+       (list (cons "Authorization" (format "token %s" token))))
+     (when xsrf
+       (list (cons "Cookie" (format "_xsrf=%s" xsrf)))))))
 
 (provide 'emjupy-http)
 ;;; emjupy-http.el ends here

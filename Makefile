@@ -36,8 +36,8 @@ LOADPATH  := -L $(SRC) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
-            emjupy-cells.el emjupy-kernel.el emjupy-lsp.el emjupy-eglot.el \
-            emjupy-notebook.el emjupy.el)
+            emjupy-cells.el emjupy-kernel.el emjupy-remote.el emjupy-lsp.el \
+            emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el README.org
 
 .PHONY: all compile test check lint docs versions check-version package install clean timestamps

@@ -27,7 +27,7 @@
 
 (defun emjupy--sync-cell-source-from-buffer (cell)
   "Read the live buffer text bounded by CELL's overlay into `emjupy-cell-source'."
-  (when-let ((ov (emjupy-cell-overlay cell)))
+  (when-let* ((ov (emjupy-cell-overlay cell)))
     (when (overlay-buffer ov)
       (let* ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
              (trimmed (string-trim-right text "\n")))
@@ -461,44 +461,6 @@ line they were looking at."
   (move-to-column column))
 
 
-
-(defcustom emjupy-protect-non-cell-regions t
-  "When non-nil, make everything outside a cell\='s source read-only.
-
-The rules, the gutters between cells and the output boxes belong to no
-cell.  Text typed there is stored nowhere and disappears at the next
-redraw, so it is better refused than silently lost."
-  :type 'boolean
-  :group 'emjupy)
-
-(defun emjupy--protect-non-cell-regions ()
-  "Mark every region that is not a cell\='s source read-only."
-  (when emjupy-protect-non-cell-regions
-    (let ((inhibit-read-only t)
-          (spans nil))
-      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
-               do (let ((ov (emjupy-cell-overlay cell)))
-                    (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer)))
-                      (push (cons (overlay-start ov) (overlay-end ov)) spans))))
-      (setq spans (sort spans #'car-less-than-car))
-      (let ((pos (point-min)))
-        (dolist (span spans)
-          (when (< pos (car span))
-            (emjupy--make-read-only pos (car span)))
-          (setq pos (max pos (cdr span))))
-        (when (< pos (point-max))
-          (emjupy--make-read-only pos (point-max)))))))
-
-(defun emjupy--make-read-only (start end)
-  "Refuse edits between START and END, without walling off the cells.
-
-`rear-nonsticky\' matters: without it, text inserted immediately AFTER a
-protected region inherits the property, so typing at the very start of a
-cell would be refused along with the gutter above it."
-  (add-text-properties start end
-                       '(read-only emjupy
-                         front-sticky (read-only)
-                         rear-nonsticky (read-only))))
 
 (defun emjupy--rerender-notebook-1 (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
@@ -1186,7 +1148,8 @@ buffer positions that undo entries hold literally."
           (push (list 'apply #'emjupy--reinsert-deleted-cell idx curr-cell)
                 buffer-undo-list)
           (undo-boundary))
-        (when next (ignore-errors (emjupy--goto-cell next 'start)))))))
+        (when (and next (overlayp (emjupy-cell-overlay next)))
+            (emjupy--goto-cell next 'start))))))
 
 (defun emjupy-cycle-cell-type ()
   "Cycle the cell at point between `code' and `markdown'."
@@ -1292,7 +1255,8 @@ In a markdown cell, and outside any cell, TAB simply inserts."
                       (last-command (if cycling
                                         'indent-for-tab-command
                                       last-command)))
-                  (ignore-errors (indent-for-tab-command)))
+                  (let ((tab-always-indent t))
+                      (indent-for-tab-command)))
                 (cons (buffer-substring-no-properties (point-min) (point-max))
                       (- (point) (point-min))))))
         (unless (equal (car result) source)
@@ -1401,6 +1365,142 @@ next line, outside the code."
               (when (and prev-cell (emjupy-cell-overlay prev-cell))
                 (goto-char (overlay-start (emjupy-cell-overlay prev-cell)))))))
       (goto-char (point-min)))))
+
+(defun emjupy--render-markdown-cell (cell)
+  "Re-render CELL, which is markdown, and its math.
+
+What running a markdown cell means in Jupyter: there is no code in it,
+so the result is the rendered form rather than anything from a kernel."
+  (emjupy--sync-all-cells)
+  ;; Turn the preview on for this cell if it was off, so that running it
+  ;; renders rather than doing nothing visible.  Running a markdown cell
+  ;; means "show me this formatted", and the maths is the part that most
+  ;; needs showing.
+  (unless emjupy-render-latex
+    (setq-local emjupy-render-latex t))
+  (emjupy--rerender-notebook cell)
+  (let ((ov (emjupy-cell-overlay cell)))
+    (when (overlayp ov)
+      (emjupy--preview-latex-in (overlay-start ov) (overlay-end ov))))
+  (message "[emjupy] Rendered markdown cell.")
+  cell)
+
+(defun emjupy-refresh-appearance ()
+  "Re-derive page colours from the theme and redraw open notebooks.
+Useful after changing `emjupy-output-color' or loading a theme in an
+Emacs too old for `enable-theme-functions'."
+  (interactive)
+  (emjupy--sync-theme-colors)
+  (dolist (buf (emjupy--notebook-buffers))
+    (with-current-buffer buf
+      (emjupy--rerender-notebook))))
+
+(defun emjupy-toggle-latex-preview ()
+  "Turn LaTeX previews in markdown cells on or off, and redraw."
+  (interactive)
+  (setq emjupy-render-latex (not emjupy-render-latex))
+  (when (and emjupy-render-latex (not (emjupy--latex-available-p)))
+    (message "[emjupy] No LaTeX renderer found: install latex and dvipng, or math-preview."))
+  (when emjupy--buffer-notebook (emjupy--rerender-notebook))
+  (message "[emjupy] LaTeX preview %s." (if emjupy-render-latex "on" "off")))
+
+;;;###autoload
+(defun emjupy-report-box-geometry ()
+  "Report the widths the cell outlines are drawn at.
+
+The rule above an output box is an overlay string, not buffer text, so
+point cannot be placed in it and its columns cannot be inspected with
+\\[describe-char].  This reports them instead: the width the rules are
+drawn at, the width of the rule actually in place, and the column the
+output background is aligned to.  If the last exceeds the others, the
+background is wider than the box."
+  (interactive)
+  (let* ((cell (emjupy--cell-at-point))
+         (width (emjupy--box-width))
+         (ov (and cell (emjupy-cell-output-ov cell)))
+         (rule (and (overlayp ov) (overlay-get ov 'before-string)))
+         (rule-width (and rule (length (string-trim-right rule "\n"))))
+         (pad (and (overlayp ov)
+                   (save-excursion
+                     (goto-char (overlay-start ov))
+                     (let ((found nil))
+                       (while (and (not found) (< (point) (overlay-end ov)))
+                         (let ((d (get-text-property (point) 'display)))
+                           (when (and (consp d) (eq (car d) 'space))
+                             (setq found (plist-get (cdr d) :align-to))))
+                         (forward-char 1))
+                       found)))))
+    (message "box width %s | rule %s | output aligned to %s%s"
+             width (or rule-width "none") (or pad "none")
+             (if (and rule-width pad (> pad rule-width))
+                 (format "  -- background is %d column(s) wider" (- pad rule-width))
+               ""))))
+
+;;;###autoload
+(defun emjupy-show-traceback ()
+  "Show the full traceback of the cell at point in a buffer of its own.
+
+The output box shows the traceback squeezed into the notebook, where a
+deep stack is unreadable.  This puts it somewhere with room, with the
+ANSI colouring the kernel sent and Python syntax highlighting, so the
+frames and the offending lines are legible."
+  (interactive)
+  (let ((cell (emjupy--cell-at-point)))
+    (unless cell (user-error "Point is not in a cell"))
+    (let ((tb (emjupy--cell-traceback cell)))
+      (unless tb (user-error "This cell has no traceback"))
+      (let ((buf (get-buffer-create "*emjupy traceback*")))
+        (with-current-buffer buf
+          (let* ((inhibit-read-only t)
+                 (coloured (emjupy--ansi-render tb)))
+            (erase-buffer)
+            (insert coloured)
+            (let ((python-indent-guess-indent-offset-verbose nil))
+              (delay-mode-hooks (python-mode)))
+            ;; Syntax highlighting first, then the kernel's own colours back
+            ;; on top.  Both live in the `face' property, and font-lock
+            ;; rewrites it wholesale -- so applied the other way round the
+            ;; colours that mark the failing frame are painted over, which is
+            ;; the half of a traceback worth having.
+            (font-lock-ensure)
+            (let ((pos 0) (len (length coloured)))
+              (while (< pos len)
+                (let ((next (or (next-single-property-change pos 'face coloured) len))
+                      (val (get-text-property pos 'face coloured)))
+                  (when val
+                    (font-lock-prepend-text-property
+                     (+ (point-min) pos) (+ (point-min) next) 'face val))
+                  (setq pos next))))
+            (goto-char (point-min)))
+          (setq buffer-read-only t)
+          (local-set-key (kbd "q") #'quit-window))
+        (pop-to-buffer buf)
+        buf))))
+
+(defun emjupy--toggle-output-from-string (pair buffer)
+  "Toggle the cell named by PAIR, a (STRING . INDEX) pair, within BUFFER.
+
+Separated from the mouse event so it can be tested: the accessors that
+take a click apart are inlined by the compiler and cannot be stubbed."
+  (let ((id (and (consp pair)
+                 (get-text-property (cdr pair) 'emjupy-toggle-cell (car pair)))))
+    (when (and id (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (emjupy-toggle-output-of-cell (emjupy--cell-by-id id))))))
+
+;;;###autoload
+(defun emjupy-toggle-output-at-click (event)
+  "Show the output whose collapsed marker was clicked.
+EVENT is the mouse event."
+  (interactive "e")
+  ;; A click on an overlay string is located by `posn-string\=', which returns
+  ;; the string and the index within it.  A buffer position would not do:
+  ;; the footer sits at the very end of a cell, where it is ambiguous which
+  ;; of two neighbours is meant.
+  (let ((posn (event-start event)))
+    (emjupy--toggle-output-from-string
+     (posn-string posn)
+     (window-buffer (posn-window posn)))))
 
 (provide 'emjupy-cells)
 ;;; emjupy-cells.el ends here

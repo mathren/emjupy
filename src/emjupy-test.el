@@ -5803,7 +5803,8 @@ an empty settings object."
   (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb"
                                   :kernel-cwd "/srv/project"))
         (sent nil))
-    (cl-letf (((symbol-function 'jsonrpc-notify)
+    (cl-letf (((symbol-function 'jsonrpc-running-p) (lambda (_) t))
+              ((symbol-function 'jsonrpc-notify)
                (lambda (_server method params) (push (cons method params) sent))))
       (emjupy--set-workspace-configuration nb 'a-server)
       (should sent)
@@ -5818,7 +5819,8 @@ an empty settings object."
         (should (equal (append paths nil) '("/srv/project")))))
     ;; nothing is sent when there is nowhere to point at
     (setq sent nil)
-    (cl-letf (((symbol-function 'jsonrpc-notify)
+    (cl-letf (((symbol-function 'jsonrpc-running-p) (lambda (_) t))
+              ((symbol-function 'jsonrpc-notify)
                (lambda (&rest _) (push t sent))))
       (emjupy--set-workspace-configuration
        (make-emjupy-notebook :cells [] :path "n.ipynb") 'a-server)
@@ -5828,6 +5830,17 @@ an empty settings object."
         (emjupy--set-workspace-configuration nb 'a-server)
         (should-not sent)))))
 
+(ert-deftest emjupy-test-configuration-not-sent-to-a-closed-connection ()
+  "Nothing is written to a language server whose connection has gone.
+
+Sending to it signals, and the old code swallowed that; asking first is
+the actual answer."
+  (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb" :kernel-cwd "/srv/p"))
+        (sent nil))
+    (cl-letf (((symbol-function 'jsonrpc-running-p) (lambda (_) nil))
+              ((symbol-function 'jsonrpc-notify) (lambda (&rest _) (setq sent t))))
+      (emjupy--set-workspace-configuration nb 'a-server)
+      (should-not sent))))
 (ert-deftest emjupy-test-local-language-server-says-so ()
   "Falling back to a language server here is announced, once.
 

@@ -29,22 +29,65 @@ request to a local process -- answering about the wrong machine's files
 
 * Source layout
 
-| File               | Contains                                                |
-|--------------------+---------------------------------------------------------|
-| =emjupy.el=          | major mode, keymap, entry point                         |
-| =emjupy-core.el=     | structs, state, server registry, lookups                |
-| =emjupy-http.el=     | REST transport, URL/scheme/base-path parsing            |
-| =emjupy-render.el=   | faces, page colours, cell outlines, syntax highlighting |
-| =emjupy-cells.el=    | buffer<->struct syncing and cell editing commands       |
-| =emjupy-kernel.el=   | kernel WebSocket, execution, message routing            |
-| =emjupy-notebook.el= | login/session management, .ipynb parse and serialize    |
-| =emjupy-eglot.el=    | shadow buffer, completion, eldoc                        |
-| =emjupy-pkg.el=      | package metadata                                        |
+The sources are in =src/=, listed here from the bottom layer up.  Each
+file requires only files above it in this table, never below.
 
-Dependencies run one way: =core -> render -> cells -> kernel -> notebook=, with
-=eglot= on top of =cells=. The two genuine cycles (=emjupy-mode= and
-=emjupy--rerender-notebook=) are runtime-only and marked with
-=declare-function=.
+| File                 | Contains                                                   |
+|----------------------+------------------------------------------------------------|
+| =emjupy-core.el=     | structs, state, server registry, lookups                   |
+| =emjupy-http.el=     | REST transport, URL parsing, the HTTP error types          |
+| =emjupy-render.el=   | faces, colours, outlines, drawing output, text helpers     |
+| =emjupy-cells.el=    | buffer<->struct syncing, cell editing and cell commands    |
+| =emjupy-kernel.el=   | kernel WebSocket, execution, message routing               |
+| =emjupy-remote.el=   | where a server's files live: roots, SSH tunnels, TRAMP     |
+| =emjupy-lsp.el=      | language-server WebSocket transport, shadow document text  |
+| =emjupy-eglot.el=    | shadow buffer, Eglot integration, completion, eldoc        |
+| =emjupy-mode.el=     | =emjupy-mode=, its keymap and menu                         |
+| =emjupy-notebook.el= | login, the notebook browser, .ipynb parse and serialize    |
+| =emjupy.el=          | package header, version, and the entry point that loads it |
+| =emjupy-pkg.el=      | package metadata for =make package= (MELPA makes its own)  |
+
+** Dependencies run one way
+
+No file calls a function defined in a file below it in the table, and
+there are no =declare-function= forms for emjupy's own functions.  Every
+module can be loaded on its own, which is what makes that checkable:
+=(require 'emjupy-lsp)= in a fresh Emacs must work without anything else
+having been loaded first.
+
+When a lower layer needs to tell a higher one that something happened,
+it runs a hook rather than naming the function.  The one such hook is
+=emjupy-kernel-connected-functions=: the kernel layer runs it when a
+kernel attaches, and =emjupy-mode= adds the language-server layer's
+handler, which asks the kernel where it runs.  The hook is wired when a
+notebook buffer starts, not when a file is loaded -- a package should
+not add hooks just by being loaded.
+
+A keymap may name a command defined further down the table, with a plain
+quote rather than =#'=: a binding needs the name, and resolves it when
+the key is pressed.
+
+** Errors
+
+Catch the failure you expect, and let everything else through.  There is
+no =ignore-errors= in the package: it hides the failure that was
+expected and every bug alongside it, and a function that has silently
+done nothing for months looks exactly like one that works.
+
+- An expected failure that has a precondition is checked, not caught --
+  =window-live-p=, =buffer-live-p=, =websocket-p= and =websocket-openp=,
+  =jsonrpc-running-p=, =xref-file-location-p=.
+- One that can only be found out by trying is caught by its type:
+  =json-parse-error=, =jsonrpc-error=, =file-error=.
+- A request to the Jupyter server that fails signals =emjupy-http-error=,
+  or =emjupy-http-status= when the server answered with an error status.
+  Both are children of =file-error=, the family Emacs uses for a
+  resource it cannot reach, which also keeps their messages readable.
+  =emjupy--http-status-of= extracts the status; =emjupy--http-exists-p=
+  answers "is this there" with nil for a 404 instead of signalling.
+- Background work that must not abort the command it runs under -- the
+  language server warming up while a notebook opens -- uses
+  =with-demoted-errors=, so a failure is reported rather than lost.
 
 * Makefile targets
 
@@ -191,21 +234,36 @@ The recipe used is kept at =.github/melpa-recipe=:
 #+begin_src elisp
 (emjupy :fetcher github
         :repo "mathren/emjupy"
-        :files ("emjupy.el" "emjupy-core.el" "emjupy-http.el"
-                "emjupy-render.el" "emjupy-cells.el" "emjupy-kernel.el"
-                "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-notebook.el"))
+        :files ("src/emjupy.el"
+                "src/emjupy-core.el"
+                "src/emjupy-http.el"
+                "src/emjupy-render.el"
+                "src/emjupy-cells.el"
+                "src/emjupy-kernel.el"
+                "src/emjupy-remote.el"
+                "src/emjupy-lsp.el"
+                "src/emjupy-eglot.el"
+                "src/emjupy-mode.el"
+                "src/emjupy-notebook.el"))
 #+end_src
 
-It matches what =make package= builds, so the tar produced locally is the
-package MELPA would produce.
+The recipe lists the sources by name rather than by wildcard, so a
+development file added to =src/= does not ship by accident.  The
+melpazoid job in CI reads this same file, so there is one list.
 
-Before submitting, check all four:
+Before submitting:
 
 #+begin_src bash
-make check                 # tests
+make check                 # unit and integration tests
+make lint                  # checkdoc and package-lint
 make package               # builds the tar
 #+end_src
 
-and, with =package-lint= available, that it reports nothing for the nine
-files above, and that the tar installs into an empty
-=package-user-dir= and =M-x emjupy-mode= works there.
+and check that:
+
+- melpazoid reports nothing -- its CI job runs it against the recipe
+  above, with warnings treated as errors;
+- the tar installs into an empty =package-user-dir= and =M-x
+  emjupy-mode= works there;
+- each module loads on its own in a fresh Emacs, since that is how an
+  accidental dependency on load order shows up.
