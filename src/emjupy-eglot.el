@@ -40,9 +40,9 @@
 (defvar python-indent-guess-indent-offset-verbose)
 (require 'xref)
 
-;; Eglot ships with Emacs (29.1+, which this package requires) but is pulled in
-;; at COMPILE time only: emjupy is fully usable without a language server, so
-;; nothing here loads Eglot until a shadow buffer actually asks for it -- see
+;; Eglot ships with Emacs (29.1+) but is pulled in at COMPILE time
+;; only: emjupy is fully usable without a language server, so nothing
+;; here loads Eglot until a shadow buffer actually asks for it -- see
 ;; the runtime `require' in `emjupy--ensure-shadow-buffer'.
 (eval-when-compile (require 'eglot nil t))
 

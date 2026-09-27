@@ -6,7 +6,7 @@
 ;; Assisted-by: Claude:claude-opus-5 and other free-tier LLMs
 ;; Maintainer: Mathieu Renzo <mathren90@gmail.com>
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (websocket "1.15"))
+;; Package-Requires: ((emacs "30.1") (websocket "1.15"))
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
 
