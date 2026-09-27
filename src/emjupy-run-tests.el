@@ -1,4 +1,4 @@
-;;; emjupy-run-tests.el --- Batch test runner for emjupy -*- lexical-binding: t; -*-
+;;; emjupy-run-tests.el --- Batch test runner for emjupy -*- lexical-binding: t; no-byte-compile: t -*-
 
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs

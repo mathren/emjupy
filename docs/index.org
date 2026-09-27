@@ -88,6 +88,9 @@ Pending on MELPA.
 | =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
 | =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
 | =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =emjupy=        | HTTP + WebSocket  | Python only (other kernels untested); needs =jupyter-lsp= on the server for eglot; Emacs 30.1+          |
+
 
 =ein= was my working tool for more than a decade, but it is
 [[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I

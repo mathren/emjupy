@@ -1,4 +1,4 @@
-;;; lint.el --- checkdoc and package-lint over the sources  -*- lexical-binding: t; -*-
+;;; lint.el --- checkdoc and package-lint over the sources  -*- lexical-binding: t; no-byte-compile: t -*-
 
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs

@@ -3523,27 +3523,32 @@ SIZE of the output instead of the number of lines in it."
 eldoc runs after EVERY command.  A blocking wait there costs the full
 request timeout per cursor movement whenever the server is slow or
 silent -- measured at ten seconds a move before this was made
-asynchronous, which is indistinguishable from a hang."
-  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "os.pa"
-                                 :outputs [] :metadata (make-hash-table)))
-         (session (make-emjupy-lsp :pending (make-hash-table :test 'equal)
-                                   :callbacks (make-hash-table :test 'equal)
-                                   :uri "file:///srv/p/n.emjupy.py"
-                                   :ready t :warmed t)))
+asynchronous, which is indistinguishable from a hang.
+
+The request is asserted to have been SENT, not only to have returned
+quickly.  An earlier version of this test called a function that no
+longer existed, inside `ignore-errors\=', so it failed at once and the
+timing passed without anything having been asked."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "os.pa"
+                                :outputs [] :metadata (make-hash-table)))
+        (requests 0))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
-        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook) "/srv/p")
-        (setf (emjupy-notebook-server emjupy--buffer-notebook)
-              (make-emjupy-server :base-url "h" :token "t"))
-        (setf (emjupy-notebook-lsp emjupy--buffer-notebook) session)
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
-        (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t))
+        (cl-letf (((symbol-function 'emjupy--cell-shadow-delegate)
+                   (lambda (fn) (funcall fn 1 1 (current-buffer))))
+                  ((symbol-function 'emjupy--eglot-live-server) (lambda (&rest _) 'a-server))
+                  ((symbol-function 'emjupy--eglot-capable-p) (lambda (&rest _) t))
+                  ((symbol-function 'eglot--TextDocumentPositionParams) (lambda () nil))
                   ;; a server that never answers
-                  ((symbol-function 'emjupy--lsp-send) (lambda (&rest _) nil)))
+                  ((symbol-function 'jsonrpc-async-request)
+                   (lambda (&rest _) (setq requests (1+ requests)) nil)))
           (let ((start (float-time)))
-            (dotimes (_ 5) (ignore-errors (emjupy-lsp-eldoc #'ignore)))
+            (dotimes (_ 5) (emjupy--cell-eldoc-function #'ignore))
             ;; five ticks, well under a second in total
-            (should (< (- (float-time) start) 1.0))))))))
+            (should (< (- (float-time) start) 1.0))
+            ;; and each one really did ask
+            (should (= requests 5))))))))
 
 (ert-deftest emjupy-test-shadow-fallback-is-a-choice ()
   "When the kernel is elsewhere, a local shadow is used unless refused.
@@ -3717,11 +3722,7 @@ the notebook still works."
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
         (let ((emjupy-language-support nil)
               (asked nil))
-          (cl-letf (((symbol-function 'emjupy-lsp-completion-at-point)
-                     (lambda (&rest _) (setq asked t) nil))
-                    ((symbol-function 'emjupy--cell-completion-at-point)
-                     (lambda (&rest _) (setq asked t) nil))
-                    ((symbol-function 'emjupy-lsp-eldoc)
+          (cl-letf (((symbol-function 'emjupy--cell-completion-at-point)
                      (lambda (&rest _) (setq asked t) nil))
                     ((symbol-function 'emjupy--cell-eldoc-function)
                      (lambda (&rest _) (setq asked t) nil)))
@@ -6702,6 +6703,77 @@ through the path that handles output as it arrives."
           (should (string-match-p "2it \\[00:02\\]" text))
           (should-not (string-match-p "0it" text))
           (should-not (string-match-p "\r" text)))))))
+
+(defun emjupy-test--kernel-msg (msg-type parent-id content)
+  "Return a kernel message of MSG-TYPE replying to PARENT-ID with CONTENT."
+  (let ((hdr (make-hash-table :test 'equal))
+        (ph (make-hash-table :test 'equal))
+        (c (make-hash-table :test 'equal))
+        (msg (make-hash-table :test 'equal)))
+    (puthash "msg_type" msg-type hdr)
+    (puthash "msg_id" parent-id ph)
+    (pcase-dolist (`(,k . ,v) content) (puthash k v c))
+    (puthash "header" hdr msg)
+    (puthash "parent_header" ph msg)
+    (puthash "content" c msg)
+    (json-serialize msg)))
+
+(defun emjupy-test--feed-in-order (order)
+  "Run one request whose messages arrive in ORDER; return the cell and kernel.
+ORDER is a list of `result\=', `reply\=' and `idle\='."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                 :source "40 + 2" :outputs []
+                                 :metadata (make-hash-table)))
+         (id "req-1")
+         (nb (make-emjupy-notebook :cells (vector cell)))
+         (kernel (make-emjupy-kernel :id "k" :pending (make-hash-table :test 'equal)
+                                     :notebook nb))
+         (data (make-hash-table :test 'equal)))
+    (clrhash emjupy--request-halves)
+    (puthash "text/plain" "42" data)
+    (puthash id cell (emjupy-kernel-pending kernel))
+    (dolist (step order)
+      (emjupy--handle-ws-message
+       kernel
+       (pcase step
+         ('result (emjupy-test--kernel-msg
+                   "execute_result" id `(("data" . ,data) ("execution_count" . 1))))
+         ('reply (emjupy-test--kernel-msg "execute_reply" id '(("execution_count" . 1))))
+         ('idle (emjupy-test--kernel-msg "status" id '(("execution_state" . "idle")))))))
+    (list cell kernel id)))
+
+(ert-deftest emjupy-test-output-after-the-reply-is-kept ()
+  "An output that arrives after execute_reply still reaches its cell.
+
+Outputs come on the iopub channel and the reply on the shell channel,
+and the protocol does not order them against each other.  The request
+used to be forgotten on the reply, so a result arriving afterwards found
+nothing waiting and was dropped.  This is the order a slow CI runner
+produced: the integration test for a bare expression saw no
+execute_result at all."
+  (pcase-let ((`(,cell ,kernel ,id) (emjupy-test--feed-in-order '(reply result idle))))
+    (should (= (length (emjupy-cell-outputs cell)) 1))
+    (should (equal (gethash "output_type" (aref (emjupy-cell-outputs cell) 0))
+                   "execute_result"))
+    (should (eql (emjupy-cell-exec-count cell) 1))
+    ;; and once both halves have come, the request is forgotten
+    (should-not (gethash id (emjupy-kernel-pending kernel)))))
+
+(ert-deftest emjupy-test-idle-before-the-reply-still-counts ()
+  "The closing idle may come first; the reply after it is still applied.
+
+Forgetting the request on idle alone would drop the execution count."
+  (pcase-let ((`(,cell ,kernel ,id) (emjupy-test--feed-in-order '(result idle reply))))
+    (should (eql (emjupy-cell-exec-count cell) 1))
+    (should (= (length (emjupy-cell-outputs cell)) 1))
+    (should-not (gethash id (emjupy-kernel-pending kernel)))))
+
+(ert-deftest emjupy-test-request-waits-for-both-halves ()
+  "A request stays open until both its reply and its idle have arrived."
+  (pcase-let ((`(,_cell ,kernel ,id) (emjupy-test--feed-in-order '(reply))))
+    (should (gethash id (emjupy-kernel-pending kernel))))
+  (pcase-let ((`(,_cell ,kernel ,id) (emjupy-test--feed-in-order '(idle))))
+    (should (gethash id (emjupy-kernel-pending kernel)))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -91,21 +91,101 @@ done nothing for months looks exactly like one that works.
 
 * Makefile targets
 
-| Target       | Effect                                                  |
-|--------------+---------------------------------------------------------|
-| =make compile= | byte-compile all sources in dependency order            |
-| =make test=    | run the suite (integration tests skip without a server) |
-| =make check=   | same, with the integration environment set              |
-| =make package= | build =emjupy-VERSION.tar=                                |
-| =make install= | install that tar via =package-install-file=               |
-| =make clean=   | remove =.elc= files and the tar                           |
+| Target               | Effect                                                         |
+|----------------------+----------------------------------------------------------------|
+| =make compile=       | byte-compile the sources, with =src/= first on the load path   |
+| =make test=          | the unit tests; integration tests skip without a server        |
+| =make check=         | unit and integration tests; refuses to run without a server    |
+| =make lint=          | checkdoc, and package-lint if it is installed                  |
+| =make docs=          | export =docs/*.org= to the site in =html-content/=             |
+| =make package=       | build =emjupy-VERSION.tar=                                     |
+| =make install=       | install that tar via =package-install-file=                    |
+| =make check-version= | the version header, =emjupy-version= and the pkg file agree    |
+| =make versions=      | which Emacs this is, against the one development targets       |
+| =make clean=         | remove =.elc= files and the tar                                |
+
+* Running everything locally
+
+What CI runs, in the order worth running it: the cheap checks first, so a
+typo does not cost a server start-up.
+
+** Once: what the checks need
+
+- Emacs 30.1 -- =make versions= says whether you have it.
+- =websocket.el=, the one dependency.  An installed copy is found; a
+  checkout can be named instead with
+  =export EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket=.
+- For the integration tests, a Python environment with the server, a
+  kernel and a language server:
+  #+begin_src bash
+  pip install jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]'
+  #+end_src
+- For =make lint= to run package-lint as well as checkdoc,
+  =M-x package-install RET package-lint=.  Without it the target says so
+  and checks the rest.
+- For melpazoid, a clone and Docker -- melpazoid runs inside a container,
+  which is what makes its result match MELPA's:
+  #+begin_src bash
+  git clone https://github.com/riscy/melpazoid ~/melpazoid
+  #+end_src
+
+** Every time
+
+#+begin_src bash
+make compile                # no warnings expected
+make test                   # unit tests, about ten seconds
+make lint                   # checkdoc and package-lint: nothing expected
+make check-version          # three places agree on the version
+#+end_src
+
+Then the integration tests, against a server of your own:
+
+#+begin_src bash
+mkdir -p /tmp/nbroot
+jupyter server --no-browser --port=8888 --ip=127.0.0.1 \
+  --IdentityProvider.token=abc --ServerApp.root_dir=/tmp/nbroot &
+
+EMJUPY_TEST_URL=127.0.0.1:8888 EMJUPY_TEST_TOKEN=abc \
+EMJUPY_TEST_ROOT=/tmp/nbroot make check
+#+end_src
+
+=EMJUPY_SKIP_UNSTABLE=1= leaves out the tests tagged =:unstable=, as CI
+does; without it they run, and a failure there is real but known.
+
+Then melpazoid, reading the same recipe MELPA will be sent:
+
+#+begin_src bash
+RECIPE="$(cat .github/melpa-recipe)" LOCAL_REPO="$PWD" make -C ~/melpazoid
+#+end_src
+
+And the documentation, which CI also link-checks:
+
+#+begin_src bash
+make docs                   # then open html-content/index.html
+#+end_src
+
+** Compiling one file by hand
+
+=M-x byte-compile-file= compiles against whatever =load-path= holds.  With
+an emjupy installed from a package archive, =(require 'emjupy-core)= finds
+the INSTALLED copy, and a module added since then is not found at all --
+"Cannot open load file: emjupy-remote" is that, not a fault in the file.
+=make compile= puts =src/= first and avoids it; by hand, add the checkout
+to the front of =load-path=, or uninstall the package while working on
+it.
+
+=emjupy-run-tests.el=, =lint.el= and =emjupy-pkg.el= are not compiled at
+all -- each says =no-byte-compile= -- because they are scripts and
+metadata rather than code to load.
 
 * Unit tests
 
 The self-contained suite requires only =websocket=:
 
 #+begin_src bash
-emacs -batch -Q -L . -l emjupy-run-tests.el
+make test
+# which is
+emacs -batch -Q -L src -l src/emjupy-run-tests.el
 #+end_src
 
 =websocket= is resolved from =load-path= first, then from
@@ -113,8 +193,7 @@ emacs -batch -Q -L . -l emjupy-run-tests.el
 also runs offline / in CI:
 
 #+begin_src bash
-EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket \
-  emacs -batch -Q -L . -l emjupy-run-tests.el
+EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket make test
 #+end_src
 
 * Integration tests (real server, real kernel, real LSP)
@@ -148,8 +227,7 @@ jupyter server --no-browser --port=8888 --ip=127.0.0.1 --IdentityProvider.token=
 ssh -N -L 18888:127.0.0.1:8888 user@remote-host &
 
 EMJUPY_TEST_URL=127.0.0.1:18888 EMJUPY_TEST_TOKEN=abc \
-EMJUPY_TEST_ROOT=/path/to/notebook/root \
-  emacs -batch -Q -L . -l emjupy-run-tests.el
+EMJUPY_TEST_ROOT=/path/to/notebook/root make check
 #+end_src
 
 The eglot tests additionally need a Python language server on =PATH=

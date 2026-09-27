@@ -243,6 +243,32 @@ For emjupy\='s own questions -- \"where are you?\" -- not for user code."
       (emjupy--ws-send (cdr req) kernel)
       msg-id)))
 
+(defun emjupy--idle-p (msg-type data)
+  "Return non-nil if MSG-TYPE and DATA make up an idle status message."
+  (and (string= msg-type "status")
+       (equal (gethash "execution_state" (gethash "content" data)) "idle")))
+
+(defvar emjupy--request-halves (make-hash-table :test 'equal)
+  "Requests for which one of execute_reply and the closing idle has come.")
+
+(defun emjupy--request-half-seen (id part pending)
+  "Note that PART of request ID has arrived; forget the request once both have.
+
+PART is `reply\=' for execute_reply and `idle\=' for the status message
+that closes the request.  Outputs travel on the iopub channel and the
+reply on the shell channel, and the protocol does not order one against
+the other: an output can come after the reply.  The request used to be
+forgotten on the reply, so an output arriving later found nothing waiting
+for it and was dropped -- on a slow machine, routinely.  Idle is what
+follows the last output, and it can itself come before the reply, so the
+request is forgotten only when both have been seen, in either order.
+PENDING is the kernel\'s table of requests awaiting output."
+  (let ((seen (gethash id emjupy--request-halves)))
+    (if (and seen (not (eq seen part)))
+        (progn (remhash id emjupy--request-halves)
+               (remhash id pending))
+      (puthash id part emjupy--request-halves))))
+
 (defun emjupy--handle-ws-message (kernel frame)
   "Handle an incoming WebSocket FRAME belonging to KERNEL.
 KERNEL carries both the pending-request table and the backlink to the
@@ -266,7 +292,10 @@ kernels never cross-talk."
         (let ((text (gethash "text" (gethash "content" data))))
           (remhash parent-id emjupy--internal-requests)
           (funcall internal (string-trim (or text "")))))
-      (when (string= msg-type "execute_reply")
+      (when (emjupy--idle-p msg-type data)
+        ;; Its answer, if any, has come by now: idle follows every output
+        ;; of the request on the same channel.  Forgetting it on
+        ;; execute_reply instead dropped an answer that arrived late.
         (remhash parent-id emjupy--internal-requests)))
 
     (when cell
@@ -327,12 +356,16 @@ kernels never cross-talk."
           (puthash "traceback" traceback out-hash)
           (emjupy--append-output-to-cell cell out-hash notebook)))
 
+       ;; The kernel has published everything this request will produce.
+       ((emjupy--idle-p msg-type data)
+        (emjupy--request-half-seen parent-id 'idle pending))
+
        ;; Finish execution frame
        ((string= msg-type "execute_reply")
         (let* ((content (gethash "content" data))
                (count (gethash "execution_count" content)))
           (setf (emjupy-cell-exec-count cell) count)
-          (remhash parent-id pending)
+          (emjupy--request-half-seen parent-id 'reply pending)
           (when-let* ((b (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p b) (emjupy--mark-done cell b)))
           (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))

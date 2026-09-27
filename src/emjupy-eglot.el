@@ -1228,7 +1228,8 @@ Deliberately does NOT delegate to `eldoc-documentation-functions' the
 way completion does: Eglot's own `eglot-hover-eldoc-function' only
 calls back when its buffer is visibly displayed in a window, which is
 never true for this shadow buffer -- staying hidden in the background
-is the whole point.  `jsonrpc-request' (blocking) bypasses that gate."
+is the whole point.  An asynchronous request goes round that gate,
+and does not hold the editor while the server thinks."
   (emjupy--cell-shadow-delegate
    (lambda (_cell-start _shadow-start _buf)
      (when (and (emjupy--eglot-live-server)

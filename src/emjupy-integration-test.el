@@ -97,13 +97,17 @@ first -- setting the struct alone would be silently overwritten."
       ;; execute_reply sets exec-count; that's our completion signal.
       (emjupy-int--pump (or seconds 60)
                         (lambda () (numberp (emjupy-cell-exec-count cell))))
-      ;; The execution count arrives with the reply, which can overtake the
-      ;; stream output it describes -- so returning here handed the caller a
-      ;; cell whose stdout was still in flight, and an assertion about that
-      ;; output failed against an empty string.  Waited for, briefly: a cell
-      ;; that genuinely prints nothing must not cost the full timeout.
-      (emjupy-int--pump 5 (lambda () (> (length (or (emjupy-cell-outputs cell) []))
-                                        0)))
+      ;; The reply can overtake the output it describes, so the count alone
+      ;; is not the end.  The request is finished when the kernel has sent
+      ;; both the reply and the idle that follows its last output, which is
+      ;; exactly when it leaves the pending table.  Waiting for that rather
+      ;; than a fixed grace period is what a slow CI runner needed.
+      (let ((pending (emjupy-kernel-pending
+                      (emjupy-notebook-kernel emjupy--buffer-notebook))))
+        (emjupy-int--pump (or seconds 60)
+                          (lambda ()
+                            (not (cl-loop for v being the hash-values of pending
+                                          thereis (eq v cell))))))
       cell)))
 
 (defun emjupy-int--output-types (cell)
