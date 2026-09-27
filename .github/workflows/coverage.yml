@@ -88,12 +88,17 @@ jobs:
             grep '^|' coverage-output.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Keep the lcov report
-        if: always()
-        uses: actions/upload-artifact@v4
+      # - name: Keep the lcov report
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: coverage-lcov
+      #     path: coverage/lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          name: coverage-lcov
-          path: coverage/lcov.info
+          use_oidc: true
 
       - name: Jupyter log on failure
         if: failure()
