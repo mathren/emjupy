@@ -1,47 +1,107 @@
 name: Release
 
+# One tag, three things that must agree: the package on the release page,
+# the version inside it, and the documentation on the site.  They are
+# produced by the same run from the same commit, so they cannot drift --
+# the site describes exactly what was released, not whatever main has
+# become since.
 on:
   push:
     tags:
       - '*'
 
-permissions:
-  contents: write
-
 jobs:
-  release:
+  package:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Installs Emacs on the runner (Required if your Makefile uses the 'emacs' command)
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
           version: '30.1'
 
-      # The tar is named from the "Version:" header, not from the tag, and
-      # package.el installs whatever the file says. Tagging 0.1.1 while the
-      # header still reads 0.1.0 would publish emjupy-0.1.0.tar under a 0.1.1
-      # release, and users would get 0.1.0 with nothing to indicate it.
+      # Without it the package does not load, and `make test' fails before
+      # testing anything.
+      - name: Fetch websocket.el
+        run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
+
       - name: Check tag matches the package version
         run: make check-version TAG="${GITHUB_REF_NAME}"
 
-      - name: Check
+      - name: Test
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make test
 
       - name: Package
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make package
 
-      - name: Verify the tar was built
+      - name: Verify the tar is the tagged version
         run: |
-          ls -l ./*.tar
-          test -s "emjupy-$(sed -n 's/^;; Version: \(.*\)/\1/p' emjupy.el).tar"
+          version="$(sed -n 's/^;; Version: *//p' src/emjupy.el | head -1)"
+          test -s "emjupy-${version}.tar"
+          tar -tf "emjupy-${version}.tar"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: '*.tar'
           generate_release_notes: true
+
+  docs:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: '30.1'
+
+      - name: Export the docs
+        run: make docs
+
+      - name: Check every internal link resolves
+        run: |
+          python3 - <<'PY'
+          import glob, os, re, sys
+          bad = []
+          for f in glob.glob('html-content/*.html'):
+              for href in re.findall(r'(?:href|src)="([^"#][^"]*)"', open(f).read()):
+                  if ':' in href.split('/')[0] or href.startswith('#'):
+                      continue
+                  if not os.path.exists(os.path.normpath(os.path.join('html-content', href))):
+                      bad.append((os.path.basename(f), href))
+          for f, h in bad:
+              print(f"broken: {f} -> {h}")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Package the site for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: html-content
+
+  # Only after the package job has succeeded: a tag whose tests fail must
+  # not replace the documentation of the last good release.
+  deploy-docs:
+    needs: docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

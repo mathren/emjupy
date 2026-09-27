@@ -95,6 +95,11 @@ check-version:
 	  echo "check-version: emjupy-version is $$constant but the header says $$version" >&2; \
 	  exit 1; \
 	fi; \
+	pkg=$$(sed -n 's/^(define-package "emjupy" "\([^"]*\)".*/\1/p' $(SRC)/emjupy-pkg.el | head -1); \
+	if [ "$$pkg" != "$$version" ]; then \
+	  echo "check-version: emjupy-pkg.el says $$pkg but the header says $$version" >&2; \
+	  exit 1; \
+	fi; \
 	if [ -n "$$tag" ] && [ "$$tag" != "$$version" ]; then \
 	  echo "check-version: tag $$tag does not match version $$version" >&2; \
 	  exit 1; \

@@ -2,14 +2,15 @@
 #+PREVIOUS_PAGE: design.org
 #+NEXT_PAGE: limitations.org
 
-=emjupy= is a multi-file Emacs package. To build a tar and install it:
+=emjupy= is a multi-file Emacs package, which was developed with use of
+Claude Opus 5.5 (and other LLMs). To build a tar and install it:
 
 #+begin_src bash
-make package                 # -> emjupy-0.1.0.tar
-make install                 # package-install-file into your Emacs
+make package                 # generates emjupy-i.j.k.tar
 #+end_src
 
-and install from Emacs: =M-x package-install-file RET emjupy-0.1.0.tar RET=.
+and install from Emacs: =M-x package-install-file RET emjupy-i.j.k.tar
+RET= with =i.j.k= the current version.
 
 The only external dependency is =websocket= (1.15+); Emacs 29.1+ is
 required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works

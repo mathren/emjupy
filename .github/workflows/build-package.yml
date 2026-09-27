@@ -123,28 +123,14 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
-      - name: Package the site for Pages
-        uses: actions/upload-pages-artifact@v3
+      # Built and checked on every push, published only on a tag: the
+      # site documents the released package, not main as it stands.
+      # See release.yml.
+      - name: Keep the exported site
+        uses: actions/upload-artifact@v4
         with:
+          name: docs-html
           path: html-content
-
-  # Publishing is a job of its own so a failed export never replaces a
-  # working site, and so it only runs for main -- a pull request builds
-  # the docs and stops there.
-  deploy-docs:
-    needs: docs
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Publish to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
 
   # The tests that talk to a real server, a real kernel and a real language
   # server: the ones most likely to catch a regression in the WebSocket,
