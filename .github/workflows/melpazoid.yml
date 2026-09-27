@@ -23,16 +23,16 @@ jobs:
         LOCAL_REPO: ${{ github.workspace }}
         # RECIPE is your recipe as written for MELPA:
         RECIPE: (emjupy :fetcher github
-        :repo "mathren/emjupy"
-        :files ("src/emjupy.el"
-                "src/emjupy-core.el"
-                "src/emjupy-http.el"
-                "src/emjupy-render.el"
-                "src/emjupy-cells.el"
-                "src/emjupy-kernel.el"
-                "src/emjupy-lsp.el"
-                "src/emjupy-eglot.el"
-                "src/emjupy-notebook.el"))
+                        :repo "mathren/emjupy"
+                        :files ("src/emjupy.el"
+                                "src/emjupy-core.el"
+                                "src/emjupy-http.el"
+                                "src/emjupy-render.el"
+                                "src/emjupy-cells.el"
+                                "src/emjupy-kernel.el"
+                                "src/emjupy-lsp.el"
+                                "src/emjupy-eglot.el"
+                                "src/emjupy-notebook.el"))
         # set this to true if warnings should be treated as errors:
         WARN_IS_ERROR: true
         # set this to false (or remove it) if the package isn't on MELPA:
