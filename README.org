@@ -45,8 +45,8 @@ setup:
   reconnect emacs)
 - toggle hide/show output without re-running cells
 - =ein=-like workflow and key bindings
-- notebook (open and available) and kernel list with =emjupy-list-*=,
-  analogous to =ein:notebooklist=
+- =emjupy-notebook-list= similar to =ein:notebooklist= allows to navigate
+  notebook and adjacent files
 
 * Try it with =emacs -Q=
 To test this in an isolated environment without touching your current config:
@@ -63,9 +63,10 @@ To test this in an isolated environment without touching your current config:
      ssh -L <PORT>:localhost:<PORT> <remote machine>
    #+end_src
 
-3. Launch Emacs with:
+3. Launch Emacs from within the =src/= directory with:
    #+begin_src bash
-     emacs -Q -L . -l quicktry.el --eval '(emjupy-login)'
+     cd src/
+     emacs -Q -L . -l quicktry.el
    #+end_src
    where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
@@ -100,6 +101,23 @@ release rather than the latest commit):
 
 Alternatively, use =install-package-file= giving it the tarball you can
 create with =make package= (see [[file:docs/development.org::+TITLE: Building and development][Building & development]]).
+
+* Landscape of other emacs/jupyter packages
+
+| Package       | Approach          | Limitations                                                                                           |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =ein=           | HTTP + WebSocket  | Sunset 2023; polymode + overlay; per-cell undo; no eglot                                              |
+| =emacs-jupyter= | ZMQ directly      | depends on =emacs-zmq= (dynamic module); can't connect via HTTP tunnel; notebook server hides ZMQ ports |
+| =ob-jupyter=    | Org-babel wrapper | Not .ipynb-compatible; no notebook list UI                                                            |
+|---------------+-------------------+-------------------------------------------------------------------------------------------------------|
+| =emjupy=        | HTTP + WebSocket  | Python only (other kernels untested); needs =jupyter-lsp= on the server for eglot; Emacs 30.1+          |
+
+
+=ein= was my working tool for more than a decade, but it is
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
+need to share code with non-emacs users, so =ob-jupyter= isn't an
+option, and =emacs-jupyter= doesn't seem the right tool for me.
+
 
 * Documentation
 

@@ -23,8 +23,8 @@ See [[./appearance.org]["Looks" tab]] for screenshots.
   reconnect emacs)
 - toggle hide/show output without re-running cells
 - =ein=-like workflow and key bindings
-- notebook (open and available) and kernel list with =emjupy-list-*=,
-  analogous to =ein:notebooklist=
+- =emjupy-notebook-list= similar to =ein:notebooklist= allows to navigate
+  notebook and adjacent files
 
 * Try it with =emacs -Q=
 To test this in an isolated environment without touching your current config:
