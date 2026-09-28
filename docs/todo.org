@@ -17,26 +17,11 @@
   a frame in flight as a notebook closes -- would show the message once.
   Harmless, but it should not happen.
 - [ ] saving notebooks broken in presence of a tqdm-drawn bar in the output
-  #+BEGIN_SRC
-Saving notebook test.ipynb...
-url-http-create-request: Multibyte text in HTTP request: PUT /api/contents/test.ipynb?_xsrf=2%7C52697de8%7C625186f229acb0693b3bf8d7b8f53210%7C1790564352 HTTP/1.1
-MIME-Version: 1.0
-Connection: keep-alive
-Host: localhost:8888
-Accept-encoding: gzip
-Accept: */*
-User-Agent: URL/Emacs Emacs/30.1 (X11; x86_64-pc-linux-gnu)
-Content-Type: application/json
-Authorization: token test
-X-XSRFToken: 2|52697de8|625186f229acb0693b3bf8d7b8f53210|1790564352
-Cookie: _xsrf=2|52697de8|625186f229acb0693b3bf8d7b8f53210|1790564352
-Content-length: 21561
-
-{"type":"notebook","format":"json","content":{"nbformat":4,"nbformat_minor":5,"metadata":{},"cells":[{"cell_type":"markdown","id":"a39fc594","metadata":{},"source":["# TEST `emjupy`\n","this notebook runs on a remote server on port `9999` with (on remote host)\n","```jupyter-notebook --port 9999 --no-browser```\n","I make an `ssh` tunnel running (locally):\n","``` ssh -L 9999:localhost:9999 remote```\n","and then connect with `M-x emjupy-login` in emacs."]},{"cell_type":"code","id":"a521bca2","metadata":{"trusted":false},"source":["import numpy as np\n","import matplotlib.pyplot as plt"],"outputs":[{"output_type":"stream","name":"stderr","text":"Matplotlib is building the font cache; this may take a moment.\n"}],"execution_count":2},{"cell_type":"markdown","id":"8c0f7c1c","metadata":{},"source":["## Show output highlight"]},{"cell_type":"code","id":"1e87f827","metadata":{"trusted":false},"source":["print(\"output line\")\n","np.log(0)\t#\t warning\n","print(error)"],"outputs":[{"output_type":"stream","name":"stdout","text":"output line\n"},{"output_type":"stream","name":"stderr","text":"/tmp/ipykernel_1096173/2602761639.py:2: RuntimeWarning: divide by zero encountered in log\n  np.log(0)\t#\t warning\n"},{"output_type":"error","ename":"NameError","evalue":"name 'error' is not defined","traceback":["\u001B[31m---------------------------------------------------------------------------\u001B[39m","\u001B[31mNameError\u001B[39m
-#+END_SRC
+- [ ] tqdm bar should respect the maximum length of the cell border
+- [ ] the last two fixes should not be tqdm specific, but apply to
+  every output possible of a cell
 - [ ] =M-.= does not work without the remote LSP. This should be
   confirmed and documented clearly if true
-
 
 ** Melpa cleanup
 - [X] melpazoid check succeeds

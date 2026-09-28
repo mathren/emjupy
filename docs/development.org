@@ -91,19 +91,19 @@ done nothing for months looks exactly like one that works.
 
 * Makefile targets
 
-| Target               | Effect                                                         |
-|----------------------+----------------------------------------------------------------|
-| =make compile=       | byte-compile the sources, with =src/= first on the load path   |
-| =make test=          | the unit tests; integration tests skip without a server        |
-| =make check=         | unit and integration tests; refuses to run without a server    |
-| =make lint=          | checkdoc, and package-lint if it is installed                  |
-| =make docs=          | export =docs/*.org= to the site in =html-content/=             |
-| =make package=       | build =emjupy-VERSION.tar=                                     |
-| =make install=       | install that tar via =package-install-file=                    |
-| =make coverage=      | line coverage of the suite, as lcov, with a per-file table     |
-| =make check-version= | the version header, =emjupy-version= and the pkg file agree    |
-| =make versions=      | which Emacs this is, against the one development targets       |
-| =make clean=         | remove =.elc= files and the tar                                |
+| Target             | Effect                                                      |
+|--------------------+-------------------------------------------------------------|
+| =make compile=       | byte-compile the sources, with =src/= first on the load path  |
+| =make test=          | the unit tests; integration tests skip without a server     |
+| =make check=         | unit and integration tests; refuses to run without a server |
+| =make lint=          | checkdoc, and package-lint if it is installed               |
+| =make docs=          | export =docs/*.org= to the site in =html-content/=              |
+| =make package=       | build =emjupy-VERSION.tar=                                    |
+| =make install=       | install that tar via =package-install-file=                   |
+| =make coverage=      | line coverage of the suite, as lcov, with a per-file table  |
+| =make check-version= | the version header, =emjupy-version= and the pkg file agree   |
+| =make versions=      | which Emacs this is, against the one development targets    |
+| =make clean=         | remove =.elc= files and the tar                               |
 
 * Running everything locally
 
