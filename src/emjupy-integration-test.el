@@ -983,5 +983,40 @@ the state this is here to catch."
         (should (member "alpha.py" names))
         (should (equal (seq-take names 3) '("alpha.py" "middle.py" "zulu.py")))))))
 
+(ert-deftest emjupy-int-progress-bar-fits-the-cell ()
+  "A progress bar written without any width drawn inside the cell.
+
+The kernel is told the box width in COLUMNS, which is how tqdm and
+anything using `shutil.get_terminal_size\=' learn how wide to draw when
+their output is not a terminal; and whatever still comes out wider is
+folded where the box ends."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run
+                 (concat "import os, shutil\n"
+                         "print('COLUMNS', os.environ.get('COLUMNS'))\n"
+                         "print('TERM', shutil.get_terminal_size().columns)\n"
+                         "import sys\n"
+                         "sys.stderr.write('100%|' + '\u2588' * 300 + '| 9/9\\n')")
+                 60))
+          (out (emjupy-int--stdout cell)))
+     (with-current-buffer emjupy-int--buffer
+       (let ((width (emjupy--box-width)))
+         ;; the kernel was told
+         (should (string-match-p (format "COLUMNS %d" width) out))
+         (should (string-match-p (format "TERM %d" width) out))
+         ;; and nothing drawn is wider than the box
+         (let ((ov (emjupy-cell-output-ov cell)) (widest 0))
+           (save-excursion
+             (goto-char (overlay-start ov))
+             (while (< (point) (overlay-end ov))
+               (let ((w 0) (p (line-beginning-position)))
+                 (while (< p (line-end-position))
+                   (unless (get-text-property p 'emjupy-pad)
+                     (setq w (+ w (char-width (char-after p)))))
+                   (setq p (1+ p)))
+                 (setq widest (max widest w)))
+               (forward-line 1)))
+           (should (<= widest width))))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

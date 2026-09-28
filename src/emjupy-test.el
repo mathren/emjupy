@@ -3514,8 +3514,16 @@ SIZE of the output instead of the number of lines in it."
                         (apply real args))))
             (let ((inhibit-read-only t))
               (emjupy--repad-output cell)))
-          ;; a handful of lines, not twenty thousand characters
-          (should (< looks 100)))))))
+          ;; One look per LINE of the drawn output -- which, now that a line
+          ;; wider than the box is broken where the box ends, is some
+          ;; hundreds for twenty thousand characters -- and nowhere near one
+          ;; per character.
+          (let* ((ov (emjupy-cell-output-ov cell))
+                 (lines (count-lines (overlay-start ov) (overlay-end ov))))
+            ;; two looks a line -- at the pad, and at the text before it --
+            ;; and one for the end
+            (should (<= looks (+ 1 (* 2 lines))))
+            (should (< looks 2000))))))))
 
 (ert-deftest emjupy-test-eldoc-never-blocks ()
   "Asking the language server must not hold the editor.
@@ -6449,6 +6457,8 @@ as it sees them.  Taken literally here they name files on this machine,
 usually files that do not exist -- so jumping to a definition opened an
 empty buffer at a plausible path instead of the file eldoc had just been
 quoting from."
+  (cl-letf (((symbol-function 'emjupy--answer-is-from-the-kernels-machine-p)
+             (lambda (_) t)))
   (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
                                      :root "/home/me/project"))
          (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
@@ -6469,7 +6479,7 @@ quoting from."
                                      "/home/me/project/library.py" 12 4)))
            (loc (xref-item-location (emjupy--xref-on-the-right-machine nb item))))
       (should (equal (xref-location-group loc) "/ssh:box:/home/me/project/library.py"))
-      (should (= (xref-location-line loc) 12)))))
+      (should (= (xref-location-line loc) 12))))))
 
 (ert-deftest emjupy-test-definitions-left-alone-when-the-kernel-is-here ()
   "No rewriting when the kernel runs on this machine."
@@ -6547,6 +6557,8 @@ configured -- the local name is a file this machine has not got.
 Opening it created an empty buffer at a plausible path, which reads as
 \"the definition is here and is blank\" rather than \"I cannot reach that
 machine\"."
+  (cl-letf (((symbol-function 'emjupy--answer-is-from-the-kernels-machine-p)
+             (lambda (_) t)))
   (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
                                      :root "/home/me/project"))
          (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
@@ -6572,7 +6584,7 @@ machine\"."
                                               :server server2))
                    (item2 (xref-make "def f" (xref-make-file-location here 1 0))))
               (should (emjupy--xref-on-the-right-machine nb2 item2))))
-        (ignore-errors (delete-file here))))))
+        (ignore-errors (delete-file here)))))))
 
 (ert-deftest emjupy-test-tunnel-line-as-typed-is-enough ()
   "A tunnel written the ordinary way gives a host, a root and a name.
@@ -6798,6 +6810,166 @@ content, so those are kept, as two distinct figures must be."
       ;; the same bytes: one
       (should (= 1 (length (emjupy--outputs-for-render
                             (vector (png "iVBORw0KGgoAAA=") (png "iVBORw0KGgoAAA=")))))))))
+
+(defun emjupy-test--drawn-widths (cell)
+  "Return the width in columns of each line of CELL\='s drawn output.
+The padding is left out: it is a stretch to the border, not text."
+  (let ((ov (emjupy-cell-output-ov cell)) widths)
+    (save-excursion
+      (goto-char (overlay-start ov))
+      (while (< (point) (overlay-end ov))
+        (let ((w 0) (p (line-beginning-position)))
+          (while (< p (line-end-position))
+            (unless (get-text-property p 'emjupy-pad)
+              (setq w (+ w (char-width (char-after p)))))
+            (setq p (1+ p)))
+          (push w widths))
+        (forward-line 1)))
+    (nreverse widths)))
+
+(ert-deftest emjupy-test-wide-output-stays-inside-the-box ()
+  "No line of any output is drawn wider than the cell.
+
+Nothing in the output decides how wide it is drawn: a progress bar sized
+to a wide terminal ran far past the right-hand edge, and so would a long
+log line or a wide table.  Breaking lines where the box ends is done for
+every output type, not for progress bars."
+  (dolist (type '("stream" "execute_result" "error"))
+    (let* ((long (concat (make-string 190 ?\u2588) " and some text after"))
+           (out (let ((o (make-hash-table :test 'equal)))
+                  (puthash "output_type" type o)
+                  (pcase type
+                    ("stream" (puthash "name" "stderr" o) (puthash "text" (concat long "\n") o))
+                    ("execute_result"
+                     (let ((d (make-hash-table :test 'equal)))
+                       (puthash "text/plain" long d) (puthash "data" d o)))
+                    ("error" (puthash "ename" "E" o) (puthash "evalue" "v" o)
+                     (puthash "traceback" (vector long) o)))
+                  o))
+           (cell (emjupy-test--cell-like 'code "x" (vector out))))
+      (emjupy-test--with-notebook (vector cell) buf nb
+        (with-current-buffer buf
+          (let ((width (emjupy--box-width))
+                (widths (emjupy-test--drawn-widths cell)))
+            (should (<= (apply #'max widths) width))
+            ;; broken, not cut: every character is still drawn
+            (should (> (length widths) 2))))))))
+
+(ert-deftest emjupy-test-folding-leaves-the-output-alone ()
+  "Folding changes the drawing, never what is saved."
+  (let* ((text (concat (make-string 300 ?x) "\n"))
+         (out (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
+                (puthash "text" text o) o))
+         (cell (emjupy-test--cell-like 'code "x" (vector out))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        ;; the stored output is exactly what arrived
+        (should (equal (gethash "text" (aref (emjupy-cell-outputs cell) 0)) text))
+        ;; and each break the drawing added is marked as one
+        (let ((ov (emjupy-cell-output-ov cell)) (marked 0))
+          (save-excursion
+            (goto-char (overlay-start ov))
+            (while (search-forward "\n" (overlay-end ov) t)
+              (when (get-text-property (1- (point)) 'emjupy-fold)
+                (setq marked (1+ marked)))))
+          (should (> marked 0)))))))
+
+(ert-deftest emjupy-test-folding-never-splits-a-wide-character ()
+  "A double-width character at the edge moves to the next line whole."
+  (with-temp-buffer
+    (insert (concat (make-string 9 ?a) "\u4e2d\u4e2d\u4e2d"))  ; 9 + 3x2 columns
+    (emjupy--fold-output-lines (point-min) (point-max) 10)
+    (dolist (line (split-string (buffer-string) "\n"))
+      (should (<= (string-width line) 10)))
+    ;; nothing lost
+    (should (equal (replace-regexp-in-string "\n" "" (buffer-string))
+                   (concat (make-string 9 ?a) "\u4e2d\u4e2d\u4e2d")))))
+
+(ert-deftest emjupy-test-request-is-bytes-with-a-multibyte-cookie ()
+  "A request carrying non-ASCII output is sent as bytes throughout.
+
+url.el joins the request line, headers and body and refuses the result
+if it is multibyte.  An XSRF cookie read from a response with
+`match-string\=' is ASCII but multibyte, and with any character outside
+ASCII in the body -- a progress bar drawn in U+2588 -- the notebook could
+not be saved: \"Multibyte text in HTTP request\"."
+  (let* ((server (make-emjupy-server :base-url "127.0.0.1:9" :token ""))
+         (seen nil))
+    (setf (emjupy-server-xsrf server) (string-to-multibyte "2|abc|def|123"))
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (url &rest _)
+                 (setq seen (list url url-request-extra-headers url-request-data))
+                 nil)))
+      (ignore (condition-case nil
+                  (emjupy--http-request "PUT" server "/api/contents/x.ipynb"
+                                        (json-serialize (list :text "100%|\u2588\u2588|")))
+                (emjupy-http-error nil))))
+    (pcase-let ((`(,url ,headers ,data) seen))
+      (should-not (multibyte-string-p url))
+      (dolist (h headers)
+        (should-not (multibyte-string-p (car h)))
+        (should-not (multibyte-string-p (cdr h))))
+      (should-not (multibyte-string-p data))
+      ;; the join url.el makes is bytes, which is what it requires
+      (should-not (multibyte-string-p
+                   (apply #'concat url data (mapcar #'cdr headers)))))))
+
+(ert-deftest emjupy-test-kernel-is-told-the-width ()
+  "The kernel\'s COLUMNS is set to the width of the box."
+  (let ((sent nil)
+        (cell (emjupy-test--cell-like 'code "x")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+        (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--kernel-eval)
+                   (lambda (_k code _cb) (setq sent code))))
+          (emjupy--tell-kernel-width nb)
+          (should (string-match-p (format "COLUMNS.*%d" (emjupy--box-width)) sent))
+          (emjupy--tell-kernel-width nb 42)
+          (should (string-match-p "COLUMNS.*42" sent)))))))
+
+(ert-deftest emjupy-test-local-server-paths-are-left-local ()
+  "A definition from a language server on THIS machine stays a local path.
+
+The fallback server reads this machine\'s files, so its paths are this
+machine\'s.  Sending them to the kernel\'s host would point at files
+that may not be there."
+  (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
+                                     :root "/home/me/project"))
+         (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
+                                   :kernel-cwd "/home/me/project"))
+         (emjupy-remote-root "/ssh:box:/home/me/project")
+         (item (xref-make "def f" (xref-make-file-location
+                                   "/usr/lib/python3.13/glob.py" 5 0))))
+    (cl-letf (((symbol-function 'emjupy--answer-is-from-the-kernels-machine-p)
+               (lambda (_) nil)))
+      (should (equal (xref-location-group
+                      (xref-item-location (emjupy--xref-on-the-right-machine nb item)))
+                     "/usr/lib/python3.13/glob.py")))))
+
+(ert-deftest emjupy-test-width-told-once-per-width ()
+  "The kernel is told the width before a run, once for each width it has.
+
+Sent ahead of the execute request, on the channel the kernel handles in
+order, so the cell runs with it set -- not from a timer after connecting,
+which lost the race to a cell run straight away."
+  (let ((sent 0) (width 80)
+        (cell (emjupy-test--cell-like 'code "x")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+        (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--box-width) (lambda () width))
+                  ((symbol-function 'emjupy--kernel-eval)
+                   (lambda (&rest _) (setq sent (1+ sent)))))
+          (emjupy--ensure-kernel-width nb)
+          (emjupy--ensure-kernel-width nb)
+          (should (= sent 1))               ; the same width is not sent twice
+          (setq width 60)
+          (emjupy--ensure-kernel-width nb)
+          (should (= sent 2)))))))          ; a new one is
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

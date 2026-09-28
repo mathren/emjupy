@@ -411,6 +411,11 @@ kernels never cross-talk."
              (msg-id (car req))
              (json-payload (cdr req)))
 
+        ;; The kernel handles requests in order, so telling it the width
+        ;; first -- if it has not been told this one -- means the cell
+        ;; runs with it set.  Sent from a timer on connect alone, it lost
+        ;; the race to a cell run straight after opening a notebook.
+        (emjupy--ensure-kernel-width emjupy--buffer-notebook)
         (puthash msg-id cell (emjupy-kernel-pending kernel))
         (emjupy--ws-send json-payload kernel)
         ;; Show that it is running.  Long cells otherwise look identical to
@@ -466,6 +471,39 @@ stepping over overlays mid-flight lands in the output box."
 Run a moment after the connection, when the socket is up.  Layers above
 this one hang their start-up work here -- asking the kernel where it
 runs, for instance -- rather than this file calling into them.")
+
+(defvar-local emjupy--kernel-width-told nil
+  "The kernel and width last sent to it, as (KERNEL-ID . WIDTH).")
+
+(defun emjupy--tell-kernel-width (nb &optional width)
+  "Tell NB\='s kernel how wide its output is drawn: WIDTH, or the box\='s now.
+
+Sets COLUMNS in the kernel\='s environment, the variable programs consult
+to learn how wide the terminal is -- directly, or through
+`shutil.get_terminal_size\=' -- when their output is not a terminal.
+Without it they guess, and a guess sized to the machine the server runs
+on drew progress bars and tables far wider than the cell.  Output that
+still comes out too wide is folded where the box ends when it is drawn;
+this is what lets well-behaved output not need that."
+  (let ((kernel (and nb (emjupy-notebook-kernel nb)))
+        (buf (and nb (emjupy-notebook-buffer nb))))
+    (when (and kernel (emjupy--ws-live-p kernel) (buffer-live-p buf))
+      (with-current-buffer buf
+        (let ((columns (or width (emjupy--box-width))))
+          (emjupy--kernel-eval
+           kernel
+           (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
+                   columns)
+           #'ignore)
+          (setq emjupy--kernel-width-told (cons (emjupy-kernel-id kernel) columns)))))))
+
+(defun emjupy--ensure-kernel-width (nb)
+  "Tell NB\='s kernel the box width, unless it already has this one."
+  (let ((kernel (and nb (emjupy-notebook-kernel nb))))
+    (when kernel
+      (unless (equal emjupy--kernel-width-told
+                     (cons (emjupy-kernel-id kernel) (emjupy--box-width)))
+        (emjupy--tell-kernel-width nb)))))
 
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.

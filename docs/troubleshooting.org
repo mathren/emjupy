@@ -38,3 +38,25 @@ a bug worth reporting with the report attached; if they are
 =redisplay_internal= or image scaling, the notebook is asking Emacs to
 draw more than it comfortably can, and clearing some output
 (=emjupy-clear-all-outputs=) will confirm it in seconds.
+
+* =M-.= finds the standard library but not my own modules
+
+The language server answering is on this machine, not beside the
+kernel, so it cannot see the files the kernel can.  =M-x
+emjupy-lsp-diagnose= will say "a local process".  Install =jupyter-lsp=
+and a language server in the environment running =jupyter server=:
+
+#+begin_src bash
+pip install jupyter-lsp 'python-lsp-server[all]'
+#+end_src
+
+and restart the server.  "What =M-.= needs" in [[file:language-server.org][Language server
+support]] has the details.
+
+* A notebook will not save: "Multibyte text in HTTP request"
+
+Fixed after 0.1.2.  Output containing any character outside ASCII -- a
+=tqdm= bar is drawn in =█= -- could not be saved from a session holding
+an XSRF cookie, because the cookie was held as a multibyte string and
+url.el refuses a request that becomes one.
+

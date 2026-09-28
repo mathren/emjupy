@@ -764,6 +764,18 @@ file on the other machine wearing a local name."
          (string-prefix-p (file-name-as-directory root) file)
          (not (file-exists-p file)))))
 
+(defun emjupy--answer-is-from-the-kernels-machine-p (nb)
+  "Non-nil if NB\='s language server is the one beside its kernel.
+
+That is the WebSocket server, which runs where the kernel runs.  Anything
+else attached to the shadow buffer is a server started on this machine,
+answering about this machine\'s files."
+  (let ((sb (emjupy-notebook-shadow-buffer nb)))
+    (and (buffer-live-p sb)
+         (with-current-buffer sb
+           (let ((server (eglot-current-server)))
+             (and server (object-of-class-p server 'emjupy-eglot-server)))))))
+
 (defun emjupy--xref-on-the-right-machine (nb item)
   "Return ITEM with its file named on the machine of NB\='s kernel.
 
@@ -778,7 +790,13 @@ built; left alone when the kernel is local, when it already is remote,
 or when there is nothing to build a name from, since a wrong remote
 name is worse than a local one."
   (let* ((loc (xref-item-location item))
-         (file (and (xref-file-location-p loc) (xref-location-group loc)))
+         ;; Only an answer from the server beside the kernel names the
+         ;; kernel's files.  The local fallback names files on THIS machine,
+         ;; and sending its paths to the remote host would point at files
+         ;; that may not be there.
+         (file (and (emjupy--answer-is-from-the-kernels-machine-p nb)
+                    (xref-file-location-p loc)
+                    (xref-location-group loc)))
          (remote (and file
                       (not (file-remote-p file))
                       (emjupy--remote-name-for nb file))))

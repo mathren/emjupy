@@ -108,7 +108,7 @@ Only the headers matter."
                         (goto-char (point-min))
                         (when (re-search-forward
                                "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
-                          (setq found (match-string 1))))
+                          (setq found (emjupy--http-bytes (match-string-no-properties 1)))))
                       (kill-buffer buffer)))
                 (file-error nil)))
     (when found (setf (emjupy-server-xsrf server) found))
@@ -193,6 +193,26 @@ being talked to, not the credential that authenticated it."
                    (concat "\\([?&]" (regexp-quote key) "=\\)[^&]*")
                    "\\1<redacted>" out t))))))
 
+(defun emjupy--http-bytes (string)
+  "Return STRING as UTF-8 bytes: a unibyte string, unchanged if ASCII.
+
+url.el joins the request line, the headers and the body into one string
+and refuses it if the result is multibyte.  The body is encoded to bytes
+already, but a URL or header value that is merely MULTIBYTE -- plain
+ASCII held in a multibyte string, as `match-string\=' returns from a
+response buffer and the minibuffer returns for a typed token -- turns
+the whole request multibyte as soon as the body holds anything outside
+ASCII.  Any output with such a character then made the notebook
+impossible to save: \"Multibyte text in HTTP request\"."
+  (if (multibyte-string-p string)
+      (encode-coding-string string 'utf-8)
+    string))
+
+(defun emjupy--http-bytes-alist (alist)
+  "Return the header ALIST with every name and value as UTF-8 bytes."
+  (mapcar (lambda (h) (cons (emjupy--http-bytes (car h)) (emjupy--http-bytes (cdr h))))
+          alist))
+
 (defun emjupy--http-request (method server path &optional body callback retrying)
   "Send a request to SERVER and return the parsed JSON response.
 METHOD is an HTTP method string, PATH the API path, BODY an optional
@@ -220,7 +240,8 @@ cookie."
          (url-cookie-secure-storage nil)
          (token (emjupy-server-token server))
          (url-request-extra-headers
-          (append `(("Content-Type" . "application/json"))
+          (emjupy--http-bytes-alist
+           (append `(("Content-Type" . "application/json"))
                   (when (and token (not (string-empty-p token)))
                     `(("Authorization" . ,(format "token %s" token))))
                   ;; Automatically inject XSRF tokens to bypass Jupyter 403 CSRF blocks.
@@ -228,7 +249,7 @@ cookie."
                   ;; (a second tunnel, say) would just earn a 403.
                   (when (emjupy-server-xsrf server)
                     `(("X-XSRFToken" . ,(emjupy-server-xsrf server))
-                      ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server)))))))
+                      ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server))))))))
          (base-url (emjupy-server-base-url server))
          ;; Tornado's check reads an `_xsrf' ARGUMENT or the X-XSRFToken
          ;; header -- "'_xsrf' argument missing from POST" is what it says
@@ -244,8 +265,9 @@ cookie."
                            (format (if (string-match-p "\\?" path) "&_t=%s" "?_t=%s")
                                    (float-time))
                          ""))
-         (full-url (concat (if (string-prefix-p "http" base-url) "" "http://")
-                           base-url path xsrf-arg cache-buster)))
+         (full-url (emjupy--http-bytes
+                   (concat (if (string-prefix-p "http" base-url) "" "http://")
+                           base-url path xsrf-arg cache-buster))))
 
     (if callback
         (url-retrieve full-url callback)

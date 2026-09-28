@@ -148,10 +148,24 @@ that finishes faster than that produces exactly two frames: the opening
 one, at 0%% with the bar area blank, and the closing one at 100%%.
 Nothing was lost -- nothing else was ever sent.
 
-Text written by something else while a bar is on screen lands on the
-bar's line, because the bar line has no newline of its own until the bar
-closes.  A warning raised mid-loop therefore appears appended to the
-frame that was current, which is what a terminal shows too.
+Each stream keeps a line of its own: a bar on stderr is redrawn in
+place while a =print= in the same loop, on stdout, goes to its own
+lines.  The bar shows once, in its latest state, with the printed lines
+together below it.
+
+* Wide output
+
+No line of output is drawn wider than the cell.  The kernel is told the
+cell's width in =COLUMNS= when it attaches, before a cell runs if the
+width has changed, and when the window is resized -- which is how
+=tqdm=, and anything using =shutil.get_terminal_size=, learn how wide to
+draw when their output is not a terminal.
+
+Output that is wider anyway -- a long log line, a wide table, a program
+that ignores =COLUMNS= -- is broken where the cell ends.  Only the
+drawing changes: the cell keeps its output as the kernel sent it, so a
+saved notebook holds the original lines.  A resize redraws the cells
+whose lines were broken, at the new width.
 
 * ANSI colour in output
 

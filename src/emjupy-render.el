@@ -407,6 +407,9 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
 (defvar-local emjupy--last-box-width nil
   "Width the visible box rules were last drawn at.")
 
+(defvar emjupy-box-width-changed-functions nil
+  "Functions called with a notebook and its new box width, when it changes.")
+
 (defun emjupy--refresh-box-rules (&optional force)
   "Redraw cell outlines at the current window width, if it changed.
 With FORCE non-nil, redraw even when the width is unchanged.
@@ -419,7 +422,13 @@ markers and the undo history are all untouched."
   (let ((width (emjupy--box-width)))
     (when (and emjupy--buffer-notebook
                (or force (not (eql width emjupy--last-box-width))))
-      (setq emjupy--last-box-width width)
+      (let ((changed (not (eql width emjupy--last-box-width))))
+        (setq emjupy--last-box-width width)
+        ;; Layers above this one -- the kernel, told how wide to draw --
+        ;; hear about it here, since this one cannot name them.
+        (when changed
+          (run-hook-with-args 'emjupy-box-width-changed-functions
+                              emjupy--buffer-notebook width)))
       (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
                do (let ((ov (emjupy-cell-overlay cell))
                         (out (emjupy-cell-output-ov cell)))
@@ -909,6 +918,43 @@ does something."
      glyph)
     (concat glyph rest)))
 
+(defun emjupy--fold-output-lines (start end width)
+  "Break every line between START and END wider than WIDTH columns.
+
+Returns (NEW-END . WIDEST), WIDEST being the widest line as it was
+before breaking.  Nothing in the output decides how wide it is drawn: a
+progress bar sized to a wide terminal, a long log line or a wide table
+ran past the cell's right-hand edge.  Breaking the lines where the box
+ends keeps every kind of output inside it.
+
+Only the drawing changes.  The cell's outputs keep the text as the
+kernel sent it, so saving writes it back unchanged.  Each break is
+marked with `emjupy-fold', so it can be told from a line the output
+really had."
+  (let ((end (copy-marker end))
+        (widest 0))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (let ((bol (point)))
+          (end-of-line)
+          (let ((eol (min (point) end)))
+            (setq widest (max widest (string-width
+                                      (buffer-substring-no-properties bol eol))))
+            (goto-char bol)
+            ;; step through the line WIDTH columns at a time
+            (while (progn (move-to-column width)
+                          (and (< (point) eol) (< (point) end)))
+              ;; never split a character that straddles the edge
+              (when (> (current-column) width) (backward-char))
+              (if (bolp)
+                  (goto-char eol)       ; one character wider than the box
+                (insert (propertize "\n" 'emjupy-fold t))
+                (setq eol (save-excursion (end-of-line) (min (point) end)))))
+            (goto-char eol)
+            (forward-line 1)))))
+    (cons (prog1 (marker-position end) (set-marker end nil)) widest)))
+
 (defun emjupy--render-cell-output (cell)
   "Insert CELL\='s output box at point and give it its overlay.
 
@@ -919,7 +965,9 @@ and restarted fontification from scratch each time."
   (let* ((outputs (emjupy-cell-outputs cell))
          (has-outputs (and outputs (> (length outputs) 0))))
     (when has-outputs
-      (let ((out-start (point)))
+      (let ((out-start (point))
+            ;; widest line as the kernel sent it, before folding
+            (widest 0))
         (cl-loop for out in (emjupy--outputs-for-render outputs)
                  do (let ((out-type (gethash "output_type" out))
                           (piece-start (point)))
@@ -945,6 +993,11 @@ and restarted fontification from scratch each time."
                                      do (insert (emjupy--ansi-render
                                                  (emjupy--mime-text line))
                                                 "\n"))))))
+                      ;; Keep the piece inside the box, whatever kind of output it is.
+                      (let ((folded (emjupy--fold-output-lines
+                                     piece-start (point) (emjupy--box-width))))
+                        (goto-char (car folded))
+                        (setq widest (max widest (cdr folded))))
                       ;; Paint this piece, not the whole box: one cell can
                       ;; hold a figure, a warning and a traceback at once, and
                       ;; each should read as what it is.  A text property
@@ -973,6 +1026,12 @@ and restarted fontification from scratch each time."
                (header (emjupy--rule (emjupy--cell-out-label cell) "├"))
                (footer (emjupy--rule nil)))
           (overlay-put ov 'emjupy-overlay 'output)
+          ;; What a resize needs to know: at what width the lines were
+          ;; folded, and how wide the widest was before.  Output whose widest
+          ;; line fits both the old and the new width looks the same at
+          ;; either, and is not redrawn.
+          (overlay-put ov 'emjupy-fold-width (emjupy--box-width))
+          (overlay-put ov 'emjupy-widest widest)
           (overlay-put ov 'before-string header)
           (overlay-put ov 'after-string footer)
           ;; No face on the overlay: each output piece paints itself, so a
@@ -1286,9 +1345,21 @@ one character beyond the right-hand rule."
       (forward-line 1))))
 
 (defun emjupy--repad-output (cell)
-  "Re-align CELL's output padding after the window width changed."
+  "Re-align CELL's output padding after the window width changed.
+
+Output folded to the old width is drawn again for the new one -- but
+only if it has a line wider than the narrower of the two, since
+anything else looks the same at either and redrawing it would cost a
+cell's worth of work for nothing."
   (let ((ov (emjupy-cell-output-ov cell))
         (width (emjupy--box-width)))
+    (when (and (overlayp ov)
+               (let ((folded-at (overlay-get ov 'emjupy-fold-width))
+                     (widest (or (overlay-get ov 'emjupy-widest) 0)))
+                 (and folded-at (/= folded-at width)
+                      (> widest (min folded-at width)))))
+      (emjupy--refresh-cell-output cell)
+      (setq ov nil))
     (when (overlayp ov)
       ;; Walk the pad markers, not the characters.  There is one pad per
       ;; output LINE and there can be tens of thousands of characters -- an

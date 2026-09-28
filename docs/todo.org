@@ -16,12 +16,12 @@
   connection at our end does not stop it.  In use, the same order --
   a frame in flight as a notebook closes -- would show the message once.
   Harmless, but it should not happen.
-- [ ] saving notebooks broken in presence of a tqdm-drawn bar in the output
-- [ ] tqdm bar should respect the maximum length of the cell border
-- [ ] the last two fixes should not be tqdm specific, but apply to
+- [X] saving notebooks broken in presence of a tqdm-drawn bar in the output
+- [X] tqdm bar should respect the maximum length of the cell border
+- [X] the last two fixes should not be tqdm specific, but apply to
   every output possible of a cell
-- [ ] =M-.= does not work without the remote LSP. This should be
-  confirmed and documented clearly if true
+- [X] =M-.= does not work without the remote LSP: confirmed for your own
+  modules, and documented in language-server.org
 
 ** Melpa cleanup
 - [X] melpazoid check succeeds

@@ -102,26 +102,46 @@ emjupy adds a backend that forwards there and maps the answer back.
 
 Because the shadow buffer holds every cell at once, a jump crosses
 cells: =M-.= on a call in one cell lands on the definition in another.
-Locations pointing anywhere else, into a library say, are left alone,
-because the real file is the right destination there.
+
+* What =M-.= needs
+
+The language server that answers decides what can be found, because it
+can only read the files on the machine it runs on.
+
+| Language server             | Your own modules | Standard library and packages        |
+|-----------------------------+------------------+--------------------------------------|
+| beside the kernel (remote)  | found            | found -- the kernel's own            |
+| on this machine (fallback)  | *not found*      | found -- but THIS machine's, not the kernel's |
+
+So for a notebook whose kernel runs elsewhere, =M-.= into your own code
+needs =jupyter-lsp= and a language server installed *where the kernel
+runs* -- see [[*Requirements][Requirements]].  Without them emjupy falls back to a
+language server on this machine and says so when it starts; the
+standard library still resolves, but to this machine's copy, which can
+be a different Python.  For a kernel on this machine the two are the
+same machine, and either works.
+
+=M-x emjupy-lsp-diagnose= says which server a notebook is using: "over
+the Jupyter WebSocket" is the one beside the kernel, "a local process"
+is the fallback.
 
 * Jumping into modules beside a remote notebook
 
-\[xref-find-definitions] on a function from one of your own modules
-opens that module, even when it lives on another machine.  The language
-server runs beside the kernel and answers with a path on *its*
-filesystem, so emjupy fetches the file through the Contents API -- the
-same connection the notebook came down -- and shows it read-only, with a
-header line saying where it came from.
+A definition the server beside the kernel reports is a path on the
+kernel's machine, and emjupy opens it there, over TRAMP.  The host comes
+from =emjupy-remote-root= if it names one, and otherwise from the SSH
+tunnel the server is reached through -- found by reading the =ssh=
+process on this machine, so nothing needs configuring when the server
+is behind =ssh -L=.  Every path is sent there, the standard library's
+included: the kernel's Python is what the code runs against.
 
-No TRAMP, no mirror, nothing configured.  Read-only because it is a copy
-fetched over HTTP: reading it is a different job from writing it back.
+When there is no way to reach that machine -- no tunnel to read, nothing
+configured -- emjupy says which file it could not open and that
+=emjupy-remote-root= is what would reach it, rather than opening a file
+of the same name on this machine.
 
-=M-x emjupy-lsp-diagnose= says which transport a notebook is actually
-using and how far it got -- whether the socket opened, whether the
-handshake finished, whether anything has answered -- since from the
-outside a server that is never reached looks exactly like one with
-nothing to say.
+Paths from the fallback server are left as they are: they name this
+machine's files.
 
 * Eglot is part of the package
 

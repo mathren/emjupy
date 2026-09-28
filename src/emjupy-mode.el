@@ -303,6 +303,9 @@ place to keep up to date, and would be wrong the moment the mode changed
   ;; should not add hooks just by being loaded.  `add-hook\=' does nothing
   ;; if it is already there.
   (add-hook 'emjupy-kernel-connected-functions #'emjupy--refresh-kernel-cwd)
+  ;; and how wide to draw, now and whenever the window changes
+  (add-hook 'emjupy-kernel-connected-functions #'emjupy--tell-kernel-width)
+  (add-hook 'emjupy-box-width-changed-functions #'emjupy--tell-kernel-width)
   ;; Cells hold code, so the editing conveniences a programming mode would
   ;; give apply here too.  emjupy-mode derives from `fundamental-mode', which
   ;; brings none of them, and nothing about the buffer suggests to the user
