@@ -2,7 +2,9 @@ name: test_emjupy
 channels:
   - defaults
 dependencies:
-  - jupyter
   - matplotlib
   - numpy
   - tqdm
+  - jupyter
+  - jupyter-lsp
+  - python-lsp-server
