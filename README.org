@@ -71,11 +71,12 @@ To test this in an isolated environment without touching your current config:
    where =-Q= ignores your setup of emacs, =-L .= installs *locally* the
    requirements (to not clutter your emacs installation).
 
-4. Follow the prompt in the minibuffer (bottom) area. The
-   token/password is =abc= provided in 1., only asked if the server
-   actually needs one. =emjupy= adopts the kernel already running behind
-   that port and shows you the notebook list; picking one drops you
-   straight into the live REPL (see screenshots above).
+4. Run =M-x emjupy-login= and follow the prompt in the minibuffer
+   (bottom) area. The token/password is =abc= provided at step 1, only
+   asked if the server actually needs one. =emjupy= adopts the kernel
+   already running behind that port and shows you the notebook list;
+   picking one drops you straight into the live REPL (see screenshots
+   above).
 
 * Installation
 

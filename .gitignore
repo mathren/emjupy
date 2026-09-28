@@ -25,3 +25,6 @@ __pycache__/*
 
 # Written by `make coverage`
 /coverage/
+
+# shadow files
+.emjupy*
