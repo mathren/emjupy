@@ -2,6 +2,7 @@ name: test_emjupy
 channels:
   - defaults
 dependencies:
-  - jupyter=1.0.0
-  - matplotlib=3.10.0
+  - jupyter
+  - matplotlib
   - numpy
+  - tqdm
