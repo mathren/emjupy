@@ -6778,5 +6778,26 @@ Forgetting the request on idle alone would drop the execution count."
   (pcase-let ((`(,_cell ,kernel ,id) (emjupy-test--feed-in-order '(idle))))
     (should (gethash id (emjupy-kernel-pending kernel)))))
 
+(ert-deftest emjupy-test-different-pictures-are-both-drawn ()
+  "Two figures whose bytes differ are two pictures, and both are drawn.
+
+A kernel can send the same figure twice with different bytes -- a
+different DPI or format setting for one of the two renders -- and
+nothing in the payload says they are the same.  Deduplication is by
+content, so those are kept, as two distinct figures must be."
+  (cl-flet ((png (b64) (let ((o (make-hash-table :test 'equal))
+                             (d (make-hash-table :test 'equal)))
+                         (puthash "output_type" "display_data" o)
+                         (puthash "image/png" b64 d)
+                         (puthash "data" d o)
+                         o)))
+    (let ((emjupy-deduplicate-image-outputs t))
+      ;; different bytes: both drawn
+      (should (= 2 (length (emjupy--outputs-for-render
+                            (vector (png "iVBORw0KGgoAAA=") (png "iVBORw0KGgoBBB="))))))
+      ;; the same bytes: one
+      (should (= 1 (length (emjupy--outputs-for-render
+                            (vector (png "iVBORw0KGgoAAA=") (png "iVBORw0KGgoAAA=")))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

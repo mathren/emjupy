@@ -455,10 +455,20 @@ just silently returned nothing for every notebook after the first."
             (ignore-errors (kill-buffer (emjupy-notebook-shadow-buffer n)))))))))
 
 (ert-deftest emjupy-int-duplicate-figure-renders-once ()
-  "A cell ending in a bare figure gets the SAME png twice from the
-kernel -- once as the execute_result repr, once as the inline
-backend's display_data. Both must be kept in the cell's outputs (so
-the saved .ipynb matches what the kernel sent) but drawn only once."
+  "A figure the kernel sends twice is kept twice but drawn once.
+
+A cell ending in a bare figure can get it both as the execute_result
+repr and as the inline backend's display_data.  Both are kept in the
+cell's outputs, so the saved .ipynb matches what the kernel sent, and
+each distinct picture is drawn once.
+
+The rule tested is emjupy's, not the kernel's: whether the two copies
+are byte-identical depends on matplotlib, matplotlib-inline and the
+user's IPython configuration.  An earlier version asserted that they
+were, and so failed wherever they were not -- when two different
+pictures correctly draw as two.  Now the payloads are compared first, a
+run with no real duplicate is skipped as having nothing to test, and
+what is asserted is that every distinct picture appears exactly once."
   (emjupy-int--with-live-kernel
    (let* ((cell (emjupy-int--run
                  (concat "%matplotlib inline\n"
@@ -467,24 +477,20 @@ the saved .ipynb matches what the kernel sent) but drawn only once."
                          "ax.plot([1,2,3])\n"
                          "fig")
                  120))
-          (with-png (cl-remove-if-not
-                     (lambda (o) (and (gethash "data" o)
-                                      (gethash "image/png" (gethash "data" o))))
-                     (append (emjupy-cell-outputs cell) nil))))
-     ;; The kernel really does send it twice -- if it ever stops, this test
-     ;; is no longer exercising anything and should be revisited.
-     (unless (> (length with-png) 1)
-       (ert-skip "Kernel did not emit a duplicate figure; nothing to deduplicate"))
-     ;; identical payloads
-     (should (equal (gethash "image/png" (gethash "data" (nth 0 with-png)))
-                    (gethash "image/png" (gethash "data" (nth 1 with-png)))))
-     ;; raw outputs keep both ...
-     (should (> (length (emjupy-cell-outputs cell)) 1))
-     ;; ... the render collapses them to one
-     (should (= 1 (length (cl-remove-if-not
-                           #'emjupy--output-image-key
-                           (emjupy--outputs-for-render (emjupy-cell-outputs cell))))))
-     ;; and on a graphical Emacs exactly one image is actually inserted
+          (outputs (emjupy-cell-outputs cell))
+          (keys (delq nil (mapcar #'emjupy--output-image-key (append outputs nil))))
+          (distinct (delete-dups (copy-sequence keys))))
+     (unless (< (length distinct) (length keys))
+       (ert-skip (format "No repeated picture to deduplicate: %d image output(s), %d distinct"
+                         (length keys) (length distinct))))
+     ;; the render draws each distinct picture exactly once ...
+     (let ((rendered (delq nil (mapcar #'emjupy--output-image-key
+                                       (emjupy--outputs-for-render outputs)))))
+       (should (equal (sort (mapcar #'cdr rendered) #'string<)
+                      (sort (mapcar #'cdr distinct) #'string<)))
+       ;; ... while the cell's outputs keep every copy the kernel sent
+       (should (> (length keys) (length rendered))))
+     ;; and on a graphical Emacs that many images are actually inserted
      (when (emjupy--image-displayable-p 'png)
        (with-current-buffer emjupy-int--buffer
          (let* ((ov (emjupy-cell-output-ov cell))
@@ -494,7 +500,7 @@ the saved .ipynb matches what the kernel sent) but drawn only once."
                     do (when (and (consp d) (eq (car d) 'image) (not (eq d prev)))
                          (setq n (1+ n)))
                        (setq prev d))
-           (should (= n 1))))))))
+           (should (= n (length distinct)))))))))
 
 ;;; --------------------------------------------------------------------
 ;;; 6. Several notebooks, and several servers, at once
