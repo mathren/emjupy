@@ -31,3 +31,4 @@ test_notebook/.ipynb_checkpoints/*
 
 # shadow files
 .emjupy*
+test_notebook/.emjupy*
