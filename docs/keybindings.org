@@ -13,7 +13,6 @@
 | =C-c C-b=     | =emjupy-insert-cell-below=          | Insert a new code cell below the current one                       |
 | =C-c C-k=     | =emjupy-delete-cell=                | Delete the cell at point                                           |
 | =C-c C-l=     | =emjupy-clear-cell-output=          | Discard this cell's output                                         |
-| =C-c C-o=     |                                   | hide or show this cell's output (show also actionable with mouse)  |
 | =C-c C-u C-l= | =emjupy-clear-all-outputs=          | Discard every cell's output (asks first)                           |
 | =C-c C-s=     | =emjupy-split-cell=                 | Split the cell at point in two (clears both outputs)               |
 | =C-c C-j=     | =emjupy-join-cell-above=            | Merge this cell into the one above (clears both outputs)           |
@@ -34,7 +33,7 @@
 | =C-x C-s=     | =emjupy-save-notebook=              | Write the notebook back to the server as nbformat v4               |
 | =C-c C-z=     | =emjupy-interrupt-kernel=           | Interrupt the running cell; the kernel and its state survive       |
 | =C-c M-z=     | =emjupy-connect-kernel-interactive= | Pick a running kernel or spawn one, for this notebook only         |
-| =C-c C-o=     | =emjupy-toggle-cell-output=         | Hide or show this cell's output; nothing is discarded              |
+| =C-c C-o=     | =emjupy-toggle-cell-output=         | Hide or show this cell's output; nothing is discarded (also by clicking the marker) |
 | =C-$=         | =emjupy-show-traceback=             | Show the last traceback in its own buffer                          |
 | =C-c C-v=     | =emjupy-menu=                       | A menu of every command, grouped by what it is for                 |
 | =TAB=         | =emjupy-indent-or-cycle=            | Indent as Python does; repeated, cycle through indentations        |
@@ -47,9 +46,11 @@
 | =C-c C-x C-e= | =emjupy-export-py=                  | Export the notebook as a plain .py file                            |
 | =C-c C-x C-l= | =emjupy-re-render=                  | Redraw the notebook from the cells                                 |
 
-Each command has exactly one binding, so =C-h m= is a list of what emjupy
-does rather than a wall of synonyms.  The one exception is Shift-RET,
-registered in both spellings because terminals disagree about which they
+Each command has one binding, so =C-h m= is a list of what emjupy does
+rather than a wall of synonyms.  Two exceptions: running a cell in
+place is on =S-<return>= and also =C-c C-e=, because many terminals
+cannot send Shift-RET at all; and =DEL= is registered under both of its
+spellings, since keyboards and terminals disagree about which they
 send.
 
 * =emjupy-shadow-edit-mode= (the =C-c '= buffer)
@@ -60,8 +61,11 @@ send.
 | =C-c '=   | =emjupy-commit-shadow-edit= | Same as =C-c C-c=                                     |
 | =C-c C-k= | =emjupy-abort-shadow-edit=  | Discard edits and return to the notebook            |
 
-Note that =C-c C-k= means /delete cell/ in the notebook but /abort edit/ in
-the shadow buffer, while =C-c C-c= and =C-c '= behave the same in both.
+The same keys mean different things in the two buffers: =C-c C-c= runs
+the cell in the notebook but commits the edit in the shadow buffer,
+=C-c C-k= deletes the cell in the notebook but discards the edit there,
+and =C-c '= opens the shadow buffer from the notebook and commits from
+it.
 
 * Unbound commands (=M-x= only)
 

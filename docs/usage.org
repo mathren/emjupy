@@ -44,11 +44,10 @@ vector like =["*"]= gives Jupyter's static marker instead.  The animation
 moves only overlay strings, never buffer text, so it cannot disturb what
 you are typing or land in the undo history.
 
-You can edit anywhere in the notebook while a cell runs.  Output
-arriving folds the buffer back into the cells before redrawing, so
-nothing typed in the meantime is lost -- earlier this silently reverted
-edits made while a long cell was working, which looked like the notebook
-scrambling itself.
+You can edit anywhere in the notebook while a cell runs.  Output is
+drawn into its own cell's box and nowhere else, so text typed in the
+meantime -- in that cell's source or any other -- is left as it is, and
+so is point.
 
 If the display ever does look wrong, =C-c C-x C-l= (=emjupy-re-render=)
 rebuilds it from the cells.  It keeps pending edits, and never touches
@@ -77,14 +76,35 @@ highlighting and the colours the kernel sent -- the output box squeezes
 a deep stack into a few lines, which is where tracebacks become
 unreadable.
 
-=M-.= on a function from one of your own modules needs the shadow file to
-sit beside that module: a language server resolves =import mylib=
-relative to the directory of the file it is reading.
+=M-.= on a function from one of your own modules needs the language
+server to read the notebook's code as if it sat in the notebook's own
+directory: a language server resolves =import mylib= relative to the
+file it is reading.
 
-emjupy puts it there by asking the kernel.  Kernels are started through
-a Jupyter /session/ bound to the notebook, which starts them in the
-notebook's own directory, so the kernel simply knows -- and for a kernel
-on this machine there is nothing to configure.
+emjupy asks the kernel where it runs -- kernels are started through a
+Jupyter /session/ bound to the notebook, which starts them in the
+notebook's directory -- and presents the code to the server as a file
+there.  Nothing needs configuring, for a kernel on this machine or
+another, provided the language server runs beside the kernel; see
+[[file:language-server.org][Language server support]].
+
+* Files emjupy writes
+
+For a notebook on this machine, emjupy keeps a hidden file beside it,
+named after the server and the notebook -- for =test.ipynb= on
+=localhost:8888=, =.emjupy_localhost_8888__test.ipynb.py=.  It is the
+notebook's code as one Python file, for the language server to read, and
+it is written once, when the notebook's language support starts.
+
+It is safe to delete, and is rebuilt the next time it is needed; add
+=.emjupy_*= to a project's =.gitignore=.  Nothing else is written there:
+no lock file, no auto-save file.  Set =emjupy-shadow-beside-notebook= to
+nil to keep it in a temporary directory instead, or
+=emjupy-shadow-directory= to choose one -- at the cost, without a
+language server beside the kernel, of =M-.= into your own modules.
+
+For a notebook whose kernel runs elsewhere the file goes to a temporary
+directory on this machine, and nothing is written on the remote.
 
 * Hiding output
 
@@ -123,17 +143,16 @@ it strips the outputs that make =.ipynb= diffs unreadable.
 * Output rendering
 
 Output is redrawn at most once per =emjupy-output-render-interval=
-seconds (0.15 by default), however many messages arrive.  Redrawing on
-each message is impractical: a progress bar sends one message per
-iteration, and each redraw of a notebook containing figures takes tens
-of milliseconds.
+seconds (0.15 by default), however many messages arrive, and only in the
+cell it belongs to.  Redrawing on each message is impractical: a
+progress bar sends one message per iteration, and a cell holding figures
+takes tens of milliseconds to draw.
 
 =M-x emjupy-flush-output= forces a pending redraw.
 
-Consecutive stream output on the same channel is merged into a single
-output, as in Jupyter, and carriage returns are collapsed as in a
-terminal.  A progress bar therefore occupies one output rather than one
-per update.
+Stream output continues the output it belongs to rather than starting a
+new one, as in Jupyter, so a cell that prints a thousand lines has one
+output, not a thousand.
 
 * Progress bars
 
@@ -145,7 +164,7 @@ latest state.
 What appears depends on what the program actually wrote, and =tqdm=
 writes a frame only every =mininterval= seconds, 0.1 by default.  A loop
 that finishes faster than that produces exactly two frames: the opening
-one, at 0%% with the bar area blank, and the closing one at 100%%.
+one, at 0% with the bar area blank, and the closing one at 100%.
 Nothing was lost -- nothing else was ever sent.
 
 Each stream keeps a line of its own: a bar on stderr is redrawn in
@@ -185,11 +204,10 @@ used in preference to the built-in approximation.
 * Copying between cells
 
 Text copied out of a cell carries its faces but none of emjupy's own
-properties.  That matters because one of them, =emjupy-cell=, holds the
-cell structure itself: killed text used to reference a whole cell --
-outputs, overlay and all -- as a snapshot that stopped being true as
-soon as the cell changed, and yanking it elsewhere left the pasted text
-claiming to belong to a cell it had nothing to do with.
+properties.  One of them, =emjupy-cell=, holds the cell itself --
+outputs, overlay and all -- and carried into the kill ring it would make
+text pasted elsewhere claim to belong to a cell it has nothing to do
+with.
 
 A kill whose region extends past the end of a cell is refused, but the
 text still reaches the kill ring: Emacs copies before deleting.  The
@@ -197,12 +215,9 @@ error is therefore accompanied by a usable =C-y=.
 
 * Relative paths in cells
 
-Because kernels are now started through a session, a cell's working
-directory is the notebook's own folder, as it is in Jupyter, so
-=open("data.csv")= finds the file next to the notebook.  Previously the
-kernel started in the server root, so the same code needed the path
-spelled out from there.  If a notebook has been written to expect the
-old behaviour, its relative paths will need adjusting.
+Kernels are started through a Jupyter session bound to the notebook, so
+a cell's working directory is the notebook's own folder, as it is in
+Jupyter: =open("data.csv")= finds the file next to the notebook.
 
 * Exporting to a plain =.py=
 
@@ -232,14 +247,13 @@ cells only -- so exporting it directly would silently drop your prose.
 
 =M-x emjupy-version= reports the version, where the code was loaded from
 and, in a checkout, the revision.  In a notebook buffer it also names
-the kernel's working directory and the shadow file, which together
-decide whether the language server can see your own modules:
+the kernel's working directory and which language server is answering:
 
 #+begin_src
-emjupy 0.1.0, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
-kernel cwd /home/you/project; shadow /ssh:box:/home/you/project/localhost_9999__nb.ipynb.py
+emjupy 0.1.2, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
+kernel cwd /home/you/project; language server beside the kernel
 #+end_src
 
-If the shadow path is under =/tmp= while the kernel cwd is elsewhere, the
-server is reading a local scratch file and =M-.= will not find your
-modules.
+"On this machine" instead means the fallback server is answering: for a
+kernel that runs elsewhere, =M-.= will not find your own modules.  See
+[[file:language-server.org][Language server support]].

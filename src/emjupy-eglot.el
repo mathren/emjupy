@@ -305,8 +305,7 @@ means nothing here, so it is used only when `emjupy-shadow-host\' says
 how to reach that machine."
   (or (emjupy--notebook-directory-from-kernel nb)
       (let* ((server (emjupy-notebook-server nb))
-             (root (and server (fboundp 'emjupy--remote-root-for)
-                        (emjupy--remote-root-for server)))
+             (root (and server (emjupy--remote-root-for server)))
              (path (emjupy-notebook-path nb)))
         (when (and root path)
           (let ((dir (file-name-directory
@@ -626,16 +625,23 @@ automatically, with nothing for the user to run."
           ;; Quietly: see the note in `emjupy--fontify-as'.
           (let ((python-indent-guess-indent-offset-verbose nil))
             (python-mode)))
-        ;; Saving must never stop to ask either.
-        (set-buffer-file-coding-system emjupy--shadow-coding t)
-        ;; No lock files.  Emacs creates and removes a `.#name' lock beside a
-        ;; visited file every time the buffer becomes modified, and when the
-        ;; file is remote that is remote I/O on the completion path: measured
-        ;; at 121 ms per edit against ssh on localhost, against 20 ms with
-        ;; locking off.  Locks guard against two people editing one file;
-        ;; this file is a generated scratch copy of the cells, and nobody
-        ;; else has any business in it.
+        ;; No lock files and no auto-save files.  This file is a generated
+        ;; copy of the cells, which nobody else edits and which is rebuilt
+        ;; from them anyway, so neither guards anything; and for a remote
+        ;; file each lock is remote I/O on the completion path -- measured at
+        ;; 121 ms per edit over ssh to localhost, against 20 ms without.
+        ;;
+        ;; Settled BEFORE anything below can modify the buffer: Emacs takes a lock on the first
+        ;; modification, and setting the coding system counts as one unless
+        ;; told otherwise.  Done after it, as it was, the lock was already
+        ;; taken -- a `.#' file, and an auto-save `#...#' one, left beside the
+        ;; notebook, in the user's own project directory.
         (setq-local create-lockfiles nil)
+        (setq buffer-auto-save-file-name nil)
+        (auto-save-mode -1)
+        ;; Saving must never stop to ask either.  NOMODIFY: this changes how
+        ;; the file is written, not what it holds.
+        (set-buffer-file-coding-system emjupy--shadow-coding t t)
         (emjupy-shadow-edit-mode 1)
         (setq emjupy--edit-shadow-notebook nb)))
     (with-current-buffer buf

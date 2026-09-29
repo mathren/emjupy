@@ -19,29 +19,49 @@
 
 ;;; Commentary:
 
-;; emjupy edits Jupyter notebooks in Emacs by talking to a running Jupyter
-;; server over the same HTTP + WebSocket API the browser uses.  Because that
-;; API is plain HTTP on one port, everything works unchanged through an ssh
-;; tunnel -- no ZMQ ports to forward.
+;; emjupy edits and runs Jupyter notebooks in Emacs.  It talks to a
+;; running Jupyter server over the same HTTP and WebSocket API the
+;; browser uses, so a kernel on another machine works through an ssh
+;; tunnel, and the notebook stays a standard .ipynb that any other
+;; Jupyter tool opens.  Completion, documentation and `M-.' come through
+;; Eglot, from a language server running beside the kernel.
+;;
+;; Remote kernels: log in to a server by its port -- the local end of a
+;; tunnel -- and emjupy adopts the kernel already running there, so
+;; opening a notebook drops you into that live session.  Each port keeps
+;; its own kernel, so several remote sessions can be open in one Emacs,
+;; and after a dropped connection `C-c C-x C-c' reconnects to the same
+;; kernel, with its state intact.
+;;
+;; Language server: through the jupyter-lsp extension on the Jupyter
+;; server, over the same connection.  It sees the environment the code
+;; runs in, so `M-.' reaches your own modules beside the notebook.  Without
+;; jupyter-lsp, emjupy falls back to a language server on this machine
+;; and says so.
+;;
+;; Requirements:
+;;   - Emacs 30.1 or later, and the websocket package.
+;;   - A Jupyter server with a kernel: jupyter-server and ipykernel.
+;;   - For completion, documentation and `M-.': jupyter-lsp and
+;;     python-lsp-server, installed where the server runs.
+;;   - Optionally, LaTeX and dvipng, to render formulae in markdown cells.
 ;;
 ;; Quick start:
 ;;
 ;;   M-x emjupy-login RET 8888 RET
 ;;
-;; The port is the whole prompt; a token is only asked for when the server
-;; needs one.  emjupy adopts the kernel already running behind that port, so
-;; picking a notebook drops you straight into the live REPL.
+;; A token is asked for only if the server needs one.  Pick a notebook;
+;; `C-c C-c' runs the cell at point, and `C-c C-v' shows every command.
 ;;
-;; One port = one kernel: log in once per ssh tunnel and each port keeps its
-;; own kernel, so several remote sessions stay live in one Emacs.
-;;
+;; Documentation: https://mathren.github.io/emjupy/
+
+;;; Code:
 ;; This file carries the package header and version, and loads the rest.
 ;; The mode, its keymap and menu are in emjupy-mode; the implementation is
 ;; layered, each file requiring only the ones before it: emjupy-core,
 ;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-remote,
 ;; emjupy-lsp, emjupy-eglot, emjupy-mode and emjupy-notebook.
 
-;;; Code:
 
 (require 'emjupy-core)
 (require 'emjupy-http)
@@ -77,6 +97,15 @@
       (unless (string-empty-p rev)
         (format "%s (%s)%s" rev date (if dirty ", with local changes" ""))))))
 
+(defun emjupy--language-server-description (nb shadow)
+  "Say which language server answers for NB, whose shadow buffer is SHADOW."
+  (let ((server (and (buffer-live-p shadow)
+                     (with-current-buffer shadow (eglot-current-server)))))
+    (cond ((null server) "not started")
+          ((emjupy--answer-is-from-the-kernels-machine-p nb)
+           "beside the kernel")
+          (t "on this machine"))))
+
 ;;;###autoload
 (defun emjupy-version (&optional insert)
   "Report which emjupy is running, and from where.
@@ -85,8 +114,10 @@ Says the version, the directory the code was loaded from and, when that
 is a git checkout, the revision -- so \"am I running the fix?\" has an
 answer that does not depend on remembering how it was installed.
 
-In a notebook buffer it also says where the shadow file is, which is
-what decides whether the language server can see your own modules.
+In a notebook buffer it also says the kernel\='s working directory and
+which language server is answering -- the one beside the kernel, or one
+on this machine, which cannot see your own modules when the kernel runs
+elsewhere.
 
 With a prefix argument, INSERT, put the report in the buffer instead of
 the echo area, for pasting into a bug report."
@@ -95,16 +126,15 @@ the echo area, for pasting into a bug report."
          (rev (emjupy--git-revision dir))
          (nb (and (derived-mode-p 'emjupy-mode) emjupy--buffer-notebook))
          (shadow (and nb (emjupy-notebook-shadow-buffer nb)))
-         (shadow-file (and (buffer-live-p shadow)
-                           (buffer-local-value 'buffer-file-name shadow)))
+
          (report (concat
                   (format "emjupy %s" emjupy-version)
                   (if rev (format ", git %s" rev) "")
                   (if dir (format ", loaded from %s" dir) "")
                   (if nb
-                      (format "; kernel cwd %s; shadow %s"
+                      (format "; kernel cwd %s; language server %s"
                               (or (emjupy-notebook-kernel-cwd nb) "unknown")
-                              (or shadow-file "not created yet"))
+                              (emjupy--language-server-description nb shadow))
                     ""))))
     (if insert (insert report) (message "%s" report))
     report))

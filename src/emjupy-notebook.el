@@ -154,6 +154,7 @@ anyway."
         emjupy-default-port
       answer)))
 
+;;;###autoload
 (defun emjupy-login (url &optional token)
   "Connect to the Jupyter server at URL and open one of its notebooks.
 TOKEN, when given, is used instead of prompting.
@@ -233,6 +234,7 @@ The server is part of the name: the same notebook path can exist on two
 different servers, and one buffer cannot represent both."
   (format "*emjupy: %s [%s]*" path (emjupy--server-label server)))
 
+;;;###autoload
 (defun emjupy-open-notebook (path &optional server)
   "Fetch PATH from SERVER, parse it, and render it in `emjupy-mode'.
 Returns the notebook buffer."
@@ -479,6 +481,20 @@ EVENT is the mouse event."
       (goto-char (posn-point posn))
       (emjupy-list-open))))
 
+(defun emjupy-list-up ()
+  "Show the parent of the directory being listed, wherever point is.
+
+Bound to \\`^\', as in Dired.  It was bound to `emjupy-list-open\=', which
+only goes up from the \"..\" row: anywhere else it opened the notebook at
+point, or descended into the directory there."
+  (interactive)
+  (unless (string-empty-p emjupy-list--path)
+    (setq emjupy-list--path
+          (let ((parent (file-name-directory
+                         (directory-file-name emjupy-list--path))))
+            (if parent (directory-file-name parent) "")))
+    (emjupy-list-refresh)))
+
 (defun emjupy-list-open ()
   "Open the notebook, or descend into the directory, at point."
   (interactive)
@@ -513,20 +529,19 @@ EVENT is the mouse event."
 (defun emjupy-list-open-file (path)
   "Open PATH, a file on this server, in the best way available.
 
-PATH is relative to what the server serves.  There are three ways to
-reach it and they are tried in that order, because they differ in
-whether the result can be edited:
-
+PATH is relative to what the server serves.  There are four ways to
+reach it, tried in this order, because they differ in whether the result
+can be edited:
 - through `emjupy-remote-root\', when it is set.  That is a path this
   Emacs can address -- a TRAMP location, or a local directory -- so the
   file opens normally and can be written back.
+- over TRAMP, when the server\'s address names a real host.  Editable.
 - as a local file, when the server turns out to be on this machine and
   the path exists.  Also editable.
 - otherwise through the Contents API, read-only.  Nothing needs
   configuring for this and it always works, but it is a copy fetched
   over HTTP and writing it back is a different job from reading it."
   (let* ((server emjupy-list--server)
-         (reachable (emjupy--remote-root-for server))
          (configured (emjupy--configured-root-for server))
          (server-side (emjupy--server-side-root-for server)))
     (cond
@@ -550,7 +565,6 @@ whether the result can be edited:
       (emjupy-open-server-file
        (expand-file-name path (file-name-as-directory server-side)) server))
      (t
-      (ignore reachable)
       (user-error "%s %s"
                   "Cannot tell where this server's files are."
                   "Open a notebook so a kernel can say, or set `emjupy-remote-root'")))))
@@ -638,9 +652,6 @@ first act would always be to add one."
   "Return the buffer showing PATH on SERVER, or nil."
   (get-buffer (emjupy--notebook-buffer-name path server)))
 
-(define-obsolete-function-alias 'emjupy-list-new-notebook
-  #'emjupy-create-new-notebook "0.1.0")
-
 (defun emjupy-list-kill-all-kernels ()
   "Shut down every kernel on this server."
   (interactive)
@@ -665,7 +676,7 @@ first act would always be to add one."
     ;; and a click elsewhere should act on what was clicked.
     (define-key map [mouse-1] #'emjupy-list-open-at-click)
     (define-key map [double-mouse-1] #'emjupy-list-open-at-click)
-    (define-key map (kbd "^")   #'emjupy-list-open)
+    (define-key map (kbd "^")   #'emjupy-list-up)
     (define-key map (kbd "g")   #'emjupy-list-refresh)
     (define-key map (kbd "k")   #'emjupy-list-kill-kernel)
     (define-key map (kbd "K")   #'emjupy-list-kill-all-kernels)
@@ -698,6 +709,7 @@ buffer per server, so several tunnels can be inspected side by side."
     (switch-to-buffer buf)
     buf))
 
+;;;###autoload
 (defalias 'emjupy-notebook-list #'emjupy-server-dashboard
   "Alias for `emjupy-server-dashboard\'.")
 

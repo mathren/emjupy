@@ -6,7 +6,7 @@
 ;; This file is not part of the package: it is a development tool, and the
 ;; MELPA recipe lists the files that ship.
 
-;; Run with: emacs -Q --batch -l quicktry.el
+;; Run from the repository root with: emacs -Q -l src/quicktry.el
 
 (require 'package)
 (setq package-user-dir (expand-file-name "/tmp/emjupy-test-packages"))
@@ -21,8 +21,10 @@
   (package-refresh-contents)
   (package-install 'websocket))
 
-;; Load local emjupy.el
-(add-to-list 'load-path default-directory)
+;; Load emjupy from the directory this file is in, not from wherever Emacs
+;; was started: `emacs -Q -L src -l src/quicktry.el' from the repository
+;; root works as well as starting in src/.
+(add-to-list 'load-path (file-name-directory (or load-file-name buffer-file-name)))
 (require 'emjupy)
 
 

@@ -80,7 +80,7 @@ emjupy enables neither: both are global and affect every buffer.
 * Inspecting the cell outlines
 
 The rule above an output box is an overlay string rather than buffer
-text, so point cannot be placed in it and \[describe-char] cannot be
+text, so point cannot be placed in it and =M-x describe-char= cannot be
 used on its columns.  =M-x emjupy-report-box-geometry= reports the width
 the rules are drawn at, the width of the rule in place, and the column
 the output background is aligned to.
@@ -107,8 +107,8 @@ A cell outline is drawn by an overlay property that is displayed even
 when the overlay has collapsed to zero width.  An overlay belonging to a
 cell that no longer exists therefore appears as a border with no cell.
 
-Every redraw deletes emjupy overlays that no live cell owns, so running
-a cell or =M-x emjupy-re-render= removes any that appear.
+A redraw of the whole notebook deletes emjupy overlays that no live cell
+owns, so =M-x emjupy-re-render= removes any that appear.
 
 * LaTeX in markdown cells
 
@@ -133,8 +133,7 @@ sudo apt install texlive-latex-base dvipng
 No extra Emacs package is needed.  =math-preview= is used instead if that
 is what you have installed -- it works well, but it wants nodejs and npm
 on top of everything else, which is why it is not the default.  Choose
-explicitly with =emjupy-latex-backend=; size the images with
-=emjupy-latex-scale=.
+explicitly with =emjupy-latex-backend=.
 
 Formulae are drawn in the theme's foreground colour on a transparent
 background, so they are dark on a light theme and light on a dark one.
@@ -153,21 +152,21 @@ does not have.
 Images are only drawn when the running Emacs can actually display them
 (=display-graphic-p= *and* =image-type-available-p=). On a terminal
 frame or an image-less build (=emacs-nox= is the common case),
-=create-image= *signals* rather than degrading, and because rendering
-happens inside the WebSocket callback -- where =websocket.el= swallows
-errors -- the old behaviour was a silently blank output box. =emjupy= now
-falls back to the bundle's own =text/plain= repr plus a short note
-saying why there is no picture.
+=create-image= *signals* rather than degrading, and rendering happens
+inside the WebSocket callback, where an error would leave the output box
+blank.  So emjupy asks first, and shows the output's own =text/plain=
+form with a short note saying why there is no picture.
 
 Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
 =image/svg+xml=.
 
 * Duplicate figures
 
-A cell whose last expression is a figure receives the same picture
-twice from the kernel: once as the =execute_result= repr and again as
-the inline backend's =display_data=. That is kernel-side behaviour, so
-emjupy drops the repeat at *render* time only -- the cell's outputs, and
-the =.ipynb= written back, still contain exactly what the kernel sent,
-keeping the file faithful for other clients. Set
+A cell whose last expression is a figure can receive the picture twice
+from the kernel: once as the =execute_result= repr and again as the
+inline backend's =display_data=.  emjupy draws a repeated picture once
+-- a repeat meaning the same bytes, since two renders at different sizes
+are two pictures -- and drops it at *render* time only: the cell's
+outputs, and the =.ipynb= written back, still contain exactly what the
+kernel sent, keeping the file faithful for other clients.  Set
 =emjupy-deduplicate-image-outputs= to =nil= to draw both.

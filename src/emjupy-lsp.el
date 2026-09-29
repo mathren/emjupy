@@ -85,26 +85,6 @@ Whatever `/lsp/status' lists.  \"pylsp\" is the usual Python one."
   :type 'string
   :group 'emjupy)
 
-(defcustom emjupy-lsp-first-timeout 10.0
-  "Seconds to allow the first request after the handshake.
-
-`jupyter-lsp' starts the language server lazily, so the first question
-waits for a process launch and an initial index.  Measured cold, a
-completion that answers in milliseconds afterwards took seconds the
-first time -- long enough that a one-second budget returned nothing and
-looked like a server that did not work."
-  :type 'number
-  :group 'emjupy)
-
-(defcustom emjupy-lsp-timeout 0.3
-  "Seconds to wait for a language-server reply before giving up.
-
-Deliberately short.  Completion and eldoc run after ordinary commands,
-so this is time the user spends waiting; a late answer is worth less
-than a responsive editor."
-  :type 'number
-  :group 'emjupy)
-
 (cl-defstruct emjupy-lsp
   "A live LSP session against a server run by `jupyter-lsp'."
   ws          ; the websocket
@@ -182,31 +162,6 @@ was the whole editor."
     (puthash "params" (or params (make-hash-table :test 'equal)) msg)
     (when id (puthash "id" id msg))
     (websocket-send-text (emjupy-lsp-ws session) (json-serialize msg))))
-
-(defvar emjupy--lsp-in-request nil
-  "Non-nil while a request is waiting, to keep replies from nesting.")
-
-(defun emjupy--lsp-request (session method params &optional timeout)
-  "Send METHOD with PARAMS over SESSION and wait for the reply.
-
-Returns the result, or nil on timeout or error.  Waits with
-`accept-process-output', which runs timers -- so a request that arrives
-while another is waiting is refused rather than allowed to nest.  That
-nesting is exactly what made the file-based client recurse until Emacs
-ran out of stack."
-  (when (and session (emjupy--lsp-live-p session)
-             (not emjupy--lsp-in-request))
-    (let* ((emjupy--lsp-in-request t)
-           (id (cl-incf (emjupy-lsp-next-id session)))
-           (deadline (+ (float-time) (or timeout emjupy-lsp-timeout)))
-           (pending (emjupy-lsp-pending session)))
-      (emjupy--lsp-send session method params id)
-      (while (and (not (gethash id pending))
-                  (< (float-time) deadline))
-        (accept-process-output nil 0.01))
-      (let ((msg (gethash id pending)))
-        (remhash id pending)
-        (and msg (not (gethash "error" msg)) (gethash "result" msg))))))
 
 (defun emjupy--lsp-live-p (session)
   "Return non-nil if SESSION's socket is open."

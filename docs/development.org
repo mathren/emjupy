@@ -13,8 +13,9 @@ and install from Emacs: =M-x package-install-file RET emjupy-i.j.k.tar
 RET= with =i.j.k= the current version.
 
 The only external dependency is =websocket= (1.15+); Emacs 30.1+ is
-required. =emjupy-login= is autoloaded, so =M-x emjupy-login= works
-without any =require=.
+required.  Installed as a package, the commands you start from --
+=emjupy-login=, =emjupy-open-notebook=, =emjupy-server-dashboard= -- are
+autoloaded, so they work without any =require=.
 
 * Which Emacs to develop against
 
@@ -30,7 +31,7 @@ was being tested.
 * Source layout
 
 The sources are in =src/=, listed here from the bottom layer up.  Each
-file requires only files above it in this table, never below.
+file requires only files earlier in this table, never later ones.
 
 | File                 | Contains                                                   |
 |----------------------+------------------------------------------------------------|
@@ -49,19 +50,25 @@ file requires only files above it in this table, never below.
 
 ** Dependencies run one way
 
-No file calls a function defined in a file below it in the table, and
+No file calls a function defined in a file later in the table, and
 there are no =declare-function= forms for emjupy's own functions.  Every
 module can be loaded on its own, which is what makes that checkable:
 =(require 'emjupy-lsp)= in a fresh Emacs must work without anything else
 having been loaded first.
 
 When a lower layer needs to tell a higher one that something happened,
-it runs a hook rather than naming the function.  The one such hook is
-=emjupy-kernel-connected-functions=: the kernel layer runs it when a
-kernel attaches, and =emjupy-mode= adds the language-server layer's
-handler, which asks the kernel where it runs.  The hook is wired when a
-notebook buffer starts, not when a file is loaded -- a package should
-not add hooks just by being loaded.
+it runs a hook rather than naming the function.  There are two:
+
+- =emjupy-kernel-connected-functions=, run by the kernel layer when a
+  kernel attaches.  =emjupy-mode= hangs two handlers on it: one asks the
+  kernel where it runs, for the language server; the other tells the
+  kernel the cell width.
+- =emjupy-box-width-changed-functions=, run by the drawing layer when the
+  width the cells are drawn at changes, so the kernel is told the new
+  width.
+
+Both are wired when a notebook buffer starts, not when a file is loaded
+-- a package should not add hooks just by being loaded.
 
 A keymap may name a command defined further down the table, with a plain
 quote rather than =#'=: a binding needs the name, and resolves it when
@@ -101,9 +108,11 @@ done nothing for months looks exactly like one that works.
 | =make package=       | build =emjupy-VERSION.tar=                                    |
 | =make install=       | install that tar via =package-install-file=                   |
 | =make coverage=      | line coverage of the suite, as lcov, with a per-file table  |
+| =make set-version=   | write a new version everywhere: =make set-version VERSION=X.Y.Z= |
 | =make check-version= | the version header, =emjupy-version= and the pkg file agree   |
 | =make versions=      | which Emacs this is, against the one development targets    |
 | =make clean=         | remove =.elc= files and the tar                               |
+| =make timestamps=    | touch every source, to force a full rebuild                 |
 
 * Running everything locally
 
@@ -192,9 +201,11 @@ the INSTALLED copy, and a module added since then is not found at all --
 to the front of =load-path=, or uninstall the package while working on
 it.
 
-=emjupy-run-tests.el=, =lint.el= and =emjupy-pkg.el= are not compiled at
-all -- each says =no-byte-compile= -- because they are scripts and
-metadata rather than code to load.
+=emjupy-run-tests.el=, =lint.el=, =emjupy-pkg.el= and =publish.el= are not
+compiled at all -- each says =no-byte-compile= -- because they are scripts
+and metadata rather than code to load.  =publish.el= matters most:
+package-vc compiles everything in a checkout, so without it an install
+from git would warn about the site's build script.
 
 * Unit tests
 
@@ -248,9 +259,12 @@ EMJUPY_TEST_URL=127.0.0.1:18888 EMJUPY_TEST_TOKEN=abc \
 EMJUPY_TEST_ROOT=/path/to/notebook/root make check
 #+end_src
 
-The eglot tests additionally need a Python language server on =PATH=
-(=pylsp=, =pyright-langserver= or =jedi-language-server=); they skip if
-none is found.
+The language-server tests come in two kinds.  Those of the WebSocket
+transport need =jupyter-lsp= and =python-lsp-server= in the environment
+running the server -- the =pip= line above installs both.  Those of the
+local fallback need a language server on this machine's =PATH= (=pylsp=,
+=pyright-langserver= or =jedi-language-server=), and skip if none is
+found.
 
 * Test hygiene
 
@@ -309,14 +323,49 @@ blocks Emacs while it waits, and anything on the per-command path pays
 that on every keystroke.  The test asserts the absence of such calls
 rather than a duration, since a duration would depend on a network.
 
-Measured on a twelve-cell notebook with figures, over the WebSocket
-transport:
+The per-command costs these keep small are measured in [[file:language-server.org][Language server
+support]].
 
-| Operation     | Time   |
-|---------------+--------|
-| cursor motion | 0.0 ms |
-| completion    | 0.1 ms |
-| eldoc         | 1.2 ms |
+* Releasing
+
+1. *Set the version.*  From GitHub: Actions, "Set version", "Run
+   workflow", and give it the new version as =X.Y.Z=.  It writes the
+   version everywhere the current one appears -- the =;; Version:=
+   header, =emjupy-version=, =src/emjupy-pkg.el= and the sample output in
+   =docs/usage.org= -- checks they agree, and commits the change.  Or
+   locally, the same script: =make set-version VERSION=X.Y.Z=.
+
+   A version mentioned as history -- "fixed in 0.1.2" -- is left alone:
+   it says when something happened, and stays true.  The script refuses
+   a version that is not =X.Y.Z=, or not higher than the current one.
+
+2. *Tag the commit* with the same version and push the tag.  That starts
+   the release: the tests, the tarball on the release page, and the
+   documentation site, all from that commit.  The workflow does not tag
+   for you: a tag pushed from a workflow does not start other workflows,
+   so the release would not run.
+
+   A commit whose message contains =[skip ci]= is skipped for tag pushes
+   too.  Tag a commit without it, or the release never starts.
+
+* The package's own description
+
+=C-h P emjupy= shows the =;;; Commentary:= section of =src/emjupy.el=:
+what emjupy is, what it needs, and how to start.  It is written for
+someone who has only just installed the package and has not seen the
+repository.
+
+package.el prefers an installed package's README to its Commentary, and
+the README is a web page -- badges, screenshots, links into the
+repository -- so the tarball =make package= builds carries no README.
+MELPA leaves it out for the same reason, so both describe themselves
+alike.  An install from git with =package-vc= is the whole checkout, and
+shows the README.
+
+The opening paragraph is the same in three places -- the Commentary, the
+README and =docs/index.org= -- and is worth keeping so when one changes.
+The one-line summary is the same in the header of =src/emjupy.el= and in
+=src/emjupy-pkg.el=.
 
 * Submitting to MELPA
 

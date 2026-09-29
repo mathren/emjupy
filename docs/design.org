@@ -6,75 +6,144 @@
 
 ** The shadow buffer
 
-A notebook is not valid python, but rather a JSON containing blocks.
-There are *n* python fragments with prose between them, and a name
-defined in, say, cell 3 is used in cell 7. A language server handed
-one cell at a time would see seven unrelated files. So instead, =emjupy=
-keeps a hidden *shadow buffer*: one ordinary python file holding every
-code cell concatenated, each preceded by a marker comment naming its
-cell. =eglot= attaches to that file and sees exactly what it expects --
-one module, in order, with all the definitions in it.
+A notebook is not valid Python, but a JSON document holding cells.
+There are *n* Python fragments with prose between them, and a name
+defined in, say, cell 3 is used in cell 7.  A language server handed
+one cell at a time would see seven unrelated files.  So instead,
+=emjupy= keeps a *shadow buffer*: one ordinary Python file holding
+every code cell concatenated, each preceded by a marker comment naming
+its cell.  =eglot= attaches to that file and sees exactly what it
+expects -- one module, in order, with all the definitions in it.
 
-The shadow buffer is never displayed, it only exists so that a
-language server has a well-formed document to read. It can be open
-with =C-c '= for multi-cell editing.
+The shadow buffer is hidden: it exists so that a language server has a
+well-formed document to read.  =C-c '= shows it, for editing several
+cells at once; =C-c C-c= there writes the changes back into the cells.
 
 Everything that needs the server is delegated there at the matching
 position:
 
-- completion and eldoc, through
-  =completion-at-point-functions= and =eldoc-documentation-functions=;
-- =M-.= and friends, through an xref backend that forwards to =eglot='s own
-  and maps the answers back onto cells;
+- completion and eldoc, through =completion-at-point-functions= and
+  =eldoc-documentation-functions=;
+- =M-.= and friends, through an xref backend that forwards to =eglot='s
+  own and maps the answers back onto cells;
 - =eglot-rename= and the other =eglot= commands, advised to run in the
   shadow buffer and pull their edits back.
 
-Because the shadow buffer holds every cell at once, this is not merely a
-workaround: a rename fixes references in *all* cells, and =M-.= on a call
-in one cell lands on the definition in another.
+Because the shadow buffer holds every cell at once, this is not merely
+a workaround: a rename fixes references in *all* cells, and =M-.= on a
+call in one cell lands on the definition in another.
 
-The shadow file lives in a temporary directory by default. When the
-kernel is on another machine, point =emjupy-shadow-directory= at it and
-=eglot= starts the server there over =tramp=, so the completions come from
-the environment the code actually runs in.
+** The language server beside the kernel
+
+The language server that answers must run where the kernel runs: only
+there can it see your own modules and the Python the code runs against.
+=emjupy= talks to it the way JupyterLab does, through =jupyter-lsp= on
+the Jupyter server, over a WebSocket on the same connection the notebook
+uses -- so it works through the same SSH tunnel, with nothing started on
+the remote by hand.
+
+The shadow file itself stays on this machine -- beside the notebook when
+the notebook is on this machine too, in a temporary directory when it is
+not -- and nothing on the far side reads it.  Its contents go over the socket as
+the LSP document, and every path in the traffic is rewritten in flight
+-- the shadow's local directory to the kernel's working directory on the
+way out, and back on the way in -- so the server resolves =import mylib=
+beside the notebook, where the module is.  The server is also told that
+directory explicitly, as the place to look for modules.
+
+When that server cannot be reached, =emjupy= falls back to a language
+server on this machine and says so: it can only see this machine's
+files, so completion of your own code and =M-.= into it find nothing.
 
 ** Mapping positions
 
-Point in a cell maps to a position in the shadow buffer by finding
-that cell's marker and adding the offset within the cell; results
-coming back map the other way. Everything the server returns is in
-shadow-file coordinates, so =xref= results are rewritten into buffer
-positions in the notebook - with locations pointing anywhere *else*,
-into a library say, left alone, because the real file is the right
-destination.
+Point in a cell maps to a position in the shadow buffer by finding that
+cell's marker and adding the offset within the cell; results coming
+back map the other way.  Everything the server returns is in
+shadow-file coordinates, so =xref= results inside the shadow are
+rewritten into positions in the notebook.
 
-** Use the browser's transport, not ZMQ
+A location anywhere else is a file on the kernel's machine, when the
+server beside the kernel answered, and is named there over TRAMP: the
+host comes from =emjupy-remote-root= or from the SSH tunnel the server
+is reached through.  When the answer came from the local fallback, its
+paths already name this machine's files and are left alone.
 
-When you run =jupyter notebook --no-browser --port=8888=, the server exposes:
+** Output
+
+Output arrives as messages on the kernel's WebSocket, each naming the
+request it belongs to.  A request is finished when two things have come:
+the reply, on the shell channel, and the status message that follows the
+request's last output, on the iopub channel.  The protocol does not order
+one channel against the other, so an output can arrive after its reply;
+waiting for both is what keeps it.
+
+Stream text continues the output it belongs to rather than starting a
+new one.  Consecutive text on one stream is one output, and text on a
+stream whose line is still open -- no newline yet -- continues that line
+even if the other stream wrote in between.  That is a terminal's rule,
+and the one a progress bar relies on: each update begins with a carriage
+return, and carriage returns are applied as a terminal would.
+
+Nothing is drawn wider than the cell.  The kernel is told the cell's
+width in =COLUMNS=, which is how programs decide how wide to draw when
+their output is not a terminal, and any line still wider is broken where
+the cell ends.  Breaking lines changes only the drawing: the cell keeps
+its output as the kernel sent it, which is what is saved.
+
+Output is redrawn at most a few times a second, however many messages
+arrive, and only in the cell it belongs to.
+
+* Redrawing
+
+Most changes redraw only the part of the buffer they affect: output
+arriving, running a cell (which clears its previous output first),
+inserting, deleting, splitting, merging and moving cells, hiding and
+clearing output.  The rest of the buffer moves by a known amount, so
+anything holding a position there -- markers, other windows, the fake
+cursors of =multiple-cursors= -- stays where it was.
+
+A few redraw the whole notebook: changing a cell's type,
+=emjupy-re-render=, rendering a markdown cell, and undoing a structural
+change.  They erase the buffer and draw it again from the cells, which
+moves every held position to the start.
+
+* Undo
+
+Undo entries hold plain buffer positions, not markers, so every redraw
+has to keep them meaningful.
+
+A partial redraw does it directly.  Entries before the change are
+untouched and those after it are shifted by the amount the change moved
+things.  Entries describing text inside the redrawn region are usually
+dropped, since that text is gone -- except where the change can be
+undone exactly, as moving and merging cells can, in which case they are
+kept for when it is.
+
+A whole redraw records itself as one undo step that puts the cells back
+as they were.  Undoing it restores exactly the text the older entries
+were recorded against, so they become meaningful again, and undo carries
+on through them.
+
+Moving and deleting a cell are undo steps of their own: undo puts the
+cell back.  An edit made before one of them is undone by undoing the
+change first, then the edit, as with any other command.
+
+* Use the browser's transport, not ZMQ
+
+When you run =jupyter server --no-browser --port=8888=, the server
+exposes:
 
 - =GET  /api/kernels=          \rightarrow list running kernels
 - =POST /api/kernels=          \rightarrow start a kernel
 - =GET  /api/sessions=         \rightarrow list sessions (kernel ↔ notebook pairs)
-- =POST /api/sessions=         \rightarrow create/attach session
+- =POST /api/sessions=         \rightarrow create or attach a session
 - =GET  /api/contents=         \rightarrow list notebooks
 - =GET  /api/contents/<path>=  \rightarrow fetch notebook JSON
 - =PUT  /api/contents/<path>=  \rightarrow save notebook JSON
-- =WS   /api/kernels/<id>/channels= \rightarrow Jupyter wire protocol over WebSocket
+- =WS   /api/kernels/<id>/channels= \rightarrow the Jupyter protocol over WebSocket
+- =WS   /lsp/ws/<server>=      \rightarrow a language server, through =jupyter-lsp=
 
-This is exactly what every browser-based client (JupyterLab, Classic Notebook)
-uses. It works transparently through an =ssh= tunnel, survives reconnects, and
-requires only =url.el= (built-in) and =websocket.el= (GNU ELPA).
-
-* Undo
-
-Undo works within a cell, and survives output arriving, a cell being
-inserted, and a cell being deleted. Every structural change now keeps
-it too: inserting, deleting, splitting and merging cells all redraw
-only the cells involved. Erasing a cell is an undoable action.
-
-Output and single-cell structural changes move only part of the
-buffer, by a known amount, so the undo entries before the change are
-untouched and those after it have their positions shifted to match. /A
-full rebuild breaks the undo/. It moves everything while undo recording is
-off, and undo entries hold plain buffer positions rather than markers,
-so there is nothing left to adjust and the history is dropped.
+This is what every browser-based client (JupyterLab, Classic Notebook)
+uses.  It works transparently through an =ssh= tunnel, survives
+reconnects, and needs only =url.el= (built in) and =websocket.el=.

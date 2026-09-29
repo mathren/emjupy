@@ -8,7 +8,7 @@
 ;; loading any code.
 
 (define-package "emjupy" "0.1.2"
-  "Interactive Jupyter notebooks in Emacs"
+  "Interactive Jupyter notebooks over HTTP and WebSocket"
   '((emacs "30.1")
     (websocket "1.15"))
   :keywords '("languages" "tools" "python" "jupyter")

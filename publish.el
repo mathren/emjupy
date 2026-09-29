@@ -1,4 +1,4 @@
-;; modified from
+;; modified from  -*- lexical-binding: nil -*-
 ;; https://systemcrafters.net/publishing-websites-with-org-mode/building-the-site/
 
 (require 'package)
@@ -246,3 +246,7 @@ All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
 
 (mr/check-for-all-flag-and-publish)
 (message "Build complete!")
+
+;; Local Variables:
+;; no-byte-compile: t
+;; End:

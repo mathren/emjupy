@@ -6,38 +6,44 @@ Running notebooks on another machine, over a tunnel or otherwise.
 
 * Notebooks on another machine
 
-The kernel answers with an absolute path on *its* filesystem, say
-=/srv/nb/analysis=.  That path means nothing on yours: Emacs would read
-it as a local one and write the shadow file into whatever =/srv/nb/analysis=
-happens to be on your own disk.  So emjupy uses a kernel-reported
-directory only when it can actually address it.
+Nothing needs configuring for a notebook whose kernel runs elsewhere.
+The kernel is reached over the Jupyter server's WebSocket, and so is the
+language server, when =jupyter-lsp= is installed beside it -- see
+[[file:language-server.org][Language server support]].  The shadow file the language server reads
+stays in a temporary directory on this machine; its contents travel over
+the socket, with paths rewritten so the server resolves them against the
+kernel's working directory.  Completion, documentation and =M-.= into
+your own modules then describe the machine the code runs on.
 
-Tell it how to reach that machine once:
+| Kernel runs     | =jupyter-lsp= on the server | =M-.= into your modules |
+|-----------------+-----------------------------+-------------------------|
+| this machine    | either                      | works                   |
+| another machine | installed                   | works                   |
+| another machine | not installed               | no -- the fallback server here cannot see them |
+
+** Without =jupyter-lsp=, over SSH
+
+If the server has no =jupyter-lsp= but you can reach the machine over
+SSH, the older arrangement still works: turn the WebSocket transport off
+and say how to reach the host, and emjupy puts the shadow file beside
+the notebook on that machine, over TRAMP, and =eglot= starts the
+language server there.
 
 #+begin_src elisp
-(setq emjupy-shadow-host "/ssh:box:")
+(setq emjupy-lsp-enabled nil
+      emjupy-shadow-host "/ssh:box:")
 #+end_src
 
-The directory still comes from the kernel, so this is a host, not a
-path: =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  =eglot= then
-starts the language server on =box=, which has a second benefit worth
-knowing -- it sees the environment the kernel actually runs in, so
-completions and signatures describe the packages your code will really
-import, not the ones that happen to be installed locally.
+=emjupy-shadow-host= is a host, not a path: the directory still comes
+from the kernel, so =/srv/nb/analysis= becomes
+=/ssh:box:/srv/nb/analysis=.  Leave it unset and the shadow file goes to
+a local temporary directory instead -- =M-.= will not find your own
+modules, but nothing is written to a path that means something else
+here.  =emjupy-shadow-host= has no effect while =emjupy-lsp-enabled= is
+on, since the shadow file is then always local.
 
-Leave it unset and a remote kernel falls back to a local temp directory:
-=M-.= will not find your own modules, but nothing is written to a path
-that means something else here.  That is the deliberate trade -- emjupy
-would rather lose a feature than write to the wrong file.
-
-| Kernel runs      | =emjupy-shadow-host= | Shadow file            | =M-.= into your modules |
-|------------------+--------------------+------------------------+-----------------------|
-| this machine     | unset              | beside the notebook    | works                 |
-| another machine  | set                | beside it, over TRAMP  | works                 |
-| another machine  | unset              | local temp directory   | no                    |
-
-=emjupy-shadow-directory= still overrides everything, and
-=emjupy-shadow-beside-notebook= turns the behaviour off.
+=emjupy-shadow-directory= overrides where the shadow file goes, and
+=emjupy-shadow-beside-notebook= turns placing it beside the notebook off.
 
 * Tunnelled servers
 
@@ -94,12 +100,15 @@ what emjupy can address:
 | Condition                          | Result                     |
 |------------------------------------+----------------------------|
 | =emjupy-remote-root= set             | the file, writable         |
-| host known (see below)             | the file over TRAMP, writable |
+| the address names a real host      | the file over TRAMP, writable |
 | server runs on this machine        | the file, writable         |
-| none of the above                  | read-only copy over HTTP   |
+| the server's root is known         | read-only copy over HTTP   |
+| none of the above                  | an error saying what to set |
 
-The last case uses the Contents API and requires no configuration.  The
-buffer is read-only and its header line gives the originating path.
+The copy over HTTP uses the Contents API and needs no configuration, only
+a kernel to have reported where the server's files are (see [[*Where the
+server's files are][below]]).  The buffer is read-only and its header line gives the
+originating path.
 
 * Multiple notebooks & multiple servers
 
@@ -128,12 +137,12 @@ REPL you started. A port with nothing running gets a fresh kernel; a
 port with several asks which one.
 
 Each port keeps its own kernel, so several remote sessions stay live in
-one Emacs. Use =C-c C-z= to give an individual notebook a different
+one Emacs. Use =C-c M-z= to give an individual notebook a different
 kernel. Logging in again to a server you already know updates its token
 and keeps the same object, so notebooks already pointing at it stay
 valid.
 
-=C-c C-z= marks kernels already driving another open notebook as =[in
+=C-c M-z= marks kernels already driving another open notebook as =[in
 use]=: attaching two notebooks to one kernel makes them share
 interpreter state, which is occasionally what you want and usually not.
 
@@ -141,7 +150,6 @@ Notebook buffers are named =*emjupy: PATH [SERVER]*=, because the same
 path can exist on two servers and one buffer cannot stand for both. The
 =eglot= shadow file is qualified the same way, so two servers hosting
 =analysis.ipynb= don't clobber each other's code.
-
 
 If a tunnel drops and the remote kernel keeps running,
 use =emjupy-reconnect-kernel= to re-establish emacs's
@@ -156,9 +164,10 @@ always prompts.
 
 * If the token is the problem
 
-A tunnelled server is still a server with a token.  emjupy already knows
-it -- =M-x emjupy-version= inside a notebook shows what it is connected
-to -- so this only bites when checking by hand from the shell.
+A tunnelled server is still a server with a token.  emjupy remembers it
+per server -- =M-x emjupy-status= lists each open notebook with the
+server it is on -- so a token only needs typing again when checking the
+server by hand from the shell, with =curl= say.
 
 * Where the server's files are
 
@@ -195,8 +204,8 @@ Suspending the machine kills a tunnelled WebSocket.  A socket that dies
 during a render can leave the buffer showing something the cells do not
 hold.
 
-=M-x emjupy-reconnect-kernel= now checks the invariants and redraws if
-they fail, so the repair happens as part of reconnecting rather than
-being left to the user.  The cells are the notebook and the buffer is a
+=M-x emjupy-reconnect-kernel= (=C-c C-x C-c=) checks that the buffer
+still matches the cells and redraws if it does not, so the repair happens
+as part of reconnecting.  The cells are the notebook and the buffer is a
 drawing of them, so redrawing is free and correct.
 =M-x emjupy-re-render= still does the same thing by hand.

@@ -2,18 +2,66 @@
 #+PREVIOUS_PAGE: development.org
 #+NEXT_PAGE: todo.org
 
-* Multicursor
-It works fine editing within one cell while nothing else is
-happening. =multiple-cursors.el= places its fake-cursor overlays on real
-buffer text and a normal edit session applies correctly to all cursor
-positions. The catch: emjupy-mode rebuilds the entire buffer
-(erase-buffer + reinsert) any time a cell executes, gets
-inserted/deleted/moved, or — critically — any time another cell's
-output streams in. Fake-cursor overlays collapsed to buffer position
-1, and the next multi-cursor edit produced genuinely garbled text (!!
-at the start of the buffer, a stray ! landing inside unrelated text).
+* Multiple cursors
 
-For multi-cell multicursor use the shadow buffer with =C-'=.
+=multiple-cursors.el= works within a notebook, with one exception: a
+command that redraws the WHOLE notebook moves its fake cursors to the
+start of the buffer, and the next edit lands there instead of at each
+cursor.  Measured with cursors on three lines of one cell:
+
+| While the cursors are active              | Result                        |
+|-------------------------------------------+-------------------------------|
+| output arrives in another cell            | edits land at every cursor    |
+| another cell is run, clearing its output  | edits land at every cursor    |
+| a cell is inserted                        | edits land at every cursor    |
+| a cell's type is changed (=C-c C-t=)      | cursors collapse to the start |
+| =M-x emjupy-re-render=                    | cursors collapse to the start |
+
+Rendering a markdown cell and undoing a structural change also redraw
+the whole notebook, and do the same.
+
+For editing across several cells at once, =C-c '= opens every code cell
+in one Python buffer, where multiple cursors, and every other editing
+tool, work as in any file; =C-c C-c= there writes the changes back.
+
+* Language features need the language server beside the kernel
+
+Completion, documentation and =M-.= come from a language server.  For
+a kernel on another machine, only a server running *there* -- through
+=jupyter-lsp= -- can see your own modules and the kernel's Python.
+Without one, emjupy falls back to a language server on this machine,
+says so when it starts, and =M-.= into your own code finds nothing,
+while the standard library resolves to this machine's copy.  See
+[[file:language-server.org][Language server support]].
+
+* Rich output: text and images only
+
+Of the forms an output can come in, emjupy draws plain text and images
+(PNG, JPEG, GIF, SVG).  Everything else is shown by its plain-text
+fallback, which every Jupyter output carries:
+
+- HTML -- a pandas =DataFrame= appears as its text table;
+- interactive widgets (=ipywidgets=) appear as their text repr, and do
+  not respond, since emjupy runs no JavaScript;
+- Markdown and LaTeX sent through =IPython.display= appear as source.
+
+Images need a graphical Emacs; in a terminal they appear as their text
+fallback too.
 
 * Python only
-Other kernels (e.g., R or julia) have never been tested, but may work.
+
+Execution speaks the Jupyter protocol and does not care which kernel is
+on the other end, so R or Julia kernels may well run.  Nothing else is
+set up for them: cells borrow =python-mode='s syntax and comment
+settings (=emjupy-language-mode= changes that), the shadow document the
+language server reads is a =.py= file, and the language-server settings
+are written for =python-lsp-server=.  None of it has been tried.
+
+* Emacs 30.1 or later
+
+Emacs 29 was supported until Eglot's differences there caused bugs that
+could not be seen from 30; see [[file:development.org][Building and development]].
+
+* Open issues
+
+Faults known but not yet fixed are kept in [[file:todo.org][the TODO list]].

@@ -395,15 +395,22 @@ kernels never cross-talk."
       (unless cell
         (user-error "No cell found at point"))
 
-      ;; 1. Sync buffer edits back into ALL cells (not just this one) --
-      ;; the upcoming rerender rebuilds the whole buffer from cell structs,
-      ;; so unsynced edits sitting in other cells would otherwise be lost.
+      ;; 1. Sync buffer edits back into ALL cells, not just this one: the
+      ;; source sent to the kernel is read from the struct, and if the old
+      ;; output cannot be cleared in place the fallback redraws the whole
+      ;; notebook from the structs.
       (emjupy--sync-all-cells)
 
-      ;; 2. Clear previous outputs for rerun so a stale output box doesn't
-      ;;    linger while the new run is in flight.
+      ;; 2. Clear the previous output, so a stale box does not linger while
+      ;;    the new run is in flight.  In place, as C-c C-l does: only this
+      ;;    cell's output changes, and redrawing the whole notebook for it
+      ;;    moved every position held in the buffer -- the fake cursors of
+      ;;    `multiple-cursors', markers, other windows' points -- to its
+      ;;    start, and recorded an undo step for a command that edits
+      ;;    nothing.
       (setf (emjupy-cell-outputs cell) [])
-      (emjupy--rerender-notebook cell)
+      (unless (emjupy--refresh-cell-output cell)
+        (emjupy--rerender-notebook cell))
 
       ;; 3. Build execution payload
       (let* ((code (emjupy-cell-source cell))

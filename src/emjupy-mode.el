@@ -240,8 +240,10 @@ this buffer."
     ("S" "save to the server" emjupy-save-notebook)
     ("B" "switch notebook" emjupy-switch-notebook)
     ("X" "export as .py" emjupy-export-py)
-    ("'" "edit this cell in a buffer" emjupy-edit-cell-externally)]
-   ["Server"
+    ("'" "edit this cell in a buffer" emjupy-edit-cell-externally)]]
+  ;; A row of its own: four groups side by side came to some 120 columns,
+  ;; so in an ordinary frame the last column wrapped mid-word.
+  [["Server"
     ("g" "log in to a server" emjupy-login)
     ("R" "restart the kernel" emjupy-restart-kernel)
     ("C" "reconnect the kernel" emjupy-reconnect-kernel)

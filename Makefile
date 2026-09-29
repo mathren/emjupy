@@ -38,9 +38,13 @@ LOADPATH  := -L $(SRC) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
             emjupy-cells.el emjupy-kernel.el emjupy-remote.el emjupy-lsp.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
-PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el README.org
+# No README: an installed package's README is what C-h P shows, before
+# the Commentary, and the README is a web page -- badges, screenshots,
+# links into the repository.  MELPA leaves it out for the same reason, so
+# the release tarball and a MELPA install describe themselves alike.
+PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el
 
-.PHONY: all compile test check lint docs coverage versions check-version package install clean timestamps
+.PHONY: all compile test check lint docs coverage set-version versions check-version package install clean timestamps
 
 all: compile
 
@@ -99,6 +103,14 @@ lint:
 # Three things have to agree or a release ships claiming to be a version
 # it is not: the Version: header, the emjupy-version constant that
 # M-x emjupy-version reports, and the tag itself.
+# Set the version everywhere the current one is written -- the header,
+# `emjupy-version', the pkg file and the sample output in the docs:
+#   make set-version VERSION=0.1.3
+# Also run from GitHub by the "Set version" workflow.
+set-version:
+	@test -n "$(VERSION)" || { echo "usage: make set-version VERSION=X.Y.Z" >&2; exit 2; }
+	@tools/set-version.sh "$(VERSION)"
+
 check-version:
 	@version=$$(sed -n 's/^;; Version: *//p' $(SRC)/emjupy.el | head -1); \
 	constant=$$(sed -n 's/^(defconst emjupy-version "\([^"]*\)".*/\1/p' $(SRC)/emjupy.el | head -1); \

@@ -3416,18 +3416,6 @@ the notebook.  Nothing here ever opens it."
       (should (string-prefix-p "ws://localhost:9999/lsp/ws/pylsp" url))
       (should (string-match-p "token=sekrit" url)))))
 
-(ert-deftest emjupy-test-lsp-requests-do-not-nest ()
-  "A request that arrives while another is waiting is refused.
-
-Waiting uses `accept-process-output\', which runs timers -- so eldoc can
-fire inside a request.  Letting that nest is what made the file-based
-client recurse until Emacs ran out of stack."
-  (let ((session (make-emjupy-lsp :pending (make-hash-table :test 'equal))))
-    (cl-letf (((symbol-function 'emjupy--lsp-live-p) (lambda (&rest _) t))
-              ((symbol-function 'emjupy--lsp-send) (lambda (&rest _) nil)))
-      (let ((emjupy--lsp-in-request t))
-        (should-not (emjupy--lsp-request session "textDocument/hover" nil 0.01))))))
-
 (ert-deftest emjupy-test-shadow-is-built-for-eglot-either-way ()
   "The shadow buffer is what Eglot manages, on either transport.
 
@@ -3610,13 +3598,10 @@ always be to add one."
       (should (= (length (emjupy-notebook-cells parsed)) 1))
       (should (eq (emjupy-cell-type (aref (emjupy-notebook-cells parsed) 0)) 'code)))))
 
-(ert-deftest emjupy-test-create-new-notebook-renamed ()
-  "The command is `emjupy-create-new-notebook\', with the old name kept
-working so anyone who bound it is not broken."
-  (should (fboundp 'emjupy-create-new-notebook))
+(ert-deftest emjupy-test-create-new-notebook-is-on-n ()
+  "Creating a notebook is `emjupy-create-new-notebook\', on n in the listing."
   (should (commandp 'emjupy-create-new-notebook))
-  (should (eq (lookup-key emjupy-list-mode-map (kbd "n")) 'emjupy-create-new-notebook))
-  (should (fboundp 'emjupy-list-new-notebook)))
+  (should (eq (lookup-key emjupy-list-mode-map (kbd "n")) 'emjupy-create-new-notebook)))
 
 (ert-deftest emjupy-test-login-recovers-from-a-refused-token ()
   "A refused token is asked for once and the login continues.
@@ -6970,6 +6955,98 @@ which lost the race to a cell run straight away."
           (setq width 60)
           (emjupy--ensure-kernel-width nb)
           (should (= sent 2)))))))          ; a new one is
+
+(ert-deftest emjupy-test-running-a-cell-does-not-redraw-the-notebook ()
+  "Running a cell clears its old output in place, not by a whole redraw.
+
+Only that cell\'s output changes.  A whole redraw moved every position
+held in the buffer to its start -- the fake cursors of multiple-cursors,
+markers, other windows\' points -- and recorded an undo step for a
+command that edits nothing."
+  (let* ((out (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
+                (puthash "text" "old output\nover two lines\n" o) o))
+         (c1 (emjupy-test--cell-like 'code "x1 = 1"))
+         (c2 (emjupy-test--cell-like 'code "y = 2" (vector out)))
+         (rebuilds 0))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel nb)
+              (make-emjupy-kernel :id "k" :pending (make-hash-table :test 'equal)))
+        ;; something holding a position in the other cell
+        (let ((mark (copy-marker (+ 2 (overlay-start (emjupy-cell-overlay c1))))))
+          (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                    ((symbol-function 'emjupy--ws-send) #'ignore)
+                    ((symbol-function 'emjupy--kernel-eval) #'ignore)
+                    ((symbol-function 'emjupy--rerender-notebook-1)
+                     (let ((real (symbol-function 'emjupy--rerender-notebook-1)))
+                       (lambda (&rest args) (setq rebuilds (1+ rebuilds)) (apply real args)))))
+            (goto-char (overlay-start (emjupy-cell-overlay c2)))
+            (emjupy-execute-cell-at-point))
+          (should (= rebuilds 0))
+          ;; the old output is gone from the buffer
+          (should-not (string-match-p "old output" (buffer-string)))
+          ;; and the marker still sits where it was, in cell 1\'s text
+          (should (equal (buffer-substring-no-properties
+                          (overlay-start (emjupy-cell-overlay c1)) mark)
+                         "x1")))))))
+
+(ert-deftest emjupy-test-caret-goes-up-wherever-point-is ()
+  "\\`^\' in the server listing shows the parent directory, from any row.
+
+It used to run the same command as RET, which goes up only from the
+\"..\" row: on a notebook it opened the notebook, and on a folder it went
+down into it."
+  (should (eq (lookup-key emjupy-list-mode-map (kbd "^")) #'emjupy-list-up))
+  (with-temp-buffer
+    (emjupy-list-mode)
+    (let ((refreshed 0))
+      (cl-letf (((symbol-function 'emjupy-list-refresh) (lambda (&rest _) (setq refreshed (1+ refreshed))))
+                ;; point on a notebook row, not on ".."
+                ((symbol-function 'tabulated-list-get-id)
+                 (lambda (&rest _) '(:kind notebook :path "a/b/n.ipynb"))))
+        (setq emjupy-list--path "a/b")
+        (emjupy-list-up)
+        (should (equal emjupy-list--path "a"))
+        (emjupy-list-up)
+        (should (equal emjupy-list--path ""))
+        ;; at the top there is nowhere to go
+        (emjupy-list-up)
+        (should (equal emjupy-list--path ""))
+        (should (= refreshed 2))))))
+
+(ert-deftest emjupy-test-shadow-leaves-nothing-beside-the-notebook ()
+  "The shadow file is the only thing written beside the notebook.
+
+It is a generated copy of the cells: no lock file, no auto-save file.
+Setting its coding system marked the buffer modified, and Emacs takes a
+lock on the first modification -- which happened before locking was
+turned off, so a `.#\' file, and in a graphical session an auto-save
+`#...#\' one, were left in the user\'s project directory."
+  (let* ((dir (make-temp-file "emjupy-shadow-dir" t))
+         (emjupy-lsp-enabled nil)
+         (c (emjupy-test--cell-like 'code "x = 1")))
+    (unwind-protect
+        (emjupy-test--with-notebook (vector c) buf nb
+          (with-current-buffer buf
+            (setf (emjupy-notebook-kernel-cwd nb) dir
+                  (emjupy-notebook-path nb) "nb.ipynb")
+            (cl-letf (((symbol-function 'eglot-ensure) #'ignore))
+              (let ((sb (emjupy--ensure-shadow-buffer nb)))
+                (goto-char (overlay-start (emjupy-cell-overlay c)))
+                (end-of-line)
+                (insert " + 2")
+                (emjupy--sync-all-cells)
+                (with-current-buffer sb
+                  (should-not create-lockfiles)
+                  (should-not buffer-auto-save-file-name)
+                  (insert "# edited\n"))
+                ;; nothing but the shadow file itself
+                (should (equal (directory-files dir nil "\\`[^.]\\|\\`\\.[^.]")
+                               (list (file-name-nondirectory (buffer-file-name sb)))))
+                (with-current-buffer sb (set-buffer-modified-p nil))
+                (kill-buffer sb)))))
+      (delete-directory dir t))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -1,0 +1,56 @@
+name: Set version
+
+# Run by hand, from the Actions tab: "Set version" -> "Run workflow".
+# Writes the new version everywhere the current one appears -- the
+# package header, `emjupy-version', the pkg file and the docs' sample
+# output -- checks they agree, and commits the change to the branch it
+# was run on.  It does not tag: a tag pushed from a workflow does not
+# start other workflows, so the release would not run.  Tag the commit
+# yourself afterwards to release it.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version, as X.Y.Z (no leading v)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  set-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The input is passed through the environment, not pasted into the
+      # script: text in an input would otherwise run as shell.
+      - name: Write the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: tools/set-version.sh "$VERSION"
+
+      - name: Check every place agrees
+        env:
+          VERSION: ${{ inputs.version }}
+        run: make check-version TAG="$VERSION"
+
+      - name: Show what changed
+        run: git diff --stat
+
+      - name: Commit and push
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Version $VERSION"
+          git push
+          {
+            echo "## Version set to $VERSION"
+            echo
+            echo "Committed as \`$(git rev-parse --short HEAD)\` on \`${GITHUB_REF_NAME}\`."
+            echo "To release it, tag that commit \`$VERSION\` and push the tag."
+          } >> "$GITHUB_STEP_SUMMARY"
