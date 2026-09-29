@@ -5,9 +5,6 @@
 * TODO list
 - [ ] upon reshowing output, background is ok, but text get python
   highlighted (including removing background)
-- [ ] first and last line numbers of cell is at the outline using
-  linenum mode, can we have them at the first line of code and last
-  line of output instead?
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
 - [ ] "Error running timer: Selecting deleted buffer", three times in a
   unit-test run.  The timer is jsonrpc's, dispatching a message that the
@@ -16,12 +13,9 @@
   connection at our end does not stop it.  In use, the same order --
   a frame in flight as a notebook closes -- would show the message once.
   Harmless, but it should not happen.
-- [X] saving notebooks broken in presence of a tqdm-drawn bar in the output
-- [X] tqdm bar should respect the maximum length of the cell border
-- [X] the last two fixes should not be tqdm specific, but apply to
-  every output possible of a cell
-- [X] =M-.= does not work without the remote LSP: confirmed for your own
-  modules, and documented in language-server.org
-
-** Melpa cleanup
-- [X] melpazoid check succeeds
+- [ ] misplaced linenum: instead of having one line number for the
+  line where I write, I get two numbers for the outlines, see image:
+#+CAPTION: Issue with line numbers.
+#+ATTR_HTML: :width 30%
+[[file:images/linenum_issue.png]]
+- [ ] $\frac{x}{y}$ not rendered correctly in markdown latex, treated as $x_{\bar{y}}$
