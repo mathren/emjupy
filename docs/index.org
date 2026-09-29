@@ -17,7 +17,7 @@ whatever completion setup you already have (=vertico=, =corfu=,
 
 #+CAPTION: The steps below in a vanilla =emacs -Q= (Emacs 30.1).
 #+ATTR_HTML: :width 75%
-[[file:html-content/images/quickstart.gif]]
+[[file:images/quickstart.gif]]
 
 
 Without touching your own Emacs configuration. The repository ships a

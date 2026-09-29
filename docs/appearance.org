@@ -19,7 +19,6 @@ setup:
 
 *N.B.:* Screenshot may be out of date.
 
-
 * Cell appearance
 
 Cells are marked out by their horizontal rules alone -- the buffer keeps
