@@ -1,24 +1,23 @@
 #+TITLE: Emjupy
 #+author: Mathieu Renzo w/ Claude:Opus 5
 
-emjupy edits and runs Jupyter notebooks in Emacs.  It talks to a running
-Jupyter server over the same HTTP and WebSocket API the browser uses, so
-a kernel on another machine works through an ssh tunnel, and the notebook
-stays a standard =.ipynb= that any other Jupyter tool opens.  Completion,
-documentation and =M-.= come through =eglot=, from a language server
-running beside the kernel.
-
 [[https://github.com/mathren/emjupy/actions/workflows/build-package.yml][https://github.com/mathren/emjupy/actions/workflows/build-package.yml/badge.svg]]
 [[https://mathren.github.io/emjupy/][https://img.shields.io/badge/docs-online-green.svg]]
 [[https://codecov.io/gh/mathren/emjupy][https://codecov.io/gh/mathren/emjupy/graph/badge.svg]]
 [[https://www.gnu.org/licenses/gpl-3.0][https://img.shields.io/badge/License-GPL%20v3-blue.svg]]
 [[https://melpa.org/#/emjupy][https://melpa.org/packages/emjupy-badge.svg]]
 
-
-
 #+CAPTION: Python Jupyter Notebook in Emacs.
 #+ATTR_HTML: :width 50%
 [[./html-content/images/emjupy-logo.png]]
+
+
+=emjupy= edits and runs Jupyter notebooks in Emacs. It talks to a
+running Jupyter server over the same HTTP and WebSocket API the
+browser uses, so a kernel on another machine works through an ssh
+tunnel, and the notebook stays a standard =.ipynb= that any other
+Jupyter tool opens. Completion, documentation and =M-.= come through
+=eglot=, from a language server running beside the kernel.
 
 It uses Emacs's own tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with
 whatever completion setup you already have (=vertico=, =corfu=,
@@ -39,27 +38,12 @@ setup:
 
 *N.B.:* Screenshot may be out of date.
 
-* Features
-- persistent kernel session (to load large dataset once and re-use
-  them)
-- remote or local kernel (just needs port and token)
-- in-line rendering of output including images
-- adopts the kernel already running behind a port, and the Python
-  environment it runs in
-- completion, documentation and =M-.= through =eglot=, from a language
-  server running beside the kernel via =jupyter-lsp=
-- resilient to connection drops (remote kernel keeps running,
-  reconnect emacs)
-- toggle hide/show output without re-running cells
-- =ein=-like workflow and key bindings
-- =emjupy-notebook-list= similar to =ein:notebooklist= allows to navigate
-  notebook and adjacent files
-
 * Try it with =emacs -Q=
 
-Five minutes, without touching your own Emacs configuration.  The
-repository ships a small notebook, =test_notebook/test.ipynb=, with a
-module beside it, so there is something real to run.
+Without touching your own Emacs configuration. The repository ships a
+small notebook, =test_notebook/test.ipynb=, with a module beside it, so
+there is something real to run. To test with your own notebooks, jump
+to step 4.
 
 #+CAPTION: The steps below in a vanilla =emacs -Q= (Emacs 30.1).
 #+ATTR_HTML: :width 75%
@@ -111,6 +95,22 @@ module beside it, so there is something real to run.
    - =C-c C-c= runs the cell at point and moves to the next;
    - =M-.= on =example_function= jumps to its definition in =library.py=;
    - =C-c C-v= shows every command, grouped by what it is for.
+
+* Features
+- persistent kernel session (to load large dataset once and re-use
+  them)
+- remote or local kernel (just needs port and token)
+- in-line rendering of output including images
+- adopts the kernel already running behind a port, and the Python
+  environment it runs in
+- completion, documentation and =M-.= through =eglot=, from a language
+  server running beside the kernel via =jupyter-lsp=
+- resilient to connection drops (remote kernel keeps running,
+  reconnect emacs)
+- toggle hide/show output without re-running cells
+- =ein=-like workflow and key bindings
+- =emjupy-notebook-list= similar to =ein:notebooklist= allows to navigate
+  notebook and adjacent files
 
 * Installation
 
