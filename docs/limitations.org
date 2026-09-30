@@ -24,6 +24,21 @@ For editing across several cells at once, =C-c '= opens every code cell
 in one Python buffer, where multiple cursors, and every other editing
 tool, work as in any file; =C-c C-c= there writes the changes back.
 
+* Undo does not take back every cell command
+
+Typing, deleting text, moving a cell and deleting a cell are undone as
+you would expect.  Inserting a cell, splitting one and changing its type
+are not undo steps of their own: undo takes back the text they drew but
+leaves the cell there.  Delete the cell, or join it back, instead.
+
+* A kernel that dies mid-cell leaves the cell running
+
+If the kernel process dies while a cell runs -- it runs out of memory,
+say -- the server restarts it but does not tell emjupy, and the cell
+goes on showing as running.  The new kernel works; interrupt with
+=C-c C-z= or run another cell.  A connection that drops is noticed, and
+the cells running on it are ended.
+
 * Language features need the language server beside the kernel
 
 Completion, documentation and =M-.= come from a language server.  For
@@ -56,6 +71,15 @@ set up for them: cells borrow =python-mode='s syntax and comment
 settings (=emjupy-language-mode= changes that), the shadow document the
 language server reads is a =.py= file, and the language-server settings
 are written for =python-lsp-server=.  None of it has been tried.
+
+* A kernel that dies mid-cell
+
+If the kernel dies while a cell runs -- it runs out of memory, or the
+code exits the process -- the cell keeps showing as running.  The server
+restarts the kernel but sends nothing over the notebook's connection to
+say so.  =C-c C-x C-c= reconnects to the new kernel and ends the run;
+the dead kernel's variables are gone.  A dropped connection, by
+contrast, is noticed, and the cells running on it are ended.
 
 * Emacs 30.1 or later
 

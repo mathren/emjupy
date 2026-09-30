@@ -265,7 +265,7 @@ server so two servers holding the same path do not collide."
       (unless existing
         (let* ((res (emjupy--http-request
                      "GET" server
-                     (concat "/api/contents/" rel "?type=file&format=text")))
+                     (concat (emjupy--contents-path rel) "?type=file&format=text")))
                (content (and (hash-table-p res) (gethash "content" res))))
           (unless (stringp content)
             (kill-buffer buf)

@@ -1018,5 +1018,199 @@ folded where the box ends."
                (forward-line 1)))
            (should (<= widest width))))))))
 
+(ert-deftest emjupy-int-closing-a-notebook-releases-its-connections ()
+  "Closing a notebook closes the connections it opened, quickly.
+
+Every notebook had its own language-server connection and shadow
+buffer, and closing it left both running -- a WebSocket, a placeholder
+process and a jupyter-lsp session on the server for every notebook ever
+opened.  Closing released nothing until this; then, done naively, it
+waited seconds for processes to drain, and Eglot started a replacement
+for each server it saw die."
+  (skip-unless (getenv "EMJUPY_TEST_URL"))
+  (let* ((server (emjupy--intern-server (getenv "EMJUPY_TEST_URL")
+                                        (or (getenv "EMJUPY_TEST_TOKEN") "")))
+         (root (or (getenv "EMJUPY_TEST_ROOT") default-directory))
+         (count (lambda ()
+                  (list (length (seq-filter #'process-live-p (process-list)))
+                        (length (seq-filter (lambda (b) (string-match-p "emjupy_" (buffer-name b)))
+                                            (buffer-list)))))))
+    (let ((before (funcall count)))
+      (dotimes (i 3)
+        (let* ((c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "import os"
+                                    :outputs [] :metadata (make-hash-table :test 'equal)))
+               (nb (make-emjupy-notebook :cells (vector c) :path (format "release-%d.ipynb" i)
+                                         :server server :kernel-cwd root))
+               (buf (generate-new-buffer (format "*release-%d*" i))))
+          (with-current-buffer buf
+            (emjupy-mode)
+            (setq emjupy--buffer-notebook nb)
+            (setf (emjupy-notebook-buffer nb) buf)
+            (emjupy--rerender-notebook)
+            (emjupy-start-language-support nb)
+            (ignore-errors (emjupy--ensure-shadow-buffer nb))
+            (dotimes (_ 50) (accept-process-output nil 0.1)))
+          (let ((t0 (float-time)))
+            (kill-buffer buf)
+            (should (< (- (float-time) t0) 0.5)))
+          (dotimes (_ 20) (accept-process-output nil 0.1))))
+      (should (equal (funcall count) before)))))
+
+;;; --------------------------------------------------------------------
+;;; Network faults, through tools/faultproxy.py
+;;; --------------------------------------------------------------------
+
+(defconst emjupy-int--proxy-script
+  (expand-file-name "../tools/faultproxy.py"
+                    (file-name-directory (or load-file-name buffer-file-name)))
+  "The proxy that misbehaves on command.")
+
+(defvar emjupy-int--proxy nil
+  "The running fault proxy, as (PROCESS PORT CONTROL-PORT).")
+
+(defun emjupy-int--start-proxy ()
+  "Start the fault proxy in front of the test server; return its port."
+  (let* ((target (split-string (emjupy-int--url) ":"))
+         (buf (generate-new-buffer " *faultproxy*"))
+         (proc (make-process :name "faultproxy" :buffer buf :noquery t
+                             :command (list "python3" emjupy-int--proxy-script
+                                            (car target) (cadr target)))))
+    (with-timeout (10 (error "Fault proxy did not start"))
+      (while (not (with-current-buffer buf
+                    (goto-char (point-min))
+                    (re-search-forward "listening \\([0-9]+\\) control \\([0-9]+\\)" nil t)))
+        (accept-process-output proc 0.1)))
+    (with-current-buffer buf
+      (setq emjupy-int--proxy (list proc (string-to-number (match-string 1))
+                                    (string-to-number (match-string 2)))))
+    (nth 1 emjupy-int--proxy)))
+
+(defun emjupy-int--proxy-say (command)
+  "Send COMMAND to the fault proxy and wait for it to be done."
+  (let* ((out (generate-new-buffer " *faultproxy-ctl*"))
+         (s (open-network-stream "faultproxy-ctl" out "127.0.0.1" (nth 2 emjupy-int--proxy))))
+    (process-send-string s (concat command "\n"))
+    (with-timeout (5 (error "Fault proxy did not answer %s" command))
+      (while (not (with-current-buffer out (string-match-p "ok" (buffer-string))))
+        (accept-process-output s 0.05)))
+    (delete-process s)
+    (kill-buffer out)))
+
+(defmacro emjupy-int--through-proxy (&rest body)
+  "Run BODY with the test server reached through the fault proxy."
+  (declare (indent 0))
+  `(progn
+     (unless (and (emjupy-int--url) (executable-find "python3"))
+       (ert-skip "Needs a live server and python3"))
+     (let* ((port (emjupy-int--start-proxy))
+            (process-environment (cons (format "EMJUPY_TEST_URL=127.0.0.1:%d" port)
+                                       process-environment)))
+       (unwind-protect (progn ,@body)
+         (when (process-live-p (car emjupy-int--proxy))
+           (kill-process (car emjupy-int--proxy)))))))
+
+(ert-deftest emjupy-int-fault-stalled-request-fails-in-time ()
+  "A request to a server that has stopped answering fails, in time.
+
+Emacs waits for a synchronous request, so one that never returns is a
+frozen Emacs.  It must give up, with the error callers expect."
+  (emjupy-int--through-proxy
+    (emjupy-int--skip-unless-live)
+    (emjupy-int--proxy-say "stall")
+    (let ((t0 (float-time)))
+      (should-error (emjupy--http-request "GET" emjupy--current-server "/api/contents")
+                    :type 'emjupy-http-error)
+      (should (< (- (float-time) t0) 10)))
+    (emjupy-int--proxy-say "reset")))
+
+(ert-deftest emjupy-int-fault-fragmented-slow-output-arrives-whole ()
+  "Output split into tiny, delayed pieces arrives exactly as sent.
+
+WebSocket frames cut mid-way, and in several pieces, must be put back
+together: nothing lost, nothing repeated, nothing out of order."
+  (emjupy-int--through-proxy
+    (emjupy-int--with-live-kernel
+     (emjupy-int--proxy-say "chunk 7")
+     (emjupy-int--proxy-say "delay 2")
+     (let ((cell (emjupy-int--run "print('é' * 300)\nprint('end')" 60)))
+       (should (equal (emjupy-int--stdout cell)
+                      (concat (make-string 300 ?é) "\nend\n"))))
+     (emjupy-int--proxy-say "reset"))))
+
+(ert-deftest emjupy-int-fault-tunnel-drop-mid-cell-then-reconnect ()
+  "The tunnel dropping while a cell runs neither errs nor hangs Emacs.
+
+Then reconnecting reaches the same kernel, its state intact: the tunnel
+went, not the kernel."
+  (emjupy-int--through-proxy
+    (emjupy-int--with-live-kernel
+     (emjupy-int--run "keep = 42" 30)
+     (with-current-buffer emjupy-int--buffer
+       (let* ((nb (emjupy--notebook))
+              (cell (aref (emjupy-notebook-cells nb) 0)))
+         (setf (emjupy-cell-source cell)
+               "import time\nfor i in range(30):\n    print(i, flush=True)\n    time.sleep(0.1)")
+         (emjupy--rerender-notebook cell)
+         (goto-char (overlay-start (emjupy-cell-overlay cell)))
+         (emjupy-execute-cell-at-point)
+         (emjupy-int--pump 1)
+         (emjupy-int--proxy-say "sever")
+         (emjupy-int--pump 2)
+         ;; the socket is known to be gone, and Emacs is still responsive
+         (should-not (emjupy--ws-live-p (emjupy-notebook-kernel nb)))
+         (let ((t0 (float-time)))
+           (emjupy--sync-all-cells)
+           (should (< (- (float-time) t0) 0.5)))
+         ;; the tunnel comes back; so does the same kernel
+         (emjupy-int--proxy-say "reset")
+         (emjupy-reconnect-kernel)
+         (emjupy-int--pump 10 (lambda () (emjupy--ws-live-p (emjupy-notebook-kernel nb))))
+         (should (emjupy--ws-live-p (emjupy-notebook-kernel nb)))))
+     (let ((cell (emjupy-int--run "print(keep)" 30)))
+       (should (equal (emjupy-int--stdout cell) "42\n"))))))
+
+(ert-deftest emjupy-int-fault-kernel-dying-mid-cell-ends-the-run ()
+  "A kernel that dies while a cell runs does not leave it running for ever.
+
+The kernel exits without replying; the server restarts it.  The cell
+must stop showing as running, rather than wait for a reply that will
+never come.
+
+Expected to fail, and in todo.org.  The server restarts the kernel about
+four seconds later but sends nothing over the notebook\'s connection --
+no \"restarting\" status, no close -- and its REST API reports the new
+kernel as \"starting\", so nothing that arrives says the run is over.
+Ending it needs a check made while a cell runs: the kernel\'s session
+changing, or the kernel polled.  A connection that does close is
+handled: the cells running on it are ended."
+  :expected-result :failed
+  (emjupy-int--with-live-kernel
+   (with-current-buffer emjupy-int--buffer
+     (let* ((nb (emjupy--notebook))
+            (cell (aref (emjupy-notebook-cells nb) 0))
+            (pending (lambda () (cl-loop for v being the hash-values of
+                                         (emjupy-kernel-pending (emjupy-notebook-kernel nb))
+                                         thereis (eq v cell)))))
+       (setf (emjupy-cell-source cell) "import os\nos._exit(1)")
+       (emjupy--rerender-notebook cell)
+       (goto-char (overlay-start (emjupy-cell-overlay cell)))
+       (emjupy-execute-cell-at-point)
+       (emjupy-int--pump 20 (lambda () (not (funcall pending))))
+       (should-not (funcall pending))))))
+
+(ert-deftest emjupy-int-fault-save-during-stall-reports-failure ()
+  "Saving while the server has stopped answering reports that it failed.
+
+Not a hang, and not a silent success: the edits are not on the server,
+and the user must be told."
+  (emjupy-int--through-proxy
+    (emjupy-int--with-live-kernel
+     (emjupy-int--proxy-say "stall")
+     (with-current-buffer emjupy-int--buffer
+       (let ((t0 (float-time)))
+         (should-error (emjupy-save-notebook))
+         (should (< (- (float-time) t0) 15))))
+     (emjupy-int--proxy-say "reset"))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

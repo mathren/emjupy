@@ -133,13 +133,24 @@ Only the headers matter."
          (string-match "\\`\\[Jupyter HTTP \\([0-9]+\\)\\]" msg)
          (string-to-number (match-string 1 msg)))))
 
+(defun emjupy--contents-path (path)
+  "Return the Contents API address of PATH, each segment percent-encoded.
+
+PATH is relative to what the server serves, and goes into a URL, where
+some characters mean something: \"#\" starts a fragment and \"?\" a query,
+so a notebook called a#b.ipynb was asked for as \"a\" -- and saved there.
+A space is not allowed at all.  The separators stay as they are; \"..\"
+is sent as written, for the server to judge."
+  (concat "/api/contents/"
+          (mapconcat #'url-hexify-string (split-string (or path "") "/") "/")))
+
 (defun emjupy--http-exists-p (server path)
   "Return non-nil if PATH exists in SERVER\='s contents.
 
 Nil for a 404, which is the answer to the question; any other failure
 is not an answer, and is signalled."
   (condition-case err
-      (progn (emjupy--http-request "GET" server (concat "/api/contents/" path)) t)
+      (progn (emjupy--http-request "GET" server (emjupy--contents-path path)) t)
     (emjupy-http-status
      (if (eql (emjupy--http-status-of err) 404) nil (signal (car err) (cdr err))))))
 
@@ -170,7 +181,7 @@ tested without a server."
    (t
     (condition-case err
         (json-parse-string body :object-type 'hash-table :array-type 'array)
-      (json-parse-error
+      (json-error
        (signal 'emjupy-http-error
                (list (format "JSON Parse Error on %s" path)
                      (error-message-string err))))))))

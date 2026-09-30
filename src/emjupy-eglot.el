@@ -1273,6 +1273,68 @@ and does not hold the editor while the server thinks."
             :timeout-fn #'ignore))
        t))))
 
+(defun emjupy--release-notebook ()
+  "Close the connections opened by this buffer's notebook, on killing it.
+
+Its connection to the kernel and its language-server session are closed,
+and its shadow buffer killed.  The kernel keeps running on the server --
+it outlives the buffer by design, to be adopted again -- but the
+connections belonged to this buffer alone.  Left open, every notebook
+ever opened in a session kept a WebSocket, a language-server connection
+and a shadow buffer alive, and `jupyter-lsp\=' a session for each on the
+server.  A language server that still serves another buffer is left
+running."
+  (when-let* ((nb (bound-and-true-p emjupy--buffer-notebook)))
+    (emjupy--disconnect-kernel nb)
+    (let* ((sb (emjupy-notebook-shadow-buffer nb))
+           (server (and (buffer-live-p sb)
+                        (with-current-buffer sb (eglot-current-server)))))
+      ;; The shadow buffer first: killing it is how Eglot is told the
+      ;; document is closed, and how it detaches from it cleanly.  Shutting
+      ;; the server down while the buffer was still managed made Eglot flush
+      ;; its pending changes from it, and fail doing so.
+      (when (buffer-live-p sb)
+        (with-current-buffer sb (set-buffer-modified-p nil))
+        (let ((kill-buffer-query-functions nil))
+          (kill-buffer sb)))
+      (when (and server
+                 (jsonrpc-running-p server)
+                 (null (eglot--managed-buffers server)))
+        ;; The connection is ended directly, not through `eglot-shutdown\=':
+        ;; that first sends a shutdown request, and every Eglot request
+        ;; begins by flushing pending changes from the current buffer --
+        ;; here the notebook being killed, or any buffer Eglot does not
+        ;; manage -- which in Emacs 30.1 fails an assertion.  Nor through
+        ;; the standard `jsonrpc-shutdown\=', which waits seconds for a
+        ;; server to exit of its own accord.  Ending the process is enough:
+        ;; its sentinel takes the server out of Eglot\'s table when Emacs
+        ;; next handles process events.  The WebSocket transport has its
+        ;; own shutdown, which also closes the socket.
+        ;; Said to be wanted first, as `eglot-shutdown\=' does: Eglot starts a
+        ;; server again when one dies unexpectedly, so without this every
+        ;; close started a replacement serving nothing.
+        (setf (eglot--shutdown-requested server) t)
+        ;; Answers still awaited are no longer wanted.  Left in place, each
+        ;; is told "Server died" as the process goes, and Eglot\'s default
+        ;; handler raises that as an error from the process sentinel.
+        (jsonrpc-forget-pending-continuations server)
+        (if (cl-typep server 'emjupy-eglot-server)
+            (jsonrpc-shutdown server)
+          ;; `kill-process\=', not `delete-process\=': deleting waits for the
+          ;; process and its stderr pipe to drain -- nearly two seconds,
+          ;; measured, on every close -- where killing sends the signal
+          ;; and returns, and the sentinel reaps it.
+          (let ((proc (jsonrpc--process server)))
+            (when (process-live-p proc)
+              (kill-process proc))))
+        ;; Out of Eglot\'s table now, not when the sentinel gets round to
+        ;; it: a notebook opened in between would otherwise be handed the
+        ;; dying server -- the fallback one is shared by every notebook in
+        ;; a project -- and its first request fail with "Server died".
+        ;; What the sentinel would do; it does it again, harmlessly.
+        (eglot--on-shutdown server))
+      (setf (emjupy-notebook-shadow-buffer nb) nil))))
+
 ;;;###autoload
 (defun emjupy-lsp-diagnose ()
   "Report which language server this notebook is using, and how it got there.

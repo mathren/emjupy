@@ -240,7 +240,7 @@ different servers, and one buffer cannot represent both."
 Returns the notebook buffer."
   (let* ((server (or server (emjupy--server))))
     (message "Fetching notebook: %s..." path)
-    (let* ((response-data (emjupy--http-request "GET" server (concat "/api/contents/" path)))
+    (let* ((response-data (emjupy--http-request "GET" server (emjupy--contents-path path)))
            (content-hash (and response-data (gethash "content" response-data))))
       (if (not content-hash)
           (error "Failed to fetch notebook content from server")
@@ -301,7 +301,8 @@ Returns the notebook buffer."
           (message "Opened notebook: %s%s" path
                    (if (emjupy-server-kernel-id server)
                        ""
-                     ". Press C-c C-z to select or spawn a kernel."))
+                     (format ". Press %s to select or spawn a kernel."
+                             (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
           buf)))))
 
 (defun emjupy-create-notebook (&optional server)
@@ -326,7 +327,7 @@ Returns the notebook buffer."
 
     (message "Creating %s on Jupyter server..." filename)
     (let ((response (emjupy--http-request "PUT" server
-                                          (concat "/api/contents/" filename)
+                                          (emjupy--contents-path filename)
                                           (json-serialize req-body))))
       (if response
           (emjupy-open-notebook filename server)
@@ -405,7 +406,7 @@ on this morning is the one wanted, and alphabetical order buries it
 among however many others share its prefix.  Kernels have no
 modification time and stay sorted by name."
   (let* ((contents (emjupy--http-request
-                    "GET" server (concat "/api/contents/" path)))
+                    "GET" server (emjupy--contents-path path)))
          (items (and contents (gethash "content" contents)))
          (kernels (condition-case nil
                       (emjupy--http-request "GET" server "/api/kernels")
@@ -633,7 +634,7 @@ first act would always be to add one."
     (when (and (emjupy--http-exists-p server path)
                (not (yes-or-no-p (format "%s already exists.  Overwrite it? " path))))
       (user-error "Not overwriting %s" path))
-    (emjupy--http-request "PUT" server (concat "/api/contents/" path)
+    (emjupy--http-request "PUT" server (emjupy--contents-path path)
                           (json-serialize req))
     (emjupy-open-notebook path server)
     ;; Into the cell, not merely into the buffer.  A new notebook is made to
@@ -716,7 +717,7 @@ buffer per server, so several tunnels can be inspected side by side."
 (defun emjupy--path-exists-p (server path)
   "Return non-nil if PATH already exists on SERVER."
   (condition-case nil
-      (and (emjupy--http-request "GET" server (concat "/api/contents/" path)) t)
+      (and (emjupy--http-request "GET" server (emjupy--contents-path path)) t)
     (error nil)))
 
 (defvar emjupy--export-history nil
@@ -804,7 +805,7 @@ file name works there, if you would rather push it somewhere else."
         (puthash "type" "file" body)
         (puthash "format" "text" body)
         (puthash "content" content body)
-        (unless (emjupy--http-request "PUT" server (concat "/api/contents/" path)
+        (unless (emjupy--http-request "PUT" server (emjupy--contents-path path)
                                       (json-serialize body))
           (error "Server refused to write %s" path))
         (message "[emjupy] Exported to %s on %s"
@@ -831,8 +832,9 @@ file name works there, if you would rather push it somewhere else."
                        :exec-count (gethash "execution_count" c-data)
                        :source (let ((src (gethash "source" c-data)))
                                  (if (vectorp src) (mapconcat #'identity src "") src))
-                       :outputs (gethash "outputs" c-data)
-                       :metadata (gethash "metadata" c-data))))
+                                              :outputs (gethash "outputs" c-data)
+                       :metadata (gethash "metadata" c-data)
+                       :attachments (gethash "attachments" c-data))))
     nb))
 
 (defun emjupy--source-lines (source)
@@ -890,6 +892,10 @@ validation even though it looks fine in emjupy."
                (puthash "cell_type" (symbol-name (emjupy-cell-type cell)) c-hash)
                (puthash "id" (emjupy--nb-cell-id cell) c-hash)
                (puthash "metadata" (or (emjupy-cell-metadata cell) (make-hash-table)) c-hash)
+               ;; nbformat allows attachments on markdown and raw cells only
+               (when (and (emjupy-cell-attachments cell)
+                          (memq (emjupy-cell-type cell) '(markdown raw)))
+                 (puthash "attachments" (emjupy-cell-attachments cell) c-hash))
                (puthash "source" (emjupy--source-lines (emjupy-cell-source cell)) c-hash)
                (when (eq (emjupy-cell-type cell) 'code)
                  (puthash "outputs"
@@ -923,7 +929,7 @@ validation even though it looks fine in emjupy."
     (puthash "content" parsed-json req-body)
 
     (message "Saving notebook %s..." path)
-    (emjupy--http-request "PUT" server (concat "/api/contents/" path) (json-serialize req-body))
+    (emjupy--http-request "PUT" server (emjupy--contents-path path) (json-serialize req-body))
     (set-buffer-modified-p nil)
     (message "Successfully saved %s!" path)))
 

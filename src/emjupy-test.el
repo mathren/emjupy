@@ -5028,11 +5028,19 @@ kept out of the history entirely."
                       cell))))
 
 (defmacro emjupy-test--elapsed (&rest body)
-  "Return the seconds BODY took."
+  "Return the seconds BODY took, garbage collection left out.
+
+What is measured is emjupy\'s own work.  A collection triggered by the
+garbage earlier tests left -- the randomised ones make a great deal --
+would otherwise land inside the timing, and a test that passed alone
+failed in the full suite one run in two."
   (declare (indent 0))
-  `(let ((start (float-time)))
-     ,@body
-     (- (float-time) start)))
+  `(progn
+     (garbage-collect)
+     (let ((gc-cons-threshold most-positive-fixnum)
+           (start (float-time)))
+       ,@body
+       (- (float-time) start))))
 
 (ert-deftest emjupy-test-per-command-work-is-small ()
   "What runs after every command must not depend on the notebook's size.
@@ -5047,6 +5055,14 @@ network is felt tenfold."
         (goto-char (overlay-start (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 30))))
         ;; no language server in a unit test, so this measures emjupy's own
         ;; share: locating the cell, syncing, and reaching the delegate
+        ;;
+        ;; Once first, untimed: the first call creates the shadow buffer --
+        ;; writes its file, starts python-mode -- which happens once per
+        ;; notebook, not per command.  Timed with the rest, that one cost
+        ;; spread over the fifty calls came to most of the average, and
+        ;; tipped it past the limit whenever the suite had left Emacs
+        ;; slower: 4.9 ms a call in steady state, 52 ms on average with it.
+        (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) nil)))
         (let ((per-call (/ (emjupy-test--elapsed
                              (dotimes (_ 50)
                                (ignore-errors (emjupy--cell-shadow-delegate

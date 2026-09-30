@@ -121,7 +121,7 @@ stripped the Content-Length framing LSP uses over a pipe."
   (let* ((text (websocket-frame-text frame))
          (msg (condition-case nil
                   (json-parse-string text :object-type 'hash-table)
-                (json-parse-error nil))))
+                (json-error nil))))
     (when (hash-table-p msg)
       (let ((id (gethash "id" msg)))
         ;; Responses only.  Server-initiated requests and notifications --
@@ -646,7 +646,7 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
                   (json-parse-string text :object-type 'plist
                                      :null-object nil
                                      :false-object :json-false)
-                (json-parse-error nil))))
+                (json-error nil))))
     (when msg
       (jsonrpc-connection-receive
        server
@@ -667,12 +667,29 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
   (let ((ws (emjupy-eglot-server-ws server)))
     (and (websocket-p ws) (websocket-openp ws) t)))
 
-(cl-defmethod jsonrpc-shutdown ((server emjupy-eglot-server) &optional _cleanup)
-  "Close SERVER's WebSocket."
+(cl-defmethod jsonrpc-shutdown ((server emjupy-eglot-server) &optional cleanup)
+  "Close SERVER's WebSocket and end its placeholder process.
+
+The WebSocket is the connection that matters, but Eglot also keeps a
+placeholder process for it -- see `emjupy-eglot-idle-command\=' -- and the
+standard shutdown is what takes the server out of Eglot\'s table.
+Closing only the WebSocket left one such process behind for every
+notebook ever opened.  CLEANUP is passed on."
   (let ((ws (emjupy-eglot-server-ws server)))
     (when (and (websocket-p ws) (websocket-openp ws))
       (websocket-close ws)))
-  (setf (emjupy-eglot-server-ws server) nil))
+  (setf (emjupy-eglot-server-ws server) nil)
+  ;; The placeholder is `cat\=', which never exits by itself, so it is
+  ;; ended here.  Its sentinel then does what shutting down a connection
+  ;; does -- takes the server out of Eglot\'s table, kills its buffers --
+  ;; when Emacs next handles process events.  Not waited for: the
+  ;; standard shutdown waits for a server to exit on its own and forces it
+  ;; only after a few seconds, which made closing a notebook take two.
+  (let ((proc (jsonrpc--process server)))
+    (when (process-live-p proc)
+      (kill-process proc))
+    (when (and cleanup (buffer-live-p (process-buffer proc)))
+      (kill-buffer (process-buffer proc)))))
 
 (defvar emjupy--lsp-last-failure nil
   "Why the WebSocket to the language server could not be opened.

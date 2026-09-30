@@ -308,6 +308,8 @@ place to keep up to date, and would be wrong the moment the mode changed
   ;; and how wide to draw, now and whenever the window changes
   (add-hook 'emjupy-kernel-connected-functions #'emjupy--tell-kernel-width)
   (add-hook 'emjupy-box-width-changed-functions #'emjupy--tell-kernel-width)
+  ;; Closing the notebook closes the connections it opened.
+  (add-hook 'kill-buffer-hook #'emjupy--release-notebook nil t)
   ;; Cells hold code, so the editing conveniences a programming mode would
   ;; give apply here too.  emjupy-mode derives from `fundamental-mode', which
   ;; brings none of them, and nothing about the buffer suggests to the user

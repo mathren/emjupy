@@ -1226,7 +1226,12 @@ means the caller should fall back to a full redraw."
       ;; Faces are applied as plain (non-sticky) `face' properties so that
       ;; text typed at a cell edge does not inherit the neighbouring face.
       (remove-text-properties src-start (point) '(rear-nonsticky nil)))
-    (unless (string-suffix-p "\n" source) (insert "\n"))
+    ;; Always one newline after the source, which sync always removes.  It
+    ;; was added only when the source did not already end in one, so a
+    ;; source ending in a newline lost it on the first sync -- and every
+    ;; save of such a notebook changed its cells.  Found by the
+    ;; round-trip corpus.
+    (insert "\n")
 
     (put-text-property src-start (point) 'emjupy-cell cell)
 

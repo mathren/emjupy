@@ -94,6 +94,21 @@ its output as the kernel sent it, which is what is saved.
 Output is redrawn at most a few times a second, however many messages
 arrive, and only in the cell it belongs to.
 
+* Closing a notebook
+
+Killing a notebook's buffer closes what it opened: the connection to its
+kernel, its language-server connection and its shadow buffer.  The
+kernel itself keeps running on the server -- it outlives the buffer by
+design, and the next login adopts it.  A language server another
+notebook still uses is left running.
+
+The connection is ended directly: the shadow buffer is killed first,
+which is how Eglot closes the document, then the server is marked as
+shut down on purpose -- or Eglot would start a replacement -- its pending
+requests are dropped, and it is taken out of Eglot's table at once, so a
+notebook opened a moment later is not handed a dying server.  None of it
+waits: closing takes no measurable time.
+
 * Redrawing
 
 Most changes redraw only the part of the buffer they affect: output

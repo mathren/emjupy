@@ -85,13 +85,19 @@ done nothing for months looks exactly like one that works.
   =window-live-p=, =buffer-live-p=, =websocket-p= and =websocket-openp=,
   =jsonrpc-running-p=, =xref-file-location-p=.
 - One that can only be found out by trying is caught by its type:
-  =json-parse-error=, =jsonrpc-error=, =file-error=.
+  =json-error= -- the whole family: a reply nested too deep, or bytes
+  that are not UTF-8, is a =json-error= but not a =json-parse-error= --
+  =jsonrpc-error=, =file-error=.
 - A request to the Jupyter server that fails signals =emjupy-http-error=,
   or =emjupy-http-status= when the server answered with an error status.
   Both are children of =file-error=, the family Emacs uses for a
   resource it cannot reach, which also keeps their messages readable.
   =emjupy--http-status-of= extracts the status; =emjupy--http-exists-p=
   answers "is this there" with nil for a 404 instead of signalling.
+- A path into the Contents API goes through =emjupy--contents-path=, never
+  a bare =concat=: a notebook name can hold =#= or =?=, which in a URL
+  start a fragment or a query, so =a#b.ipynb= was asked for as =a= -- and
+  saved there.
 - Background work that must not abort the command it runs under -- the
   language server warming up while a notebook opens -- uses
   =with-demoted-errors=, so a failure is reported rather than lost.
@@ -265,6 +271,80 @@ running the server -- the =pip= line above installs both.  Those of the
 local fallback need a language server on this machine's =PATH= (=pylsp=,
 =pyright-langserver= or =jedi-language-server=), and skip if none is
 found.
+
+* Robustness tests
+
+=src/emjupy-robustness-test.el= holds the tests that make their own
+inputs.  They run with the rest of =make test=, and each found a bug
+the hand-written tests had not.
+
+| Test                            | What it tries                                           |
+|---------------------------------+---------------------------------------------------------|
+| message order                   | random interleavings of a kernel's replies and outputs  |
+| random edits                    | random sequences of cell commands, invariants after each |
+| undo everything                 | random edits, then undo to the start                    |
+| round-trip                      | every notebook in =src/test-corpus/=, saved and reloaded |
+| hostile content                 | escape floods, huge SVGs, deep JSON, awkward file names |
+| leaks                           | many sessions; timers, processes, hooks, tables after   |
+
+** Seeds
+
+Each run draws a seed, and every failure of a randomised test names it:
+
+#+begin_src
+Info: EMJUPY_FUZZ_SEED=4, case 5
+Info: after (insert-above insert-below delete-char split move-down)
+#+end_src
+
+Set it to replay the run exactly; =EMJUPY_FUZZ_ITERATIONS= sets how many
+cases each test tries -- by default from ten, for the slow ones, to two
+hundred, for the message orders:
+
+#+begin_src bash
+EMJUPY_FUZZ_SEED=4 EMJUPY_FUZZ_ITERATIONS=500 make test
+#+end_src
+
+A failing sequence is usually long.  Before working on one, shrink it:
+replay it with a step removed, and keep the removal while it still
+fails.  The separator bug the edit fuzz found was some twenty steps as
+found and five once shrunk, and understood from those, three: insert a
+cell, insert another before it, backspace.
+
+** Expected failures
+
+A test for a fault that is known but not yet fixed is marked
+=:expected-result :failed=, with the reason in its docstring and an entry
+in [[file:todo.org][the TODO list]].  The suite stays green, the fault stays visible, and
+a fix shows up as an unexpected pass -- the cue to take the marking off.
+
+** The notebook corpus
+
+=src/test-corpus/= is written by =tools/make-notebook-corpus.py=, with
+=nbformat= itself, so each notebook is valid by Jupyter's own
+definition.  =tools/check-roundtrip.py= compares a notebook with emjupy's
+save of it -- every cell, source, output, metadata and attachment -- and
+validates the save; the round-trip test calls it when Python has
+=nbformat=, and otherwise checks only that saving twice changes nothing.
+Add a notebook to the generator, not by hand, when a new shape turns up.
+
+** Network faults
+
+=tools/faultproxy.py= sits between emjupy and the server and misbehaves
+on command: it drops every connection, stalls, delays or splits what it
+forwards.  The =emjupy-int-fault-*= tests start it in front of the test
+server, so they run with the integration tests and need =python3=.  It
+can be driven by hand as well:
+
+#+begin_src bash
+python3 tools/faultproxy.py 127.0.0.1 8888     # prints its port and control port
+echo stall | nc 127.0.0.1 CONTROL-PORT         # or sever, resume, delay 200, chunk 7, reset
+#+end_src
+
+** Compiled files
+
+Emacs loads a =.elc= in preference to its =.el=, newer or not.  To check
+a test fails without a fix, run =make clean= first -- otherwise the old
+code is the compiled copy of the new, and the test passes for no reason.
 
 * Test hygiene
 

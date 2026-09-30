@@ -78,7 +78,7 @@ gets a definite answer rather than a local one.")
   xsrf
   ;; The kernel bound to this port. One port = one kernel: notebooks opened
   ;; from this server attach to it, so selecting a notebook drops you into
-  ;; the REPL already running behind that tunnel. C-c C-z overrides it for
+  ;; the REPL already running behind that tunnel. C-c M-z overrides it for
   ;; an individual notebook.
   kernel-id)
 
@@ -96,7 +96,11 @@ gets a definite answer rather than a local one.")
   (setq emjupy--next-cell-id (1+ emjupy--next-cell-id)))
 
 (cl-defstruct emjupy-cell
-  id type exec-count source outputs metadata overlay output-ov nb-id)
+  id type exec-count source outputs metadata overlay output-ov nb-id
+  ;; Files pasted into a markdown or raw cell, by name, as nbformat keeps
+  ;; them.  Carried untouched: emjupy does not show them, but a notebook
+  ;; saved without them has lost the images its markdown refers to.
+  attachments)
 
 (cl-defstruct emjupy-notebook
   path server kernel cells metadata buffer shadow-buffer

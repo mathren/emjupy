@@ -60,6 +60,7 @@
 
 (require 'emjupy)
 (require 'emjupy-test)
+(require 'emjupy-robustness-test)
 
 ;; Integration tests (real Jupyter server / ssh tunnel / language server) are
 ;; opt-in: they are skipped unless the relevant environment variables point at

@@ -352,7 +352,17 @@ should fall back to a full redraw."
             ;; cell, where it shows up as a stray line at the top of its
             ;; source.
             (move-overlay following-ov resume
-                          (max resume (overlay-end following-ov)))))
+                          (max resume (overlay-end following-ov))))
+          ;; Again, now the following cell starts where it should.  The
+          ;; drawing protected the gaps while that cell's overlay still
+          ;; stretched back over the new one, so the gap between them
+          ;; counted as inside a cell and was left writable: a backspace
+          ;; at the new cell's start then deleted the separator, and the
+          ;; two cells ran together.  Found by the edit fuzz.  Not recorded
+          ;; for undo: marking text read-only edits nothing, and an entry
+          ;; for it would sit among the ones `emjupy--undo-adjust' shifts.
+          (let ((buffer-undo-list t))
+            (emjupy--protect-non-cell-regions)))
         (emjupy--undo-adjust at at inserted))
       t)))
 

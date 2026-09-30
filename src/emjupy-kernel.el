@@ -389,7 +389,8 @@ kernels never cross-talk."
       (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
     (unless (emjupy--ws-live-p kernel)
-      (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
+      (user-error "This notebook has no kernel! Use %s to select or start one"
+                  (substitute-command-keys "\\[emjupy-connect-kernel-interactive]")))
 
     (let* ((cell (emjupy--cell-at-point)))
       (unless cell
@@ -512,6 +513,31 @@ this is what lets well-behaved output not need that."
                      (cons (emjupy-kernel-id kernel) (emjupy--box-width)))
         (emjupy--tell-kernel-width nb)))))
 
+(defun emjupy--kernel-connection-closed (kernel label)
+  "The WebSocket to KERNEL, for the notebook called LABEL, has closed.
+
+Any cell still running on it is ended: its reply and closing idle will
+not come over a closed connection.  A kernel that dies mid-cell is one
+way that happens -- the server restarts it and closes the socket -- and
+the cell was left showing as running for ever, waiting for them."
+  (let* ((pending (emjupy-kernel-pending kernel))
+         (nb (emjupy-kernel-notebook kernel))
+         (buf (and nb (emjupy-notebook-buffer nb)))
+         (cells nil))
+    (when (hash-table-p pending)
+      (maphash (lambda (id cell)
+                 (push cell cells)
+                 (remhash id emjupy--request-halves))
+               pending)
+      (clrhash pending))
+    (when (buffer-live-p buf)
+      (dolist (cell cells) (emjupy--mark-done cell buf)))
+    (message "[emjupy] %s: kernel connection closed%s." label
+             (if cells
+                 (format "; %d running cell%s stopped" (length cells)
+                         (if (cdr cells) "s" ""))
+               ""))))
+
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
 KERNEL-NAME, when given, is the kernelspec name to record.
@@ -552,7 +578,7 @@ several notebooks -- from several servers -- stay live at once."
            :custom-header-alist headers
            :on-message (lambda (_ws frame) (emjupy--handle-ws-message kernel frame))
            :on-open (lambda (_ws) (message "[emjupy] %s connected to kernel %s" label kernel-id))
-           :on-close (lambda (_ws) (message "[emjupy] %s: kernel WebSocket closed." label))
+           :on-close (lambda (_ws) (emjupy--kernel-connection-closed kernel label))
            :on-error (lambda (_ws type err)
                        (message "[emjupy] %s WebSocket error (%s): %s" label type err))))
     (setf (emjupy-notebook-kernel notebook) kernel)
@@ -681,7 +707,8 @@ Other open notebooks, and their kernels, are untouched."
   (let* ((nb (emjupy--notebook))
          (kernel (emjupy-notebook-kernel nb)))
     (unless (and kernel (emjupy-kernel-id kernel))
-      (user-error "This notebook has no kernel! Use C-c C-z to select/start one"))
+      (user-error "This notebook has no kernel! Use %s to select or start one"
+                  (substitute-command-keys "\\[emjupy-connect-kernel-interactive]")))
     ;; Ask first: a restart throws away every variable in the session, and
     ;; there is no undo for that.  C-c C-x C-r is one slip from C-c C-x C-c,
     ;; which merely reconnects.
