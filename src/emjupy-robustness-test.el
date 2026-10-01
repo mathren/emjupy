@@ -405,6 +405,7 @@ images pasted into markdown cells, were dropped on save."
 
 Built here rather than kept in the corpus: at 200,000 lines it is some
 megabytes, too heavy for the repository."
+  :tags '(:timing)
   (let* ((text (apply #'concat (make-list 200000 "line\n")))
          (out (let ((o (make-hash-table :test 'equal)))
                 (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
@@ -435,12 +436,14 @@ megabytes, too heavy for the repository."
 
 A program can write anything to a terminal: colour codes by the tens of
 thousands, sequences cut off half-way, codes no terminal knows."
+  :tags '(:timing)
   (let ((text (concat (apply #'concat (make-list 20000 "\e[31;1mx\e[0m"))
                       "\e[38;5;999m\e[?25l\e[" "\e]0;title\a" "unterminated \e[31")))
     (should (< (emjupy-fuzz--draw-output-seconds (emjupy-fuzz--stream text)) 10.0))))
 
 (ert-deftest emjupy-fuzz-huge-svg-does-not-stall-drawing ()
   "A multi-megabyte SVG output is drawn, or declined, without stalling."
+  :tags '(:timing)
   (let* ((svg (concat "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'>"
                       (apply #'concat (make-list 60000 "<rect x='1' y='1' width='1' height='1'/>"))
                       "</svg>"))
