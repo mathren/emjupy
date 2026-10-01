@@ -679,7 +679,7 @@ and its own bottom border is never hidden."
                                  :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector cell) buf nb
       (should-not (emjupy-cell-output-ov cell))
-      (let ((footer (overlay-get (emjupy-cell-overlay cell) 'after-string)))
+      (let ((footer (emjupy--overlay-footer (emjupy-cell-overlay cell))))
         (should (and footer (string-match-p "└" footer)))))))
 
 (ert-deftest emjupy-test-output-box-merges-with-input-border ()
@@ -693,8 +693,8 @@ closing border immediately followed by a separate opening one."
     (setf (emjupy-cell-outputs cell) (vector oh))
     (emjupy-test--with-notebook (vector cell) buf nb
       (should (emjupy-cell-output-ov cell))
-      (should (string= (overlay-get (emjupy-cell-overlay cell) 'after-string) ""))
-      (should (string-prefix-p "├" (overlay-get (emjupy-cell-output-ov cell) 'before-string))))))
+      (should (string= (emjupy--overlay-footer (emjupy-cell-overlay cell)) ""))
+      (should (string-prefix-p "├" (emjupy--overlay-header (emjupy-cell-output-ov cell)))))))
 
 (ert-deftest emjupy-test-box-borders-match-configured-width ()
   "Box-drawing borders (excluding their trailing newline) are pinned to
@@ -2268,7 +2268,7 @@ poked out beyond the right-hand border."
             (let ((emjupy-box-width w))
               (emjupy--refresh-box-rules t)
               (let* ((ov (emjupy-cell-output-ov cell))
-                     (rule (1- (length (overlay-get ov 'before-string))))
+                     (rule (1- (length (emjupy--overlay-header ov))))
                      (pads 0))
                 (should (= rule w))
                 (save-excursion
@@ -2529,7 +2529,7 @@ only that cell does."
         ;; the marker is in the label and in the drawn header
         (should (string-match-p "In: |" (emjupy--cell-label c1)))
         (should (string-match-p "In: |"
-                                (overlay-get (emjupy-cell-overlay c1) 'before-string)))
+                                (emjupy--overlay-header (emjupy-cell-overlay c1))))
         (should (string-match-p "In:  " (emjupy--cell-label c2)))
         ;; the animation advances
         (setq emjupy--spinner-frame 1)
@@ -3196,6 +3196,19 @@ guards against a second editor that cannot exist for a generated file."
               (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook)))
             (should (> writes 0))))))))
 
+(defun emjupy-test--companions-all-owned ()
+  "Check that every overlay showing a rule belongs to a live cell or output.
+The boxes are counted by their own overlays; the header and footer
+companions that draw their rules must each have an owner that is still
+there, or they are a rule with no cell."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (dolist (o (overlays-in (point-min) (point-max)))
+        (let ((owner (overlay-get o 'emjupy-rules-of)))
+          (when owner
+            (should (overlay-buffer owner))
+            (should (memq o (overlay-get owner 'emjupy-companions)))))))))
+
 (ert-deftest emjupy-test-no-stray-overlays-after-reparse ()
   "Overlays whose cell has gone must be deleted, not left at position 1.
 
@@ -3216,7 +3229,7 @@ on displaying its before-string and after-string: a stack of stray
             (setf (emjupy-notebook-buffer nb) buf)
             (emjupy--rerender-notebook)
             (cl-flet ((emjupy-overlays ()
-                        (seq-filter (lambda (o) (overlay-get o 'emjupy-overlay))
+                        (seq-filter (lambda (o) (memq (overlay-get o 'emjupy-overlay) '(cell output)))
                                     (overlays-in (point-min) (point-max)))))
               (should (= (length (emjupy-overlays)) 2))
               ;; re-parse three times: fresh structs, old ones abandoned
@@ -3227,8 +3240,8 @@ on displaying its before-string and after-string: a stack of stray
               ;; nothing collapsed at the top
               (should-not (cl-some (lambda (o) (= (overlay-start o) (overlay-end o)))
                                    (emjupy-overlays)))))
-        (let ((kill-buffer-query-functions nil)) (kill-buffer buf))))))
-
+        (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+  (emjupy-test--companions-all-owned))
 (ert-deftest emjupy-test-shadow-buffer-follows-a-changed-path ()
   "The shadow buffer moves when its path changes.
 
@@ -3766,11 +3779,11 @@ the symptom unrepresentable rather than merely unlikely."
       (with-current-buffer buf
         (cl-flet ((strays ()
                     (seq-filter (lambda (o)
-                                  (and (overlay-get o 'emjupy-overlay)
+                                  (and (memq (overlay-get o 'emjupy-overlay) '(cell output))
                                        (= (overlay-start o) (overlay-end o))))
                                 (overlays-in (point-min) (point-max))))
                   (tagged ()
-                    (seq-filter (lambda (o) (overlay-get o 'emjupy-overlay))
+                    (seq-filter (lambda (o) (memq (overlay-get o 'emjupy-overlay) '(cell output)))
                                 (overlays-in (point-min) (point-max)))))
           ;; forge the symptom: collapsed overlays at the top, each drawing
           ;; a rule, exactly as an abandoned cell would leave behind
@@ -3787,8 +3800,8 @@ the symptom unrepresentable rather than merely unlikely."
           (should (overlayp (emjupy-cell-overlay c1)))
           (should (overlayp (emjupy-cell-overlay c2)))
           (should (string-match-p "a = 1" (buffer-string)))
-          (should (string-match-p "b = 2" (buffer-string))))))))
-
+          (should (string-match-p "b = 2" (buffer-string)))))))
+  (emjupy-test--companions-all-owned))
 (ert-deftest emjupy-test-sweep-keeps-output-overlays ()
   "The sweep must not take the output boxes with it: they are claimed by
 their cells just as the source overlays are."
@@ -3849,18 +3862,18 @@ if the open path stops going through the redraw."
               (setq buffer (emjupy-open-notebook "reopen.ipynb" server)))
             (with-current-buffer buffer
               (let ((strays (seq-filter
-                             (lambda (o) (and (overlay-get o 'emjupy-overlay)
+                             (lambda (o) (and (memq (overlay-get o 'emjupy-overlay) '(cell output))
                                               (= (overlay-start o) (overlay-end o))))
                              (overlays-in (point-min) (point-max))))
-                    (tagged (seq-filter (lambda (o) (overlay-get o 'emjupy-overlay))
+                    (tagged (seq-filter (lambda (o) (memq (overlay-get o 'emjupy-overlay) '(cell output)))
                                         (overlays-in (point-min) (point-max)))))
                 (should (= (length strays) 0))
                 ;; one cell, so one overlay, however many times it was opened
                 (should (= (length tagged) 1))
                 (should (string-match-p "a = 1" (buffer-string))))))
         (when (buffer-live-p buffer)
-          (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))))
-
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))
+  (emjupy-test--companions-all-owned))
 (ert-deftest emjupy-test-lsp-failure-names-the-cause ()
   "A refused WebSocket says nothing useful, so /lsp/status is asked.
 
@@ -4299,7 +4312,7 @@ the structural gaps notes_undo.org described."
               (should (= (length (emjupy-notebook-cells nb))
                          (if (eq action 'split) 4 2)))
               (should (string-match-p "a = 1 \\+ 7" (buffer-string)))
-              (undo)
+              (emjupy-test--undo-past-steps "\\+ 7")
               (should-not (string-match-p "\\+ 7" (buffer-string)))
               (should (string-match-p "a = 1" (buffer-string))))
           (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))))
@@ -4366,7 +4379,7 @@ behaved that way."
         (should-not (string-match-p "result" (buffer-string)))
         ;; the typing is there and can still be taken back
         (should (string-match-p "a = 1 \\+ 7" (buffer-string)))
-        (undo)
+        (emjupy-test--undo-past-steps "\\+ 7")
         (should-not (string-match-p "\\+ 7" (buffer-string)))
         (should (string-match-p "a = 1" (buffer-string)))))))
 
@@ -4892,11 +4905,15 @@ whether the first cell survived, :problems any invariant violations."
         (let ((worked (condition-case nil
                           (progn
                             (undo)
-                            ;; Deleting a cell is itself undoable now, so the
-                            ;; first step puts the cell back and the typing
-                            ;; needs another.  Anything else is undone in one.
-                            (when (string-match-p "\\+ 7" (buffer-string))
-                              (undo-more 1))
+                            ;; Deleting and inserting a cell are undo steps of
+                            ;; their own, so each operation of that kind takes
+                            ;; a step back before the typing is reached.
+                            ;; Anything else is undone with the typing.
+                            (let ((steps 0))
+                              (while (and (string-match-p "\\+ 7" (buffer-string))
+                                          (< steps 4))
+                                (undo-more 1)
+                                (setq steps (1+ steps))))
                             t)
                         (error nil))))
           ;; Undo changes the buffer; the cells catch up at the next sync,
@@ -5237,7 +5254,7 @@ away, which is the difference between hidden and absent."
         (should (= (length (emjupy-cell-outputs cell)) 1))
         (should (emjupy--cell-outputs-hidden-p cell))
         ;; the rule says so, and the cell still has a bottom
-        (let ((footer (overlay-get (emjupy-cell-overlay cell) 'after-string)))
+        (let ((footer (emjupy--overlay-footer (emjupy-cell-overlay cell))))
           (should (string-match-p emjupy-hidden-output-glyph footer))
           (should (string-match-p "hidden" footer))
           (should (string-prefix-p "└" footer)))
@@ -5277,16 +5294,16 @@ went, so did the only bottom edge, leaving the cell open."
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         ;; with output, the output box carries the bottom
-        (should (equal (overlay-get (emjupy-cell-overlay cell) 'after-string) ""))
+        (should (equal (emjupy--overlay-footer (emjupy-cell-overlay cell)) ""))
         (should (string-prefix-p
-                 "└" (overlay-get (emjupy-cell-output-ov cell) 'after-string)))
+                 "└" (emjupy--overlay-footer (emjupy-cell-output-ov cell))))
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
         (let ((emjupy-confirm-clear-output nil))
           (emjupy-clear-cell-output))
         ;; with it gone, the cell carries it again
         (should-not (emjupy-cell-output-ov cell))
         (should (string-prefix-p
-                 "└" (overlay-get (emjupy-cell-overlay cell) 'after-string)))
+                 "└" (emjupy--overlay-footer (emjupy-cell-overlay cell))))
         (should-not (emjupy--check-invariants))))))
 
 (ert-deftest emjupy-test-collapsed-marker-is-clickable ()
@@ -5305,7 +5322,7 @@ where it is ambiguous which of two neighbours is meant."
         (goto-char (overlay-start (emjupy-cell-overlay c1)))
         (emjupy-toggle-cell-output)
         (should-not (string-match-p "first" (buffer-string)))
-        (let* ((footer (overlay-get (emjupy-cell-overlay c1) 'after-string))
+        (let* ((footer (emjupy--overlay-footer (emjupy-cell-overlay c1)))
                (idx (text-property-not-all 0 (length footer)
                                            'emjupy-toggle-cell nil footer)))
           ;; only the marker is live; the rest of the rule is an ordinary line
@@ -5597,11 +5614,11 @@ output boxes above grow and shrink."
                         (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 25))))
             (recenter 0)
             (redisplay t)
-            (let ((top (line-at (window-start w)))
+            (let ((top (line-at (emjupy--visible-from (window-start w))))
                   (here (line-at (point))))
               (emjupy--rerender-notebook)
               (redisplay t)
-              (should (equal (line-at (window-start w)) top))
+              (should (equal (line-at (emjupy--visible-from (window-start w))) top))
               (should (equal (line-at (point)) here)))))))))
 
 (ert-deftest emjupy-test-brackets-pair-in-cells ()
@@ -5793,12 +5810,12 @@ untidy."
           (goto-char (overlay-start (emjupy-cell-overlay target)))
           (recenter 0)
           (redisplay t)
-          (let ((top (line-number-at-pos (window-start w))))
+          (let ((top (line-number-at-pos (emjupy--visible-from (window-start w)))))
             (emjupy-cycle-cell-type)
             (redisplay t)
             ;; compared by line number: the line\='s text may change, its
             ;; place in the buffer should not
-            (should (= (line-number-at-pos (window-start w)) top))))))))
+            (should (= (line-number-at-pos (emjupy--visible-from (window-start w))) top))))))))
 
 (ert-deftest emjupy-test-server-is-told-where-modules-are ()
   "The language server is told the notebook\='s own directory.
@@ -6125,6 +6142,17 @@ bound unless someone writes down why it should not be.")
       (funcall walk emjupy-mode-map))
     cmds))
 
+(defun emjupy-test--undo-past-steps (regexp)
+  "Undo, and go on undoing while REGEXP still matches the buffer.
+Every cell command is an undo step of its own, so an edit made before
+one is reached after that step -- and one more for each such command.
+Bounded, so a history that never gets there fails rather than loops."
+  (let ((last-command nil)) (undo))
+  (let ((steps 0))
+    (while (and (string-match-p regexp (buffer-string)) (< steps 5))
+      (undo-more 1)
+      (setq steps (1+ steps)))))
+
 (defun emjupy-test--undo-survives-command (command)
   "Type into a cell, run COMMAND, and return whether the typing can be undone.
 
@@ -6168,12 +6196,7 @@ Returns t, or a string saying what went wrong."
                (t
                 (goto-char (point-min))
                 (let ((undone (condition-case nil
-                                  (progn (undo)
-                                         ;; deleting a cell is undoable in its
-                                         ;; own right, so its step comes first
-                                         (when (string-match-p "\\+ 7" (buffer-string))
-                                           (ignore-errors (undo-more 1)))
-                                         t)
+                                  (progn (emjupy-test--undo-past-steps "\\+ 7") t)
                                 (error nil))))
                   (cond
                    ((not undone) "undo refused")
@@ -7063,6 +7086,55 @@ turned off, so a `.#\' file, and in a graphical session an auto-save
                 (with-current-buffer sb (set-buffer-modified-p nil))
                 (kill-buffer sb)))))
       (delete-directory dir t))))
+
+(ert-deftest emjupy-test-latex-is-rendered-in-math-mode ()
+  "Math is handed to LaTeX with its delimiters, so in math mode.
+
+The body alone was passed, which LaTeX reads as text: $\\frac{x}{y}$
+rendered as an upright x above a stray bar over y.  The delimiters also
+say whether the math is inline or display, and are kept for that."
+  (should (equal (emjupy--latex-math "$\\frac{x}{y}$") "$\\frac{x}{y}$"))
+  (should (equal (emjupy--latex-math "$$\\frac{x}{y}$$") "$$\\frac{x}{y}$$"))
+  (should (equal (emjupy--latex-math "\\(a\\)") "\\(a\\)"))
+  (should (equal (emjupy--latex-math "\\[a\\]") "\\[a\\]"))
+  ;; a bare body is taken as inline math
+  (should (equal (emjupy--latex-math "x^2") "$x^2$"))
+  ;; and what the preview sends is the whole fragment
+  (let ((sent nil) (emjupy-render-latex t))
+    (with-temp-buffer
+      (insert "a $\\frac{x}{y}$ and $$y^2$$")
+      (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () 'org))
+                ((symbol-function 'emjupy--latex-image)
+                 (lambda (frag) (push frag sent) nil)))
+        (emjupy--preview-latex-in (point-min) (point-max))))
+    (should (member "$\\frac{x}{y}$" sent))
+    (should (member "$$y^2$$" sent))))
+
+(ert-deftest emjupy-test-inserting-a-cell-is-undone-and-redone ()
+  "Undo takes back an inserted cell, and redo puts it back.
+
+The insertion was drawn with undo recording off and recorded as nothing,
+so undo skipped it and took back the edit before, leaving the new cell
+in place.  Found by the undo fuzz."
+  (dolist (cmd (list #'emjupy-insert-cell-below #'emjupy-insert-cell-above))
+    (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                         (emjupy-test--cell-like 'code "b = 2"))))
+      (emjupy-test--with-notebook cells buf nb
+        (with-current-buffer buf
+          (buffer-enable-undo)
+          (setq buffer-undo-list nil)
+          (goto-char (overlay-start (emjupy-cell-overlay (aref cells 0))))
+          (funcall cmd)
+          (undo-boundary)
+          (should (= (length (emjupy-notebook-cells nb)) 3))
+          (let ((last-command nil)) (undo))
+          (should (= (length (emjupy-notebook-cells nb)) 2))
+          (should-not (emjupy--check-invariants))
+          ;; redo: undo the undo
+          (undo-boundary)
+          (let ((last-command nil)) (undo))
+          (should (= (length (emjupy-notebook-cells nb)) 3))
+          (should-not (emjupy--check-invariants)))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -7,22 +7,22 @@ name: Coverage
 # Tests tagged :timing are left out: they assert on elapsed time, which
 # means nothing when every function is instrumented.
 
+# On main only, for the badge: pull requests are tested by build-package.yml,
+# and measuring coverage there too ran the whole suite a second time.
 on:
   workflow_dispatch:
 
   push:
+    branches: [main]
     paths:
       - 'src/**'
       - 'Makefile'
       - 'tools/coverage-summary.py'
       - '.github/workflows/coverage.yml'
 
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'Makefile'
-      - 'tools/coverage-summary.py'
-      - '.github/workflows/coverage.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   coverage:

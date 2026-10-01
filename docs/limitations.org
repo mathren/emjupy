@@ -24,13 +24,6 @@ For editing across several cells at once, =C-c '= opens every code cell
 in one Python buffer, where multiple cursors, and every other editing
 tool, work as in any file; =C-c C-c= there writes the changes back.
 
-* Undo does not take back every cell command
-
-Typing, deleting text, moving a cell and deleting a cell are undone as
-you would expect.  Inserting a cell, splitting one and changing its type
-are not undo steps of their own: undo takes back the text they drew but
-leaves the cell there.  Delete the cell, or join it back, instead.
-
 * A kernel that dies mid-cell leaves the cell running
 
 If the kernel process dies while a cell runs -- it runs out of memory,

@@ -32,6 +32,8 @@ jobs:
       - name: Check tag matches the package version
         run: make check-version TAG="${GITHUB_REF_NAME}"
 
+      # The only run a tag starts, and not a repeat: the version commit it
+      # points at is often pushed with [skip ci], so nothing has tested it.
       - name: Test
         env:
           EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket

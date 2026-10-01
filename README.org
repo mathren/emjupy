@@ -38,7 +38,7 @@ setup:
 
 *N.B.:* Screenshot may be out of date.
 
-* Try it with =emacs -Q=
+* Try it in under 2 minutes with =emacs -Q=
 
 Without touching your own Emacs configuration. The repository ships a
 small notebook, =test_notebook/test.ipynb=, with a module beside it, so

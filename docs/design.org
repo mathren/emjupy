@@ -125,24 +125,30 @@ moves every held position to the start.
 
 * Undo
 
-Undo entries hold plain buffer positions, not markers, so every redraw
-has to keep them meaningful.
+Every cell command -- inserting, deleting, moving, splitting, joining,
+changing a cell's type, clearing or hiding output, yanking a cell -- is
+one undo step, and redo takes it forward again.  They all work the same
+way: the cells are snapshotted before the command changes anything, and
+undoing the step restores the snapshot.  Restoring records the state it
+replaced, so redo is the same operation the other way.
 
-A partial redraw does it directly.  Entries before the change are
-untouched and those after it are shifted by the amount the change moved
-things.  Entries describing text inside the redrawn region are usually
-dropped, since that text is gone -- except where the change can be
-undone exactly, as moving and merging cells can, in which case they are
-kept for when it is.
+Three things make that sound.  The snapshot is taken first: a command
+that changed a cell and then redrew left the redraw to record the state
+after the change, so undoing it restored the change.  A snapshot is
+written back into the same cell objects, not copies, since the notebook
+and every other undo entry refer to them.  And while a cell command runs,
+no earlier undo entry is shifted or dropped: undoing the step restores
+exactly the text those entries describe, and they are only replayed after
+it.  Shifting them instead could not be done right -- undoing a deletion
+reinserts the cell, and the shift that makes room for it moved the cell's
+own entries into the next one.
 
-A whole redraw records itself as one undo step that puts the cells back
-as they were.  Undoing it restores exactly the text the older entries
-were recorded against, so they become meaningful again, and undo carries
-on through them.
-
-Moving and deleting a cell are undo steps of their own: undo puts the
-cell back.  An edit made before one of them is undone by undoing the
-change first, then the edit, as with any other command.
+Undo entries hold plain buffer positions, so a redraw that is not an
+undo step -- output arriving, say -- keeps them meaningful directly:
+entries before the change are untouched, those after it are shifted by
+the amount it moved things, and those inside the redrawn region are
+dropped.  It changes the entries in place, since an undo already under
+way replays from a list that is shared, not copied.
 
 * Use the browser's transport, not ZMQ
 

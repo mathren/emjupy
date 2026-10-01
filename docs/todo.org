@@ -3,12 +3,18 @@
 #+NEXT_PAGE: index.org
 
 * TODO list
-- [ ] misplaced linenum: instead of having one line number for the
+- [-] misplaced linenum: instead of having one line number for the
   line where I write, I get two numbers for the outlines, see image:
 #+CAPTION: Issue with line numbers.
 #+ATTR_HTML: :width 30%
 [[file:images/linenum_issue.png]]
-- [ ] $\frac{x}{y}$ not rendered correctly in markdown latex, treated as $x_{\bar{y}}$
+  Fixed for every rule but two: code and output lines are numbered, the
+  rules between cells are not, and all of them line up.  Left: the first
+  cell's header, which has no line above it to be drawn as a
+  continuation of, still takes line 1's number; and the last cell's
+  footer is drawn on a numbered line at the end of the buffer.
+- [X] $\frac{x}{y}$ not rendered correctly in markdown latex, treated as $x_{\bar{y}}$:
+  the fragment was handed to LaTeX without its delimiters, so in text mode
 - [ ] upon reshowing output, background is ok, but text get python
   highlighted (including removing background)
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
@@ -18,14 +24,9 @@
   before the connection was ended; handling it replies to a server that
   is gone.  Closing a notebook drops pending requests, but not messages
   already queued for dispatch.  Harmless, but it should not happen.
-- [ ] Undo does not take back every cell command.  Inserting, splitting
-  and changing the type of a cell are not undo steps of their own, so
-  undoing their text leaves the cell structure behind.  Test:
-  =emjupy-fuzz-undo-takes-every-edit-back=, expected to fail.
-- [ ] Undo after two joins, with output and typing between, fails with
-  "Changes to be undone are outside visible portion of buffer": some
-  undo entries point past the end of the buffer.  Seven steps, fixed in
-  =emjupy-fuzz-undo-after-two-joins=, expected to fail.
+- [X] Undo takes back every cell command, and redo reapplies it: one
+  mechanism, a snapshot taken before the command.  The undo fuzz passes,
+  and the two-joins case with it.
 - [ ] A kernel that dies while a cell runs leaves the cell running for
   ever.  The server restarts the kernel but sends nothing over the
   notebook's connection, and reports the new one as "starting"; ending

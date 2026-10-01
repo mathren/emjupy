@@ -120,6 +120,28 @@ done nothing for months looks exactly like one that works.
 | =make clean=         | remove =.elc= files and the tar                               |
 | =make timestamps=    | touch every source, to force a full rebuild                 |
 
+* Continuous integration
+
+Each check runs once per event, in one workflow unless only another can
+do it:
+
+| Event                           | Runs                                        |
+|---------------------------------+---------------------------------------------|
+| push to =main=, pull request    | =build-package.yml=: compile, lint, melpazoid, docs, and the tests -- unit and integration, once |
+| push to =main= changing =src/=  | and =coverage.yml=, for the Codecov badge   |
+| tag                             | =release.yml= only                          |
+| by hand                         | =set-version.yml=, or any of the above from the Actions tab |
+
+Pushes to other branches run nothing until a pull request is opened, and
+a newer push to the same branch cancels a run still going.  Build also
+runs for changes to the documentation, the tools, the notebook corpus and
+the MELPA recipe, not only the Lisp.
+
+The release tests what it ships, and is the only run a tag starts: the
+version commit is often pushed with =[skip ci]=, so nothing else has
+tested it.  Path filters do not apply to tag pushes, which is why a tag
+used to start Build and Coverage as well -- the suite four times over.
+
 * Running everything locally
 
 What CI runs, in the order worth running it: the cheap checks first, so a
@@ -415,9 +437,6 @@ support]].
    =docs/usage.org= -- checks they agree, and commits the change.  Or
    locally, the same script: =make set-version VERSION=X.Y.Z=.
 
-   A version mentioned as history -- "fixed in 0.1.2" -- is left alone:
-   it says when something happened, and stays true.  The script refuses
-   a version that is not =X.Y.Z=, or not higher than the current one.
 
 2. *Tag the commit* with the same version and push the tag.  That starts
    the release: the tests, the tarball on the release page, and the

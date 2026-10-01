@@ -241,7 +241,17 @@ the numbers are widest and the overshoot wraps a whole line."
     (let ((cols (window-max-chars-per-line win))
         (numbers (with-selected-window win
                      (if (bound-and-true-p display-line-numbers)
-                         (line-number-display-width)
+                         ;; What Emacs reports, or what the column will need --
+                         ;; the digits of the last line number and the space
+                         ;; either side -- whichever is more: the report is 0
+                         ;; until the window has been displayed once, which is
+                         ;; when a notebook is first drawn, and leaves out the
+                         ;; gap before the text.  Either way the rule fits.
+                         (max (line-number-display-width)
+                              (+ 2 (max (length (number-to-string
+                                                 (line-number-at-pos (point-max) t)))
+                                        (or (bound-and-true-p display-line-numbers-width)
+                                            0))))
                        0))))
       (max 1 (- cols numbers)))))
 
@@ -347,8 +357,11 @@ The header is an overlay `before-string', so this changes no buffer text
 and does not enter the undo history."
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
+      (overlay-put ov 'emjupy-header nil)
       (overlay-put ov 'before-string
-                   (emjupy--rule (emjupy--cell-label cell) "┌")))))
+                   (emjupy--rule (emjupy--cell-label cell) "┌"))
+      (emjupy--reconcile-rules)
+      (emjupy--overlay-header ov))))
 
 (defun emjupy--mark-running (cell &optional buffer)
   "Mark CELL as executing in BUFFER, and start the indicator."
@@ -387,6 +400,95 @@ and does not enter the undo history."
   "Return the header label for CELL's output box."
   (let ((exec (emjupy-cell-exec-count cell)))
     (format "[Out: %s]" (if (numberp exec) (number-to-string exec) " "))))
+
+(defun emjupy--overlay-header (ov)
+  "Return the header rule of cell or output overlay OV, wherever it is shown."
+  (or (overlay-get ov 'before-string) (overlay-get ov 'emjupy-header)))
+
+(defun emjupy--overlay-footer (ov)
+  "Return the footer rule of cell or output overlay OV, wherever it is shown."
+  (or (overlay-get ov 'after-string) (overlay-get ov 'emjupy-footer)))
+
+(defun emjupy--reconcile-rules ()
+  "Draw every rule as the continuation of the content line above it.
+
+`display-line-numbers-mode' numbers the first screen line of each buffer
+line.  A header drawn as a `before-string' on a cell's first line is
+that screen line, so the number went on the rule and the first line of
+code got none; the footer, drawn at the start of the separator line
+after a cell, took that line's number.  So each box's footer, and the
+header of the box after it, are shown instead as further screen lines of
+the last line of the box -- continuation lines, which are never numbered
+and keep the number column blank, so every rule lines up -- and the
+empty separator line between cells is made invisible.  What is on screen
+is unchanged; the numbers move to where the text is.
+
+The first cell\\='s header has no line above it and stays where it was.
+
+The rule strings are kept on each box in `emjupy-header' and
+`emjupy-footer'; a `before-string' or `after-string' set on a box is
+taken as its new rule.  Run after anything that redraws a box or
+changes the buffer\\'s structure; it rebuilds every companion, so it
+cannot leave one behind."
+  (when (bound-and-true-p emjupy--buffer-notebook)
+    ;; every box, in buffer order, with its rules taken into keeping
+    (let ((boxes nil))
+      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               do (dolist (ov (list (emjupy-cell-overlay cell) (emjupy-cell-output-ov cell)))
+                    (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer)))
+                      (overlay-put ov 'emjupy-header (emjupy--overlay-header ov))
+                      (overlay-put ov 'emjupy-footer (emjupy--overlay-footer ov))
+                      (overlay-put ov 'before-string nil)
+                      (overlay-put ov 'after-string nil)
+                      (push ov boxes))))
+      (setq boxes (sort boxes (lambda (a b) (< (overlay-start a) (overlay-start b)))))
+      ;; the previous companions, all of them
+      (dolist (o (overlays-in (point-min) (point-max)))
+        (when (overlay-get o 'emjupy-rules-of) (delete-overlay o)))
+      (dolist (ov boxes) (overlay-put ov 'emjupy-companions nil))
+      (let ((prev nil))
+        (dolist (ov (append boxes (list nil)))
+          (let* ((header (and ov (overlay-get ov 'emjupy-header)))
+                 (footer (and prev (overlay-get prev 'emjupy-footer)))
+                 (rules (mapconcat (lambda (r) (string-remove-suffix "\n" r))
+                                   (seq-filter (lambda (r) (and r (not (string-empty-p r))))
+                                               (list footer header))
+                                   "\n"))
+                 (anchor (and prev (1- (overlay-end prev)))))
+            (cond
+             ;; after a box: on its last newline, as continuation lines
+             ((and anchor (eq (char-after anchor) ?\n))
+              (unless (string-empty-p rules)
+                (let ((o (make-overlay anchor (1+ anchor) nil t nil))
+                      (text (concat "\n" rules)))
+                  ;; point there shows at the end of the text, before the rule
+                  (put-text-property 0 1 'cursor t text)
+                  (overlay-put o 'before-string text)
+                  (overlay-put o 'emjupy-overlay 'rules)
+                  (overlay-put o 'emjupy-rules-of prev)
+                  (push o (overlay-get prev 'emjupy-companions))))
+              ;; the separator after the box takes no line of its own --
+              ;; between boxes; the last one is left alone, since Emacs
+              ;; draws the end of the buffer whatever is hidden before it
+              (let ((gap-end (and ov (overlay-start ov))))
+                (when (and gap-end (< (overlay-end prev) gap-end))
+                  (let ((o (make-overlay (overlay-end prev) gap-end)))
+                    (overlay-put o 'invisible t)
+                    (overlay-put o 'emjupy-overlay 'rules)
+                    (overlay-put o 'emjupy-rules-of prev)
+                    (push o (overlay-get prev 'emjupy-companions))))))
+             ;; the first box, or one whose line above cannot carry it
+             (ov (overlay-put ov 'before-string header)
+                 (when prev (overlay-put prev 'after-string footer)))
+             (prev (overlay-put prev 'after-string footer))))
+          (setq prev ov))))))
+
+(defun emjupy--line-numbers-toggled ()
+  "Redraw the rules after line numbers are turned on or off.
+The number column takes width from the page, so the rules were drawn
+too wide for it, and wrapped."
+  (when (derived-mode-p 'emjupy-mode)
+    (emjupy--refresh-box-rules t)))
 
 (defun emjupy--rule (label &optional corner)
   "Return a propertized box rule line showing LABEL.
@@ -433,13 +535,15 @@ markers and the undo history are all untouched."
                do (let ((ov (emjupy-cell-overlay cell))
                         (out (emjupy-cell-output-ov cell)))
                     (when (overlayp ov)
+                      (overlay-put ov 'emjupy-header nil)
                       (overlay-put ov 'before-string
                                    (emjupy--rule (emjupy--cell-label cell)))
-                      ;; A cell with output has no footer of its own: the
+                                  ;; A cell with output has no footer of its own: the
                       ;; output box's header doubles as its bottom edge.
                       (overlay-put ov 'after-string
                                    (if (overlayp out) "" (emjupy--rule nil))))
                     (when (overlayp out)
+                      (overlay-put out 'emjupy-header nil)
                       (overlay-put out 'before-string
                                    (emjupy--rule (emjupy--cell-out-label cell) "├"))
                       (overlay-put out 'after-string (emjupy--rule nil))
@@ -447,7 +551,8 @@ markers and the undo history are all untouched."
                       ;; be re-aligned at the new width as well.
                       (let ((inhibit-read-only t)
                             (buffer-undo-list t))
-                        (emjupy--repad-output cell))))))))
+                        (emjupy--repad-output cell)))))
+      (emjupy--reconcile-rules))))
 
 (defun emjupy--window-size-changed (&optional _frame)
   "Refresh box rules in every emjupy buffer after a window size change."
@@ -610,8 +715,21 @@ the whole fragment with its image."
              ((executable-find "math-preview") 'math-preview)
              (t nil)))))
 
+(defun emjupy--latex-math (fragment)
+  "Return FRAGMENT as LaTeX in math mode.
+
+A fragment that brings its delimiters -- $...$, $$...$$, \\(...\\),
+\\[...\\] -- is used as written, so display math stays display math.  A
+bare body is taken as inline math.  The body alone is what used to be
+handed to LaTeX, which reads it in TEXT mode: $\\frac{x}{y}$ came out as
+an upright x above a stray bar over y."
+  (if (string-match-p "\\`[ \t\n]*\\(?:\\$\\|\\\\[[(]\\)" fragment)
+      fragment
+    (concat "$" fragment "$")))
+
 (defun emjupy--latex-image (body)
-  "Render BODY, a LaTeX math string, to an image spec, or nil."
+  "Render BODY, a LaTeX math fragment, to an image spec, or nil.
+BODY may bring its delimiters or not; see `emjupy--latex-math\='."
   (when (and (eq (emjupy--latex-available-p) 'org)
              (require 'org nil 'noerror))
     (let* ((dir (expand-file-name "emjupy-latex/" temporary-file-directory))
@@ -622,7 +740,9 @@ the whole fragment with its image."
            ;; rendered under one theme would be served back unchanged after
            ;; switching to another -- black glyphs on a dark background.
            (file (expand-file-name
-                  (concat (md5 (format "%s-%s-%s" body emjupy-latex-scale fg)) ".png")
+                  (concat (md5 (format "%s-%s-%s" (emjupy--latex-math body)
+                                       emjupy-latex-scale fg))
+                          ".png")
                   dir))
            ;; Deliberately NOT org's full preamble.  That pulls in packages a
            ;; minimal TeX install does not have -- ulem, for one -- and then
@@ -655,7 +775,8 @@ the whole fragment with its image."
               ;; :foreground and :background -- defaulting to "Black" on
               ;; "Transparent" whatever the theme says -- and takes :html-scale
               ;; rather than :scale, so emjupy-latex-scale was ignored too.
-              (org-create-formula-image body file opts (current-buffer) 'dvipng))
+              (org-create-formula-image (emjupy--latex-math body) file opts
+                                        (current-buffer) 'dvipng))
             (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
               (create-image file 'png nil :ascent 'center)))
         (error
@@ -668,7 +789,11 @@ the whole fragment with its image."
     (dolist (frag (emjupy--latex-fragments start end))
       (pcase-let ((`(,beg ,fin ,body) frag))
         (unless (string-empty-p (string-trim (or body "")))
-          (when-let* ((image (emjupy--latex-image body)))
+          (when-let* ((image (emjupy--latex-image
+                               ;; with its delimiters: they say whether the
+                               ;; math is inline or display, and put LaTeX
+                               ;; in math mode at all
+                               (buffer-substring-no-properties beg fin))))
             (let ((ov (make-overlay beg fin)))
               (overlay-put ov 'display image)
               (overlay-put ov 'emjupy-latex t)
@@ -1032,6 +1157,7 @@ and restarted fontification from scratch each time."
           ;; either, and is not redrawn.
           (overlay-put ov 'emjupy-fold-width (emjupy--box-width))
           (overlay-put ov 'emjupy-widest widest)
+          (overlay-put ov 'emjupy-header nil)
           (overlay-put ov 'before-string header)
           (overlay-put ov 'after-string footer)
           ;; No face on the overlay: each output piece paints itself, so a
@@ -1095,13 +1221,6 @@ text.  The shapes are those Emacs documents for `buffer-undo-list'."
             (nthcdr 4 entry)))
    (t entry)))
 
-(defvar emjupy--undo-region-is-restorable nil
-  "Non-nil when the caller records a step restoring the region it replaces.
-
-Entries describing text inside that region are then kept rather than
-dropped: the step\='s own undo puts the text back, and nothing can reach
-those entries until it has.")
-
 (defun emjupy--undo-adjust (start old-end delta)
   "Keep the undo history usable across a replacement of START..OLD-END.
 
@@ -1120,29 +1239,49 @@ worth keeping are precisely the ones that moved.  Getting the shift
 wrong is worse than dropping everything -- a wrong position does not
 raise an error, it quietly rewrites the wrong text -- which is why each
 entry shape is handled explicitly rather than by pattern-guessing."
-  (when (listp buffer-undo-list)
-    (setq buffer-undo-list
-          (delq :emjupy-drop
-                (mapcar
-                 (lambda (entry)
-                   (let ((p (emjupy--undo-entry-position entry)))
-                     (cond
-                      ((null p) entry)
-                      ((< p start) entry)
-                      ((< p old-end)
-                       ;; Text inside the region is normally gone, so an
-                       ;; entry describing it must go too.  Unless the
-                       ;; caller is recording a step that restores this
-                       ;; region exactly -- swapping two cells, merging
-                       ;; two into one -- in which case the entry can
-                       ;; only ever be replayed after that step has been
-                       ;; undone and the text is back.  Dropping it there
-                       ;; is what made an edit vanish for good when the
-                       ;; cell holding it was moved.
-                       (if emjupy--undo-region-is-restorable entry :emjupy-drop))
-                      (t (emjupy--undo-map-positions
-                          entry (lambda (x) (if (>= x old-end) (+ x delta) x)))))))
-                 buffer-undo-list)))))
+  (unless (bound-and-true-p emjupy--in-cell-step)
+  (let ((transform
+         (lambda (entry)
+           (let ((p (emjupy--undo-entry-position entry)))
+             (cond
+              ((null p) entry)
+              ((< p start) entry)
+              ((< p old-end)
+               ;; Text inside the region is gone, so an entry describing it
+               ;; goes too.  Structural commands never get here -- they
+               ;; suspend this and are undone as a whole -- so this is for
+               ;; redraws that are not undo steps, such as output arriving.
+               :emjupy-drop)
+              (t (emjupy--undo-map-positions
+                  entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
+        (seen (make-hash-table :test 'eq)))
+    ;; In place, cell by cell.  An undo in progress replays from
+    ;; `pending-undo-list', and `primitive-undo' walks that through a local
+    ;; variable it writes back when it is done -- so a structural change
+    ;; made BY an undo, deleting the cell an insertion made, could not be
+    ;; seen by rebinding the list: the next step replayed at the old
+    ;; position and rewrote the wrong text, a typed character surviving
+    ;; while its neighbour was deleted.  The list's cons cells are shared,
+    ;; though -- by it, by `buffer-undo-list' and by that local variable --
+    ;; so changing the entries in them reaches all three.  Each cell once:
+    ;; the two lists share their tails.  An entry to drop cannot be
+    ;; unlinked in place, so it becomes one that does nothing.
+    (dolist (entries (list buffer-undo-list pending-undo-list))
+      (when (consp entries)
+        (let ((c entries))
+          (while (consp c)
+            (unless (gethash c seen)
+              (puthash c t seen)
+              (let ((new (funcall transform (car c))))
+                (setcar c (if (eq new :emjupy-drop)
+                              (list 'apply #'ignore :emjupy-dropped)
+                            new))))
+            (setq c (cdr c))))))
+    ;; Outside an undo the placeholders can go for good.
+    (unless (or undo-in-progress (consp pending-undo-list))
+      (when (consp buffer-undo-list)
+        (setq buffer-undo-list
+              (delete (list 'apply #'ignore :emjupy-dropped) buffer-undo-list)))))))
 
 (defun emjupy--undo-drop-from (pos)
   "Drop undo entries referring to POS or later in this buffer.
@@ -1256,7 +1395,8 @@ means the caller should fall back to a full redraw."
                     (has-outputs "")
                     (t (emjupy--rule nil)))))
       (overlay-put ov 'emjupy-overlay 'cell)
-      (overlay-put ov 'before-string header)
+      (overlay-put ov 'emjupy-header nil)
+          (overlay-put ov 'before-string header)
       (overlay-put ov 'after-string footer)
       ;; No face: source cells keep the buffer's normal background, and are
       ;; marked out by their rules alone.
@@ -1573,7 +1713,8 @@ cell would be refused along with the gutter above it."
                          rear-nonsticky (read-only))))
 
 (defun emjupy--protect-non-cell-regions ()
-  "Mark every region that is not a cell\='s source read-only."
+  "Mark every region that is not a cell\='s source read-only.
+Then put every header and footer where its cell now is."
   (when emjupy-protect-non-cell-regions
     (let ((inhibit-read-only t)
           (spans nil))
@@ -1588,7 +1729,11 @@ cell would be refused along with the gutter above it."
             (emjupy--make-read-only pos (car span)))
           (setq pos (max pos (cdr span))))
         (when (< pos (point-max))
-          (emjupy--make-read-only pos (point-max)))))))
+          (emjupy--make-read-only pos (point-max))))))
+  ;; Run after every change to the buffer's structure, as this is; so the
+  ;; rules are put back where their cells are here too, whether or not the
+  ;; gaps are protected.
+  (emjupy--reconcile-rules))
 
 (provide 'emjupy-render)
 ;;; emjupy-render.el ends here

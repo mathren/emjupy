@@ -1,24 +1,55 @@
 name: Build
 
+# One workflow for everything a change can break; the others do what
+# only they do.  What runs on each event, so each check runs once:
+#
+#   push to main, pull request   this workflow (the tests, once)
+#   push to main                 + coverage.yml, for the badge
+#   tag                          release.yml only -- it tests what it ships
+#
+# Pushes to other branches run nothing until a pull request is opened, and
+# a pull request from a branch of this repository is not run twice, once
+# for the push and once for the request.  A tag starts none of this: path
+# filters are not applied to tag pushes, so a tag used to run this
+# workflow and coverage.yml as well as the release.
 on:
   # Creates the "Run workflow" button in the GitHub Actions tab
   workflow_dispatch:
 
   push:
+    branches: [main]
     paths:
       - '**/*.el'
       - 'Makefile'
       - '.github/workflows/*.yml'
+      - '.github/melpa-recipe'
+      - 'docs/**'
+      - 'README.org'
+      - 'publish.el'
+      - 'tools/**'
+      - 'src/test-corpus/**'
 
   pull_request:
+    # the same list as for push
     paths:
       - '**/*.el'
       - 'Makefile'
       - '.github/workflows/*.yml'
+      - '.github/melpa-recipe'
+      - 'docs/**'
+      - 'README.org'
+      - 'publish.el'
+      - 'tools/**'
+      - 'src/test-corpus/**'
+
+# A newer push to the same branch or pull request makes an older run moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # Unit tests and the package tar.  No server, so this is the job that has
-  # to stay fast and green.
+  # Compiles with warnings as errors and builds the package tar.  The tests
+  # run once, in the integration job -- unit tests included -- not here too.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -35,13 +66,12 @@ jobs:
       - name: Fetch websocket.el
         run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
 
-      - name: Compile and test
+      - name: Compile
         env:
           EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: |
           make clean
           make compile
-          make test
 
       - name: Package
         env:
@@ -199,3 +229,28 @@ jobs:
       - name: Jupyter log on failure
         if: failure()
         run: cat "$RUNNER_TEMP/jupyter.log"
+
+  # melpazoid against the recipe MELPA will build, as its reviewers do.
+  melpazoid:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with: { python-version: '3.10' }
+    - name: Install
+      run: |
+        sudo apt-get install emacs && emacs --version
+        git clone https://github.com/riscy/melpazoid.git ~/melpazoid
+    - name: Run
+      env:
+        LOCAL_REPO: ${{ github.workspace }}
+        WARN_IS_ERROR: true
+        EXIST_OK: false
+      # The recipe is read from the file MELPA will be sent, rather than
+      # copied here: a second copy goes stale the first time a source file
+      # is added, and then this checks a package nobody will install.
+      run: |
+        export RECIPE="$(cat .github/melpa-recipe)"
+        echo "$RECIPE"
+        echo $GITHUB_REF && make -C ~/melpazoid

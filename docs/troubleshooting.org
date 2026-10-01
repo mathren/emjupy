@@ -47,14 +47,6 @@ pip install jupyter-lsp 'python-lsp-server[all]'
 and restart the server.  "Remote =M-.= needs remote LSP" in
 [[file:language-server.org][Language server support]] has the details.
 
-* A notebook will not save: "Multibyte text in HTTP request"
-
-Fixed in 0.1.2.  Before it, output containing any character outside
-ASCII -- a =tqdm= bar is drawn in =█= -- could not be saved from a
-session holding an XSRF cookie: the cookie was held as a multibyte
-string, and url.el refuses a request that becomes one.  If you see it,
-you are running an older emjupy; =M-x emjupy-version= says which.
-
 * A cell shows as running and never finishes
 
 If the cell is not really still working, the kernel most likely died --

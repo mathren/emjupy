@@ -94,7 +94,9 @@ fitting.
 
 Outlines follow the window as it changes: splitting, dragging a mode
 line or toggling full screen all redraw the rules at the new width, so
-they never wrap onto a second line. Only the overlay strings are
+they do not wrap onto a second line -- unless the window is narrower than
+=emjupy-box-min-width=, 60 columns by default, which the rules do not go
+below. Only the overlay strings are
 rebuilt, not the buffer text, so point, markers and the undo history
 are untouched. When the buffer is shown in two windows at once the
 *narrower* one wins, since a rule sized for the wide window would wrap
@@ -109,6 +111,19 @@ cell that no longer exists therefore appears as a border with no cell.
 A redraw of the whole notebook deletes emjupy overlays that no live cell
 owns, so =M-x emjupy-re-render= removes any that appear.
 
+* Line numbers
+
+With =display-line-numbers-mode= on, the numbers fall on the lines you
+write and on the lines of output, not on the outlines: each rule is drawn
+as a continuation of the line above it, and the empty line between two
+cells is hidden.  The numbers are the buffer's own, so they skip a value
+where a cell ends.  The rules narrow to make room for the number column
+when it is turned on.
+
+Two rules are exceptions, and on the TODO list: the first cell's header,
+which has no line above it, takes line 1's number, and the last cell's
+footer is drawn on a numbered line at the end of the buffer.
+
 * LaTeX in markdown cells
 
 Off by default.  Turn it on with =M-x emjupy-toggle-latex-preview=, or:
@@ -118,7 +133,8 @@ Off by default.  Turn it on with =M-x emjupy-toggle-latex-preview=, or:
 #+end_src
 
 Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then replaced
-*on screen* by a rendered image.  The buffer text is untouched -- the
+*on screen* by a rendered image -- inline for the first and third,
+displayed for the other two, as in a LaTeX document.  The buffer text is untouched -- the
 image is an overlay -- so the cell still holds, and saves, the LaTeX you
 wrote, and hovering shows the source.
 

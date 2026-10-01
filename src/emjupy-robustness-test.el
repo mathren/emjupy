@@ -163,7 +163,10 @@ several requests in flight, against the order with every reply last."
   (let* ((cells (emjupy-notebook-cells nb))
          (cell (aref cells (random (length cells))))
          (ov (emjupy-cell-overlay cell))
-         (len (length (emjupy-cell-source cell))))
+         ;; the cell's extent in the buffer, not its stored source, which
+         ;; is stale until the next sync: a position past the source\'s end
+         ;; is the separator, where typing is rightly refused
+         (len (max 0 (- (overlay-end ov) (overlay-start ov) 1))))
     (goto-char (+ (overlay-start ov) (random (1+ len))))
     cell))
 
@@ -228,9 +231,7 @@ particular sequence that broke that; this tries many."
           (buffer-enable-undo)
           (setq buffer-undo-list nil)
           (dotimes (_ 25)
-            ;; Undo is left out here: undoing structural changes has known
-            ;; faults, covered by the two tests expected to fail below.
-            (let ((op (emjupy-fuzz-pick (remq 'undo emjupy-fuzz--edits))))
+            (let ((op (emjupy-fuzz-pick emjupy-fuzz--edits)))
               (push op trail)
               (ert-info ((format "after %S" (reverse trail)))
                 (emjupy-fuzz--do-edit op nb buf)
@@ -246,13 +247,7 @@ particular sequence that broke that; this tries many."
   "Undoing everything, after any sequence of edits, gives the notebook back.
 
 Only commands that edit the notebook are used, and the comparison is of
-the cells -- type and source -- as they read back from the buffer.
-
-Expected to fail, and recorded in todo.org: inserting, splitting and
-changing the type of a cell are not undo steps of their own, so undoing
-their text leaves the cell structure behind.  When that is fixed this
-reports an unexpected pass, and the expectation comes off."
-  :expected-result :failed
+the cells -- type and source -- as they read back from the buffer."
   (emjupy-fuzz-cases i (emjupy-fuzz-iterations 30)
     (let* ((cells (vector (emjupy-test--cell-like 'code "a = 1")
                           (emjupy-test--cell-like 'markdown "# Title")
@@ -268,7 +263,8 @@ reports an unexpected pass, and the expectation comes off."
             (dotimes (_ 12)
               (let ((op (emjupy-fuzz-pick edits)))
                 (push op trail)
-                (emjupy-fuzz--do-edit op nb buf)
+                (ert-info ((format "while editing: %S" (reverse trail)))
+                  (emjupy-fuzz--do-edit op nb buf))
                 (undo-boundary)))
             (ert-info ((format "edits %S" (reverse trail)))
               (let ((last-command nil))
@@ -287,8 +283,7 @@ The edit fuzz\'s shortest failing sequence, fixed here so it can be
 worked on: undo fails with \"Changes to be undone are outside visible
 portion of buffer\", meaning some undo entries point past the end of the
 buffer -- positions a join, or the redraw of output after one, did not
-shift.  Expected to fail until fixed; see todo.org."
-  :expected-result :failed
+shift."
   (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
                        (emjupy-test--cell-like 'markdown "# Title\ntext")
                        (emjupy-test--cell-like 'code "b = 2\nc = 3"
