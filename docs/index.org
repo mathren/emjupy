@@ -2,12 +2,12 @@
 #+PREVIOUS_PAGE: index.org
 #+NEXT_PAGE:     usage.org
 
-emjupy edits and runs Jupyter notebooks in Emacs.  It talks to a running
-Jupyter server over the same HTTP and WebSocket API the browser uses, so
-a kernel on another machine works through an ssh tunnel, and the notebook
-stays a standard =.ipynb= that any other Jupyter tool opens.  Completion,
-documentation and =M-.= come through =eglot=, from a language server
-running beside the kernel.
+=emjupy= edits and runs Jupyter notebooks in Emacs. It talks to a
+running Jupyter server over the same HTTP and WebSocket API the
+browser uses, so a kernel on another machine works through an ssh
+tunnel, and the notebook stays a standard =.ipynb= that any other
+Jupyter tool opens. Completion, documentation and =M-.= come through
+=eglot=, from a language server running beside the kernel.
 
 It uses Emacs's own tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with
 whatever completion setup you already have (=vertico=, =corfu=,
