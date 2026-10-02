@@ -40,6 +40,9 @@ file requires only files earlier in this table, never later ones.
 | =emjupy-render.el=   | faces, colours, outlines, drawing output, text helpers     |
 | =emjupy-cells.el=    | buffer<->struct syncing, cell editing and cell commands    |
 | =emjupy-kernel.el=   | kernel WebSocket, execution, message routing               |
+| =emjupy-figures.el=  | opening an output on its own: plotly figures, HTML, images |
+| =emjupy-widgets.el=  | widget controls in the buffer, and what they cause         |
+| =emjupy-widget-page.el= | widgets that draw themselves, live in a page, through Emacs |
 | =emjupy-remote.el=   | where a server's files live: roots, SSH tunnels, TRAMP     |
 | =emjupy-lsp.el=      | language-server WebSocket transport, shadow document text  |
 | =emjupy-eglot.el=    | shadow buffer, Eglot integration, completion, eldoc        |
@@ -57,7 +60,7 @@ module can be loaded on its own, which is what makes that checkable:
 having been loaded first.
 
 When a lower layer needs to tell a higher one that something happened,
-it runs a hook rather than naming the function.  There are two:
+it runs a hook rather than naming the function.  There are these:
 
 - =emjupy-kernel-connected-functions=, run by the kernel layer when a
   kernel attaches.  =emjupy-mode= hangs two handlers on it: one asks the
@@ -66,6 +69,12 @@ it runs a hook rather than naming the function.  There are two:
 - =emjupy-box-width-changed-functions=, run by the drawing layer when the
   width the cells are drawn at changes, so the kernel is told the new
   width.
+- =emjupy-comm-functions=, run by the kernel layer with each comm message,
+  and =emjupy-output-owner-functions=, asked by it which cell output
+  answering a request no cell waits on belongs to.  The widgets layer
+  keeps its models from the first, and claims with the second the output
+  a moved slider causes.  It also sets =emjupy-widget-view-function=,
+  which the drawing layer calls to draw a widget.
 
 Both are wired when a notebook buffer starts, not when a file is loaded
 -- a package should not add hooks just by being loaded.
@@ -484,6 +493,10 @@ The recipe used is kept at =.github/melpa-recipe=:
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"
                 "src/emjupy-kernel.el"
+                "src/emjupy-figures.el"
+                "src/emjupy-widgets.el"
+                "src/emjupy-widget-page.el"
+                "src/emjupy-figure-window.py"
                 "src/emjupy-remote.el"
                 "src/emjupy-lsp.el"
                 "src/emjupy-eglot.el"

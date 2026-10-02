@@ -3112,7 +3112,7 @@ written to a wrong path."
                                            :pending (make-hash-table :test 'equal)
                                            :notebook emjupy--buffer-notebook)))
           (clrhash emjupy--internal-requests)
-          (puthash "mid" (lambda (out) (setq got out)) emjupy--internal-requests)
+          (puthash "mid" (cons (lambda (out) (setq got out)) nil) emjupy--internal-requests)
           (emjupy--handle-ws-message
            kernel
            (json-serialize
@@ -3128,8 +3128,12 @@ written to a wrong path."
               (puthash "parent_header" p m)
               (puthash "content" c m)
               m)))
+          ;; the answer is handed over when the request is done
+          (emjupy--handle-ws-message
+           kernel (emjupy-test--kernel-msg "status" "mid" '(("execution_state" . "idle"))))
           ;; the callback saw it ...
-          (should (equal got "/home/me/nb"))
+          ;; as printed: a caller asking for a line trims it itself
+          (should (equal got "/home/me/nb\n"))
           ;; ... and the cell did not
           (should (= (length (emjupy-cell-outputs cell)) 0))
           (should-not (string-match-p "/home/me/nb" (buffer-string))))))))
@@ -7135,6 +7139,300 @@ in place.  Found by the undo fuzz."
           (let ((last-command nil)) (undo))
           (should (= (length (emjupy-notebook-cells nb)) 3))
           (should-not (emjupy--check-invariants)))))))
+
+(ert-deftest emjupy-test-reshown-output-is-not-highlighted-as-code ()
+  "Output shown again after being hidden keeps its own face, not Python\'s.
+
+Redrawing a cell in place inserts its text at the start of the next
+cell\'s overlay, which takes the insertion in until the redraw moves it
+back.  The change hook, there to re-highlight what the user types, took
+the next cell to be the one edited and re-highlighted its region --
+now the reshown output -- as code: keywords coloured, and the output\'s
+background gone where they were.  emjupy\'s own drawing is not an edit
+to re-highlight, and no longer runs the hook."
+  (dolist (how '(command click))
+    (let* ((out (let ((o (make-hash-table :test 'equal)))
+                  (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
+                  (puthash "text" "for x in y: print(True, None)\n# a comment\n" o)
+                  o))
+           (cells (vector (emjupy-test--cell-like 'code "x = 1" (vector out))
+                          ;; the next cell is what the redraw inserted into
+                          (emjupy-test--cell-like 'code "y = 2")))
+           (cell (aref cells 0)))
+      (emjupy-test--with-notebook cells buf nb
+        (with-current-buffer buf
+          (goto-char (overlay-start (emjupy-cell-overlay cell)))
+          (dotimes (_ 2)
+            (if (eq how 'command)
+                (emjupy-toggle-cell-output)
+              (emjupy-toggle-output-of-cell cell)))
+          (let ((ov (emjupy-cell-output-ov cell)))
+            (should (overlayp ov))
+            (save-excursion
+              (dolist (word '("for" "print" "True" "None" "comment"))
+                (goto-char (overlay-start ov))
+                (should (search-forward word (overlay-end ov) t))
+                (ert-info ((format "%s, %s" how word))
+                  (should (equal (get-text-property (match-beginning 0) 'face)
+                                 '(emjupy-output))))))))))))
+
+(ert-deftest emjupy-test-internal-answer-in-pieces-arrives-whole ()
+  "An answer to one of emjupy\'s own questions arrives whole, however split.
+
+The callback was given the first stream message and the request was then
+forgotten, so a large answer -- plotly.js, asked of the kernel, is near
+5 MB -- lost everything after its first piece."
+  (let ((got nil)
+        (kernel (make-emjupy-kernel :id "k" :name "python3"
+                                    :pending (make-hash-table :test 'equal))))
+    (clrhash emjupy--internal-requests)
+    (puthash "big" (cons (lambda (out) (setq got out)) nil) emjupy--internal-requests)
+    (dolist (piece '("first " "second " "third\n"))
+      (emjupy--handle-ws-message
+       kernel (emjupy-test--kernel-msg "stream" "big" `(("name" . "stdout") ("text" . ,piece)))))
+    ;; nothing until the request is done
+    (should-not got)
+    (emjupy--handle-ws-message
+     kernel (emjupy-test--kernel-msg "status" "big" '(("execution_state" . "idle"))))
+    (should (equal got "first second third\n"))
+    (should-not (gethash "big" emjupy--internal-requests))))
+
+(ert-deftest emjupy-test-widgets-are-drawn-before-their-output ()
+  "A widget is drawn above the cell\'s other outputs; the saved order stays."
+  (let* ((img (let ((o (make-hash-table :test 'equal)) (d (make-hash-table :test 'equal)))
+                (puthash "output_type" "display_data" o) (puthash "text/plain" "<Figure>" d)
+                (puthash "data" d o) o))
+         (view (let ((o (make-hash-table :test 'equal)) (d (make-hash-table :test 'equal))
+                     (v (make-hash-table :test 'equal)))
+                 (puthash "model_id" "m" v)
+                 (puthash "output_type" "display_data" o)
+                 (puthash emjupy--widget-view-mime v d) (puthash "data" d o) o))
+         (outputs (vector img view)))
+    (should (equal (emjupy--outputs-for-render outputs) (list view img)))
+    ;; the cell's own order is untouched
+    (should (eq (aref outputs 0) img))))
+
+(defun emjupy-test--png-output ()
+  "Return a display_data output holding a 1x1 PNG."
+  (let ((o (make-hash-table :test 'equal)) (d (make-hash-table :test 'equal)))
+    (puthash "output_type" "display_data" o)
+    (puthash "image/png" "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" d)
+    (puthash "text/plain" "<Figure size 1x1>" d)
+    (puthash "data" d o)
+    o))
+
+(ert-deftest emjupy-test-figures-can-be-kept-out-of-the-notebook ()
+  "With `emjupy-inline-figures' nil, a figure is a line that opens it."
+  (let ((emjupy-inline-figures nil))
+    (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) t)))
+      (with-temp-buffer
+        (emjupy--insert-rich-output (gethash "data" (emjupy-test--png-output)))
+        (should (string-match-p "▶ Figure (PNG)" (buffer-string)))
+        ;; no image drawn anywhere
+        (should-not (get-text-property (point-min) 'display))
+        (should-not (next-single-property-change (point-min) 'display))
+        (goto-char (point-min))
+        (should (get-text-property (point) 'emjupy-output-data))))))
+
+(ert-deftest emjupy-test-key-hint-does-not-depend-on-the-current-buffer ()
+  "The line opening an output names its key, whatever buffer is current.
+Output can be drawn while another buffer is current, where the key is
+not bound, and the line said \"M-x emjupy-open-output\"."
+  (with-temp-buffer
+    (emjupy--insert-open-line "Interactive plotly figure" 1000 (make-hash-table))
+    (should (string-match-p "C-c C-f" (buffer-string)))))
+
+(ert-deftest emjupy-test-figure-window-command-is-used ()
+  "A figure window is opened with `emjupy-figure-window-command', URL in."
+  (let ((emjupy-figure-viewer 'window)
+        (emjupy-figure-window-command '("myviewer" "--title" "x" "%s"))
+        (started nil))
+    (cl-letf (((symbol-function 'start-process)
+               (lambda (_name _buffer program &rest args) (setq started (cons program args)))))
+      (emjupy--show-file "/tmp/page.html"))
+    (should (equal started '("myviewer" "--title" "x" "file:///tmp/page.html")))))
+
+(ert-deftest emjupy-test-a-mixed-installation-is-noticed ()
+  "Files loaded from two installations are named; one installation, none.
+A package and a checkout both on the `load-path' gave a mix, and a mix
+showed keys as \"M-x ...\" and widgets as text."
+  (should-not (emjupy--stray-modules))
+  (let ((real (symbol-function 'feature-file)))
+    (cl-letf (((symbol-function 'feature-file)
+               (lambda (f) (if (eq f 'emjupy-mode) "/elsewhere/emjupy-mode.elc"
+                             (funcall real f)))))
+      (should (equal (emjupy--stray-modules)
+                     '((emjupy-mode . "/elsewhere/emjupy-mode.elc")))))))
+
+(ert-deftest emjupy-test-figure-window-browsers-in-order ()
+  "Without the bundled window, the first browser of the list installed is used.
+Firefox by default, then Chromium; a change to the list counts at once."
+  (let ((emjupy-figure-window-command nil)
+        (emjupy--figure-window-bundled-command nil))   ; it cannot run
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (p) (and (member p '("firefox" "chromium")) (concat "/usr/bin/" p)))))
+      (should (equal (emjupy--figure-window-command)
+                     '("/usr/bin/firefox" "--new-window" "%s")))
+      (let ((emjupy-figure-window-browsers '(("chromium" "--app=%s") ("firefox" "--new-window" "%s"))))
+        (should (equal (emjupy--figure-window-command) '("/usr/bin/chromium" "--app=%s"))))
+      (let ((emjupy-figure-window-browsers '(("google-chrome" "--app=%s"))))
+        ;; none installed: the caller falls back to the browser
+        (should-not (emjupy--figure-window-command))))))
+
+(ert-deftest emjupy-test-widget-rules-by-shape ()
+  "Each kind of widget state is drawn by the rule its shape calls for.
+The order of `emjupy-widget-rules' matters, and this pins it down."
+  (cl-flet ((state (&rest kv)
+              (let ((h (make-hash-table :test 'equal)))
+                (while kv (puthash (pop kv) (pop kv) h))
+                h)))
+    (dolist (case
+             `((step   ,(state "_model_name" "IntSliderModel" "value" 3 "min" 0 "max" 9 "step" 1))
+               (range  ,(state "_model_name" "IntRangeSliderModel" "value" [2 8] "min" 0 "max" 9 "step" 1 "orientation" "horizontal"))
+               (bar    ,(state "_model_name" "IntProgressModel" "value" 3 "min" 0 "max" 9))
+               (number ,(state "_model_name" "IntTextModel" "value" 3))
+               (choose ,(state "_model_name" "DropdownModel" "_options_labels" ["a"] "index" 0))
+               (choose-several ,(state "_model_name" "SelectMultipleModel" "_options_labels" ["a"] "index" []))
+               (toggle ,(state "_model_name" "CheckboxModel" "value" :false))
+               (toggle ,(state "_model_name" "ValidModel" "value" t "readout" "x"))
+               (button ,(state "_model_name" "ButtonModel" "button_style" ""))
+               (typed  ,(state "_model_name" "TextModel" "value" "x" "continuous_update" t))
+               (color  ,(state "_model_name" "ColorPickerModel" "value" "black" "concise" :false))
+               (text   ,(state "_model_name" "LabelModel" "value" "x"))
+               (date   ,(state "_model_name" "DatePickerModel" "value" :null))
+               (list   ,(state "_model_name" "TagsInputModel" "value" ["p"] "allow_duplicates" t))
+               (container ,(state "_model_name" "VBoxModel" "children" []))
+               (nil    ,(state "_model_name" "FileUploadModel" "value" [] "accept" ""))))
+      (ert-info ((format "%s" (gethash "_model_name" (cadr case))))
+        (should (eq (car (emjupy--widget-rule (cadr case))) (car case)))))))
+
+(defun emjupy-test--unhex (hex)
+  "Return the unibyte string HEX spells."
+  (apply #'unibyte-string
+         (cl-loop for i from 0 below (length hex) by 2
+                  collect (string-to-number (substring hex i (+ i 2)) 16))))
+
+(ert-deftest emjupy-test-binary-frames-as-the-server-writes-them ()
+  "A binary frame is read as the Jupyter server writes it.
+The frame below is what jupyter_server's serialize_binary_message made
+of a message with two buffers; the buffers come back byte for byte."
+  (let* ((frame (emjupy-test--unhex "0000000300000010000000f0000000f67b22686561646572223a207b226d73675f74797065223a2022636f6d6d5f6d7367222c20226d73675f6964223a20226d31227d2c2022706172656e745f686561646572223a207b7d2c20226d65746164617461223a207b7d2c20226368616e6e656c223a2022696f707562222c2022636f6e74656e74223a207b22636f6d6d5f6964223a20226331222c202264617461223a207b226d6574686f64223a2022757064617465222c20227374617465223a207b7d2c20226275666665725f7061746873223a205b5b2276616c7565225d2c205b2270616972222c20315d5d7d7d7d89504e4700ff4142"))
+         (parts (emjupy--decode-binary-message frame))
+         (msg (json-parse-string (car parts) :object-type 'hash-table)))
+    (should (equal (gethash "msg_id" (gethash "header" msg)) "m1"))
+    (should (equal (cdr parts) (list (unibyte-string #x89 ?P ?N ?G 0 #xff) "AB")))
+    ;; and what is encoded here reads back the same
+    (let ((again (emjupy--decode-binary-message
+                  (emjupy--encode-binary-message (car parts) (cdr parts)))))
+      (should (equal again parts)))
+    ;; a message with no buffers at all
+    (should (equal (emjupy--decode-binary-message (emjupy--encode-binary-message "{}" nil))
+                   (cons "{}" nil)))))
+
+(ert-deftest emjupy-test-buffers-go-where-their-paths-say ()
+  "Each binary buffer is put into the widget state at its path."
+  (let* ((state (json-parse-string "{\"value\": null, \"files\": [{\"content\": null}]}"
+                                   :object-type 'hash-table))
+         (data (json-parse-string "{\"buffer_paths\": [[\"value\"], [\"files\", 0, \"content\"]]}"
+                                  :object-type 'hash-table))
+         (a (emjupy-bytes-make "aa")) (b (emjupy-bytes-make "bb")))
+    (emjupy--widget-put-buffers state data (list a b))
+    (should (eq (gethash "value" state) a))
+    (should (eq (gethash "content" (aref (gethash "files" state) 0)) b))))
+
+(ert-deftest emjupy-test-bytes-take-the-image-and-media-rules ()
+  "A value of bytes with a format is an image; with autoplay, a sound or video."
+  (cl-flet ((state (&rest kv)
+              (let ((h (make-hash-table :test 'equal)))
+                (while kv (puthash (pop kv) (pop kv) h))
+                h)))
+    (should (eq (car (emjupy--widget-rule
+                      (state "value" (emjupy-bytes-make "x") "format" "png" "width" "")))
+                'image))
+    (should (eq (car (emjupy--widget-rule
+                      (state "value" (emjupy-bytes-make "x") "format" "wav" "autoplay" t)))
+                'media))
+    (should (eq (car (emjupy--widget-rule
+                      (state "value" [] "accept" "" "multiple" :false)))
+                'upload))))
+
+(defun emjupy-test--models (models)
+  "Return a table of widget models from MODELS, (ID . STATE-ALIST) pairs."
+  (let ((table (make-hash-table :test 'equal)))
+    (dolist (m models table)
+      (let ((h (make-hash-table :test 'equal)))
+        (dolist (kv (cdr m)) (puthash (car kv) (cdr kv) h))
+        (puthash (car m) (cons 'kernel h) table)))))
+
+(ert-deftest emjupy-test-widget-tree-follows-references ()
+  "A page gets a widget and every model it refers to, however deep, once."
+  (let ((emjupy--widget-models (emjupy-test--models
+      '(("a" ("children" . ["IPY_MODEL_b"]))
+        ("b" ("layout" . "IPY_MODEL_c") ("back" . "IPY_MODEL_a"))
+        ("c" ("value" . 1))
+        ("lone" ("value" . 2))))))
+    (should (equal (sort (emjupy--widget-tree "a") #'string<) '("a" "b" "c")))))
+
+(ert-deftest emjupy-test-widget-model-json-takes-the-bytes-out ()
+  "A model goes to a page as JSON, its bytes as base64 with their paths."
+  (let ((emjupy--widget-models (emjupy-test--models
+      `(("i" ("_model_name" . "ImageModel") ("_model_module" . "@jupyter-widgets/controls")
+             ("_model_module_version" . "2.0.0") ("value" . ,(emjupy-bytes-make "AB")))))))
+    (let ((m (emjupy--widget-model-json "i")))
+      (should (equal (gethash "model_name" m) "ImageModel"))
+      (should (eq (gethash "value" (gethash "state" m)) :null))
+      (should (equal (gethash "buffer_paths" m) [["value"]]))
+      (should (equal (gethash "buffers" m) ["QUI="]))
+      ;; and it serializes
+      (should (json-serialize m)))))
+
+(ert-deftest emjupy-test-scripted-widgets-go-to-a-page ()
+  "A widget whose view is not ipywidgets' own opens in a page."
+  (emjupy-widget-page-enable)
+  (cl-flet ((state (&rest kv)
+              (let ((h (make-hash-table :test 'equal)))
+                (while kv (puthash (pop kv) (pop kv) h))
+                h)))
+    (should (eq (car (emjupy--widget-rule
+                      (state "_view_module" "anywidget" "_model_name" "AnyModel"
+                             "_anywidget_id" "plotly.graph_objs._figurewidget.FigureWidget")))
+                'scripted))
+    (should (equal (emjupy--widget-scripted-name
+                    (state "_anywidget_id" "plotly.graph_objs._figurewidget.FigureWidget"))
+                   "FigureWidget"))
+    (should-not (eq (car (emjupy--widget-rule
+                          (state "_view_module" "@jupyter-widgets/controls"
+                                 "value" 3 "min" 0 "max" 9 "step" 1)))
+                    'scripted))))
+
+(ert-deftest emjupy-test-bridge-passes-on-only-what-concerns-a-page ()
+  "Kernel messages go to the pages showing their models; new models too."
+  (let ((emjupy--bridge-pages (make-hash-table :test 'equal))
+        (sent nil))
+    (puthash "p1" (list :kernel 'k1 :ws 'ws1 :models (list "m1")) emjupy--bridge-pages)
+    (puthash "p2" (list :kernel 'k2 :ws 'ws2 :models (list "m2")) emjupy--bridge-pages)
+    (cl-letf (((symbol-function 'emjupy--bridge-send)
+               (lambda (ws obj) (push (list ws (gethash "type" obj) (gethash "comm_id" obj)) sent))))
+      (let ((content (make-hash-table :test 'equal)))
+        (puthash "comm_id" "m1" content)
+        (emjupy--bridge-on-comm 'k1 "comm_msg" content (list (emjupy-bytes-make "x")))
+        (puthash "comm_id" "other" content)
+        (emjupy--bridge-on-comm 'k1 "comm_msg" content nil)     ; not shown there
+        (puthash "comm_id" "new" content)
+        (emjupy--bridge-on-comm 'k1 "comm_open" content nil)))  ; may come to be
+    (should (equal (reverse sent) '((ws1 "comm_msg" "m1") (ws1 "comm_open" "new"))))
+    (should (member "new" (plist-get (gethash "p1" emjupy--bridge-pages) :models)))))
+
+(ert-deftest emjupy-test-widget-page-has-what-it-needs ()
+  "The page names the bridge's port, its token, its scripts and modules."
+  (let* ((emjupy-widget-scripts '("/opt/require.js" "https://cdn.example/embed-amd.js"))
+         (page (emjupy--widget-page "tok-1" 4567 "Counter" '(("anywidget" . "/tmp/m/anywidget.js")))))
+    (should (string-match-p "ws://127.0.0.1:4567/" page))
+    (should (string-match-p "\"tok-1\"" page))
+    (should (string-match-p "<script src=\"file:///opt/require.js\">" page))
+    (should (string-match-p "<script src=\"https://cdn.example/embed-amd.js\">" page))
+    (should (string-match-p "\"anywidget\":\"file:///tmp/m/anywidget.js\"" page))
+    (should (string-match-p "<title>Counter</title>" page))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

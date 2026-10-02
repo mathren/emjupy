@@ -137,19 +137,28 @@ jobs:
           python3 - <<'PY'
           import glob, os, re, sys
           bad = []
+          anchors = 0
           for f in glob.glob('html-content/*.html'):
-              page = open(f).read()
-              for href in re.findall(r'(?:href|src)="([^"#][^"]*)"', page):
-                  # Anything that is not a path to a file in the site:
-                  # a scheme (javascript: drives the menu), or an anchor.
-                  if ':' in href.split('/')[0] or href.startswith('#'):
+              for href in re.findall(r'(?:href|src)="([^"]*)"', open(f).read()):
+                  # Anything that is not in the site: a scheme
+                  # (javascript: drives the menu), or nothing at all.
+                  if not href or ':' in href.split('/')[0]:
                       continue
-                  target = os.path.normpath(os.path.join('html-content', href))
+                  # page.html#anchor is the page, then the anchor on it.
+                  path, _, anchor = href.partition('#')
+                  target = os.path.normpath(os.path.join('html-content', path)) if path else f
                   if not os.path.exists(target):
                       bad.append((os.path.basename(f), href))
+                  # The anchor must be on the page -- a link to a heading
+                  # since renamed is broken too -- except #top, which HTML
+                  # defines as the top of any page.
+                  elif anchor and anchor != 'top' and target.endswith('.html'):
+                      anchors += 1
+                      if f'id="{anchor}"' not in open(target).read():
+                          bad.append((os.path.basename(f), href + ' (no such anchor)'))
           for f, h in bad:
               print(f"broken: {f} -> {h}")
-          print(f"{len(glob.glob('html-content/*.html'))} pages checked, {len(bad)} broken")
+          print(f"{len(glob.glob('html-content/*.html'))} pages and {anchors} anchors checked, {len(bad)} broken")
           sys.exit(1 if bad else 0)
           PY
 

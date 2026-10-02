@@ -36,13 +36,13 @@ LOADPATH  := -L $(SRC) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
-            emjupy-cells.el emjupy-kernel.el emjupy-remote.el emjupy-lsp.el \
+            emjupy-cells.el emjupy-kernel.el emjupy-figures.el emjupy-widgets.el emjupy-widget-page.el emjupy-remote.el emjupy-lsp.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
 # No README: an installed package's README is what C-h P shows, before
 # the Commentary, and the README is a web page -- badges, screenshots,
 # links into the repository.  MELPA leaves it out for the same reason, so
 # the release tarball and a MELPA install describe themselves alike.
-PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el
+PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el $(SRC)/emjupy-figure-window.py
 
 .PHONY: all compile test check lint docs coverage set-version versions check-version package install clean timestamps
 

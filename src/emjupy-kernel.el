@@ -197,8 +197,70 @@ since patching one region only makes sense while the rest still matches."
         t
       (emjupy--rerender-preserving-point))))
 
+(defvar emjupy-comm-functions nil
+  "Functions called with each comm message from a kernel.
+Each is called with the KERNEL, the message type -- \"comm_open\",
+\"comm_msg\" or \"comm_close\" -- the message content, and the binary
+buffers the message carried, a list of `emjupy-bytes\='.  This is how
+the layer that knows about widgets hears of them.")
+
+(defvar emjupy-output-owner-functions nil
+  "Functions asked which cell output answering a request belongs to.
+Each is called with the request\'s message id and returns a cell or nil.
+Asked only for a request no cell is waiting on: one emjupy sent itself,
+such as moving a widget\'s slider, whose redrawn figure belongs to the
+cell showing the widget.")
+
+(defvar emjupy--clear-before-next-output (make-hash-table :test 'eq :weakness 'key)
+  "Cells whose outputs are cleared when their next output arrives.")
+
+(defun emjupy--widget-view-output-p (output)
+  "Return non-nil if OUTPUT is the view of a widget."
+  (let ((data (and (hash-table-p output) (gethash "data" output))))
+    (and (hash-table-p data) (gethash emjupy--widget-view-mime data))))
+
+(defun emjupy--clear-cell-outputs-now (cell notebook)
+  "Clear CELL's outputs in NOTEBOOK, as a kernel's `clear_output' asks.
+Widgets stay: in a notebook a widget\'s own output area is what an
+`interact\=' clears before drawing again, and the controls are outside
+it.  Here the outputs are one list, so the widgets are what is kept."
+  (setf (emjupy-cell-outputs cell)
+        (vconcat (seq-filter #'emjupy--widget-view-output-p
+                             (append (or (emjupy-cell-outputs cell) []) nil))))
+  (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (cl-pushnew cell emjupy--cells-awaiting-output))
+      (emjupy--schedule-render buf))))
+
+(defun emjupy--make-message (msg-type content)
+  "Return a shell-channel message of MSG-TYPE carrying CONTENT, a hash table.
+The value is a cons of the message id and the serialized message."
+  (let ((msg-id (emjupy--uuid))
+        (header (make-hash-table :test 'equal))
+        (msg (make-hash-table :test 'equal)))
+    (puthash "msg_id" msg-id header)
+    (puthash "username" "emacs" header)
+    (puthash "session" emjupy--session-id header)
+    (puthash "msg_type" msg-type header)
+    (puthash "version" "5.3" header)
+    (puthash "header" header msg)
+    (puthash "parent_header" (make-hash-table) msg)
+    (puthash "channel" "shell" msg)
+    (puthash "metadata" (make-hash-table) msg)
+    (puthash "content" content msg)
+    (puthash "buffers" [] msg)
+    (cons msg-id (json-serialize msg))))
+
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
+  ;; `clear_output\=' with wait: the clear happens now, as the new output
+  ;; arrives, so the old one stays up until there is something to replace it
+  (when (gethash cell emjupy--clear-before-next-output)
+    (remhash cell emjupy--clear-before-next-output)
+    (setf (emjupy-cell-outputs cell)
+          (vconcat (seq-filter #'emjupy--widget-view-output-p
+                               (append (or (emjupy-cell-outputs cell) []) nil)))))
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
     ;; Stream text that starts an output of its own still has its carriage
@@ -218,6 +280,59 @@ since patching one region only makes sense while the rest still matches."
           (cl-pushnew cell emjupy--cells-awaiting-output)))
       (emjupy--schedule-render buf))))
 
+(cl-defstruct (emjupy-bytes (:constructor emjupy-bytes-make (data)))
+  "Bytes a kernel message carried in binary: an image widget\'s, say.
+Wrapped, so that no one takes them for text."
+  data)
+
+(defun emjupy--u32 (bytes pos)
+  "Return the big-endian 32-bit number at POS in the unibyte string BYTES."
+  (logior (ash (aref bytes pos) 24) (ash (aref bytes (+ pos 1)) 16)
+          (ash (aref bytes (+ pos 2)) 8) (aref bytes (+ pos 3))))
+
+(defun emjupy--u32-bytes (n)
+  "Return the number N as four big-endian bytes."
+  (unibyte-string (logand (ash n -24) 255) (logand (ash n -16) 255)
+                  (logand (ash n -8) 255) (logand n 255)))
+
+(defun emjupy--decode-binary-message (bytes)
+  "Split a binary WebSocket frame BYTES into its message and its buffers.
+Return a cons of the message\'s JSON text and a list of the buffers, as
+unibyte strings.  The format is the Jupyter server\'s: a count of parts,
+the offset of each, then the parts -- the JSON first, then the buffers."
+  (let* ((n (emjupy--u32 bytes 0))
+         (offsets (cl-loop for i from 1 to n collect (emjupy--u32 bytes (* 4 i))))
+         (ends (append (cdr offsets) (list (length bytes))))
+         (parts (cl-mapcar (lambda (from to) (substring bytes from to)) offsets ends)))
+    (cons (decode-coding-string (car parts) 'utf-8) (cdr parts))))
+
+(defun emjupy--encode-binary-message (json buffers)
+  "Return a binary WebSocket frame of the message JSON and its BUFFERS.
+JSON is the serialized message, as `json-serialize\=' gives it; BUFFERS
+unibyte strings.  The format `emjupy--decode-binary-message\=' reads."
+  (let* ((parts (cons (encode-coding-string json 'utf-8) buffers))
+         (n (length parts))
+         (offset (* 4 (1+ n)))
+         (offsets nil))
+    (dolist (part parts)
+      (push offset offsets)
+      (setq offset (+ offset (length part))))
+    (apply #'concat (emjupy--u32-bytes n)
+           (append (mapcar #'emjupy--u32-bytes (nreverse offsets)) parts))))
+
+(defun emjupy--ws-message-parts (frame)
+  "Return FRAME\'s message as a cons of its JSON text and its buffers.
+A message carrying binary data comes as a binary frame, read here; any
+other has no buffers."
+  (if (and (websocket-frame-p frame) (eq (websocket-frame-opcode frame) 'binary))
+      (emjupy--decode-binary-message (websocket-frame-payload frame))
+    (cons (emjupy--ws-payload frame) nil)))
+
+(defun emjupy--ws-send-binary (bytes kernel)
+  "Send the binary frame BYTES on KERNEL\'s WebSocket."
+  (websocket-send (emjupy-kernel-ws kernel)
+                  (make-websocket-frame :opcode 'binary :payload bytes :completep t)))
+
 (defun emjupy--ws-payload (frame)
   "Return the text payload of FRAME.
 Accepts either a `websocket-frame' (what websocket.el hands the
@@ -233,13 +348,14 @@ requests belong to no cell and their output must not be rendered as if
 it did.")
 
 (defun emjupy--kernel-eval (kernel code callback)
-  "Run CODE on KERNEL and pass its printed output to CALLBACK.
+  "Run CODE on KERNEL and pass its printed output, as printed, to CALLBACK.
 
 For emjupy\='s own questions -- \"where are you?\" -- not for user code."
   (when (emjupy--ws-live-p kernel)
     (let* ((req (emjupy--make-execute-request code))
            (msg-id (car req)))
-      (puthash msg-id callback emjupy--internal-requests)
+      ;; The callback, and the output gathered so far, newest first.
+      (puthash msg-id (cons callback nil) emjupy--internal-requests)
       (emjupy--ws-send (cdr req) kernel)
       msg-id)))
 
@@ -274,32 +390,51 @@ PENDING is the kernel\'s table of requests awaiting output."
 KERNEL carries both the pending-request table and the backlink to the
 notebook whose buffer should be refreshed, so frames from several
 kernels never cross-talk."
-  (let* ((payload (emjupy--ws-payload frame))
-         (data (json-parse-string payload :object-type 'hash-table :array-type 'array))
+  (let* ((parts (emjupy--ws-message-parts frame))
+         (data (json-parse-string (car parts) :object-type 'hash-table :array-type 'array))
+         (buffers (mapcar #'emjupy-bytes-make (cdr parts)))
          (header (gethash "header" data))
          (parent-header (gethash "parent_header" data))
          (msg-type (gethash "msg_type" header))
          (parent-id (when parent-header (gethash "msg_id" parent-header)))
          (pending (and kernel (emjupy-kernel-pending kernel)))
          (notebook (and kernel (emjupy-kernel-notebook kernel)))
-         (cell (when (and parent-id pending) (gethash parent-id pending)))
+         (cell (when parent-id
+                 (or (and pending (gethash parent-id pending))
+                     ;; output answering a request no cell waits on: one
+                     ;; emjupy sent itself, such as moving a slider
+                     (run-hook-with-args-until-success
+                      'emjupy-output-owner-functions parent-id))))
          (internal (when parent-id (gethash parent-id emjupy--internal-requests))))
 
     ;; One of emjupy's own questions: hand the answer to its callback and
     ;; keep it out of the notebook entirely.
     (when internal
+      ;; Gathered until the request is done, then handed over whole.  The
+      ;; callback used to get the first stream message alone, which for a
+      ;; one-line answer is all of it -- but a large answer comes in
+      ;; several, and the rest was dropped.
       (when (string= msg-type "stream")
-        (let ((text (gethash "text" (gethash "content" data))))
-          (remhash parent-id emjupy--internal-requests)
-          (funcall internal (string-trim (or text "")))))
+        (push (or (gethash "text" (gethash "content" data)) "") (cdr internal)))
       (when (emjupy--idle-p msg-type data)
         ;; Its answer, if any, has come by now: idle follows every output
         ;; of the request on the same channel.  Forgetting it on
         ;; execute_reply instead dropped an answer that arrived late.
-        (remhash parent-id emjupy--internal-requests)))
+        (remhash parent-id emjupy--internal-requests)
+        (when (cdr internal)
+          ;; As printed: a caller asking for a line trims it; one asking
+          ;; for data, a piece of a file, needs every character.
+          (funcall (car internal) (apply #'concat (reverse (cdr internal)))))))
 
+    (when (member msg-type '("comm_open" "comm_msg" "comm_close"))
+      (run-hook-with-args 'emjupy-comm-functions kernel msg-type
+                          (gethash "content" data) buffers))
     (when cell
       (cond
+       ((string= msg-type "clear_output")
+        (if (eq (gethash "wait" (gethash "content" data)) t)
+            (puthash cell t emjupy--clear-before-next-output)
+          (emjupy--clear-cell-outputs-now cell notebook)))
        ;; Stdout/Stderr live streaming
        ((string= msg-type "stream")
         (let* ((content (gethash "content" data))

@@ -23,17 +23,20 @@ It uses Emacs's own tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with
 whatever completion setup you already have (=vertico=, =corfu=,
 =orderless= or anything else).
 
+Interactive plots and widgets can be shown in an external window or
+browser (see [[file:docs/usage.org::*Interactive output][Interactive output]] and [[file:docs/appearance.org::*Gifs and Screenshots gallery][Gifs and Screenshots gallery]]).
+
 * Try it in under 2 minutes with =emacs -Q=...
 
 ...without touching your own Emacs configuration.
 
-The repository ships a small notebook, =test_notebook/test.ipynb=, with
-a module beside it, so there is something real to run. To test with
-your own notebooks, jump to step 4.
-
 #+CAPTION: The steps below in  =emacs -Q= (version 30.1).
 #+ATTR_HTML: :width 75%
 [[file:html-content/images/quickstart.gif]]
+
+The repository ships a small notebook, =test_notebook/test.ipynb=, with
+a module beside it, so there is something real to run. To test with
+your own notebooks, jump to step 4.
 
 1. *Get emjupy.*
    #+begin_src bash
@@ -81,21 +84,6 @@ your own notebooks, jump to step 4.
    - =C-c C-c= runs the cell at point and moves to the next;
    - =M-.= on =example_function= jumps to its definition in =library.py=;
    - =C-c C-v= shows every command, grouped by what it is for.
-
-** Screenshots
-
-On a plain emacs installation, you should see something like:
-#+CAPTION: [[./test_notebook/test.ipynb][Simple notebook]] rendering in a fresh emacs with no customization. Screenshot may be out of date.
-#+DOWNLOADED: screenshot @ 2026-09-06 12:42:46
-[[file:html-content/images/screenshot-default-colored.png]]
-
-This is what the same notebook looks like with =wombat= theme in my
-setup:
-#+CAPTION: simple notebook rendering in [[https://github.com/mathren/emacs_mathren][my emacs]] with a slightly modified =wombat= dark theme.
-#+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
-[[file:html-content/images/screenshot-dark-colored.png]]
-
-*N.B.:* Screenshot may be out of date.
 
 ** Features
 - persistent kernel session (to load large dataset once and re-use

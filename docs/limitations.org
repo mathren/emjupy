@@ -42,19 +42,37 @@ says so when it starts, and =M-.= into your own code finds nothing,
 while the standard library resolves to this machine's copy.  See
 [[file:language-server.org][Language server support]].
 
-* Rich output: text and images only
+* Rich output: what is drawn in the buffer
 
-Of the forms an output can come in, emjupy draws plain text and images
-(PNG, JPEG, GIF, SVG).  Everything else is shown by its plain-text
-fallback, which every Jupyter output carries:
+In the buffer emjupy draws plain text, images (PNG, JPEG, GIF, SVG) and
+widget controls.  A figure that draws itself in JavaScript is opened in a
+window of its own (see [[file:usage.org][Interactive output]]).  Everything else is shown by
+its plain-text fallback, which every Jupyter output carries:
 
-- HTML -- a pandas =DataFrame= appears as its text table;
-- interactive widgets (=ipywidgets=) appear as their text repr, and do
-  not respond, since emjupy runs no JavaScript;
+- HTML without a script -- a pandas =DataFrame= appears as its text table;
 - Markdown and LaTeX sent through =IPython.display= appear as source.
 
 Images need a graphical Emacs; in a terminal they appear as their text
 fallback too.
+
+* Widgets that draw themselves open in a page, with two gaps
+
+A widget drawn by JavaScript of its own -- plotly's =FigureWidget=, a map
+-- opens in a page in the figure window (see [[file:usage.org][Interactive output]]).  Two
+things do not reach that page: what an =Output= widget inside it
+captures, which is drawn in the notebook instead, and the widget manager
+without a network, unless =emjupy-widget-scripts= names local copies.
+
+* Figures open in a window of their own, not inside Emacs
+
+Showing a figure inside Emacs needs an xwidget, and that needs Emacs
+built with =--with-xwidgets=.  Emacs 30.1 refuses WebKitGTK 2.41.92 or
+newer, and current distributions ship newer (Ubuntu 24.04 has 2.52), so
+there Emacs 30.1 has no xwidgets.  The refusal is still warranted: built
+with the check lifted, against 2.52, Emacs aborts as the figure opens.
+So figures open in a window of their own, outside Emacs.
+=emjupy-figure-viewer= can choose an xwidget, for a build known to work
+with one.
 
 * Python only
 

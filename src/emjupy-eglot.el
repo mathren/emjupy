@@ -343,8 +343,9 @@ plainly not here.  A remote name is not here by definition."
       (emjupy--kernel-eval
        kernel "import os as _o; print(_o.getcwd())"
        (lambda (out)
-         (when (and out (not (string-empty-p out)))
-           (setf (emjupy-notebook-kernel-cwd nb) (string-trim out))
+         (setq out (string-trim (or out "")))
+         (when (not (string-empty-p out))
+           (setf (emjupy-notebook-kernel-cwd nb) out)
            ;; Now that a kernel has said where it runs, the server's root
            ;; can be worked out from it -- so browsing its files needs no
            ;; configuration either.
@@ -431,6 +432,10 @@ hand.  Reports what it found rather than failing quietly."
   (interactive)
   (let ((nb (or nb (emjupy--notebook))))
     (when (and nb emjupy-language-support
+               ;; It is called when the kernel says where it runs, which may
+               ;; be after the notebook was closed: a server started then
+               ;; would serve nothing, and nothing would ever end it.
+               (buffer-live-p (emjupy-notebook-buffer nb))
                (not (emjupy--shadow-would-mislead-p nb)))
       (let* ((want-socket (and (bound-and-true-p emjupy-lsp-enabled)
                                (emjupy-notebook-kernel-cwd nb)))

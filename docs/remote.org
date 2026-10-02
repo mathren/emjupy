@@ -106,8 +106,7 @@ what emjupy can address:
 | none of the above                  | an error saying what to set |
 
 The copy over HTTP uses the Contents API and needs no configuration, only
-a kernel to have reported where the server's files are (see [[*Where the
-server's files are][below]]).  The buffer is read-only and its header line gives the
+a kernel to have reported where the server's files are (see [[#server-files][below]]).  The buffer is read-only and its header line gives the
 originating path.
 
 * Multiple notebooks & multiple servers
@@ -170,6 +169,9 @@ server it is on -- so a token only needs typing again when checking the
 server by hand from the shell, with =curl= say.
 
 * Where the server's files are
+:PROPERTIES:
+:CUSTOM_ID: server-files
+:END:
 
 Jupyter does not publish its root directory, and that is deliberate -- it
 is not something a client should be handed.  emjupy works it out instead,

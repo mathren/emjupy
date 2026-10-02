@@ -512,6 +512,9 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
 (defvar emjupy-box-width-changed-functions nil
   "Functions called with a notebook and its new box width, when it changes.")
 
+(defvar-local emjupy--refontifying nil
+  "Non-nil while emjupy is re-applying faces, to stop the hook recursing.")
+
 (defun emjupy--refresh-box-rules (&optional force)
   "Redraw cell outlines at the current window width, if it changed.
 With FORCE non-nil, redraw even when the width is unchanged.
@@ -550,7 +553,9 @@ markers and the undo history are all untouched."
                       ;; The output band is padded to a column, so it has to
                       ;; be re-aligned at the new width as well.
                       (let ((inhibit-read-only t)
-                            (buffer-undo-list t))
+                            (buffer-undo-list t)
+                            ;; emjupy's own drawing: not an edit to re-highlight
+                            (emjupy--refontifying t))
                         (emjupy--repad-output cell)))))
       (emjupy--reconcile-rules))))
 
@@ -889,9 +894,6 @@ installed."
           (emjupy--markdown-fontify-fallback))))
      (t (font-lock-ensure)))
     (buffer-string)))
-
-(defvar-local emjupy--refontifying nil
-  "Non-nil while emjupy is re-applying faces, to stop the hook recursing.")
 
 (defun emjupy--apply-faces-from (string start)
   "Copy the `face' properties of STRING onto the buffer text at START.
@@ -1329,7 +1331,9 @@ means the caller should fall back to a full redraw."
              (end (if live-out (overlay-end out) start)))
         (let ((new-end start))
           (let ((inhibit-read-only t)
-                (buffer-undo-list t))
+                (buffer-undo-list t)
+                ;; emjupy's own drawing: not an edit to re-highlight
+                (emjupy--refontifying t))
             (when live-out (delete-overlay out))
             (setf (emjupy-cell-output-ov cell) nil)
             (delete-region start end)
@@ -1589,6 +1593,63 @@ puts `warnings.warn\', logging, and progress bars."
       'emjupy-output-image)
      (t 'emjupy-output))))
 
+(defcustom emjupy-inline-figures t
+  "Whether figures -- image outputs -- are drawn in the notebook.
+nil shows each as a line instead, and opens it in a window of its own on
+\\<emjupy-mode-map>\\[emjupy-open-output] or a click, the way a plotting
+window would show it."
+  :type 'boolean
+  :group 'emjupy)
+
+(defconst emjupy--widget-view-mime "application/vnd.jupyter.widget-view+json"
+  "MIME type of an output that shows a widget.")
+
+(defvar emjupy-widget-view-function nil
+  "Function returning the text that shows a widget, or nil.
+Called with the widget\'s model id.  Set by the layer that knows about
+widgets; nil, or a nil return, shows the output\'s `text/plain\=' instead.")
+
+(defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
+  "MIME type of a plotly figure, sent as its JSON specification.")
+
+(declare-function emjupy-open-output "emjupy-figures" (&optional data))
+
+(defun emjupy--scripted-html (data)
+  "Return the `text/html' of DATA if it has a script in it, or nil.
+Only that needs opening elsewhere: HTML without a script -- a pandas
+table -- says the same in its `text/plain', which is shown instead."
+  (let ((html (and data (gethash "text/html" data))))
+    (when html
+      (let ((text (emjupy--mime-text html)))
+        (and (string-match-p "<script" text) text)))))
+
+(defvar emjupy-output-button-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'emjupy-open-output-at-point)
+    (define-key map [mouse-1] #'emjupy-open-output-at-point)
+    map)
+  "Keymap on the line that stands for an interactive output.")
+
+(defun emjupy-open-output-at-point (&optional event)
+  "Open the interactive output whose line is at point, or was clicked.
+EVENT is the mouse event, when there was one."
+  (interactive (list last-nonmenu-event))
+  (let ((pos (if (mouse-event-p event) (posn-point (event-start event)) (point))))
+    (emjupy-open-output (get-text-property pos 'emjupy-output-data))))
+
+(defun emjupy--insert-open-line (what size data)
+  "Insert a line standing for an output that is opened elsewhere.
+WHAT names it, SIZE is its size in bytes, and DATA is its MIME bundle,
+kept on the line so that opening it opens this one."
+  (insert (propertize
+           (format "▶ %s (%s) -- %s, or click, to open it\n"
+                   what (file-size-human-readable size)
+                   (substitute-command-keys "\\<emjupy-mode-map>\\[emjupy-open-output]"))
+           'face 'link 'mouse-face 'highlight
+           'help-echo "Open this output in a window of its own"
+           'keymap emjupy-output-button-map
+           'emjupy-output-data data)))
+
 (defun emjupy--insert-rich-output (data)
   "Insert the best available representation of the DATA MIME bundle at point.
 
@@ -1601,8 +1662,30 @@ happens inside the WebSocket callback, where websocket.el swallows the
   (let* ((image (cl-loop for (mime . type) in emjupy--image-mime-types
                          for payload = (and data (gethash mime data))
                          when payload return (list mime type payload)))
-         (text (and data (gethash "text/plain" data))))
+         (text (and data (gethash "text/plain" data)))
+         (plotly (and data (gethash emjupy--plotly-mime data)))
+         (widget (let ((view (and data (gethash emjupy--widget-view-mime data))))
+                   (and view emjupy-widget-view-function
+                        (funcall emjupy-widget-view-function
+                                 (gethash "model_id" view)))))
+         (scripted (and (not plotly) (emjupy--scripted-html data))))
     (cond
+     ;; A widget the layer above knows how to show: its controls.
+     (widget (insert widget))
+     ;; A figure that draws itself in JavaScript: there is nothing to draw
+     ;; here, so a line says what it is and opens it.  Nothing runs until
+     ;; asked -- opening it runs the notebook's JavaScript.
+     (plotly
+      (emjupy--insert-open-line "Interactive plotly figure"
+                                (length (json-serialize plotly)) data))
+     (scripted
+      (when text (insert (emjupy--mime-text text) "\n"))
+      (emjupy--insert-open-line "Interactive HTML output" (length scripted) data))
+     ;; Figures shown on their own, not in the notebook, when so asked.
+     ((and image (not emjupy-inline-figures)
+           (emjupy--image-displayable-p (nth 1 image)))
+      (emjupy--insert-open-line (format "Figure (%s)" (upcase (symbol-name (nth 1 image))))
+                                (length (nth 2 image)) data))
      ((and image (emjupy--image-displayable-p (nth 1 image)))
       (condition-case err
           (progn (insert-image (emjupy--render-image-output (nth 2 image) (nth 1 image)))
@@ -1651,13 +1734,25 @@ hundreds of kilobytes of base64, and this runs on every re-render."
                  when payload
                  return (cons mime (md5 (emjupy--mime-text payload))))))))
 
+(defun emjupy--widgets-first (outputs)
+  "Return OUTPUTS with the ones showing widgets first, otherwise in order.
+An `interact\=' sends its figure before its controls, and after each move
+clears the figure but not the controls, so the controls came below the
+figure at first and above it from then on.  Above is where a notebook
+puts them.  Only the drawing changes: the cell keeps its outputs in the
+order the kernel sent them, which is what is saved."
+  (let ((widget-p (lambda (o)
+                    (let ((d (and (hash-table-p o) (gethash "data" o))))
+                      (and (hash-table-p d) (gethash emjupy--widget-view-mime d))))))
+    (append (seq-filter widget-p outputs) (seq-remove widget-p outputs))))
+
 (defun emjupy--outputs-for-render (outputs)
   "Return OUTPUTS as a list, with repeated identical images dropped.
 
 Only image-bearing outputs are collapsed, and only against images
 already seen in the same cell: two `print' calls emitting the same text
 are genuinely two outputs and both must show."
-  (let ((all (append (or outputs []) nil)))
+  (let ((all (emjupy--widgets-first (append (or outputs []) nil))))
     (if (not emjupy-deduplicate-image-outputs)
         all
       (let ((seen (make-hash-table :test 'equal))

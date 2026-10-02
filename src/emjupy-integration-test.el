@@ -1035,6 +1035,16 @@ for each server it saw die."
                   (list (length (seq-filter #'process-live-p (process-list)))
                         (length (seq-filter (lambda (b) (string-match-p "emjupy_" (buffer-name b)))
                                             (buffer-list)))))))
+    ;; Settle first: a test before this one may still be starting its
+    ;; notebook's language server -- the kernel says where it runs after the
+    ;; test has finished -- and that would be counted as this one's.
+    (let ((last nil) (stable 0))
+      ;; steady for a second and a half, or fifteen at most
+      (cl-loop repeat 30 until (>= stable 3)
+               do (accept-process-output nil 0.5)
+               (let ((now (funcall count)))
+                 (setq stable (if (equal now last) (1+ stable) 0)
+                       last now))))
     (let ((before (funcall count)))
       (dotimes (i 3)
         (let* ((c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "import os"
@@ -1211,6 +1221,288 @@ and the user must be told."
          (should-error (emjupy-save-notebook))
          (should (< (- (float-time) t0) 15))))
      (emjupy-int--proxy-say "reset"))))
+
+(ert-deftest emjupy-int-plotly-figure-opens-with-the-kernels-plotly-js ()
+  "A plotly figure shows as a line, and opens as a page that draws it.
+
+The figure arrives as JSON only: the page is built here, with plotly.js
+asked of the kernel -- near 5 MB, which has to arrive whole -- and kept.
+The viewer is the one thing stubbed: it records the page it would show."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import plotly.graph_objects as go
+go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2])).show()" 60))
+          (data (gethash "data" (aref (emjupy-cell-outputs cell) 0)))
+          (shown nil))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "plotly is not installed where the kernel runs"))
+     (should (gethash emjupy--plotly-mime data))
+     (with-current-buffer emjupy-int--buffer
+       ;; the output is the line that opens it, not "Figure"
+       (should (string-match-p "Interactive plotly figure" (buffer-string)))
+       (cl-letf (((symbol-function 'emjupy--show-file) (lambda (file) (setq shown file))))
+         (emjupy-open-output data)
+         (emjupy-int--pump 60 (lambda () shown))))
+     (should shown)
+     (let* ((page (with-temp-buffer (insert-file-contents shown) (buffer-string)))
+            (script (and (string-match "<script src=\"file://\\([^\"]+\\)\"" page)
+                         (match-string 1 page))))
+       (should (string-match-p "Plotly.newPlot" page))
+       (should (string-match-p "\"type\":\"scatter\"" page))
+       (should (and script (file-exists-p script)))
+       ;; the kernel's whole plotly.js, not its first piece
+       (should (> (file-attribute-size (file-attributes script)) 1000000))
+       (should (string-match-p "plotly\\.js v[0-9]"
+                               (with-temp-buffer
+                                 (insert-file-contents script nil 0 2000)
+                                 (buffer-string))))))))
+
+(ert-deftest emjupy-int-interact-slider-redraws-its-figure-in-place ()
+  "An interact slider shows as a control, and moving it redraws the figure.
+
+The figure comes back as ordinary output answering the slider's message,
+not the cell's execution: it must reach the cell, replace the figure
+there rather than add a second, and leave the control in place."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import matplotlib
+matplotlib.use('module://matplotlib_inline.backend_inline')
+import matplotlib.pyplot as plt
+from ipywidgets import interact
+@interact(n=(1, 5))
+def f(n=3):
+    plt.plot(range(n)); plt.title(f'n={n}'); plt.show()" 60))
+          (images (lambda ()
+                    (cl-loop for o across (emjupy-cell-outputs cell)
+                             for d = (and (hash-table-p o) (gethash "data" o))
+                             when (and d (gethash "image/png" d)) collect (gethash "image/png" d)))))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "ipywidgets or matplotlib is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       ;; the slider, not "interactive(children=...)"
+       (should (string-match-p "n ◀ 3 ▶" (buffer-string)))
+       (should-not (string-match-p "interactive(children" (buffer-string)))
+       (let ((before (funcall images)))
+         (should (= (length before) 1))
+         (goto-char (point-min))
+         (search-forward "n ◀ 3 ▶")
+         (backward-char)
+         (emjupy-widget-increase)
+         (emjupy-int--pump 30 (lambda () (let ((now (funcall images)))
+                                           (and (= (length now) 1)
+                                                (not (equal now before))))))
+         ;; one figure, the new one, and the control showing the new value
+         (should (= (length (funcall images)) 1))
+         (should-not (equal (funcall images) before))
+         (emjupy-flush-output (current-buffer))
+         (should (string-match-p "n ◀ 4 ▶" (buffer-string))))))))
+
+(ert-deftest emjupy-int-widgets-are-driven-by-the-shape-of-their-state ()
+  "Every kind of widget control sends the kernel what it was given.
+
+The controls are not written per widget type: each is drawn and driven
+by the shape of the widget's state.  One widget per kind of control,
+each used once -- the minibuffer's answers given -- and the kernel asked
+what it now holds."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import ipywidgets as w, datetime
+clicks = [0]
+b = w.Button(description='Press')
+b.on_click(lambda _: clicks.__setitem__(0, clicks[0] + 1))
+W = dict(step=w.IntSlider(description='Step', value=3, min=0, max=10),
+         number=w.IntText(description='Number', value=1),
+         range=w.IntRangeSlider(description='Range', value=(2, 8), min=0, max=10),
+         choose=w.Dropdown(description='Choose', options=['a', 'b', 'c'], value='a'),
+         several=w.SelectMultiple(description='Several', options=['x', 'y', 'z']),
+         toggle=w.Checkbox(description='Toggle', value=False),
+         text=w.Text(description='Text', value='old'),
+         date=w.DatePicker(description='Date'),
+         tags=w.TagsInput(description='Tags', value=['p']),
+         color=w.ColorPicker(description='Colour', value='black'))
+w.VBox(list(W.values()) + [b])" 60))
+          (kernel (with-current-buffer emjupy-int--buffer
+                    (emjupy-notebook-kernel emjupy--buffer-notebook))))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "ipywidgets is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (cl-flet ((use (label glyph)
+                   ;; the control after LABEL: GLYPH starts it
+                   (goto-char (overlay-start (emjupy-cell-output-ov cell)))
+                   (re-search-forward (if (string-empty-p label)
+                                          (concat "\\(" (regexp-quote glyph) "\\)")
+                                        (concat (regexp-quote label) " .*?\\(" (regexp-quote glyph) "\\)")))
+                   (goto-char (match-beginning 1))
+                   (emjupy-widget-activate)
+                   (emjupy-int--pump 0.5)))
+         (cl-letf (((symbol-function 'read-number) (lambda (&rest _) 7))
+                   ((symbol-function 'read-string)
+                    (lambda (prompt &rest _)
+                      (cond ((string-match-p "Date" prompt) "2024-03-05")
+                            ((string-match-p "commas" prompt) "p, q")
+                            (t "new"))))
+                   ((symbol-function 'completing-read) (lambda (&rest _) "c"))
+                   ((symbol-function 'completing-read-multiple) (lambda (&rest _) '("x" "z")))
+                   ((symbol-function 'read-color) (lambda (&rest _) "red")))
+           (use "Step" "▶")
+           (use "Number" "[")
+           (use "Range" "2")
+           (use "Choose" "a")
+           (use "Several" "(none)")
+           (use "Toggle" "[ ]")
+           (use "Text" "[")
+           (use "Date" "[")
+           (use "Tags" "[")
+           (use "Colour" "[")
+           (use "" "[ Press ]"))))
+     (let ((answer nil))
+       (emjupy--kernel-eval
+        kernel "print(repr((W['step'].value, W['number'].value, W['range'].value, W['choose'].value, W['several'].value, W['toggle'].value, W['text'].value, str(W['date'].value), W['tags'].value, W['color'].value, clicks[0])))"
+        (lambda (out) (setq answer (string-trim out))))
+       (emjupy-int--pump 15 (lambda () answer))
+       (should (equal answer
+                      "(4, 7, (7, 8), 'c', ('x', 'z'), True, 'new', '2024-03-05', ['p', 'q'], '#ff0000', 1)"))))))
+
+(ert-deftest emjupy-int-every-ipywidgets-widget-is-drawn ()
+  "Every widget ipywidgets defines is drawn by a rule, bar a known few.
+
+Built from ipywidgets' own list, so a widget it adds is checked the day
+it appears: drawn, if its state has a shape a rule knows, else named
+here as an exception.  The one exception: a gamepad, shown by name."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import ipywidgets as w, inspect
+ws = []
+for n, c in inspect.getmembers(w, inspect.isclass):
+    if issubclass(c, w.DOMWidget) and c is not w.DOMWidget and not n.startswith(('Layout', 'Style')):
+        try:
+            ws.append(c(description=n) if 'description' in c.class_trait_names() else c())
+        except Exception:
+            pass
+w.VBox(ws)" 60)))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "ipywidgets is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (let* ((ov (emjupy-cell-output-ov cell))
+              (text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
+              (named nil) (start 0))
+         (while (string-match "\\[widget: \\([A-Za-z]+\\)\\]" text start)
+           (push (match-string 1 text) named)
+           (setq start (match-end 0)))
+         (should (equal named '("Controller")))
+         ;; the binary ones are read now: none goes unshown
+         (should-not (cl-some (lambda (l) (string-match-p "\\`\\[widget\\]" l))
+                              (split-string text "\n")))
+         ;; and the rest are drawn as themselves: a few to be sure
+         (dolist (shown '("IntSlider ◀ 0 ▶" "IntRangeSlider 25 – 75" "IntProgress ░"
+                          "Checkbox [ ]" "Valid ✗" "SelectMultiple (none) ▾" "DatePicker [--]"
+                          "FloatLogSlider ◀ 1 ▶   1 … 10000" "Password []" "[ Button ]"))
+           (ert-info (shown) (should (string-match-p (regexp-quote shown) text)))))))))
+
+(ert-deftest emjupy-int-binary-widgets-image-audio-upload ()
+  "Widgets whose data is binary: an image drawn and redrawn, a sound, an upload.
+
+Their data comes, and goes, in binary WebSocket frames, which were not
+read: an image, a sound or a video showed as [widget], and a file could
+not be uploaded.  The image is replaced from the kernel and drawn anew;
+the file chosen reaches the kernel byte for byte."
+  (emjupy-int--with-live-kernel
+   (let* ((file (make-temp-file "emjupy-upload" nil ".bin"))
+          (bytes (apply #'unibyte-string (number-sequence 0 255)))
+          (cell (emjupy-int--run "import ipywidgets as w, base64
+png1 = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+png2 = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR42mP8z8DwnwEJMDKQIgEA9b0D/6m0jAgAAAAASUVORK5CYII=')
+img = w.Image(value=png1, format='png')
+snd = w.Audio(value=b'RIFF' + bytes(40), format='wav', autoplay=False)
+up = w.FileUpload(description='Up')
+w.VBox([img, snd, up])" 60)))
+     (unwind-protect
+         (progn
+           (let ((coding-system-for-write 'no-conversion)) (write-region bytes nil file nil 'quiet))
+           (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+             (ert-skip "ipywidgets is not installed where the kernel runs"))
+           (with-current-buffer emjupy-int--buffer
+             (emjupy-flush-output (current-buffer))
+             (let ((shown (lambda ()
+                            (let ((ov (emjupy-cell-output-ov cell)))
+                              (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))))
+               ;; the image's bytes arrived; this Emacs draws no images, so it is a line
+               (should (string-match-p "▶ Image (png, 70)" (funcall shown)))
+               (should (string-match-p "▶ Audio (wav" (funcall shown)))
+               ;; replaced from the kernel: drawn anew
+               (let ((kernel (emjupy-notebook-kernel emjupy--buffer-notebook)) (done nil))
+                 (emjupy--kernel-eval kernel "img.value = png2; print('ok')" (lambda (_) (setq done t)))
+                 (emjupy-int--pump 15 (lambda () (and done (string-match-p "▶ Image (png, 77)"
+                                                                           (funcall shown))))))
+               (should (string-match-p "▶ Image (png, 77)" (funcall shown)))
+               ;; an upload: the file is chosen, then nothing more
+               (goto-char (overlay-start (emjupy-cell-output-ov cell)))
+               (search-forward "[ Upload… ]") (backward-char 3)
+               (let ((answers (list file "")))
+                 (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) (pop answers))))
+                   (emjupy-widget-activate)))
+               (should (string-match-p (regexp-quote (file-name-nondirectory file)) (funcall shown)))))
+           (let ((answer nil)
+                 (kernel (with-current-buffer emjupy-int--buffer
+                           (emjupy-notebook-kernel emjupy--buffer-notebook))))
+             (emjupy-int--pump 1)
+             (emjupy--kernel-eval
+              kernel "print(len(up.value), up.value[0].name.endswith('.bin'), bytes(up.value[0].content) == bytes(range(256)))"
+              (lambda (out) (setq answer (string-trim out))))
+             (emjupy-int--pump 15 (lambda () answer))
+             (should (equal answer "1 True True"))))
+       (delete-file file)))))
+
+(ert-deftest emjupy-int-widget-page-bridge-relays-both-ways ()
+  "A page, through the bridge, gets the widget's models and moves the widget.
+
+Emacs stands in for the page here -- a WebSocket to the bridge, saying
+what a page says -- so no browser is needed: the models the page would
+draw arrive, and a value the page sends reaches the kernel."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import anywidget, traitlets
+class Counter(anywidget.AnyWidget):
+    _esm = 'export default { render() {} }'
+    value = traitlets.Int(0).tag(sync=True)
+c = Counter(); c" 60))
+          (received nil))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "anywidget is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (should (string-match-p "▶ Interactive widget: Counter (anywidget)" (buffer-string)))
+       (let* ((id (catch 'found
+                    (maphash (lambda (k v) (when (equal (gethash "_anywidget_id" (cdr v) "") "__main__.Counter")
+                                             (throw 'found k)))
+                             emjupy--widget-models)))
+              (token "test-page")
+              (kernel (emjupy-notebook-kernel emjupy--buffer-notebook)))
+         (should id)
+         (puthash token (list :kernel kernel :cell cell :view id :models (emjupy--widget-tree id))
+                  emjupy--bridge-pages)
+         (let ((ws (websocket-open (format "ws://127.0.0.1:%d/" (emjupy--bridge-port))
+                                   :on-message (lambda (_ws frame)
+                                                 (push (json-parse-string (websocket-frame-text frame)
+                                                                          :object-type 'hash-table)
+                                                       received)))))
+           (unwind-protect
+               (progn
+                 (emjupy-int--pump 5 (lambda () (websocket-openp ws)))
+                 (websocket-send-text ws (format "{\"type\": \"hello\", \"page\": \"%s\"}" token))
+                 (emjupy-int--pump 10 (lambda () received))
+                 ;; the models a page draws from
+                 (let ((init (car received)))
+                   (should (equal (gethash "type" init) "init"))
+                   (should (equal (gethash "view" init) id))
+                   (should (cl-some (lambda (m) (equal (gethash "id" m) id)) (gethash "models" init))))
+                 ;; a value the page sends reaches the kernel
+                 (websocket-send-text
+                  ws (format "{\"type\": \"comm_msg\", \"comm_id\": \"%s\", \"data\": {\"method\": \"update\", \"state\": {\"value\": 5}, \"buffer_paths\": []}, \"buffers\": []}" id))
+                 (emjupy-int--pump 2)
+                 (let ((answer nil))
+                   (emjupy--kernel-eval kernel "print(c.value)" (lambda (out) (setq answer (string-trim out))))
+                   (emjupy-int--pump 10 (lambda () answer))
+                   (should (equal answer "5"))))
+             (websocket-close ws)
+             (remhash token emjupy--bridge-pages))))))))
 
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

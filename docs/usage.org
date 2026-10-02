@@ -154,6 +154,87 @@ Stream output continues the output it belongs to rather than starting a
 new one, as in Jupyter, so a cell that prints a thousand lines has one
 output, not a thousand.
 
+* Interactive output
+:PROPERTIES:
+:CUSTOM_ID: interactive-output
+:END:
+
+** Figures
+
+A figure that draws itself in JavaScript -- plotly, bokeh -- has nothing
+to show in a text buffer, and shows as a line saying what it is.  =C-c C-f=
+there, a click, or =RET= opens it in a window of its own, one per figure,
+not a tab in your browser.  That window is the small WebKitGTK viewer
+that comes with emjupy where Python has PyGObject and WebKitGTK -- GNOME
+desktops do, and the system's Python is tried when the one first on the
+PATH is a virtualenv's -- or else a new Firefox window, or a Chromium
+app window: =emjupy-figure-window-browsers= lists the browsers tried, in
+order.  =emjupy-figure-window-command= names another program; =emjupy-figure-viewer= can choose the browser instead,
+or an xwidget, inside Emacs -- see [[file:limitations.org][Known limitations]] for why that is not
+the default.  Opening is always asked for, never
+automatic: it runs the notebook's JavaScript.
+
+#+CAPTION: Opening a plotly figure, and rotating it.
+#+ATTR_HTML: :width 100%
+[[file:./images/interactive-plotly.gif]]
+
+A plotly figure arrives as its JSON specification, so the page is built
+in Emacs, with plotly.js asked of the kernel that made the figure: it
+matches the figure, needs no network, and works through a tunnel.  The
+first figure of a plotly version takes some seconds -- the server limits
+how fast output reaches Emacs, so it comes in pieces -- and later ones
+none: it is kept.  =emjupy-plotly-js= names a URL or a file instead.
+
+=C-c C-f= on an image opens it in a frame of its own, for a figure too
+small to read at cell width; the same frame each time.  With
+=emjupy-inline-figures= set to nil, figures are not drawn in the notebook
+at all: each is a line, opened there the same way.  Drawn inline is the
+default.
+
+** Widgets
+
+=ipywidgets= controls show as controls.  An =interact= slider reads
+=frequency ◀ 3 ▶   1 … 10=: =<left>= and =<right>= anywhere on it step it,
+the arrows can be clicked, and =RET= on the value asks for one.  Moving
+it redraws the figure in place, as in a notebook.
+
+Every widget is drawn from the shape of its state, not from its type: a
+number with bounds and a step is stepped (=◀ 3 ▶=), one without a step is
+a bar, two numbers are a range, option labels are chosen from (=a ▾=), true
+or false is a box to toggle (=[x]=), a value with no bounds is edited in
+brackets (=[text]=), a button is clicked (=[ Press ]=), and a box draws
+what it holds.  So ipywidgets' controls all show without emjupy naming
+them -- 49 of its 50 widgets, checked against its own list -- and a new
+one does too if its state has a familiar shape.  =RET= or a click on a
+control uses it; what it asks for in the minibuffer follows the value: a
+number within its bounds, text, a password, a list, a date or a time, a
+colour.
+
+#+CAPTION: An interact slider, stepped from 3 to 6.
+#+ATTR_HTML: :width 70%
+[[file:./images/interactive-widgets.gif]]
+
+Widgets whose data is binary work too: an image widget is drawn in the
+notebook, and drawn again when the kernel replaces it (or shown as a line
+that opens it, with =emjupy-inline-figures= nil); a sound or a video plays
+in a window of its own; a file upload asks for files and sends them.
+
+A widget that draws itself in JavaScript -- plotly's =FigureWidget=, a
+map, an anywidget -- shows as a line, =▶ Interactive widget: FigureWidget
+(anywidget)=, and opens in a page of its own, in the figure window, where
+its JavaScript draws it, live: a change made there reaches the kernel,
+and one made in the kernel reaches the page.  The page talks to Emacs,
+which relays over the kernel connection it has: it needs no token, and
+works through a tunnel as the notebook does.
+
+The widget's code is asked of the kernel -- widget packages leave a copy
+for the classic notebook in its environment, which matches its version
+and needs no network; one with none is fetched from a CDN.  The widget
+manager itself comes from a CDN: =emjupy-widget-scripts= names local
+copies instead, for a machine with no network.
+
+Not drawn: a gamepad, shown by name.
+
 * Progress bars
 
 A progress bar redraws itself by returning to the start of the line with

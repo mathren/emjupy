@@ -59,7 +59,7 @@
 ;; This file carries the package header and version, and loads the rest.
 ;; The mode, its keymap and menu are in emjupy-mode; the implementation is
 ;; layered, each file requiring only the ones before it: emjupy-core,
-;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-remote,
+;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-figures, emjupy-widgets, emjupy-widget-page, emjupy-remote,
 ;; emjupy-lsp, emjupy-eglot, emjupy-mode and emjupy-notebook.
 
 
@@ -68,7 +68,42 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
+(require 'emjupy-figures)
+(require 'emjupy-widgets)
+(require 'emjupy-widget-page)
 (require 'emjupy-notebook)
+
+(require 'loadhist)                     ; `feature-file'
+
+(defconst emjupy--home
+  (file-name-directory (or load-file-name buffer-file-name default-directory))
+  "The directory this file was loaded from, where every emjupy file belongs.")
+
+(defconst emjupy--modules
+  '(emjupy-core emjupy-http emjupy-render emjupy-cells emjupy-kernel
+    emjupy-figures emjupy-widgets emjupy-widget-page emjupy-remote emjupy-lsp emjupy-eglot
+    emjupy-mode emjupy-notebook)
+  "The files emjupy is made of, as features.")
+
+(defun emjupy--stray-modules ()
+  "Return the emjupy files loaded from a directory other than this one\='s.
+Each is a cons of the feature and the file.  Two installations on the
+`load-path' at once -- a package and a checkout -- give a mix, and a
+mix fails in ways that look like bugs: a command named where its key
+should be, widgets drawn as text."
+  (cl-loop for feature in emjupy--modules
+           for file = (and (featurep feature) (feature-file feature))
+           when (and file (not (file-equal-p (file-name-directory file) emjupy--home)))
+           collect (cons feature file)))
+
+(when-let* ((strays (emjupy--stray-modules)))
+  (display-warning
+   'emjupy
+   (format "emjupy is loaded from two places: %s, but %s.  Two installations
+are on the `load-path' -- remove one, or put the one you want first."
+           emjupy--home
+           (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s))) strays ", "))
+   :warning))
 (require 'emjupy-lsp)
 (require 'emjupy-eglot)
 (require 'emjupy-mode)
@@ -131,6 +166,12 @@ the echo area, for pasting into a bug report."
                   (format "emjupy %s" emjupy-version)
                   (if rev (format ", git %s" rev) "")
                   (if dir (format ", loaded from %s" dir) "")
+                  (let ((strays (emjupy--stray-modules)))
+                    (if strays
+                        (format " -- but %s"
+                                (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s)))
+                                           strays ", "))
+                      ""))
                   (if nb
                       (format "; kernel cwd %s; language server %s"
                               (or (emjupy-notebook-kernel-cwd nb) "unknown")
