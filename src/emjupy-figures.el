@@ -26,10 +26,13 @@
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
 
-(defcustom emjupy-figure-viewer 'auto
+(defcustom emjupy-figure-viewer 'browser
   "Where `emjupy-open-output' shows an interactive figure.
-`auto' uses an xwidget when this Emacs has one, and the browser
-otherwise.  `xwidget' and `browser' insist on one of them."
+`browser' is the browser.  `xwidget' is inside Emacs, and `auto' an
+xwidget when this Emacs has them.  Neither is the default: Emacs 30.1
+refuses WebKitGTK from 2.41.92, and a build made to take a newer one
+aborts as the figure opens -- seen with 2.52 -- so only choose an xwidget
+on a build that works with it."
   :type '(choice (const :tag "xwidget if available, else browser" auto)
                  (const :tag "An xwidget" xwidget)
                  (const :tag "The browser" browser))

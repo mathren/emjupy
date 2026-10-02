@@ -87,4 +87,3 @@ automatically.
 |----------------------+---------------------------------------------------|
 | =<left>=, =<right>=  | Step the slider at point                          |
 | =RET=, click         | Use the control: step, toggle, choose; on a slider's value, ask for one |
-

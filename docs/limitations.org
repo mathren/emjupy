@@ -57,14 +57,15 @@ its plain-text fallback, which every Jupyter output carries:
 Images need a graphical Emacs; in a terminal they appear as their text
 fallback too.
 
-* Figures open in the browser, not in Emacs, on most systems
+* Figures open in the browser, not inside Emacs
 
-An xwidget -- a browser inside Emacs -- needs Emacs built with
-=--with-xwidgets=, and Emacs 30.1 refuses WebKitGTK 2.41.92 or newer:
-versions after it crashed with xwidgets.  Current distributions ship
-newer ones (Ubuntu 24.04 has 2.52), so there Emacs 30.1 has no xwidgets,
-and a figure opens in your browser.  Where Emacs does have them, figures
-open inside it; =emjupy-figure-viewer= can insist on either.
+Showing a figure inside Emacs needs an xwidget, and that needs Emacs
+built with =--with-xwidgets=.  Emacs 30.1 refuses WebKitGTK 2.41.92 or
+newer, and current distributions ship newer (Ubuntu 24.04 has 2.52), so
+there Emacs 30.1 has no xwidgets.  The refusal is still warranted: built
+with the check lifted, against 2.52, Emacs aborts as the figure opens.
+So figures open in your browser.  =emjupy-figure-viewer= can choose an
+xwidget, for a build known to work with one.
 
 * Python only
 

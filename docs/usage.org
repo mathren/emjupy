@@ -160,9 +160,9 @@ output, not a thousand.
 
 A figure that draws itself in JavaScript -- plotly, bokeh -- has nothing
 to show in a text buffer, and shows as a line saying what it is.  =C-c C-f=
-there, a click, or =RET= opens it: in your browser, or in Emacs itself
-where Emacs was built with xwidgets (see [[file:limitations.org][Known limitations]]).
-=emjupy-figure-viewer= chooses.  Opening is always asked for, never
+there, a click, or =RET= opens it in your browser; =emjupy-figure-viewer=
+can choose an xwidget, inside Emacs, instead -- see [[file:limitations.org][Known limitations]]
+for why that is not the default.  Opening is always asked for, never
 automatic: it runs the notebook's JavaScript.
 
 #+CAPTION: Opening a plotly figure, and rotating it.
