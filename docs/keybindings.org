@@ -85,5 +85,5 @@ automatically.
 
 | Key                  | Does                                              |
 |----------------------+---------------------------------------------------|
-| =<left>=, =<right>=  | Step the slider at point                          |
-| =RET=, click         | Use the control: step, toggle, choose; on a slider's value, ask for one |
+| =<left>=, =<right>=  | Step the number at point: a slider, a bounded field |
+| =RET=, click         | Use the control: step, toggle, choose one or several, click a button; on a value, ask for a new one |

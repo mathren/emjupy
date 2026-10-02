@@ -193,15 +193,28 @@ default.
 =ipywidgets= controls show as controls.  An =interact= slider reads
 =frequency ◀ 3 ▶   1 … 10=: =<left>= and =<right>= anywhere on it step it,
 the arrows can be clicked, and =RET= on the value asks for one.  Moving
-it redraws the figure in place, as in a notebook.  Checkboxes and
-dropdowns work too, and the boxes holding them.
+it redraws the figure in place, as in a notebook.
+
+Every widget is drawn from the shape of its state, not from its type: a
+number with bounds and a step is stepped (=◀ 3 ▶=), one without a step is
+a bar, two numbers are a range, option labels are chosen from (=a ▾=), true
+or false is a box to toggle (=[x]=), a value with no bounds is edited in
+brackets (=[text]=), a button is clicked (=[ Press ]=), and a box draws
+what it holds.  So ipywidgets' controls all show without emjupy naming
+them -- 45 of its 50 widgets, checked against its own list -- and a new
+one does too if its state has a familiar shape.  =RET= or a click on a
+control uses it; what it asks for in the minibuffer follows the value: a
+number within its bounds, text, a password, a list, a date or a time, a
+colour.
 
 #+CAPTION: An interact slider, stepped from 3 to 6.
 #+ATTR_HTML: :width 70%
 [[file:./images/interactive-widgets.gif]]
 
-A widget that draws itself in JavaScript -- plotly's =FigureWidget=, a map
--- shows as its text.
+Not drawn: a widget that draws itself in JavaScript -- plotly's
+=FigureWidget=, a map -- shows as its text; a gamepad and a file upload
+show by name; an image, a sound or a video widget, whose data comes in a
+binary message emjupy does not read, shows as =[widget]=.
 
 * Progress bars
 

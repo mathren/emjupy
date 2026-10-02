@@ -7279,5 +7279,32 @@ Firefox by default, then Chromium; a change to the list counts at once."
         ;; none installed: the caller falls back to the browser
         (should-not (emjupy--figure-window-command))))))
 
+(ert-deftest emjupy-test-widget-rules-by-shape ()
+  "Each kind of widget state is drawn by the rule its shape calls for.
+The order of `emjupy-widget-rules' matters, and this pins it down."
+  (cl-flet ((state (&rest kv)
+              (let ((h (make-hash-table :test 'equal)))
+                (while kv (puthash (pop kv) (pop kv) h))
+                h)))
+    (dolist (case
+             `((step   ,(state "_model_name" "IntSliderModel" "value" 3 "min" 0 "max" 9 "step" 1))
+               (range  ,(state "_model_name" "IntRangeSliderModel" "value" [2 8] "min" 0 "max" 9 "step" 1 "orientation" "horizontal"))
+               (bar    ,(state "_model_name" "IntProgressModel" "value" 3 "min" 0 "max" 9))
+               (number ,(state "_model_name" "IntTextModel" "value" 3))
+               (choose ,(state "_model_name" "DropdownModel" "_options_labels" ["a"] "index" 0))
+               (choose-several ,(state "_model_name" "SelectMultipleModel" "_options_labels" ["a"] "index" []))
+               (toggle ,(state "_model_name" "CheckboxModel" "value" :false))
+               (toggle ,(state "_model_name" "ValidModel" "value" t "readout" "x"))
+               (button ,(state "_model_name" "ButtonModel" "button_style" ""))
+               (typed  ,(state "_model_name" "TextModel" "value" "x" "continuous_update" t))
+               (color  ,(state "_model_name" "ColorPickerModel" "value" "black" "concise" :false))
+               (text   ,(state "_model_name" "LabelModel" "value" "x"))
+               (date   ,(state "_model_name" "DatePickerModel" "value" :null))
+               (list   ,(state "_model_name" "TagsInputModel" "value" ["p"] "allow_duplicates" t))
+               (container ,(state "_model_name" "VBoxModel" "children" []))
+               (nil    ,(state "_model_name" "FileUploadModel" "value" [] "accept" ""))))
+      (ert-info ((format "%s" (gethash "_model_name" (cadr case))))
+        (should (eq (car (emjupy--widget-rule (cadr case))) (car case)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

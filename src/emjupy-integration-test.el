@@ -1285,5 +1285,110 @@ def f(n=3):
          (emjupy-flush-output (current-buffer))
          (should (string-match-p "n ◀ 4 ▶" (buffer-string))))))))
 
+(ert-deftest emjupy-int-widgets-are-driven-by-the-shape-of-their-state ()
+  "Every kind of widget control sends the kernel what it was given.
+
+The controls are not written per widget type: each is drawn and driven
+by the shape of the widget's state.  One widget per kind of control,
+each used once -- the minibuffer's answers given -- and the kernel asked
+what it now holds."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import ipywidgets as w, datetime
+clicks = [0]
+b = w.Button(description='Press')
+b.on_click(lambda _: clicks.__setitem__(0, clicks[0] + 1))
+W = dict(step=w.IntSlider(description='Step', value=3, min=0, max=10),
+         number=w.IntText(description='Number', value=1),
+         range=w.IntRangeSlider(description='Range', value=(2, 8), min=0, max=10),
+         choose=w.Dropdown(description='Choose', options=['a', 'b', 'c'], value='a'),
+         several=w.SelectMultiple(description='Several', options=['x', 'y', 'z']),
+         toggle=w.Checkbox(description='Toggle', value=False),
+         text=w.Text(description='Text', value='old'),
+         date=w.DatePicker(description='Date'),
+         tags=w.TagsInput(description='Tags', value=['p']),
+         color=w.ColorPicker(description='Colour', value='black'))
+w.VBox(list(W.values()) + [b])" 60))
+          (kernel (with-current-buffer emjupy-int--buffer
+                    (emjupy-notebook-kernel emjupy--buffer-notebook))))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "ipywidgets is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (cl-flet ((use (label glyph)
+                   ;; the control after LABEL: GLYPH starts it
+                   (goto-char (overlay-start (emjupy-cell-output-ov cell)))
+                   (re-search-forward (if (string-empty-p label)
+                                          (concat "\\(" (regexp-quote glyph) "\\)")
+                                        (concat (regexp-quote label) " .*?\\(" (regexp-quote glyph) "\\)")))
+                   (goto-char (match-beginning 1))
+                   (emjupy-widget-activate)
+                   (emjupy-int--pump 0.5)))
+         (cl-letf (((symbol-function 'read-number) (lambda (&rest _) 7))
+                   ((symbol-function 'read-string)
+                    (lambda (prompt &rest _)
+                      (cond ((string-match-p "Date" prompt) "2024-03-05")
+                            ((string-match-p "commas" prompt) "p, q")
+                            (t "new"))))
+                   ((symbol-function 'completing-read) (lambda (&rest _) "c"))
+                   ((symbol-function 'completing-read-multiple) (lambda (&rest _) '("x" "z")))
+                   ((symbol-function 'read-color) (lambda (&rest _) "red")))
+           (use "Step" "▶")
+           (use "Number" "[")
+           (use "Range" "2")
+           (use "Choose" "a")
+           (use "Several" "(none)")
+           (use "Toggle" "[ ]")
+           (use "Text" "[")
+           (use "Date" "[")
+           (use "Tags" "[")
+           (use "Colour" "[")
+           (use "" "[ Press ]"))))
+     (let ((answer nil))
+       (emjupy--kernel-eval
+        kernel "print(repr((W['step'].value, W['number'].value, W['range'].value, W['choose'].value, W['several'].value, W['toggle'].value, W['text'].value, str(W['date'].value), W['tags'].value, W['color'].value, clicks[0])))"
+        (lambda (out) (setq answer (string-trim out))))
+       (emjupy-int--pump 15 (lambda () answer))
+       (should (equal answer
+                      "(4, 7, (7, 8), 'c', ('x', 'z'), True, 'new', '2024-03-05', ['p', 'q'], '#ff0000', 1)"))))))
+
+(ert-deftest emjupy-int-every-ipywidgets-widget-is-drawn ()
+  "Every widget ipywidgets defines is drawn by a rule, bar a known few.
+
+Built from ipywidgets' own list, so a widget it adds is checked the day
+it appears: drawn, if its state has a shape a rule knows, else named
+here as an exception.  The exceptions: a gamepad and a file upload,
+shown by name, and the widgets whose data comes in binary messages,
+which are not read -- an image, a sound, a video -- shown as [widget]."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import ipywidgets as w, inspect
+ws = []
+for n, c in inspect.getmembers(w, inspect.isclass):
+    if issubclass(c, w.DOMWidget) and c is not w.DOMWidget and not n.startswith(('Layout', 'Style')):
+        try:
+            ws.append(c(description=n) if 'description' in c.class_trait_names() else c())
+        except Exception:
+            pass
+w.VBox(ws)" 60)))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "ipywidgets is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (let* ((ov (emjupy-cell-output-ov cell))
+              (text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
+              (named nil) (start 0))
+         (while (string-match "\\[widget: \\([A-Za-z]+\\)\\]" text start)
+           (push (match-string 1 text) named)
+           (setq start (match-end 0)))
+         (should (equal (sort named #'string<) '("Controller" "FileUpload")))
+         ;; at most the three binary ones go unread
+         (should (<= (cl-count-if (lambda (l) (string-match-p "\\`\\[widget\\]" l))
+                                  (split-string text "\n"))
+                     3))
+         ;; and the rest are drawn as themselves: a few to be sure
+         (dolist (shown '("IntSlider ◀ 0 ▶" "IntRangeSlider 25 – 75" "IntProgress ░"
+                          "Checkbox [ ]" "Valid ✗" "SelectMultiple (none) ▾" "DatePicker [--]"
+                          "FloatLogSlider ◀ 1 ▶   1 … 10000" "Password []" "[ Button ]"))
+           (ert-info (shown) (should (string-match-p (regexp-quote shown) text)))))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here
