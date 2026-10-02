@@ -1,6 +1,6 @@
 name: test_emjupy
 channels:
-  - defaults
+  - conda-forge
 dependencies:
   - matplotlib
   - numpy
@@ -8,5 +8,6 @@ dependencies:
   - plotly
   - ipywidgets
   - jupyter
+  - pandas
   - jupyter-lsp
   - python-lsp-server
