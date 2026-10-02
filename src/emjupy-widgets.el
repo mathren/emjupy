@@ -101,7 +101,10 @@ ACTION says what using it does: -1 or 1 to step a slider, `toggle', or
     (pcase name
       ('nil nil)
       ((or "IntSliderModel" "FloatSliderModel")
-       (list (concat label
+       ;; The whole line is the control: <left> and <right> step it from
+       ;; anywhere on it, and RET on the value asks for one.
+       (list (propertize
+              (concat label
                      (emjupy--widget-button "◀" id -1) " "
                      (propertize (emjupy--widget-number (gethash "value" state))
                                  'face 'bold)
@@ -109,7 +112,8 @@ ACTION says what using it does: -1 or 1 to step a slider, `toggle', or
                      (propertize (format "   %s … %s"
                                          (emjupy--widget-number (gethash "min" state))
                                          (emjupy--widget-number (gethash "max" state)))
-                                 'face 'shadow))))
+                                 'face 'shadow))
+              'emjupy-widget id 'keymap emjupy-widget-map)))
       ("CheckboxModel"
        (list (concat (emjupy--widget-button
                       (if (eq (gethash "value" state) t) "[x]" "[ ]") id 'toggle)
@@ -187,6 +191,15 @@ The value is a list of the comm id, the action and the cell."
     (let ((state (emjupy--widget-state id)))
       (pcase action
         ((or -1 1) (emjupy--widget-step id action cell))
+        ('nil (let ((value (read-number
+                            (format "Value (%s to %s): "
+                                    (emjupy--widget-number (gethash "min" state))
+                                    (emjupy--widget-number (gethash "max" state)))
+                            (gethash "value" state))))
+                (emjupy--widget-send
+                 id `(("value" . ,(min (gethash "max" state)
+                                       (max (gethash "min" state) value))))
+                 cell)))
         ('toggle (emjupy--widget-send
                   id `(("value" . ,(if (eq (gethash "value" state) t) :false t))) cell))
         ('choose
@@ -208,9 +221,13 @@ The value is a list of the comm id, the action and the cell."
   (pcase-let ((`(,id ,_ ,cell) (emjupy--widget-at nil)))
     (emjupy--widget-step id -1 cell)))
 
-(add-hook 'emjupy-comm-functions #'emjupy--widget-on-comm)
-(add-hook 'emjupy-output-owner-functions #'emjupy--widget-owner)
-(setq emjupy-widget-view-function #'emjupy--widget-view)
+(defun emjupy-widgets-enable ()
+  "Show widgets as controls, and route what they cause to their cells.
+Run when a notebook buffer starts, like the other hooks between layers,
+so that loading this file changes nothing."
+  (add-hook 'emjupy-comm-functions #'emjupy--widget-on-comm)
+  (add-hook 'emjupy-output-owner-functions #'emjupy--widget-owner)
+  (setq emjupy-widget-view-function #'emjupy--widget-view))
 
 (provide 'emjupy-widgets)
 

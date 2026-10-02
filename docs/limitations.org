@@ -42,19 +42,29 @@ says so when it starts, and =M-.= into your own code finds nothing,
 while the standard library resolves to this machine's copy.  See
 [[file:language-server.org][Language server support]].
 
-* Rich output: text and images only
+* Rich output: what is drawn in the buffer
 
-Of the forms an output can come in, emjupy draws plain text and images
-(PNG, JPEG, GIF, SVG).  Everything else is shown by its plain-text
-fallback, which every Jupyter output carries:
+In the buffer emjupy draws plain text, images (PNG, JPEG, GIF, SVG) and
+widget controls.  A figure that draws itself in JavaScript is opened in a
+window of its own (see [[file:usage.org][Interactive output]]).  Everything else is shown by
+its plain-text fallback, which every Jupyter output carries:
 
-- HTML -- a pandas =DataFrame= appears as its text table;
-- interactive widgets (=ipywidgets=) appear as their text repr, and do
-  not respond, since emjupy runs no JavaScript;
+- HTML without a script -- a pandas =DataFrame= appears as its text table;
+- widgets that draw themselves in JavaScript -- plotly's =FigureWidget=,
+  maps -- appear as their text;
 - Markdown and LaTeX sent through =IPython.display= appear as source.
 
 Images need a graphical Emacs; in a terminal they appear as their text
 fallback too.
+
+* Figures open in the browser, not in Emacs, on most systems
+
+An xwidget -- a browser inside Emacs -- needs Emacs built with
+=--with-xwidgets=, and Emacs 30.1 refuses WebKitGTK 2.41.92 or newer:
+versions after it crashed with xwidgets.  Current distributions ship
+newer ones (Ubuntu 24.04 has 2.52), so there Emacs 30.1 has no xwidgets,
+and a figure opens in your browser.  Where Emacs does have them, figures
+open inside it; =emjupy-figure-viewer= can insist on either.
 
 * Python only
 

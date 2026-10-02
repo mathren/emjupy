@@ -34,6 +34,7 @@
 | =C-c C-z=     | =emjupy-interrupt-kernel=           | Interrupt the running cell; the kernel and its state survive       |
 | =C-c M-z=     | =emjupy-connect-kernel-interactive= | Pick a running kernel or spawn one, for this notebook only         |
 | =C-c C-o=     | =emjupy-toggle-cell-output=         | Hide or show this cell's output; nothing is discarded (also by clicking the marker) |
+| =C-c C-f=     | =emjupy-open-output=                | Open the output at point on its own: a plotly figure or HTML in the browser or an xwidget, an image in an image buffer |
 | =C-$=         | =emjupy-show-traceback=             | Show the last traceback in its own buffer                          |
 | =C-c C-v=     | =emjupy-menu=                       | A menu of every command, grouped by what it is for                 |
 | =TAB=         | =emjupy-indent-or-cycle=            | Indent as Python does; repeated, cycle through indentations        |
@@ -79,3 +80,11 @@ it.
 Completion (=M-TAB=) and eldoc need no =emjupy= binding: they are wired into
 the standard hooks and reach the language server through the shadow buffer
 automatically.
+
+* On a widget
+
+| Key                  | Does                                              |
+|----------------------+---------------------------------------------------|
+| =<left>=, =<right>=  | Step the slider at point                          |
+| =RET=, click         | Use the control: step, toggle, choose; on a slider's value, ask for one |
+

@@ -154,6 +154,46 @@ Stream output continues the output it belongs to rather than starting a
 new one, as in Jupyter, so a cell that prints a thousand lines has one
 output, not a thousand.
 
+* Interactive output
+
+** Figures
+
+A figure that draws itself in JavaScript -- plotly, bokeh -- has nothing
+to show in a text buffer, and shows as a line saying what it is.  =C-c C-f=
+there, a click, or =RET= opens it: in your browser, or in Emacs itself
+where Emacs was built with xwidgets (see [[file:limitations.org][Known limitations]]).
+=emjupy-figure-viewer= chooses.  Opening is always asked for, never
+automatic: it runs the notebook's JavaScript.
+
+#+CAPTION: Opening a plotly figure, and rotating it.
+#+ATTR_HTML: :width 100%
+[[file:./images/interactive-plotly.gif]]
+
+A plotly figure arrives as its JSON specification, so the page is built
+in Emacs, with plotly.js asked of the kernel that made the figure: it
+matches the figure, needs no network, and works through a tunnel.  The
+first figure of a plotly version takes some seconds -- the server limits
+how fast output reaches Emacs, so it comes in pieces -- and later ones
+none: it is kept.  =emjupy-plotly-js= names a URL or a file instead.
+
+=C-c C-f= on an image opens it in an image buffer of its own, for a
+figure too small to read at cell width.
+
+** Widgets
+
+=ipywidgets= controls show as controls.  An =interact= slider reads
+=frequency ◀ 3 ▶   1 … 10=: =<left>= and =<right>= anywhere on it step it,
+the arrows can be clicked, and =RET= on the value asks for one.  Moving
+it redraws the figure in place, as in a notebook.  Checkboxes and
+dropdowns work too, and the boxes holding them.
+
+#+CAPTION: An interact slider, stepped from 3 to 6.
+#+ATTR_HTML: :width 70%
+[[file:./images/interactive-widgets.gif]]
+
+A widget that draws itself in JavaScript -- plotly's =FigureWidget=, a map
+-- shows as its text.
+
 * Progress bars
 
 A progress bar redraws itself by returning to the start of the line with

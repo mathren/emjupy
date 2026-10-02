@@ -7197,5 +7197,20 @@ forgotten, so a large answer -- plotly.js, asked of the kernel, is near
     (should (equal got "first second third\n"))
     (should-not (gethash "big" emjupy--internal-requests))))
 
+(ert-deftest emjupy-test-widgets-are-drawn-before-their-output ()
+  "A widget is drawn above the cell\'s other outputs; the saved order stays."
+  (let* ((img (let ((o (make-hash-table :test 'equal)) (d (make-hash-table :test 'equal)))
+                (puthash "output_type" "display_data" o) (puthash "text/plain" "<Figure>" d)
+                (puthash "data" d o) o))
+         (view (let ((o (make-hash-table :test 'equal)) (d (make-hash-table :test 'equal))
+                     (v (make-hash-table :test 'equal)))
+                 (puthash "model_id" "m" v)
+                 (puthash "output_type" "display_data" o)
+                 (puthash emjupy--widget-view-mime v d) (puthash "data" d o) o))
+         (outputs (vector img view)))
+    (should (equal (emjupy--outputs-for-render outputs) (list view img)))
+    ;; the cell's own order is untouched
+    (should (eq (aref outputs 0) img))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

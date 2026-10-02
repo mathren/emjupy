@@ -1721,13 +1721,25 @@ hundreds of kilobytes of base64, and this runs on every re-render."
                  when payload
                  return (cons mime (md5 (emjupy--mime-text payload))))))))
 
+(defun emjupy--widgets-first (outputs)
+  "Return OUTPUTS with the ones showing widgets first, otherwise in order.
+An `interact\=' sends its figure before its controls, and after each move
+clears the figure but not the controls, so the controls came below the
+figure at first and above it from then on.  Above is where a notebook
+puts them.  Only the drawing changes: the cell keeps its outputs in the
+order the kernel sent them, which is what is saved."
+  (let ((widget-p (lambda (o)
+                    (let ((d (and (hash-table-p o) (gethash "data" o))))
+                      (and (hash-table-p d) (gethash emjupy--widget-view-mime d))))))
+    (append (seq-filter widget-p outputs) (seq-remove widget-p outputs))))
+
 (defun emjupy--outputs-for-render (outputs)
   "Return OUTPUTS as a list, with repeated identical images dropped.
 
 Only image-bearing outputs are collapsed, and only against images
 already seen in the same cell: two `print' calls emitting the same text
 are genuinely two outputs and both must show."
-  (let ((all (append (or outputs []) nil)))
+  (let ((all (emjupy--widgets-first (append (or outputs []) nil))))
     (if (not emjupy-deduplicate-image-outputs)
         all
       (let ((seen (make-hash-table :test 'equal))
