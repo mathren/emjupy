@@ -72,20 +72,7 @@ jobs:
         run: make docs
 
       - name: Check every internal link resolves
-        run: |
-          python3 - <<'PY'
-          import glob, os, re, sys
-          bad = []
-          for f in glob.glob('html-content/*.html'):
-              for href in re.findall(r'(?:href|src)="([^"#][^"]*)"', open(f).read()):
-                  if ':' in href.split('/')[0] or href.startswith('#'):
-                      continue
-                  if not os.path.exists(os.path.normpath(os.path.join('html-content', href))):
-                      bad.append((os.path.basename(f), href))
-          for f, h in bad:
-              print(f"broken: {f} -> {h}")
-          sys.exit(1 if bad else 0)
-          PY
+        run: python3 tools/check-links.py html-content
 
       - name: Package the site for Pages
         uses: actions/upload-pages-artifact@v3

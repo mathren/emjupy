@@ -222,11 +222,17 @@ well, which is how CI runs it.  Tests tagged =:timing= are left out: they
 assert on elapsed time, and every function is several times slower when
 instrumented.
 
-And the documentation, which CI also link-checks:
+And the documentation, with the link check CI runs -- every page and
+every anchor a link names must exist:
 
 #+begin_src bash
 make docs                   # then open html-content/index.html
+python3 tools/check-links.py
 #+end_src
+
+Both the build and the release run that one script; a link to a section
+of another page is checked to its anchor, so link to a heading by a
+=CUSTOM_ID= -- Org cannot resolve a heading searched for in another file.
 
 ** Compiling one file by hand
 
