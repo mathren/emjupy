@@ -3112,7 +3112,7 @@ written to a wrong path."
                                            :pending (make-hash-table :test 'equal)
                                            :notebook emjupy--buffer-notebook)))
           (clrhash emjupy--internal-requests)
-          (puthash "mid" (lambda (out) (setq got out)) emjupy--internal-requests)
+          (puthash "mid" (cons (lambda (out) (setq got out)) nil) emjupy--internal-requests)
           (emjupy--handle-ws-message
            kernel
            (json-serialize
@@ -3128,8 +3128,12 @@ written to a wrong path."
               (puthash "parent_header" p m)
               (puthash "content" c m)
               m)))
+          ;; the answer is handed over when the request is done
+          (emjupy--handle-ws-message
+           kernel (emjupy-test--kernel-msg "status" "mid" '(("execution_state" . "idle"))))
           ;; the callback saw it ...
-          (should (equal got "/home/me/nb"))
+          ;; as printed: a caller asking for a line trims it itself
+          (should (equal got "/home/me/nb\n"))
           ;; ... and the cell did not
           (should (= (length (emjupy-cell-outputs cell)) 0))
           (should-not (string-match-p "/home/me/nb" (buffer-string))))))))
@@ -7171,6 +7175,27 @@ to re-highlight, and no longer runs the hook."
                 (ert-info ((format "%s, %s" how word))
                   (should (equal (get-text-property (match-beginning 0) 'face)
                                  '(emjupy-output))))))))))))
+
+(ert-deftest emjupy-test-internal-answer-in-pieces-arrives-whole ()
+  "An answer to one of emjupy\'s own questions arrives whole, however split.
+
+The callback was given the first stream message and the request was then
+forgotten, so a large answer -- plotly.js, asked of the kernel, is near
+5 MB -- lost everything after its first piece."
+  (let ((got nil)
+        (kernel (make-emjupy-kernel :id "k" :name "python3"
+                                    :pending (make-hash-table :test 'equal))))
+    (clrhash emjupy--internal-requests)
+    (puthash "big" (cons (lambda (out) (setq got out)) nil) emjupy--internal-requests)
+    (dolist (piece '("first " "second " "third\n"))
+      (emjupy--handle-ws-message
+       kernel (emjupy-test--kernel-msg "stream" "big" `(("name" . "stdout") ("text" . ,piece)))))
+    ;; nothing until the request is done
+    (should-not got)
+    (emjupy--handle-ws-message
+     kernel (emjupy-test--kernel-msg "status" "big" '(("execution_state" . "idle"))))
+    (should (equal got "first second third\n"))
+    (should-not (gethash "big" emjupy--internal-requests))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -1212,5 +1212,39 @@ and the user must be told."
          (should (< (- (float-time) t0) 15))))
      (emjupy-int--proxy-say "reset"))))
 
+(ert-deftest emjupy-int-plotly-figure-opens-with-the-kernels-plotly-js ()
+  "A plotly figure shows as a line, and opens as a page that draws it.
+
+The figure arrives as JSON only: the page is built here, with plotly.js
+asked of the kernel -- near 5 MB, which has to arrive whole -- and kept.
+The viewer is the one thing stubbed: it records the page it would show."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import plotly.graph_objects as go
+go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2])).show()" 60))
+          (data (gethash "data" (aref (emjupy-cell-outputs cell) 0)))
+          (shown nil))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "plotly is not installed where the kernel runs"))
+     (should (gethash emjupy--plotly-mime data))
+     (with-current-buffer emjupy-int--buffer
+       ;; the output is the line that opens it, not "Figure"
+       (should (string-match-p "Interactive plotly figure" (buffer-string)))
+       (cl-letf (((symbol-function 'emjupy--show-file) (lambda (file) (setq shown file))))
+         (emjupy-open-output data)
+         (emjupy-int--pump 60 (lambda () shown))))
+     (should shown)
+     (let* ((page (with-temp-buffer (insert-file-contents shown) (buffer-string)))
+            (script (and (string-match "<script src=\"file://\\([^\"]+\\)\"" page)
+                         (match-string 1 page))))
+       (should (string-match-p "Plotly.newPlot" page))
+       (should (string-match-p "\"type\":\"scatter\"" page))
+       (should (and script (file-exists-p script)))
+       ;; the kernel's whole plotly.js, not its first piece
+       (should (> (file-attribute-size (file-attributes script)) 1000000))
+       (should (string-match-p "plotly\\.js v[0-9]"
+                               (with-temp-buffer
+                                 (insert-file-contents script nil 0 2000)
+                                 (buffer-string))))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

@@ -233,13 +233,14 @@ requests belong to no cell and their output must not be rendered as if
 it did.")
 
 (defun emjupy--kernel-eval (kernel code callback)
-  "Run CODE on KERNEL and pass its printed output to CALLBACK.
+  "Run CODE on KERNEL and pass its printed output, as printed, to CALLBACK.
 
 For emjupy\='s own questions -- \"where are you?\" -- not for user code."
   (when (emjupy--ws-live-p kernel)
     (let* ((req (emjupy--make-execute-request code))
            (msg-id (car req)))
-      (puthash msg-id callback emjupy--internal-requests)
+      ;; The callback, and the output gathered so far, newest first.
+      (puthash msg-id (cons callback nil) emjupy--internal-requests)
       (emjupy--ws-send (cdr req) kernel)
       msg-id)))
 
@@ -288,15 +289,21 @@ kernels never cross-talk."
     ;; One of emjupy's own questions: hand the answer to its callback and
     ;; keep it out of the notebook entirely.
     (when internal
+      ;; Gathered until the request is done, then handed over whole.  The
+      ;; callback used to get the first stream message alone, which for a
+      ;; one-line answer is all of it -- but a large answer comes in
+      ;; several, and the rest was dropped.
       (when (string= msg-type "stream")
-        (let ((text (gethash "text" (gethash "content" data))))
-          (remhash parent-id emjupy--internal-requests)
-          (funcall internal (string-trim (or text "")))))
+        (push (or (gethash "text" (gethash "content" data)) "") (cdr internal)))
       (when (emjupy--idle-p msg-type data)
         ;; Its answer, if any, has come by now: idle follows every output
         ;; of the request on the same channel.  Forgetting it on
         ;; execute_reply instead dropped an answer that arrived late.
-        (remhash parent-id emjupy--internal-requests)))
+        (remhash parent-id emjupy--internal-requests)
+        (when (cdr internal)
+          ;; As printed: a caller asking for a line trims it; one asking
+          ;; for data, a piece of a file, needs every character.
+          (funcall (car internal) (apply #'concat (reverse (cdr internal)))))))
 
     (when cell
       (cond

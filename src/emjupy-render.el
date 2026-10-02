@@ -1593,6 +1593,47 @@ puts `warnings.warn\', logging, and progress bars."
       'emjupy-output-image)
      (t 'emjupy-output))))
 
+(defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
+  "MIME type of a plotly figure, sent as its JSON specification.")
+
+(declare-function emjupy-open-output "emjupy-figures" (&optional data))
+
+(defun emjupy--scripted-html (data)
+  "Return the `text/html' of DATA if it has a script in it, or nil.
+Only that needs opening elsewhere: HTML without a script -- a pandas
+table -- says the same in its `text/plain', which is shown instead."
+  (let ((html (and data (gethash "text/html" data))))
+    (when html
+      (let ((text (emjupy--mime-text html)))
+        (and (string-match-p "<script" text) text)))))
+
+(defvar emjupy-output-button-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'emjupy-open-output-at-point)
+    (define-key map [mouse-1] #'emjupy-open-output-at-point)
+    map)
+  "Keymap on the line that stands for an interactive output.")
+
+(defun emjupy-open-output-at-point (&optional event)
+  "Open the interactive output whose line is at point, or was clicked.
+EVENT is the mouse event, when there was one."
+  (interactive (list last-nonmenu-event))
+  (let ((pos (if (mouse-event-p event) (posn-point (event-start event)) (point))))
+    (emjupy-open-output (get-text-property pos 'emjupy-output-data))))
+
+(defun emjupy--insert-open-line (what size data)
+  "Insert a line standing for an output that is opened elsewhere.
+WHAT names it, SIZE is its size in bytes, and DATA is its MIME bundle,
+kept on the line so that opening it opens this one."
+  (insert (propertize
+           (format "▶ %s (%s) -- %s, or click, to open it\n"
+                   what (file-size-human-readable size)
+                   (substitute-command-keys "\\[emjupy-open-output]"))
+           'face 'link 'mouse-face 'highlight
+           'help-echo "Open this output in a window of its own"
+           'keymap emjupy-output-button-map
+           'emjupy-output-data data)))
+
 (defun emjupy--insert-rich-output (data)
   "Insert the best available representation of the DATA MIME bundle at point.
 
@@ -1605,8 +1646,19 @@ happens inside the WebSocket callback, where websocket.el swallows the
   (let* ((image (cl-loop for (mime . type) in emjupy--image-mime-types
                          for payload = (and data (gethash mime data))
                          when payload return (list mime type payload)))
-         (text (and data (gethash "text/plain" data))))
+         (text (and data (gethash "text/plain" data)))
+         (plotly (and data (gethash emjupy--plotly-mime data)))
+         (scripted (and (not plotly) (emjupy--scripted-html data))))
     (cond
+     ;; A figure that draws itself in JavaScript: there is nothing to draw
+     ;; here, so a line says what it is and opens it.  Nothing runs until
+     ;; asked -- opening it runs the notebook's JavaScript.
+     (plotly
+      (emjupy--insert-open-line "Interactive plotly figure"
+                                (length (json-serialize plotly)) data))
+     (scripted
+      (when text (insert (emjupy--mime-text text) "\n"))
+      (emjupy--insert-open-line "Interactive HTML output" (length scripted) data))
      ((and image (emjupy--image-displayable-p (nth 1 image)))
       (condition-case err
           (progn (insert-image (emjupy--render-image-output (nth 2 image) (nth 1 image)))

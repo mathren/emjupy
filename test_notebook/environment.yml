@@ -5,6 +5,8 @@ dependencies:
   - matplotlib
   - numpy
   - tqdm
+  - plotly
+  - ipywidgets
   - jupyter
   - jupyter-lsp
   - python-lsp-server

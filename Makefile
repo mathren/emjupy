@@ -36,7 +36,7 @@ LOADPATH  := -L $(SRC) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
-            emjupy-cells.el emjupy-kernel.el emjupy-remote.el emjupy-lsp.el \
+            emjupy-cells.el emjupy-kernel.el emjupy-figures.el emjupy-remote.el emjupy-lsp.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
 # No README: an installed package's README is what C-h P shows, before
 # the Commentary, and the README is a web page -- badges, screenshots,

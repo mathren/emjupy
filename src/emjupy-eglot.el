@@ -343,8 +343,9 @@ plainly not here.  A remote name is not here by definition."
       (emjupy--kernel-eval
        kernel "import os as _o; print(_o.getcwd())"
        (lambda (out)
-         (when (and out (not (string-empty-p out)))
-           (setf (emjupy-notebook-kernel-cwd nb) (string-trim out))
+         (setq out (string-trim (or out "")))
+         (when (not (string-empty-p out))
+           (setf (emjupy-notebook-kernel-cwd nb) out)
            ;; Now that a kernel has said where it runs, the server's root
            ;; can be worked out from it -- so browsing its files needs no
            ;; configuration either.
