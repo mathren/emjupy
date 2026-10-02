@@ -15,8 +15,10 @@
   footer is drawn on a numbered line at the end of the buffer.
 - [X] $\frac{x}{y}$ not rendered correctly in markdown latex, treated as $x_{\bar{y}}$:
   the fragment was handed to LaTeX without its delimiters, so in text mode
-- [ ] upon reshowing output, background is ok, but text get python
-  highlighted (including removing background)
+- [X] upon reshowing output, background is ok, but text get python
+  highlighted (including removing background): the redraw inserted into
+  the next cell's overlay, and the change hook re-highlighted that region
+  as code.  emjupy's own drawing no longer runs the hook.
 - [ ] on =xwidget= branch address [[https://github.com/mathren/emjupy/issues/1][#1]]
 - [ ] "Error running timer" twice in a unit-test run, now "Process EGLOT
   ... not running: killed", before that "Selecting deleted buffer".  The

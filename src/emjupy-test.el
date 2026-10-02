@@ -7136,5 +7136,41 @@ in place.  Found by the undo fuzz."
           (should (= (length (emjupy-notebook-cells nb)) 3))
           (should-not (emjupy--check-invariants)))))))
 
+(ert-deftest emjupy-test-reshown-output-is-not-highlighted-as-code ()
+  "Output shown again after being hidden keeps its own face, not Python\'s.
+
+Redrawing a cell in place inserts its text at the start of the next
+cell\'s overlay, which takes the insertion in until the redraw moves it
+back.  The change hook, there to re-highlight what the user types, took
+the next cell to be the one edited and re-highlighted its region --
+now the reshown output -- as code: keywords coloured, and the output\'s
+background gone where they were.  emjupy\'s own drawing is not an edit
+to re-highlight, and no longer runs the hook."
+  (dolist (how '(command click))
+    (let* ((out (let ((o (make-hash-table :test 'equal)))
+                  (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
+                  (puthash "text" "for x in y: print(True, None)\n# a comment\n" o)
+                  o))
+           (cells (vector (emjupy-test--cell-like 'code "x = 1" (vector out))
+                          ;; the next cell is what the redraw inserted into
+                          (emjupy-test--cell-like 'code "y = 2")))
+           (cell (aref cells 0)))
+      (emjupy-test--with-notebook cells buf nb
+        (with-current-buffer buf
+          (goto-char (overlay-start (emjupy-cell-overlay cell)))
+          (dotimes (_ 2)
+            (if (eq how 'command)
+                (emjupy-toggle-cell-output)
+              (emjupy-toggle-output-of-cell cell)))
+          (let ((ov (emjupy-cell-output-ov cell)))
+            (should (overlayp ov))
+            (save-excursion
+              (dolist (word '("for" "print" "True" "None" "comment"))
+                (goto-char (overlay-start ov))
+                (should (search-forward word (overlay-end ov) t))
+                (ert-info ((format "%s, %s" how word))
+                  (should (equal (get-text-property (match-beginning 0) 'face)
+                                 '(emjupy-output))))))))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

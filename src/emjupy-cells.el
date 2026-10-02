@@ -232,6 +232,8 @@ follows, since that newline belongs to this cell rather than the next."
 Returns the number of characters inserted."
   (let ((inhibit-read-only t)
         (buffer-undo-list t)
+        ;; emjupy's own drawing: not an edit to re-highlight
+        (emjupy--refontifying t)
         (inserted 0))
     (save-excursion
       (goto-char at)
@@ -267,7 +269,9 @@ should fall back to a full redraw."
             (new-end nil)
             (following-after nil))
         (let ((inhibit-read-only t)
-              (buffer-undo-list t))
+              (buffer-undo-list t)
+              ;; emjupy's own drawing: not an edit to re-highlight
+              (emjupy--refontifying t))
           (dolist (cell old-cells)
             (when (overlayp (emjupy-cell-overlay cell))
               (delete-overlay (emjupy-cell-overlay cell)))
@@ -381,7 +385,9 @@ Returns non-nil when it was done incrementally."
         (setf (emjupy-notebook-cells nb)
               (vconcat (delq cell (append (emjupy-notebook-cells nb) nil))))
         (let ((inhibit-read-only t)
-              (buffer-undo-list t))
+              (buffer-undo-list t)
+              ;; emjupy's own drawing: not an edit to re-highlight
+              (emjupy--refontifying t))
           (when (overlayp (emjupy-cell-overlay cell))
             (delete-overlay (emjupy-cell-overlay cell)))
           (when (overlayp (emjupy-cell-output-ov cell))
@@ -504,6 +510,8 @@ text comes out identical -- a re-render triggered by something that
 changed nothing -- the history is left intact."
   (when emjupy--buffer-notebook
     (let ((inhibit-read-only t)
+          ;; emjupy's own drawing: not an edit to re-highlight
+          (emjupy--refontifying t)
           (cells (emjupy-notebook-cells emjupy--buffer-notebook))
           (target-start nil)
           (snapshot (emjupy--snapshot-cells))

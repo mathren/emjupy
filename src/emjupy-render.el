@@ -512,6 +512,9 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
 (defvar emjupy-box-width-changed-functions nil
   "Functions called with a notebook and its new box width, when it changes.")
 
+(defvar-local emjupy--refontifying nil
+  "Non-nil while emjupy is re-applying faces, to stop the hook recursing.")
+
 (defun emjupy--refresh-box-rules (&optional force)
   "Redraw cell outlines at the current window width, if it changed.
 With FORCE non-nil, redraw even when the width is unchanged.
@@ -550,7 +553,9 @@ markers and the undo history are all untouched."
                       ;; The output band is padded to a column, so it has to
                       ;; be re-aligned at the new width as well.
                       (let ((inhibit-read-only t)
-                            (buffer-undo-list t))
+                            (buffer-undo-list t)
+                            ;; emjupy's own drawing: not an edit to re-highlight
+                            (emjupy--refontifying t))
                         (emjupy--repad-output cell)))))
       (emjupy--reconcile-rules))))
 
@@ -889,9 +894,6 @@ installed."
           (emjupy--markdown-fontify-fallback))))
      (t (font-lock-ensure)))
     (buffer-string)))
-
-(defvar-local emjupy--refontifying nil
-  "Non-nil while emjupy is re-applying faces, to stop the hook recursing.")
 
 (defun emjupy--apply-faces-from (string start)
   "Copy the `face' properties of STRING onto the buffer text at START.
@@ -1329,7 +1331,9 @@ means the caller should fall back to a full redraw."
              (end (if live-out (overlay-end out) start)))
         (let ((new-end start))
           (let ((inhibit-read-only t)
-                (buffer-undo-list t))
+                (buffer-undo-list t)
+                ;; emjupy's own drawing: not an edit to re-highlight
+                (emjupy--refontifying t))
             (when live-out (delete-overlay out))
             (setf (emjupy-cell-output-ov cell) nil)
             (delete-region start end)
