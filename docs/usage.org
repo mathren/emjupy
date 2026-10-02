@@ -164,9 +164,9 @@ there, a click, or =RET= opens it in a window of its own, one per figure,
 not a tab in your browser.  That window is the small WebKitGTK viewer
 that comes with emjupy where Python has PyGObject and WebKitGTK -- GNOME
 desktops do, and the system's Python is tried when the one first on the
-PATH is a virtualenv's -- or else a Chromium-family browser as an app
-window, or a new Firefox window.  =emjupy-figure-window-command= names
-another program; =emjupy-figure-viewer= can choose the browser instead,
+PATH is a virtualenv's -- or else a new Firefox window, or a Chromium
+app window: =emjupy-figure-window-browsers= lists the browsers tried, in
+order.  =emjupy-figure-window-command= names another program; =emjupy-figure-viewer= can choose the browser instead,
 or an xwidget, inside Emacs -- see [[file:limitations.org][Known limitations]] for why that is not
 the default.  Opening is always asked for, never
 automatic: it runs the notebook's JavaScript.

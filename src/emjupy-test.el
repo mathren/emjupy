@@ -7264,5 +7264,20 @@ showed keys as \"M-x ...\" and widgets as text."
       (should (equal (emjupy--stray-modules)
                      '((emjupy-mode . "/elsewhere/emjupy-mode.elc")))))))
 
+(ert-deftest emjupy-test-figure-window-browsers-in-order ()
+  "Without the bundled window, the first browser of the list installed is used.
+Firefox by default, then Chromium; a change to the list counts at once."
+  (let ((emjupy-figure-window-command nil)
+        (emjupy--figure-window-bundled-command nil))   ; it cannot run
+    (cl-letf (((symbol-function 'executable-find)
+               (lambda (p) (and (member p '("firefox" "chromium")) (concat "/usr/bin/" p)))))
+      (should (equal (emjupy--figure-window-command)
+                     '("/usr/bin/firefox" "--new-window" "%s")))
+      (let ((emjupy-figure-window-browsers '(("chromium" "--app=%s") ("firefox" "--new-window" "%s"))))
+        (should (equal (emjupy--figure-window-command) '("/usr/bin/chromium" "--app=%s"))))
+      (let ((emjupy-figure-window-browsers '(("google-chrome" "--app=%s"))))
+        ;; none installed: the caller falls back to the browser
+        (should-not (emjupy--figure-window-command))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

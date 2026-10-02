@@ -45,11 +45,23 @@ an xwidget on a build that works with it."
   "The program that shows a figure in a window of its own, or nil.
 A list: the program and its arguments, where \"%s\" stands for the
 page\'s URL.  nil finds one: the WebKitGTK window that comes with emjupy
--- it needs PyGObject and WebKitGTK, which GNOME desktops have -- then a
-Chromium-family browser as an app window, then a new Firefox window,
-and the browser if there is none of these."
+-- it needs PyGObject and WebKitGTK, which GNOME desktops have -- then
+the first of `emjupy-figure-window-browsers\=' installed, and the
+browser if there is none of these."
   :type '(choice (const :tag "Find one" nil)
                  (repeat :tag "Program and arguments" string))
+  :group 'emjupy)
+
+(defcustom emjupy-figure-window-browsers
+  '(("firefox" "--new-window" "%s")
+    ("chromium" "--app=%s"))
+  "Browsers that can show a figure in a window of their own, tried in order.
+Each is the program and its arguments, where \"%s\" stands for the page\'s
+URL; the first installed is used, when the WebKitGTK window that comes
+with emjupy cannot run.  Firefox opens a new window; Chromium an app
+window, without tabs or toolbar.  Another browser can be added: Chrome
+as (\"google-chrome\" \"--app=%s\"), say."
+  :type '(repeat (repeat :tag "Program and arguments" string))
   :group 'emjupy)
 
 (defconst emjupy--figure-window-script
@@ -58,8 +70,9 @@ and the browser if there is none of these."
                                              default-directory)))
   "The WebKitGTK figure window that comes with emjupy.")
 
-(defvar emjupy--figure-window-found 'unknown
-  "The command `emjupy-figure-window-command' found, nil for none, or `unknown'.")
+(defvar emjupy--figure-window-bundled-command 'unknown
+  "The command running the bundled figure window, nil if it cannot, or `unknown'.
+Kept: finding out starts Python.")
 
 (defun emjupy--figure-window-bundled ()
   "Return the command running the bundled figure window, or nil if it cannot.
@@ -82,19 +95,16 @@ activated -- usually lacks it."
              return (list python emjupy--figure-window-script "%s"))))
 
 (defun emjupy--figure-window-command ()
-  "Return the command showing a figure in a window of its own, or nil."
+  "Return the command showing a figure in a window of its own, or nil.
+See `emjupy-figure-window-command'.  The browsers are looked for each
+time, so a change to `emjupy-figure-window-browsers' counts at once."
   (or emjupy-figure-window-command
-      (if (not (eq emjupy--figure-window-found 'unknown))
-          emjupy--figure-window-found
-        (setq emjupy--figure-window-found
-              (or (emjupy--figure-window-bundled)
-                  (cl-loop for browser in '("chromium" "chromium-browser" "google-chrome"
-                                            "google-chrome-stable" "brave-browser"
-                                            "microsoft-edge")
-                           for path = (executable-find browser)
-                           when path return (list path "--app=%s"))
-                  (let ((firefox (executable-find "firefox")))
-                    (and firefox (list firefox "--new-window" "%s"))))))))
+      (if (eq emjupy--figure-window-bundled-command 'unknown)
+          (setq emjupy--figure-window-bundled-command (emjupy--figure-window-bundled))
+        emjupy--figure-window-bundled-command)
+      (cl-loop for (program . args) in emjupy-figure-window-browsers
+               for path = (executable-find program)
+               when path return (cons path args))))
 
 (defcustom emjupy-plotly-js 'kernel
   "Where the plotly.js a figure page loads comes from.
