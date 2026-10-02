@@ -7306,5 +7306,55 @@ The order of `emjupy-widget-rules' matters, and this pins it down."
       (ert-info ((format "%s" (gethash "_model_name" (cadr case))))
         (should (eq (car (emjupy--widget-rule (cadr case))) (car case)))))))
 
+(defun emjupy-test--unhex (hex)
+  "Return the unibyte string HEX spells."
+  (apply #'unibyte-string
+         (cl-loop for i from 0 below (length hex) by 2
+                  collect (string-to-number (substring hex i (+ i 2)) 16))))
+
+(ert-deftest emjupy-test-binary-frames-as-the-server-writes-them ()
+  "A binary frame is read as the Jupyter server writes it.
+The frame below is what jupyter_server's serialize_binary_message made
+of a message with two buffers; the buffers come back byte for byte."
+  (let* ((frame (emjupy-test--unhex "0000000300000010000000f0000000f67b22686561646572223a207b226d73675f74797065223a2022636f6d6d5f6d7367222c20226d73675f6964223a20226d31227d2c2022706172656e745f686561646572223a207b7d2c20226d65746164617461223a207b7d2c20226368616e6e656c223a2022696f707562222c2022636f6e74656e74223a207b22636f6d6d5f6964223a20226331222c202264617461223a207b226d6574686f64223a2022757064617465222c20227374617465223a207b7d2c20226275666665725f7061746873223a205b5b2276616c7565225d2c205b2270616972222c20315d5d7d7d7d89504e4700ff4142"))
+         (parts (emjupy--decode-binary-message frame))
+         (msg (json-parse-string (car parts) :object-type 'hash-table)))
+    (should (equal (gethash "msg_id" (gethash "header" msg)) "m1"))
+    (should (equal (cdr parts) (list (unibyte-string #x89 ?P ?N ?G 0 #xff) "AB")))
+    ;; and what is encoded here reads back the same
+    (let ((again (emjupy--decode-binary-message
+                  (emjupy--encode-binary-message (car parts) (cdr parts)))))
+      (should (equal again parts)))
+    ;; a message with no buffers at all
+    (should (equal (emjupy--decode-binary-message (emjupy--encode-binary-message "{}" nil))
+                   (cons "{}" nil)))))
+
+(ert-deftest emjupy-test-buffers-go-where-their-paths-say ()
+  "Each binary buffer is put into the widget state at its path."
+  (let* ((state (json-parse-string "{\"value\": null, \"files\": [{\"content\": null}]}"
+                                   :object-type 'hash-table))
+         (data (json-parse-string "{\"buffer_paths\": [[\"value\"], [\"files\", 0, \"content\"]]}"
+                                  :object-type 'hash-table))
+         (a (emjupy-bytes-make "aa")) (b (emjupy-bytes-make "bb")))
+    (emjupy--widget-put-buffers state data (list a b))
+    (should (eq (gethash "value" state) a))
+    (should (eq (gethash "content" (aref (gethash "files" state) 0)) b))))
+
+(ert-deftest emjupy-test-bytes-take-the-image-and-media-rules ()
+  "A value of bytes with a format is an image; with autoplay, a sound or video."
+  (cl-flet ((state (&rest kv)
+              (let ((h (make-hash-table :test 'equal)))
+                (while kv (puthash (pop kv) (pop kv) h))
+                h)))
+    (should (eq (car (emjupy--widget-rule
+                      (state "value" (emjupy-bytes-make "x") "format" "png" "width" "")))
+                'image))
+    (should (eq (car (emjupy--widget-rule
+                      (state "value" (emjupy-bytes-make "x") "format" "wav" "autoplay" t)))
+                'media))
+    (should (eq (car (emjupy--widget-rule
+                      (state "value" [] "accept" "" "multiple" :false)))
+                'upload))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

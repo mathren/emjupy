@@ -200,7 +200,8 @@ since patching one region only makes sense while the rest still matches."
 (defvar emjupy-comm-functions nil
   "Functions called with each comm message from a kernel.
 Each is called with the KERNEL, the message type -- \"comm_open\",
-\"comm_msg\" or \"comm_close\" -- and the message content.  This is how
+\"comm_msg\" or \"comm_close\" -- the message content, and the binary
+buffers the message carried, a list of `emjupy-bytes\='.  This is how
 the layer that knows about widgets hears of them.")
 
 (defvar emjupy-output-owner-functions nil
@@ -279,6 +280,59 @@ The value is a cons of the message id and the serialized message."
           (cl-pushnew cell emjupy--cells-awaiting-output)))
       (emjupy--schedule-render buf))))
 
+(cl-defstruct (emjupy-bytes (:constructor emjupy-bytes-make (data)))
+  "Bytes a kernel message carried in binary: an image widget\'s, say.
+Wrapped, so that no one takes them for text."
+  data)
+
+(defun emjupy--u32 (bytes pos)
+  "Return the big-endian 32-bit number at POS in the unibyte string BYTES."
+  (logior (ash (aref bytes pos) 24) (ash (aref bytes (+ pos 1)) 16)
+          (ash (aref bytes (+ pos 2)) 8) (aref bytes (+ pos 3))))
+
+(defun emjupy--u32-bytes (n)
+  "Return the number N as four big-endian bytes."
+  (unibyte-string (logand (ash n -24) 255) (logand (ash n -16) 255)
+                  (logand (ash n -8) 255) (logand n 255)))
+
+(defun emjupy--decode-binary-message (bytes)
+  "Split a binary WebSocket frame BYTES into its message and its buffers.
+Return a cons of the message\'s JSON text and a list of the buffers, as
+unibyte strings.  The format is the Jupyter server\'s: a count of parts,
+the offset of each, then the parts -- the JSON first, then the buffers."
+  (let* ((n (emjupy--u32 bytes 0))
+         (offsets (cl-loop for i from 1 to n collect (emjupy--u32 bytes (* 4 i))))
+         (ends (append (cdr offsets) (list (length bytes))))
+         (parts (cl-mapcar (lambda (from to) (substring bytes from to)) offsets ends)))
+    (cons (decode-coding-string (car parts) 'utf-8) (cdr parts))))
+
+(defun emjupy--encode-binary-message (json buffers)
+  "Return a binary WebSocket frame of the message JSON and its BUFFERS.
+JSON is the serialized message, as `json-serialize\=' gives it; BUFFERS
+unibyte strings.  The format `emjupy--decode-binary-message\=' reads."
+  (let* ((parts (cons (encode-coding-string json 'utf-8) buffers))
+         (n (length parts))
+         (offset (* 4 (1+ n)))
+         (offsets nil))
+    (dolist (part parts)
+      (push offset offsets)
+      (setq offset (+ offset (length part))))
+    (apply #'concat (emjupy--u32-bytes n)
+           (append (mapcar #'emjupy--u32-bytes (nreverse offsets)) parts))))
+
+(defun emjupy--ws-message-parts (frame)
+  "Return FRAME\'s message as a cons of its JSON text and its buffers.
+A message carrying binary data comes as a binary frame, read here; any
+other has no buffers."
+  (if (and (websocket-frame-p frame) (eq (websocket-frame-opcode frame) 'binary))
+      (emjupy--decode-binary-message (websocket-frame-payload frame))
+    (cons (emjupy--ws-payload frame) nil)))
+
+(defun emjupy--ws-send-binary (bytes kernel)
+  "Send the binary frame BYTES on KERNEL\'s WebSocket."
+  (websocket-send (emjupy-kernel-ws kernel)
+                  (make-websocket-frame :opcode 'binary :payload bytes :completep t)))
+
 (defun emjupy--ws-payload (frame)
   "Return the text payload of FRAME.
 Accepts either a `websocket-frame' (what websocket.el hands the
@@ -336,8 +390,9 @@ PENDING is the kernel\'s table of requests awaiting output."
 KERNEL carries both the pending-request table and the backlink to the
 notebook whose buffer should be refreshed, so frames from several
 kernels never cross-talk."
-  (let* ((payload (emjupy--ws-payload frame))
-         (data (json-parse-string payload :object-type 'hash-table :array-type 'array))
+  (let* ((parts (emjupy--ws-message-parts frame))
+         (data (json-parse-string (car parts) :object-type 'hash-table :array-type 'array))
+         (buffers (mapcar #'emjupy-bytes-make (cdr parts)))
          (header (gethash "header" data))
          (parent-header (gethash "parent_header" data))
          (msg-type (gethash "msg_type" header))
@@ -373,7 +428,7 @@ kernels never cross-talk."
 
     (when (member msg-type '("comm_open" "comm_msg" "comm_close"))
       (run-hook-with-args 'emjupy-comm-functions kernel msg-type
-                          (gethash "content" data)))
+                          (gethash "content" data) buffers))
     (when cell
       (cond
        ((string= msg-type "clear_output")

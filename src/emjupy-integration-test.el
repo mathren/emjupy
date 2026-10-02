@@ -1035,6 +1035,16 @@ for each server it saw die."
                   (list (length (seq-filter #'process-live-p (process-list)))
                         (length (seq-filter (lambda (b) (string-match-p "emjupy_" (buffer-name b)))
                                             (buffer-list)))))))
+    ;; Settle first: a test before this one may still be starting its
+    ;; notebook's language server -- the kernel says where it runs after the
+    ;; test has finished -- and that would be counted as this one's.
+    (let ((last nil) (stable 0))
+      ;; steady for a second and a half, or fifteen at most
+      (cl-loop repeat 30 until (>= stable 3)
+               do (accept-process-output nil 0.5)
+               (let ((now (funcall count)))
+                 (setq stable (if (equal now last) (1+ stable) 0)
+                       last now))))
     (let ((before (funcall count)))
       (dotimes (i 3)
         (let* ((c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "import os"
@@ -1356,9 +1366,7 @@ w.VBox(list(W.values()) + [b])" 60))
 
 Built from ipywidgets' own list, so a widget it adds is checked the day
 it appears: drawn, if its state has a shape a rule knows, else named
-here as an exception.  The exceptions: a gamepad and a file upload,
-shown by name, and the widgets whose data comes in binary messages,
-which are not read -- an image, a sound, a video -- shown as [widget]."
+here as an exception.  The one exception: a gamepad, shown by name."
   (emjupy-int--with-live-kernel
    (let* ((cell (emjupy-int--run "import ipywidgets as w, inspect
 ws = []
@@ -1379,16 +1387,69 @@ w.VBox(ws)" 60)))
          (while (string-match "\\[widget: \\([A-Za-z]+\\)\\]" text start)
            (push (match-string 1 text) named)
            (setq start (match-end 0)))
-         (should (equal (sort named #'string<) '("Controller" "FileUpload")))
-         ;; at most the three binary ones go unread
-         (should (<= (cl-count-if (lambda (l) (string-match-p "\\`\\[widget\\]" l))
-                                  (split-string text "\n"))
-                     3))
+         (should (equal named '("Controller")))
+         ;; the binary ones are read now: none goes unshown
+         (should-not (cl-some (lambda (l) (string-match-p "\\`\\[widget\\]" l))
+                              (split-string text "\n")))
          ;; and the rest are drawn as themselves: a few to be sure
          (dolist (shown '("IntSlider ◀ 0 ▶" "IntRangeSlider 25 – 75" "IntProgress ░"
                           "Checkbox [ ]" "Valid ✗" "SelectMultiple (none) ▾" "DatePicker [--]"
                           "FloatLogSlider ◀ 1 ▶   1 … 10000" "Password []" "[ Button ]"))
            (ert-info (shown) (should (string-match-p (regexp-quote shown) text)))))))))
+
+(ert-deftest emjupy-int-binary-widgets-image-audio-upload ()
+  "Widgets whose data is binary: an image drawn and redrawn, a sound, an upload.
+
+Their data comes, and goes, in binary WebSocket frames, which were not
+read: an image, a sound or a video showed as [widget], and a file could
+not be uploaded.  The image is replaced from the kernel and drawn anew;
+the file chosen reaches the kernel byte for byte."
+  (emjupy-int--with-live-kernel
+   (let* ((file (make-temp-file "emjupy-upload" nil ".bin"))
+          (bytes (apply #'unibyte-string (number-sequence 0 255)))
+          (cell (emjupy-int--run "import ipywidgets as w, base64
+png1 = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+png2 = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR42mP8z8DwnwEJMDKQIgEA9b0D/6m0jAgAAAAASUVORK5CYII=')
+img = w.Image(value=png1, format='png')
+snd = w.Audio(value=b'RIFF' + bytes(40), format='wav', autoplay=False)
+up = w.FileUpload(description='Up')
+w.VBox([img, snd, up])" 60)))
+     (unwind-protect
+         (progn
+           (let ((coding-system-for-write 'no-conversion)) (write-region bytes nil file nil 'quiet))
+           (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+             (ert-skip "ipywidgets is not installed where the kernel runs"))
+           (with-current-buffer emjupy-int--buffer
+             (emjupy-flush-output (current-buffer))
+             (let ((shown (lambda ()
+                            (let ((ov (emjupy-cell-output-ov cell)))
+                              (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))))
+               ;; the image's bytes arrived; this Emacs draws no images, so it is a line
+               (should (string-match-p "▶ Image (png, 70)" (funcall shown)))
+               (should (string-match-p "▶ Audio (wav" (funcall shown)))
+               ;; replaced from the kernel: drawn anew
+               (let ((kernel (emjupy-notebook-kernel emjupy--buffer-notebook)) (done nil))
+                 (emjupy--kernel-eval kernel "img.value = png2; print('ok')" (lambda (_) (setq done t)))
+                 (emjupy-int--pump 15 (lambda () (and done (string-match-p "▶ Image (png, 77)"
+                                                                           (funcall shown))))))
+               (should (string-match-p "▶ Image (png, 77)" (funcall shown)))
+               ;; an upload: the file is chosen, then nothing more
+               (goto-char (overlay-start (emjupy-cell-output-ov cell)))
+               (search-forward "[ Upload… ]") (backward-char 3)
+               (let ((answers (list file "")))
+                 (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) (pop answers))))
+                   (emjupy-widget-activate)))
+               (should (string-match-p (regexp-quote (file-name-nondirectory file)) (funcall shown)))))
+           (let ((answer nil)
+                 (kernel (with-current-buffer emjupy-int--buffer
+                           (emjupy-notebook-kernel emjupy--buffer-notebook))))
+             (emjupy-int--pump 1)
+             (emjupy--kernel-eval
+              kernel "print(len(up.value), up.value[0].name.endswith('.bin'), bytes(up.value[0].content) == bytes(range(256)))"
+              (lambda (out) (setq answer (string-trim out))))
+             (emjupy-int--pump 15 (lambda () answer))
+             (should (equal answer "1 True True"))))
+       (delete-file file)))))
 
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

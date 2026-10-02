@@ -31,6 +31,7 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
+(require 'emjupy-figures)
 
 (defvar emjupy--widget-models (make-hash-table :test 'equal)
   "Widget models, by comm id: a cons of the kernel and the state.")
@@ -39,9 +40,20 @@
   "Cells whose widgets sent a message, by message id.
 The output a message causes is drawn in the cell its widget is in.")
 
-(defun emjupy--widget-on-comm (kernel msg-type content)
-  "Keep the widget models up to date from KERNEL\\='s comm messages.
-MSG-TYPE is the message type and CONTENT its content."
+(defun emjupy--widget-put-path (state path value)
+  "Set the place PATH names in STATE to VALUE.
+PATH is a vector of keys and indices, as `buffer_paths\=' gives them."
+  (let ((place state) (keys (append path nil)))
+    (while (cdr keys)
+      (setq place (if (integerp (car keys)) (aref place (car keys)) (gethash (car keys) place)))
+      (setq keys (cdr keys)))
+    (if (integerp (car keys)) (aset place (car keys) value) (puthash (car keys) value place))))
+
+(defun emjupy--widget-on-comm (kernel msg-type content &optional buffers)
+  "Keep the widget models up to date from KERNEL\='s comm messages.
+MSG-TYPE is the message type and CONTENT its content.  BUFFERS are the
+binary data the message carried; each goes where `buffer_paths\=' says,
+in the state -- an image widget\'s value, say."
   (let ((id (gethash "comm_id" content))
         (data (gethash "data" content)))
     (pcase msg-type
@@ -50,13 +62,38 @@ MSG-TYPE is the message type and CONTENT its content."
                   (hash-table-p data))
          (puthash id (cons kernel (or (gethash "state" data)
                                       (make-hash-table :test 'equal)))
-                  emjupy--widget-models)))
+                  emjupy--widget-models)
+         (emjupy--widget-put-buffers (cdr (gethash id emjupy--widget-models)) data buffers)))
       ("comm_msg"
        (let ((model (gethash id emjupy--widget-models))
              (state (and (hash-table-p data) (gethash "state" data))))
          (when (and model (hash-table-p state))
-           (maphash (lambda (k v) (puthash k v (cdr model))) state))))
+           (emjupy--widget-put-buffers state data buffers)
+           (maphash (lambda (k v) (puthash k v (cdr model))) state)
+           (emjupy--widget-redraw kernel))))
       ("comm_close" (remhash id emjupy--widget-models)))))
+
+(defun emjupy--widget-redraw (kernel)
+  "Redraw the cells of KERNEL\'s notebook that show widgets.
+A widget changed in the kernel -- a progress bar moving, an image
+replaced -- is drawn anew; the redraw waits for the output timer, so
+many changes in a row cost one."
+  (let* ((nb (emjupy-kernel-notebook kernel))
+         (buf (and nb (emjupy-notebook-buffer nb))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (cl-loop for cell across (emjupy-notebook-cells nb)
+                 when (cl-some #'emjupy--widget-view-output-p
+                               (append (emjupy-cell-outputs cell) nil))
+                 do (cl-pushnew cell emjupy--cells-awaiting-output)))
+      (emjupy--schedule-render buf))))
+
+(defun emjupy--widget-put-buffers (state data buffers)
+  "Put BUFFERS into STATE where DATA\'s `buffer_paths\=' say."
+  (when buffers
+    (cl-loop for path across (or (gethash "buffer_paths" data) [])
+             for buffer in buffers
+             do (emjupy--widget-put-path state path buffer))))
 
 (defun emjupy--widget-owner (msg-id)
   "Return the cell whose widget sent message MSG-ID, or nil."
@@ -317,6 +354,67 @@ A widget with a `base\=' is logarithmic: its bounds are exponents."
         (cons (expt (float base) low) (expt (float base) high))
       (cons low high))))
 
+(defun emjupy--widget-bytes (s)
+  "Return the bytes in the value of S, a unibyte string, or nil if none."
+  (let ((v (gethash "value" s)))
+    (and (emjupy-bytes-p v) (emjupy-bytes-data v))))
+
+(defun emjupy--widget-media-p (s)
+  "Return non-nil if S, a widget\'s state, has the shape of a sound or video."
+  (and (emjupy--widget-bytes s) (emjupy--widget-has s "format" "autoplay")))
+(defun emjupy--widget-draw-media (id s)
+  "Draw S, a sound or a video, as a line opening it in a window of its own.
+ID is the widget\'s comm id."
+  (let ((bytes (emjupy--widget-bytes s)))
+    (list (emjupy--widget-button
+           (format "▶ %s (%s, %s) -- RET or click to play it"
+                   (if (emjupy--widget-has s "width") "Video" "Audio")
+                   (gethash "format" s) (file-size-human-readable (length bytes)))
+           id 'open-media))))
+
+(defun emjupy--widget-image-p (s)
+  "Return non-nil if S, a widget\'s state, has the shape of an image."
+  (and (emjupy--widget-bytes s) (emjupy--widget-has s "format")))
+(defun emjupy--widget-image-type (s)
+  "Return the image type of S\'s format, or nil if Emacs cannot draw it."
+  (let ((type (pcase (downcase (or (gethash "format" s) ""))
+                ("png" 'png) ((or "jpeg" "jpg") 'jpeg) ("gif" 'gif)
+                ((or "svg" "svg+xml") 'svg) ("webp" 'webp))))
+    (and type (image-type-available-p type) type)))
+(defun emjupy--widget-image-payload (s)
+  "Return S\'s image as `emjupy--render-image-output\=' takes it."
+  (let ((bytes (emjupy--widget-bytes s)))
+    (if (eq (emjupy--widget-image-type s) 'svg)
+        (decode-coding-string bytes 'utf-8)
+      (base64-encode-string bytes t))))
+(defun emjupy--widget-draw-image (id s)
+  "Draw S, an image, in the notebook, or a line opening it.
+The line is drawn instead when `emjupy-inline-figures\=' is nil.  ID is
+the widget\'s comm id."
+  (let ((bytes (emjupy--widget-bytes s))
+        (type (emjupy--widget-image-type s)))
+    (list (cond ((string-empty-p bytes) (propertize "[empty image]" 'face 'shadow))
+                ((null type) (propertize (format "[image: %s]" (gethash "format" s)) 'face 'shadow))
+                ((and emjupy-inline-figures (display-images-p))
+                 (propertize " " 'display (emjupy--render-image-output
+                                           (emjupy--widget-image-payload s) type)))
+                (t (emjupy--widget-button
+                    (format "▶ Image (%s, %s) -- RET or click to open it"
+                            (gethash "format" s) (file-size-human-readable (length bytes)))
+                    id 'open-image))))))
+
+(defun emjupy--widget-upload-p (s)
+  "Return non-nil if S, a widget\'s state, has the shape of a file upload."
+  (and (vectorp (gethash "value" s)) (emjupy--widget-has s "accept" "multiple")))
+(defun emjupy--widget-draw-upload (id s)
+  "Draw S, a file upload, as a button choosing files.  ID is its comm id."
+  (let ((files (gethash "value" s)))
+    (list (concat (emjupy--widget-button "[ Upload… ]" id 'upload)
+                  (propertize (if (seq-empty-p files) "   no file"
+                                (format "   %s" (mapconcat (lambda (f) (gethash "name" f))
+                                                           files ", ")))
+                              'face 'shadow)))))
+
 (defun emjupy--widget-bounds (s)
   "Return the bounds of S, shown after its control."
   (let ((limits (emjupy--widget-limits s)))
@@ -328,6 +426,9 @@ A widget with a `base\=' is logarithmic: its bounds are exponents."
   (list
    (list 'container      #'emjupy--widget-container-p      #'emjupy--widget-draw-container)
    (list 'output         #'emjupy--widget-output-p         #'emjupy--widget-draw-nothing)
+   (list 'media          #'emjupy--widget-media-p          #'emjupy--widget-draw-media)
+   (list 'image          #'emjupy--widget-image-p          #'emjupy--widget-draw-image)
+   (list 'upload         #'emjupy--widget-upload-p         #'emjupy--widget-draw-upload)
    (list 'choose-several #'emjupy--widget-choose-several-p #'emjupy--widget-draw-choose-several)
    (list 'choose         #'emjupy--widget-choose-p         #'emjupy--widget-draw-choose)
    (list 'button         #'emjupy--widget-button-p         #'emjupy--widget-draw-button)
@@ -379,9 +480,10 @@ lists; options before a value, since a dropdown has both.")
 
 ;;;; Using a widget
 
-(defun emjupy--widget-message (id data cell)
+(defun emjupy--widget-message (id data cell &optional buffers)
   "Send the widget with comm ID the comm message DATA, a hash table.
-CELL is the cell showing it, where what the message causes is drawn."
+CELL is the cell showing it, where what the message causes is drawn.
+BUFFERS, unibyte strings, go with it in a binary frame."
   (let* ((kernel (car (gethash id emjupy--widget-models)))
          (content (make-hash-table :test 'equal)))
     (unless (and kernel (emjupy--ws-live-p kernel))
@@ -390,11 +492,14 @@ CELL is the cell showing it, where what the message causes is drawn."
     (puthash "data" data content)
     (let ((msg (emjupy--make-message "comm_msg" content)))
       (puthash (car msg) cell emjupy--widget-requests)
-      (emjupy--ws-send (cdr msg) kernel))))
+      (if buffers
+          (emjupy--ws-send-binary (emjupy--encode-binary-message (cdr msg) buffers) kernel)
+        (emjupy--ws-send (cdr msg) kernel)))))
 
-(defun emjupy--widget-send (id state-changes cell)
+(defun emjupy--widget-send (id state-changes cell &optional buffer-paths buffers)
   "Send the widget with comm ID its new STATE-CHANGES, an alist.
-CELL is the cell showing it, where what the change causes is drawn."
+CELL is the cell showing it, where what the change causes is drawn.
+BUFFERS, unibyte strings, go where BUFFER-PATHS say in the state."
   (let* ((model (gethash id emjupy--widget-models))
          (state (make-hash-table :test 'equal))
          (data (make-hash-table :test 'equal)))
@@ -403,8 +508,8 @@ CELL is the cell showing it, where what the change causes is drawn."
       (puthash k v (cdr model)))
     (puthash "method" "update" data)
     (puthash "state" state data)
-    (puthash "buffer_paths" [] data)
-    (emjupy--widget-message id data cell)
+    (puthash "buffer_paths" (or buffer-paths []) data)
+    (emjupy--widget-message id data cell buffers)
     ;; show the new value at once
     (when-let* ((buf (emjupy-notebook-buffer (emjupy-kernel-notebook (car model)))))
       (when (buffer-live-p buf)
@@ -521,7 +626,64 @@ several options, a click, or a new value asked for in the minibuffer."
            (puthash "method" "custom" data)
            (puthash "content" event data)
            (emjupy--widget-message id data cell)))
-        ('edit (emjupy--widget-send id `(("value" . ,(emjupy--widget-read state arg))) cell))))))
+        ('edit (emjupy--widget-send id `(("value" . ,(emjupy--widget-read state arg))) cell))
+        ('open-image (emjupy--show-image (emjupy--widget-image-payload state)
+                                         (emjupy--widget-image-type state)))
+        ('open-media (emjupy--widget-open-media state))
+        ('upload (emjupy--widget-upload id state cell))))))
+
+(defun emjupy--widget-open-media (state)
+  "Play the sound or video of STATE, in a window of its own."
+  (let* ((tag (if (emjupy--widget-has state "width") "video" "audio"))
+         (src (format "data:%s/%s;base64,%s" tag (gethash "format" state)
+                      (base64-encode-string (emjupy--widget-bytes state) t))))
+    (emjupy--show-file
+     (emjupy--write-page
+      (format "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>%s</title></head>
+<body style=\"margin:0;display:flex;align-items:center;justify-content:center;height:100vh\">
+<%s controls autoplay src=\"%s\" style=\"max-width:100%%;max-height:100%%\"></%s></body></html>
+" (capitalize tag) tag src tag)))))
+
+(defun emjupy--widget-upload-entry (file)
+  "Return the description of FILE a file upload widget expects.
+Its content is sent apart, as binary data, so it is null here."
+  (let ((entry (make-hash-table :test 'equal))
+        (attrs (file-attributes file)))
+    (puthash "name" (file-name-nondirectory file) entry)
+    (puthash "type" (or (mailcap-file-name-to-mime-type file) "") entry)
+    (puthash "size" (file-attribute-size attrs) entry)
+    (puthash "last_modified"
+             (truncate (* 1000 (float-time (file-attribute-modification-time attrs))))
+             entry)
+    (puthash "content" :null entry)
+    entry))
+
+(defun emjupy--widget-file-bytes (file)
+  "Return FILE\'s contents, as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (buffer-string)))
+
+(defun emjupy--widget-upload (id state cell)
+  "Choose files for the file upload with comm ID and STATE, and send them.
+One file, or -- if the upload takes several -- as many as are chosen,
+ending with an empty answer.  CELL is the cell showing it."
+  (let ((several (eq (gethash "multiple" state) t))
+        (files nil))
+    (catch 'done
+      (while t
+        (let ((file (read-file-name (if files "Another file (RET when done): " "File to upload: ")
+                                    nil "" (not files))))
+          (when (or (string-empty-p file) (file-directory-p file)) (throw 'done nil))
+          (push (expand-file-name file) files)
+          (unless several (throw 'done nil)))))
+    (setq files (nreverse files))
+    (when files
+      (emjupy--widget-send
+       id `(("value" . ,(vconcat (mapcar #'emjupy--widget-upload-entry files)))) cell
+       (vconcat (cl-loop for i from 0 below (length files) collect (vector "value" i "content")))
+       (mapcar #'emjupy--widget-file-bytes files)))))
 
 (defun emjupy--widget-step-at-point (direction)
   "Step the number of the widget at point in DIRECTION, -1 or 1."

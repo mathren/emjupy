@@ -201,7 +201,7 @@ a bar, two numbers are a range, option labels are chosen from (=a ▾=), true
 or false is a box to toggle (=[x]=), a value with no bounds is edited in
 brackets (=[text]=), a button is clicked (=[ Press ]=), and a box draws
 what it holds.  So ipywidgets' controls all show without emjupy naming
-them -- 45 of its 50 widgets, checked against its own list -- and a new
+them -- 49 of its 50 widgets, checked against its own list -- and a new
 one does too if its state has a familiar shape.  =RET= or a click on a
 control uses it; what it asks for in the minibuffer follows the value: a
 number within its bounds, text, a password, a list, a date or a time, a
@@ -211,10 +211,13 @@ colour.
 #+ATTR_HTML: :width 70%
 [[file:./images/interactive-widgets.gif]]
 
+Widgets whose data is binary work too: an image widget is drawn in the
+notebook, and drawn again when the kernel replaces it (or shown as a line
+that opens it, with =emjupy-inline-figures= nil); a sound or a video plays
+in a window of its own; a file upload asks for files and sends them.
+
 Not drawn: a widget that draws itself in JavaScript -- plotly's
-=FigureWidget=, a map -- shows as its text; a gamepad and a file upload
-show by name; an image, a sound or a video widget, whose data comes in a
-binary message emjupy does not read, shows as =[widget]=.
+=FigureWidget=, a map -- shows as its text; a gamepad shows by name.
 
 * Progress bars
 
