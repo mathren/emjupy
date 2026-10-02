@@ -2,7 +2,7 @@
 #+PREVIOUS_PAGE: keybindings.org
 #+NEXT_PAGE: remote.org
 
-* Screenshots
+* Gifs and Screenshots gallery
 
 On a plain emacs installation, you should see something like:
 #+CAPTION: [[./test_notebook/test.ipynb][Simple notebook]] rendering in a fresh emacs with no customization. Screenshot may be out of date.
@@ -16,6 +16,19 @@ setup:
 #+DOWNLOADED: screenshot @ 2026-09-06 12:49:08
 #+ATTR_HTML: :width 75%
 [[file:./images/screenshot-dark-colored.png]]
+
+Plotly figures and interactive plots with sliders can open in an
+external window or browser (see [[file:usage.org::*Interactive output][Interactive output]]):
+
+#+CAPTION: Opening a plotly figure, and rotating it.
+#+ATTR_HTML: :width 100%
+[[file:./images/interactive-plotly.gif]]
+
+
+#+CAPTION: An interact slider, stepped from 3 to 6.
+#+ATTR_HTML: :width 70%
+[[file:./images/interactive-widgets.gif]]
+
 
 *N.B.:* Screenshot may be out of date.
 
