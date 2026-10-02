@@ -155,6 +155,9 @@ new one, as in Jupyter, so a cell that prints a thousand lines has one
 output, not a thousand.
 
 * Interactive output
+:PROPERTIES:
+:CUSTOM_ID: interactive-output
+:END:
 
 ** Figures
 
@@ -216,8 +219,21 @@ notebook, and drawn again when the kernel replaces it (or shown as a line
 that opens it, with =emjupy-inline-figures= nil); a sound or a video plays
 in a window of its own; a file upload asks for files and sends them.
 
-Not drawn: a widget that draws itself in JavaScript -- plotly's
-=FigureWidget=, a map -- shows as its text; a gamepad shows by name.
+A widget that draws itself in JavaScript -- plotly's =FigureWidget=, a
+map, an anywidget -- shows as a line, =▶ Interactive widget: FigureWidget
+(anywidget)=, and opens in a page of its own, in the figure window, where
+its JavaScript draws it, live: a change made there reaches the kernel,
+and one made in the kernel reaches the page.  The page talks to Emacs,
+which relays over the kernel connection it has: it needs no token, and
+works through a tunnel as the notebook does.
+
+The widget's code is asked of the kernel -- widget packages leave a copy
+for the classic notebook in its environment, which matches its version
+and needs no network; one with none is fetched from a CDN.  The widget
+manager itself comes from a CDN: =emjupy-widget-scripts= names local
+copies instead, for a machine with no network.
+
+Not drawn: a gamepad, shown by name.
 
 * Progress bars
 

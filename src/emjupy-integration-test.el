@@ -1451,5 +1451,58 @@ w.VBox([img, snd, up])" 60)))
              (should (equal answer "1 True True"))))
        (delete-file file)))))
 
+(ert-deftest emjupy-int-widget-page-bridge-relays-both-ways ()
+  "A page, through the bridge, gets the widget's models and moves the widget.
+
+Emacs stands in for the page here -- a WebSocket to the bridge, saying
+what a page says -- so no browser is needed: the models the page would
+draw arrive, and a value the page sends reaches the kernel."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import anywidget, traitlets
+class Counter(anywidget.AnyWidget):
+    _esm = 'export default { render() {} }'
+    value = traitlets.Int(0).tag(sync=True)
+c = Counter(); c" 60))
+          (received nil))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "anywidget is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (should (string-match-p "▶ Interactive widget: Counter (anywidget)" (buffer-string)))
+       (let* ((id (catch 'found
+                    (maphash (lambda (k v) (when (equal (gethash "_anywidget_id" (cdr v) "") "__main__.Counter")
+                                             (throw 'found k)))
+                             emjupy--widget-models)))
+              (token "test-page")
+              (kernel (emjupy-notebook-kernel emjupy--buffer-notebook)))
+         (should id)
+         (puthash token (list :kernel kernel :cell cell :view id :models (emjupy--widget-tree id))
+                  emjupy--bridge-pages)
+         (let ((ws (websocket-open (format "ws://127.0.0.1:%d/" (emjupy--bridge-port))
+                                   :on-message (lambda (_ws frame)
+                                                 (push (json-parse-string (websocket-frame-text frame)
+                                                                          :object-type 'hash-table)
+                                                       received)))))
+           (unwind-protect
+               (progn
+                 (emjupy-int--pump 5 (lambda () (websocket-openp ws)))
+                 (websocket-send-text ws (format "{\"type\": \"hello\", \"page\": \"%s\"}" token))
+                 (emjupy-int--pump 10 (lambda () received))
+                 ;; the models a page draws from
+                 (let ((init (car received)))
+                   (should (equal (gethash "type" init) "init"))
+                   (should (equal (gethash "view" init) id))
+                   (should (cl-some (lambda (m) (equal (gethash "id" m) id)) (gethash "models" init))))
+                 ;; a value the page sends reaches the kernel
+                 (websocket-send-text
+                  ws (format "{\"type\": \"comm_msg\", \"comm_id\": \"%s\", \"data\": {\"method\": \"update\", \"state\": {\"value\": 5}, \"buffer_paths\": []}, \"buffers\": []}" id))
+                 (emjupy-int--pump 2)
+                 (let ((answer nil))
+                   (emjupy--kernel-eval kernel "print(c.value)" (lambda (out) (setq answer (string-trim out))))
+                   (emjupy-int--pump 10 (lambda () answer))
+                   (should (equal answer "5"))))
+             (websocket-close ws)
+             (remhash token emjupy--bridge-pages))))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

@@ -50,12 +50,18 @@ window of its own (see [[file:usage.org][Interactive output]]).  Everything else
 its plain-text fallback, which every Jupyter output carries:
 
 - HTML without a script -- a pandas =DataFrame= appears as its text table;
-- widgets that draw themselves in JavaScript -- plotly's =FigureWidget=,
-  maps -- appear as their text;
 - Markdown and LaTeX sent through =IPython.display= appear as source.
 
 Images need a graphical Emacs; in a terminal they appear as their text
 fallback too.
+
+* Widgets that draw themselves open in a page, with two gaps
+
+A widget drawn by JavaScript of its own -- plotly's =FigureWidget=, a map
+-- opens in a page in the figure window (see [[file:usage.org][Interactive output]]).  Two
+things do not reach that page: what an =Output= widget inside it
+captures, which is drawn in the notebook instead, and the widget manager
+without a network, unless =emjupy-widget-scripts= names local copies.
 
 * Figures open in a window of their own, not inside Emacs
 

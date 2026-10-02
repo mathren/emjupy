@@ -31,6 +31,8 @@ def main():
     view = WebKit2.WebView()
     settings = view.get_settings()
     settings.set_enable_webgl(True)
+    # A widget's page loads the widget's module from a file beside it
+    settings.set_allow_file_access_from_file_urls(True)
     # the page's own title, once it has one: a figure's title, say
     view.connect("notify::title",
                  lambda v, _: v.get_title() and window.set_title(v.get_title()))

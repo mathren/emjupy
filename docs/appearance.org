@@ -18,7 +18,7 @@ setup:
 [[file:./images/screenshot-dark-colored.png]]
 
 Plotly figures and interactive plots with sliders can open in an
-external window or browser (see [[file:usage.org::*Interactive output][Interactive output]]):
+external window or browser (see [[file:usage.org::#interactive-output][Interactive output]]):
 
 #+CAPTION: Opening a plotly figure, and rotating it.
 #+ATTR_HTML: :width 100%

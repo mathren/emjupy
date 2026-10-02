@@ -51,7 +51,7 @@
     (eval `(undercover
             ,@(mapcar (lambda (f) (expand-file-name f src))
                       '("emjupy-core.el" "emjupy-http.el" "emjupy-render.el"
-                        "emjupy-cells.el" "emjupy-kernel.el" "emjupy-figures.el" "emjupy-widgets.el" "emjupy-remote.el"
+                        "emjupy-cells.el" "emjupy-kernel.el" "emjupy-figures.el" "emjupy-widgets.el" "emjupy-widget-page.el" "emjupy-remote.el"
                         "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-mode.el"
                         "emjupy-notebook.el" "emjupy.el"))
             (:report-format 'lcov)

@@ -42,6 +42,7 @@ file requires only files earlier in this table, never later ones.
 | =emjupy-kernel.el=   | kernel WebSocket, execution, message routing               |
 | =emjupy-figures.el=  | opening an output on its own: plotly figures, HTML, images |
 | =emjupy-widgets.el=  | widget controls in the buffer, and what they cause         |
+| =emjupy-widget-page.el= | widgets that draw themselves, live in a page, through Emacs |
 | =emjupy-remote.el=   | where a server's files live: roots, SSH tunnels, TRAMP     |
 | =emjupy-lsp.el=      | language-server WebSocket transport, shadow document text  |
 | =emjupy-eglot.el=    | shadow buffer, Eglot integration, completion, eldoc        |
@@ -494,6 +495,7 @@ The recipe used is kept at =.github/melpa-recipe=:
                 "src/emjupy-kernel.el"
                 "src/emjupy-figures.el"
                 "src/emjupy-widgets.el"
+                "src/emjupy-widget-page.el"
                 "src/emjupy-figure-window.py"
                 "src/emjupy-remote.el"
                 "src/emjupy-lsp.el"

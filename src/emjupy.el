@@ -59,7 +59,7 @@
 ;; This file carries the package header and version, and loads the rest.
 ;; The mode, its keymap and menu are in emjupy-mode; the implementation is
 ;; layered, each file requiring only the ones before it: emjupy-core,
-;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-figures, emjupy-widgets, emjupy-remote,
+;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-figures, emjupy-widgets, emjupy-widget-page, emjupy-remote,
 ;; emjupy-lsp, emjupy-eglot, emjupy-mode and emjupy-notebook.
 
 
@@ -70,6 +70,7 @@
 (require 'emjupy-kernel)
 (require 'emjupy-figures)
 (require 'emjupy-widgets)
+(require 'emjupy-widget-page)
 (require 'emjupy-notebook)
 
 (require 'loadhist)                     ; `feature-file'
@@ -80,7 +81,7 @@
 
 (defconst emjupy--modules
   '(emjupy-core emjupy-http emjupy-render emjupy-cells emjupy-kernel
-    emjupy-figures emjupy-widgets emjupy-remote emjupy-lsp emjupy-eglot
+    emjupy-figures emjupy-widgets emjupy-widget-page emjupy-remote emjupy-lsp emjupy-eglot
     emjupy-mode emjupy-notebook)
   "The files emjupy is made of, as features.")
 

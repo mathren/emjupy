@@ -31,6 +31,7 @@
 (require 'emjupy-kernel)
 (require 'emjupy-figures)
 (require 'emjupy-widgets)
+(require 'emjupy-widget-page)
 (require 'emjupy-lsp)
 (require 'emjupy-eglot)
 
@@ -315,6 +316,7 @@ place to keep up to date, and would be wrong the moment the mode changed
   ;; Closing the notebook closes the connections it opened.
   (add-hook 'kill-buffer-hook #'emjupy--release-notebook nil t)
   (emjupy-widgets-enable)
+  (emjupy-widget-page-enable)
   ;; The number column narrows the page; the rules are redrawn to fit.
   (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled nil t)
   ;; Cells hold code, so the editing conveniences a programming mode would

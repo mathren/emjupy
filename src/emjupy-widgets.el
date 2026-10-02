@@ -448,6 +448,18 @@ called with the comm id and the state, and returns the widget\'s lines.
 The order matters -- a range\'s value is a list, and is tried before
 lists; options before a value, since a dropdown has both.")
 
+(defun emjupy--widget-add-rule (rule)
+  "Put RULE, (NAME TEST DRAW), first in `emjupy-widget-rules\=', once.
+For a layer above this one: a widget that draws itself must be known as
+such before any other rule takes it for what its state looks like."
+  (unless (assq (car rule) emjupy-widget-rules)
+    (push rule emjupy-widget-rules)))
+
+(defvar emjupy-widget-page-function nil
+  "Function opening a widget that draws itself in a page, or nil.
+Called with the widget\'s comm id and the cell showing it.  Set by the
+layer that runs pages.")
+
 (defun emjupy--widget-rule (state)
   "Return the rule of `emjupy-widget-rules' that draws STATE, or nil."
   (cl-find-if (lambda (rule) (funcall (nth 1 rule) state)) emjupy-widget-rules))
@@ -630,7 +642,10 @@ several options, a click, or a new value asked for in the minibuffer."
         ('open-image (emjupy--show-image (emjupy--widget-image-payload state)
                                          (emjupy--widget-image-type state)))
         ('open-media (emjupy--widget-open-media state))
-        ('upload (emjupy--widget-upload id state cell))))))
+        ('upload (emjupy--widget-upload id state cell))
+        ('open-page (if emjupy-widget-page-function
+                        (funcall emjupy-widget-page-function id cell)
+                      (user-error "Opening a widget in a page needs emjupy-widget-page")))))))
 
 (defun emjupy--widget-open-media (state)
   "Play the sound or video of STATE, in a window of its own."
