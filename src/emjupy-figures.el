@@ -26,17 +26,75 @@
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
 
-(defcustom emjupy-figure-viewer 'browser
+(defcustom emjupy-figure-viewer 'window
   "Where `emjupy-open-output' shows an interactive figure.
-`browser' is the browser.  `xwidget' is inside Emacs, and `auto' an
-xwidget when this Emacs has them.  Neither is the default: Emacs 30.1
-refuses WebKitGTK from 2.41.92, and a build made to take a newer one
-aborts as the figure opens -- seen with 2.52 -- so only choose an xwidget
-on a build that works with it."
-  :type '(choice (const :tag "xwidget if available, else browser" auto)
+`window' is a window of its own, one per figure -- see
+`emjupy-figure-window-command'.  `browser' is the browser, which most
+often means a tab in one already open.  `xwidget' is inside Emacs, and
+`auto' an xwidget when this Emacs has them; neither is the default:
+Emacs 30.1 refuses WebKitGTK from 2.41.92, and a build made to take a
+newer one aborts as the figure opens -- seen with 2.52 -- so only choose
+an xwidget on a build that works with it."
+  :type '(choice (const :tag "A window of its own" window)
+                 (const :tag "The browser" browser)
                  (const :tag "An xwidget" xwidget)
-                 (const :tag "The browser" browser))
+                 (const :tag "An xwidget if available, else a window" auto))
   :group 'emjupy)
+
+(defcustom emjupy-figure-window-command nil
+  "The program that shows a figure in a window of its own, or nil.
+A list: the program and its arguments, where \"%s\" stands for the
+page\'s URL.  nil finds one: the WebKitGTK window that comes with emjupy
+-- it needs PyGObject and WebKitGTK, which GNOME desktops have -- then a
+Chromium-family browser as an app window, then a new Firefox window,
+and the browser if there is none of these."
+  :type '(choice (const :tag "Find one" nil)
+                 (repeat :tag "Program and arguments" string))
+  :group 'emjupy)
+
+(defconst emjupy--figure-window-script
+  (expand-file-name "emjupy-figure-window.py"
+                    (file-name-directory (or load-file-name buffer-file-name
+                                             default-directory)))
+  "The WebKitGTK figure window that comes with emjupy.")
+
+(defvar emjupy--figure-window-found 'unknown
+  "The command `emjupy-figure-window-command' found, nil for none, or `unknown'.")
+
+(defun emjupy--figure-window-bundled ()
+  "Return the command running the bundled figure window, or nil if it cannot.
+Asks Python, once, whether it has PyGObject and WebKitGTK.  The system\'s
+Python is tried too: PyGObject comes with the desktop, so a virtualenv
+or conda Python first on the PATH -- the notebook\'s environment,
+activated -- usually lacks it."
+  (when (file-exists-p emjupy--figure-window-script)
+    (cl-loop for python in (delete-dups
+                            (delq nil (list (executable-find "python3")
+                                            (and (file-executable-p "/usr/bin/python3")
+                                                 "/usr/bin/python3"))))
+             when (zerop (call-process
+                          python nil nil nil "-c"
+                          (concat "import gi; gi.require_version('Gtk', '3.0')\n"
+                                  "for v in ('4.1', '4.0'):\n"
+                                  "    try: gi.require_version('WebKit2', v); break\n"
+                                  "    except ValueError: pass\n"
+                                  "from gi.repository import Gtk, WebKit2")))
+             return (list python emjupy--figure-window-script "%s"))))
+
+(defun emjupy--figure-window-command ()
+  "Return the command showing a figure in a window of its own, or nil."
+  (or emjupy-figure-window-command
+      (if (not (eq emjupy--figure-window-found 'unknown))
+          emjupy--figure-window-found
+        (setq emjupy--figure-window-found
+              (or (emjupy--figure-window-bundled)
+                  (cl-loop for browser in '("chromium" "chromium-browser" "google-chrome"
+                                            "google-chrome-stable" "brave-browser"
+                                            "microsoft-edge")
+                           for path = (executable-find browser)
+                           when path return (list path "--app=%s"))
+                  (let ((firefox (executable-find "firefox")))
+                    (and firefox (list firefox "--new-window" "%s"))))))))
 
 (defcustom emjupy-plotly-js 'kernel
   "Where the plotly.js a figure page loads comes from.
@@ -62,12 +120,13 @@ feature is what is tested.  And an xwidget needs a graphical frame."
   (and (featurep 'xwidget-internal) (display-graphic-p)))
 
 (defun emjupy--figure-viewer ()
-  "Return the viewer to use, `xwidget' or `browser'."
+  "Return the viewer to use: `window', `browser' or `xwidget'."
   (pcase emjupy-figure-viewer
     ('browser 'browser)
     ('xwidget (if (emjupy--xwidget-available-p) 'xwidget
                 (user-error "This Emacs has no xwidget support")))
-    (_ (if (emjupy--xwidget-available-p) 'xwidget 'browser))))
+    ('auto (if (emjupy--xwidget-available-p) 'xwidget 'window))
+    (_ 'window)))
 
 (defun emjupy--show-file (file)
   "Show the page FILE in the figure viewer."
@@ -75,6 +134,15 @@ feature is what is tested.  And an xwidget needs a graphical frame."
     (pcase (emjupy--figure-viewer)
       ('xwidget (require 'xwidget)
                 (xwidget-webkit-browse-url url t))
+      ('window
+       (let ((command (emjupy--figure-window-command)))
+         (if (not command)
+             (progn (message "[emjupy] No program for a figure window; %s"
+                             "opening it in the browser")
+                    (browse-url url))
+           (apply #'start-process "emjupy-figure" nil (car command)
+                  (mapcar (lambda (arg) (string-replace "%s" url arg))
+                          (cdr command))))))
       (_ (browse-url url)))))
 
 (defun emjupy--write-page (html)
@@ -88,11 +156,21 @@ megabytes."
         (write-region html nil file nil 'quiet)))
     file))
 
+(defun emjupy--plotly-title (figure)
+  "Return the title of the plotly FIGURE, for its window, made safe for HTML."
+  (let* ((layout (and (hash-table-p figure) (gethash "layout" figure)))
+         (title (and (hash-table-p layout) (gethash "title" layout)))
+         (text (cond ((stringp title) title)
+                     ((hash-table-p title) (gethash "text" title)))))
+    (if (and (stringp text) (not (string-empty-p text)))
+        (replace-regexp-in-string "[<>&\"]" (lambda (c) (format "&#%d;" (string-to-char c))) text)
+      "plotly figure")))
+
 (defun emjupy--plotly-page (figure script)
   "Return a page drawing the plotly FIGURE, a parsed JSON object.
 SCRIPT is the address plotly.js is loaded from."
   (format "<!DOCTYPE html>
-<html><head><meta charset=\"utf-8\"><title>plotly figure</title>
+<html><head><meta charset=\"utf-8\"><title>%s</title>
 <style>html,body{margin:0;height:100%%}#figure{width:100%%;height:100vh}</style>
 <script src=\"%s\"></script></head>
 <body><div id=\"figure\"></div>
@@ -102,7 +180,8 @@ Plotly.newPlot('figure', spec.data || [], spec.layout || {},
                Object.assign({responsive: true}, spec.config || {}));
 </script></body></html>
 "
-          script (decode-coding-string (json-serialize figure) 'utf-8)))
+          (emjupy--plotly-title figure) script
+          (decode-coding-string (json-serialize figure) 'utf-8)))
 
 (defconst emjupy--plotly-js-chunk 900000
   "Characters of plotly.js asked of the kernel at a time.")
@@ -168,7 +247,11 @@ is written and CALLBACK called with its address."
         (insert-image (emjupy--render-image-output payload type))
         (goto-char (point-min)))
       (special-mode))
-    (pop-to-buffer buf)))
+    ;; In a frame of its own, the same one each time: a figure window.
+    (display-buffer buf '((display-buffer-reuse-window display-buffer-pop-up-frame)
+                          (reusable-frames . t)
+                          (pop-up-frame-parameters (name . "emjupy figure")
+                                                   (width . 90) (height . 40))))))
 
 (defun emjupy--openable-data (cell)
   "Return the first output bundle of CELL that can be opened, or nil."

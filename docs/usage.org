@@ -160,9 +160,15 @@ output, not a thousand.
 
 A figure that draws itself in JavaScript -- plotly, bokeh -- has nothing
 to show in a text buffer, and shows as a line saying what it is.  =C-c C-f=
-there, a click, or =RET= opens it in your browser; =emjupy-figure-viewer=
-can choose an xwidget, inside Emacs, instead -- see [[file:limitations.org][Known limitations]]
-for why that is not the default.  Opening is always asked for, never
+there, a click, or =RET= opens it in a window of its own, one per figure,
+not a tab in your browser.  That window is the small WebKitGTK viewer
+that comes with emjupy where Python has PyGObject and WebKitGTK -- GNOME
+desktops do, and the system's Python is tried when the one first on the
+PATH is a virtualenv's -- or else a Chromium-family browser as an app
+window, or a new Firefox window.  =emjupy-figure-window-command= names
+another program; =emjupy-figure-viewer= can choose the browser instead,
+or an xwidget, inside Emacs -- see [[file:limitations.org][Known limitations]] for why that is not
+the default.  Opening is always asked for, never
 automatic: it runs the notebook's JavaScript.
 
 #+CAPTION: Opening a plotly figure, and rotating it.
@@ -176,8 +182,11 @@ first figure of a plotly version takes some seconds -- the server limits
 how fast output reaches Emacs, so it comes in pieces -- and later ones
 none: it is kept.  =emjupy-plotly-js= names a URL or a file instead.
 
-=C-c C-f= on an image opens it in an image buffer of its own, for a
-figure too small to read at cell width.
+=C-c C-f= on an image opens it in a frame of its own, for a figure too
+small to read at cell width; the same frame each time.  With
+=emjupy-inline-figures= set to nil, figures are not drawn in the notebook
+at all: each is a line, opened there the same way.  Drawn inline is the
+default.
 
 ** Widgets
 

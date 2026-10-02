@@ -7212,5 +7212,57 @@ forgotten, so a large answer -- plotly.js, asked of the kernel, is near
     ;; the cell's own order is untouched
     (should (eq (aref outputs 0) img))))
 
+(defun emjupy-test--png-output ()
+  "Return a display_data output holding a 1x1 PNG."
+  (let ((o (make-hash-table :test 'equal)) (d (make-hash-table :test 'equal)))
+    (puthash "output_type" "display_data" o)
+    (puthash "image/png" "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" d)
+    (puthash "text/plain" "<Figure size 1x1>" d)
+    (puthash "data" d o)
+    o))
+
+(ert-deftest emjupy-test-figures-can-be-kept-out-of-the-notebook ()
+  "With `emjupy-inline-figures' nil, a figure is a line that opens it."
+  (let ((emjupy-inline-figures nil))
+    (cl-letf (((symbol-function 'emjupy--image-displayable-p) (lambda (&rest _) t)))
+      (with-temp-buffer
+        (emjupy--insert-rich-output (gethash "data" (emjupy-test--png-output)))
+        (should (string-match-p "▶ Figure (PNG)" (buffer-string)))
+        ;; no image drawn anywhere
+        (should-not (get-text-property (point-min) 'display))
+        (should-not (next-single-property-change (point-min) 'display))
+        (goto-char (point-min))
+        (should (get-text-property (point) 'emjupy-output-data))))))
+
+(ert-deftest emjupy-test-key-hint-does-not-depend-on-the-current-buffer ()
+  "The line opening an output names its key, whatever buffer is current.
+Output can be drawn while another buffer is current, where the key is
+not bound, and the line said \"M-x emjupy-open-output\"."
+  (with-temp-buffer
+    (emjupy--insert-open-line "Interactive plotly figure" 1000 (make-hash-table))
+    (should (string-match-p "C-c C-f" (buffer-string)))))
+
+(ert-deftest emjupy-test-figure-window-command-is-used ()
+  "A figure window is opened with `emjupy-figure-window-command', URL in."
+  (let ((emjupy-figure-viewer 'window)
+        (emjupy-figure-window-command '("myviewer" "--title" "x" "%s"))
+        (started nil))
+    (cl-letf (((symbol-function 'start-process)
+               (lambda (_name _buffer program &rest args) (setq started (cons program args)))))
+      (emjupy--show-file "/tmp/page.html"))
+    (should (equal started '("myviewer" "--title" "x" "file:///tmp/page.html")))))
+
+(ert-deftest emjupy-test-a-mixed-installation-is-noticed ()
+  "Files loaded from two installations are named; one installation, none.
+A package and a checkout both on the `load-path' gave a mix, and a mix
+showed keys as \"M-x ...\" and widgets as text."
+  (should-not (emjupy--stray-modules))
+  (let ((real (symbol-function 'feature-file)))
+    (cl-letf (((symbol-function 'feature-file)
+               (lambda (f) (if (eq f 'emjupy-mode) "/elsewhere/emjupy-mode.elc"
+                             (funcall real f)))))
+      (should (equal (emjupy--stray-modules)
+                     '((emjupy-mode . "/elsewhere/emjupy-mode.elc")))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

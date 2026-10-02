@@ -1593,6 +1593,14 @@ puts `warnings.warn\', logging, and progress bars."
       'emjupy-output-image)
      (t 'emjupy-output))))
 
+(defcustom emjupy-inline-figures t
+  "Whether figures -- image outputs -- are drawn in the notebook.
+nil shows each as a line instead, and opens it in a window of its own on
+\\<emjupy-mode-map>\\[emjupy-open-output] or a click, the way a plotting
+window would show it."
+  :type 'boolean
+  :group 'emjupy)
+
 (defconst emjupy--widget-view-mime "application/vnd.jupyter.widget-view+json"
   "MIME type of an output that shows a widget.")
 
@@ -1636,7 +1644,7 @@ kept on the line so that opening it opens this one."
   (insert (propertize
            (format "▶ %s (%s) -- %s, or click, to open it\n"
                    what (file-size-human-readable size)
-                   (substitute-command-keys "\\[emjupy-open-output]"))
+                   (substitute-command-keys "\\<emjupy-mode-map>\\[emjupy-open-output]"))
            'face 'link 'mouse-face 'highlight
            'help-echo "Open this output in a window of its own"
            'keymap emjupy-output-button-map
@@ -1673,6 +1681,11 @@ happens inside the WebSocket callback, where websocket.el swallows the
      (scripted
       (when text (insert (emjupy--mime-text text) "\n"))
       (emjupy--insert-open-line "Interactive HTML output" (length scripted) data))
+     ;; Figures shown on their own, not in the notebook, when so asked.
+     ((and image (not emjupy-inline-figures)
+           (emjupy--image-displayable-p (nth 1 image)))
+      (emjupy--insert-open-line (format "Figure (%s)" (upcase (symbol-name (nth 1 image))))
+                                (length (nth 2 image)) data))
      ((and image (emjupy--image-displayable-p (nth 1 image)))
       (condition-case err
           (progn (insert-image (emjupy--render-image-output (nth 2 image) (nth 1 image)))

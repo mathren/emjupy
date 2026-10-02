@@ -54,3 +54,11 @@ out of memory, or the code exited -- and the server restarted it without
 telling the notebook.  =C-c C-x C-c= reconnects to the kernel now there
 and ends the run; anything the old kernel held is gone.  See [[file:limitations.org][Known
 limitations]].
+
+* "emjupy is loaded from two places"
+
+Two installations of emjupy are on the =load-path= -- a package and a
+checkout, say -- and some files came from each.  A mix fails in ways that
+look like bugs: a key shown as the command's name, widgets drawn as
+their text.  Remove one installation, or put the one you want first.
+=M-x emjupy-version= names the files loaded from elsewhere.
