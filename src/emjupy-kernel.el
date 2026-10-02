@@ -197,8 +197,69 @@ since patching one region only makes sense while the rest still matches."
         t
       (emjupy--rerender-preserving-point))))
 
+(defvar emjupy-comm-functions nil
+  "Functions called with each comm message from a kernel.
+Each is called with the KERNEL, the message type -- \"comm_open\",
+\"comm_msg\" or \"comm_close\" -- and the message content.  This is how
+the layer that knows about widgets hears of them.")
+
+(defvar emjupy-output-owner-functions nil
+  "Functions asked which cell output answering a request belongs to.
+Each is called with the request\'s message id and returns a cell or nil.
+Asked only for a request no cell is waiting on: one emjupy sent itself,
+such as moving a widget\'s slider, whose redrawn figure belongs to the
+cell showing the widget.")
+
+(defvar emjupy--clear-before-next-output (make-hash-table :test 'eq :weakness 'key)
+  "Cells whose outputs are cleared when their next output arrives.")
+
+(defun emjupy--widget-view-output-p (output)
+  "Return non-nil if OUTPUT is the view of a widget."
+  (let ((data (and (hash-table-p output) (gethash "data" output))))
+    (and (hash-table-p data) (gethash emjupy--widget-view-mime data))))
+
+(defun emjupy--clear-cell-outputs-now (cell notebook)
+  "Clear CELL's outputs in NOTEBOOK, as a kernel's `clear_output' asks.
+Widgets stay: in a notebook a widget\'s own output area is what an
+`interact\=' clears before drawing again, and the controls are outside
+it.  Here the outputs are one list, so the widgets are what is kept."
+  (setf (emjupy-cell-outputs cell)
+        (vconcat (seq-filter #'emjupy--widget-view-output-p
+                             (append (or (emjupy-cell-outputs cell) []) nil))))
+  (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (cl-pushnew cell emjupy--cells-awaiting-output))
+      (emjupy--schedule-render buf))))
+
+(defun emjupy--make-message (msg-type content)
+  "Return a shell-channel message of MSG-TYPE carrying CONTENT, a hash table.
+The value is a cons of the message id and the serialized message."
+  (let ((msg-id (emjupy--uuid))
+        (header (make-hash-table :test 'equal))
+        (msg (make-hash-table :test 'equal)))
+    (puthash "msg_id" msg-id header)
+    (puthash "username" "emacs" header)
+    (puthash "session" emjupy--session-id header)
+    (puthash "msg_type" msg-type header)
+    (puthash "version" "5.3" header)
+    (puthash "header" header msg)
+    (puthash "parent_header" (make-hash-table) msg)
+    (puthash "channel" "shell" msg)
+    (puthash "metadata" (make-hash-table) msg)
+    (puthash "content" content msg)
+    (puthash "buffers" [] msg)
+    (cons msg-id (json-serialize msg))))
+
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
+  ;; `clear_output\=' with wait: the clear happens now, as the new output
+  ;; arrives, so the old one stays up until there is something to replace it
+  (when (gethash cell emjupy--clear-before-next-output)
+    (remhash cell emjupy--clear-before-next-output)
+    (setf (emjupy-cell-outputs cell)
+          (vconcat (seq-filter #'emjupy--widget-view-output-p
+                               (append (or (emjupy-cell-outputs cell) []) nil)))))
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
     ;; Stream text that starts an output of its own still has its carriage
@@ -283,7 +344,12 @@ kernels never cross-talk."
          (parent-id (when parent-header (gethash "msg_id" parent-header)))
          (pending (and kernel (emjupy-kernel-pending kernel)))
          (notebook (and kernel (emjupy-kernel-notebook kernel)))
-         (cell (when (and parent-id pending) (gethash parent-id pending)))
+         (cell (when parent-id
+                 (or (and pending (gethash parent-id pending))
+                     ;; output answering a request no cell waits on: one
+                     ;; emjupy sent itself, such as moving a slider
+                     (run-hook-with-args-until-success
+                      'emjupy-output-owner-functions parent-id))))
          (internal (when parent-id (gethash parent-id emjupy--internal-requests))))
 
     ;; One of emjupy's own questions: hand the answer to its callback and
@@ -305,8 +371,15 @@ kernels never cross-talk."
           ;; for data, a piece of a file, needs every character.
           (funcall (car internal) (apply #'concat (reverse (cdr internal)))))))
 
+    (when (member msg-type '("comm_open" "comm_msg" "comm_close"))
+      (run-hook-with-args 'emjupy-comm-functions kernel msg-type
+                          (gethash "content" data)))
     (when cell
       (cond
+       ((string= msg-type "clear_output")
+        (if (eq (gethash "wait" (gethash "content" data)) t)
+            (puthash cell t emjupy--clear-before-next-output)
+          (emjupy--clear-cell-outputs-now cell notebook)))
        ;; Stdout/Stderr live streaming
        ((string= msg-type "stream")
         (let* ((content (gethash "content" data))

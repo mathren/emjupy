@@ -59,7 +59,7 @@
 ;; This file carries the package header and version, and loads the rest.
 ;; The mode, its keymap and menu are in emjupy-mode; the implementation is
 ;; layered, each file requiring only the ones before it: emjupy-core,
-;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-figures, emjupy-remote,
+;; emjupy-http, emjupy-render, emjupy-cells, emjupy-kernel, emjupy-figures, emjupy-widgets, emjupy-remote,
 ;; emjupy-lsp, emjupy-eglot, emjupy-mode and emjupy-notebook.
 
 
@@ -69,6 +69,7 @@
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
 (require 'emjupy-figures)
+(require 'emjupy-widgets)
 (require 'emjupy-notebook)
 (require 'emjupy-lsp)
 (require 'emjupy-eglot)

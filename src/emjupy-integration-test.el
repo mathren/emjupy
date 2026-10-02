@@ -1246,5 +1246,44 @@ go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2])).show()" 60))
                                  (insert-file-contents script nil 0 2000)
                                  (buffer-string))))))))
 
+(ert-deftest emjupy-int-interact-slider-redraws-its-figure-in-place ()
+  "An interact slider shows as a control, and moving it redraws the figure.
+
+The figure comes back as ordinary output answering the slider's message,
+not the cell's execution: it must reach the cell, replace the figure
+there rather than add a second, and leave the control in place."
+  (emjupy-int--with-live-kernel
+   (let* ((cell (emjupy-int--run "import matplotlib
+matplotlib.use('module://matplotlib_inline.backend_inline')
+import matplotlib.pyplot as plt
+from ipywidgets import interact
+@interact(n=(1, 5))
+def f(n=3):
+    plt.plot(range(n)); plt.title(f'n={n}'); plt.show()" 60))
+          (images (lambda ()
+                    (cl-loop for o across (emjupy-cell-outputs cell)
+                             for d = (and (hash-table-p o) (gethash "data" o))
+                             when (and d (gethash "image/png" d)) collect (gethash "image/png" d)))))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "ipywidgets or matplotlib is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       ;; the slider, not "interactive(children=...)"
+       (should (string-match-p "n ◀ 3 ▶" (buffer-string)))
+       (should-not (string-match-p "interactive(children" (buffer-string)))
+       (let ((before (funcall images)))
+         (should (= (length before) 1))
+         (goto-char (point-min))
+         (search-forward "n ◀ 3 ▶")
+         (backward-char)
+         (emjupy-widget-increase)
+         (emjupy-int--pump 30 (lambda () (let ((now (funcall images)))
+                                           (and (= (length now) 1)
+                                                (not (equal now before))))))
+         ;; one figure, the new one, and the control showing the new value
+         (should (= (length (funcall images)) 1))
+         (should-not (equal (funcall images) before))
+         (emjupy-flush-output (current-buffer))
+         (should (string-match-p "n ◀ 4 ▶" (buffer-string))))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

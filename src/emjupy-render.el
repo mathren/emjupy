@@ -1593,6 +1593,14 @@ puts `warnings.warn\', logging, and progress bars."
       'emjupy-output-image)
      (t 'emjupy-output))))
 
+(defconst emjupy--widget-view-mime "application/vnd.jupyter.widget-view+json"
+  "MIME type of an output that shows a widget.")
+
+(defvar emjupy-widget-view-function nil
+  "Function returning the text that shows a widget, or nil.
+Called with the widget\'s model id.  Set by the layer that knows about
+widgets; nil, or a nil return, shows the output\'s `text/plain\=' instead.")
+
 (defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
   "MIME type of a plotly figure, sent as its JSON specification.")
 
@@ -1648,8 +1656,14 @@ happens inside the WebSocket callback, where websocket.el swallows the
                          when payload return (list mime type payload)))
          (text (and data (gethash "text/plain" data)))
          (plotly (and data (gethash emjupy--plotly-mime data)))
+         (widget (let ((view (and data (gethash emjupy--widget-view-mime data))))
+                   (and view emjupy-widget-view-function
+                        (funcall emjupy-widget-view-function
+                                 (gethash "model_id" view)))))
          (scripted (and (not plotly) (emjupy--scripted-html data))))
     (cond
+     ;; A widget the layer above knows how to show: its controls.
+     (widget (insert widget))
      ;; A figure that draws itself in JavaScript: there is nothing to draw
      ;; here, so a line says what it is and opens it.  Nothing runs until
      ;; asked -- opening it runs the notebook's JavaScript.
