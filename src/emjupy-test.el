@@ -5984,18 +5984,7 @@ finished -- after the user had already gone back to typing."
     ;; edit at point by design, so "did the typing survive" is not the
     ;; question to ask of them
     emjupy-indent-or-cycle emjupy-latex-unrender-or-delete
-    emjupy-copy-cell
-    ;; Moving a cell up and merging into the one above both rewrite the
-    ;; cell above, which in this guard is the cell that was typed in -- so
-    ;; that edit is inside the region being redrawn and cannot survive it.
-    ;; Edits anywhere else do survive, and are tested.  Everything else
-    ;; that was on this list has been fixed.
-    emjupy-move-cell-up emjupy-join-cell-above
-    ;; Still rebuilds the notebook.  Whether the history survives depends
-    ;; on how the cells happen to be laid out, which is not a guarantee --
-    ;; it passes one arrangement and fails this one.  Left in the README
-    ;; TODO rather than called fixed.
-    emjupy-cycle-cell-type)
+    emjupy-copy-cell)
   "Commands the general undo guard does not run.
 
 Every exemption is a claim that the command is covered elsewhere or
@@ -6115,20 +6104,7 @@ different cell; afterwards the typing must still be undoable."
     (emjupy-connect-kernel-interactive . "needs a server")
     (emjupy-show-traceback . "opens another buffer")
     (emjupy-edit-cell-externally . "opens another buffer")
-    (emjupy-latex-unrender-or-delete . "deletes a character when there is no formula")
-    ;; Found by this guard on its first run, and not yet fixed.  Listed so
-    ;; the guard can protect everything else in the meantime; see the TODO
-    ;; in README.org.  Each of these still rebuilds the notebook, and a
-    ;; rebuild cannot keep a history of buffer positions.
-    ;; Merging rewrites the cell above, which in these tests is the one
-    ;; that was typed in, so that edit cannot survive -- it is inside the
-    ;; region being redrawn.  Edits anywhere else do survive.
-    (emjupy-join-cell-above . "rewrites the cell above, which here holds the edit")
-    ;; Moving a cell UP rewrites the cell above it, which in this test is
-    ;; the one that was typed in -- so that edit's undo entry is inside the
-    ;; region the move redraws, and cannot survive it.  Edits anywhere else
-    ;; do survive; moving down, which rewrites the cell below, is tested.
-    (emjupy-move-cell-up . "rewrites the cell above, which here holds the edit"))
+    (emjupy-latex-unrender-or-delete . "deletes a character when there is no formula"))
   "Commands the undo guard does not run, each with the reason.
 
 Being on this list is a decision; being absent from it is not, which is

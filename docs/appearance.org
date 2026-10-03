@@ -130,7 +130,7 @@ cells is hidden.  The numbers are the buffer's own, so they skip a value
 where a cell ends.  The rules narrow to make room for the number column
 when it is turned on.
 
-Two rules are exceptions, and on the TODO list: the first cell's header,
+Two rules are exceptions: the first cell's header,
 which has no line above it, takes line 1's number, and the last cell's
 footer is drawn on a numbered line at the end of the buffer.
 

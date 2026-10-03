@@ -1,5 +1,5 @@
 #+TITLE: emjupy documentation
-#+PREVIOUS_PAGE: index.org
+#+PREVIOUS_PAGE: limitations.org
 #+NEXT_PAGE:     usage.org
 
 =emjupy= edits and runs Jupyter python notebooks in Emacs. It talks to a
@@ -165,4 +165,3 @@ integration, =emjupy= is Python only (other kernels untested), needs
 - [[file:design.org][How it works]]
 - [[file:development.org][Building and development]]
 - [[file:limitations.org][Known limitations]]
-- [[file:todo.org][TODO list of improvements]]

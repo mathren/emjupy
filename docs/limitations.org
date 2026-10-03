@@ -1,6 +1,6 @@
 #+TITLE: Known limitations
 #+PREVIOUS_PAGE: development.org
-#+NEXT_PAGE: todo.org
+#+NEXT_PAGE: index.org
 
 * Multiple cursors
 
@@ -87,4 +87,4 @@ could not be seen from 30; see [[file:development.org][Building and development]
 
 * Open issues
 
-Faults known but not yet fixed are kept in [[file:todo.org][the TODO list]].
+Faults known but not yet fixed are kept as [[https://github.com/mathren/emjupy/issues][issues on GitHub]].

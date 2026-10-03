@@ -1186,7 +1186,7 @@ The kernel exits without replying; the server restarts it.  The cell
 must stop showing as running, rather than wait for a reply that will
 never come.
 
-Expected to fail, and in todo.org.  The server restarts the kernel about
+Expected to fail.  The server restarts the kernel about
 four seconds later but sends nothing over the notebook\'s connection --
 no \"restarting\" status, no close -- and its REST API reports the new
 kernel as \"starting\", so nothing that arrives says the run is over.

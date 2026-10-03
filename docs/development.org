@@ -350,8 +350,7 @@ cell, insert another before it, backspace.
 ** Expected failures
 
 A test for a fault that is known but not yet fixed is marked
-=:expected-result :failed=, with the reason in its docstring and an entry
-in [[file:todo.org][the TODO list]].  The suite stays green, the fault stays visible, and
+=:expected-result :failed=, with the reason in its docstring.  The suite stays green, the fault stays visible, and
 a fix shows up as an unexpected pass -- the cue to take the marking off.
 
 ** The notebook corpus

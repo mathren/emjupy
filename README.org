@@ -176,4 +176,3 @@ The full documentation lives in [[file:docs/index.org][docs/]]:
 - [[file:docs/design.org][How it works]]
 - [[file:docs/development.org][Building and development]]
 - [[file:docs/limitations.org][Known limitations]]
-- [[file:docs/todo.org][TODO list of improvements]]

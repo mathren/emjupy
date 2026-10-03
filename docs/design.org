@@ -1,6 +1,6 @@
 #+TITLE: How it works
-#+PREVIOUS_PAGE: development.org
-#+NEXT_PAGE: troubleshooting.org
+#+PREVIOUS_PAGE: troubleshooting.org
+#+NEXT_PAGE: development.org
 
 * Architecture
 
