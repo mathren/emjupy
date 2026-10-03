@@ -2653,7 +2653,7 @@ makes it work for a remote kernel with no TRAMP and no configuration."
           (setf (emjupy-notebook-path emjupy--buffer-notebook) "subdir/nb.ipynb")
           (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
           (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
-                    ((symbol-function 'emjupy--path-exists-p) (lambda (&rest _) nil))
+                    ((symbol-function 'emjupy--http-exists-p) (lambda (&rest _) nil))
                     ((symbol-function 'emjupy--http-request)
                      (lambda (method _s path &optional body &rest _)
                        (setq sent (list method path body))
@@ -2679,7 +2679,7 @@ makes it work for a remote kernel with no TRAMP and no configuration."
           (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
           (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
           (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
-                    ((symbol-function 'emjupy--path-exists-p) (lambda (&rest _) t))
+                    ((symbol-function 'emjupy--http-exists-p) (lambda (&rest _) t))
                     ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
                     ((symbol-function 'emjupy--http-request)
                      (lambda (&rest _) (error "should not have written"))))
@@ -2699,7 +2699,7 @@ makes it work for a remote kernel with no TRAMP and no configuration."
         (end-of-line)
         (insert " + 41")
         (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
-                  ((symbol-function 'emjupy--path-exists-p) (lambda (&rest _) nil))
+                  ((symbol-function 'emjupy--http-exists-p) (lambda (&rest _) nil))
                   ((symbol-function 'emjupy--http-request)
                    (lambda (_m _s _p &optional body &rest _)
                      (setq written (gethash "content"
@@ -3487,7 +3487,9 @@ A 403 there is the expected answer for a server that DOES want a token,
 not a failure worth showing."
   (let ((shown nil))
     (cl-letf (((symbol-function 'emjupy--http-request)
-               (lambda (&rest _) (error "[Jupyter HTTP 403] GET: Forbidden")))
+               ;; as the real request raises it
+               (lambda (&rest _) (signal 'emjupy-http-status
+                                         (list "[Jupyter HTTP 403] GET: Forbidden"))))
               ((symbol-function 'message)
                (lambda (f &rest args) (when f (push (apply #'format f args) shown)) nil)))
       (should-not (emjupy--server-reachable-p
@@ -7433,6 +7435,59 @@ of a message with two buffers; the buffers come back byte for byte."
     (should (string-match-p "<script src=\"https://cdn.example/embed-amd.js\">" page))
     (should (string-match-p "\"anywidget\":\"file:///tmp/m/anywidget.js\"" page))
     (should (string-match-p "<title>Counter</title>" page))))
+
+(ert-deftest emjupy-test-export-py-does-not-take-a-failure-for-absence ()
+  "Export asks before overwriting; a failed check is not \"not there\".
+The check took any failure -- a 403, a server error -- for a file that
+does not exist, so the export overwrote it without asking.  Now a 404 is
+\"not there\" and anything else is raised, and nothing is written."
+  (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+         (cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                          :outputs [] :metadata (make-hash-table)))))
+    (dolist (case '((403 . refused) (404 . written)))
+      (let ((wrote nil))
+        (emjupy-test--with-notebook cells buf nb
+          (with-current-buffer buf
+            (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+            (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
+            (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                      ((symbol-function 'yes-or-no-p)
+                       (lambda (&rest _) (error "Should not ask: the file is not there")))
+                      ((symbol-function 'emjupy--http-request)
+                       (lambda (method _s path &rest _)
+                         (if (equal method "GET")
+                             (signal 'emjupy-http-status
+                                     (list (format "[Jupyter HTTP %d] GET %s" (car case) path)))
+                           (setq wrote path)))))
+              (ert-info ((format "%d" (car case)))
+                (if (eq (cdr case) 'refused)
+                    (progn (should-error (emjupy-export-py) :type 'emjupy-http-status)
+                           (should-not wrote))
+                  (emjupy-export-py)
+                  (should (equal wrote "/api/contents/nb.py")))))))))))
+
+(ert-deftest emjupy-test-reachability-takes-only-a-failed-request-for-no ()
+  "A failed request means unreachable; a bug in emjupy is raised, not taken for it."
+  (let ((server (make-emjupy-server :base-url "localhost:9" :token "")))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (&rest _) (signal 'emjupy-http-error (list "no server")))))
+      (should-not (emjupy--server-reachable-p server)))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (&rest _) (signal 'wrong-type-argument (list 'stringp 1)))))
+      (should-error (emjupy--server-reachable-p server) :type 'wrong-type-argument))))
+
+(ert-deftest emjupy-test-a-refused-session-says-why ()
+  "A session the server would not start is reported with its reason."
+  (let ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+        (said nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (&rest _) (signal 'emjupy-http-status
+                                         (list "[Jupyter HTTP 403] POST: token refused"))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (setq said (apply #'format fmt args)))))
+      (should-not (emjupy--start-kernel-session
+                   (make-emjupy-notebook :server server :path "nb.ipynb")))
+      (should (string-match-p "Could not start a session for nb.ipynb.*token refused" said)))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

@@ -740,11 +740,16 @@ the caller can fall back to a bare kernel."
       (puthash "type" "notebook" body)
       (puthash "name" (file-name-nondirectory path) body)
       (puthash "kernel" kspec body)
-      (condition-case nil
+      (condition-case err
           (let ((res (emjupy--http-request "POST" server "/api/sessions"
                                            (json-serialize body))))
             (and (hash-table-p res) (gethash "kernel" res)))
-        (error nil)))))
+        ;; Its callers carry on without a session; the server's reason --
+        ;; a token refused, a kernel it does not have -- is said, not lost.
+        (emjupy-http-error
+         (message "[emjupy] Could not start a session for %s: %s"
+                  path (error-message-string err))
+         nil)))))
 
 (defun emjupy--spawn-and-connect-kernel (notebook)
   "Start a fresh Python 3 kernel on NOTEBOOK's server and attach it.

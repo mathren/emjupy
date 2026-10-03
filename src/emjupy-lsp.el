@@ -119,9 +119,13 @@ Whatever `/lsp/status' lists.  \"pylsp\" is the usual Python one."
 Frames are plain JSON, one message each -- `jupyter-lsp' has already
 stripped the Content-Length framing LSP uses over a pipe."
   (let* ((text (websocket-frame-text frame))
-         (msg (condition-case nil
+         (msg (condition-case err
                   (json-parse-string text :object-type 'hash-table)
-                (json-error nil))))
+                ;; dropped -- it cannot be answered -- but said
+                (json-error
+                 (message "[emjupy] The language server sent what is not JSON: %s"
+                          (error-message-string err))
+                 nil))))
     (when (hash-table-p msg)
       (let ((id (gethash "id" msg)))
         ;; Responses only.  Server-initiated requests and notifications --
@@ -642,11 +646,15 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
 (defun emjupy--eglot-receive (server frame)
   "Hand the message in FRAME to SERVER, as if it had come from a process."
   (let* ((text (websocket-frame-text frame))
-         (msg (condition-case nil
+         (msg (condition-case err
                   (json-parse-string text :object-type 'plist
                                      :null-object nil
                                      :false-object :json-false)
-                (json-error nil))))
+                ;; dropped -- it cannot be answered -- but said
+                (json-error
+                 (message "[emjupy] The language server sent what is not JSON: %s"
+                          (error-message-string err))
+                 nil))))
     (when msg
       (jsonrpc-connection-receive
        server

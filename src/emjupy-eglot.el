@@ -473,9 +473,13 @@ is whether the attached one is ours.  One that is not is shut down."
        ((null server) t)
        ((object-of-class-p server 'emjupy-eglot-server) nil)
        (t
-        (condition-case nil
+        ;; It is being replaced either way; a shutdown it does not answer
+        ;; leaves it to end with Emacs, and the user is told.
+        (condition-case err
             (eglot-shutdown server)
-          (jsonrpc-error nil))
+          (jsonrpc-error
+           (message "[emjupy] The local language server did not shut down: %s"
+                    (error-message-string err))))
         t)))))
 
 (defun emjupy--shadow-file-path (nb)

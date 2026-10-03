@@ -976,7 +976,7 @@ character before it, so typing after a keyword picks up that keyword's
 face."
   (unless emjupy--refontifying
     (when emjupy--buffer-notebook
-      (condition-case nil
+      (condition-case err
           (let* ((lo (max (point-min) (min beg (point-max))))
                  (cell (or (and (< lo (point-max)) (get-text-property lo 'emjupy-cell))
                            (and (> lo (point-min))
@@ -984,7 +984,11 @@ face."
                            (and (< end (point-max))
                                 (get-text-property end 'emjupy-cell)))))
             (when cell (emjupy--refontify-cell cell)))
-        (error nil)))))
+        ;; Caught: an error in a change hook makes Emacs remove the hook,
+        ;; and highlighting would stop for the rest of the session.  But
+        ;; said, not swallowed.
+        (error (message "[emjupy] Could not highlight the edit: %s"
+                        (error-message-string err)))))))
 
 (defcustom emjupy-hidden-output-glyph "▼"
   "Glyph marking an output box that is collapsed."

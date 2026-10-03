@@ -74,9 +74,11 @@ asked for.  Contents is both genuinely protected and the thing emjupy
 actually needs."
   (let ((inhibit-message t)
         (message-log-max nil))
+    ;; A failed request -- refused, or no server -- is the answer "no";
+    ;; anything else is a bug, and is raised rather than taken for it.
     (condition-case nil
         (and (emjupy--http-request "GET" server "/api/contents") t)
-      (error nil))))
+      (emjupy-http-error nil))))
 
 (defun emjupy--resolve-token (base-url explicit)
   "Work out the token for BASE-URL, prompting only when unavoidable.
@@ -714,12 +716,6 @@ buffer per server, so several tunnels can be inspected side by side."
 (defalias 'emjupy-notebook-list #'emjupy-server-dashboard
   "Alias for `emjupy-server-dashboard\'.")
 
-(defun emjupy--path-exists-p (server path)
-  "Return non-nil if PATH already exists on SERVER."
-  (condition-case nil
-      (and (emjupy--http-request "GET" server (emjupy--contents-path path)) t)
-    (error nil)))
-
 (defvar emjupy--export-history nil
   "Minibuffer history for export destinations.")
 
@@ -798,7 +794,9 @@ file name works there, if you would rather push it somewhere else."
              (body (make-hash-table :test 'equal)))
         (when (string-empty-p (string-trim path))
           (user-error "No destination given"))
-        (when (and (emjupy--path-exists-p server path)
+        ;; A 404 is "not there"; any other failure is not an answer, and
+        ;; is raised -- taking it for "not there" overwrote without asking.
+        (when (and (emjupy--http-exists-p server path)
                    (not (yes-or-no-p (format "%s exists on %s.  Overwrite it? "
                                              path (emjupy--server-label server)))))
           (user-error "Not overwriting %s" path))
