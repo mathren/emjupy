@@ -151,7 +151,7 @@ path can exist on two servers and one buffer cannot stand for both. The
 =analysis.ipynb= don't clobber each other's code.
 
 If a tunnel drops and the remote kernel keeps running,
-use =emjupy-reconnect-kernel= to re-establish emacs's
+use =emjupy-reconnect-kernel= to re-establish Emacs's
 socket and your session state survives.
 
 * Access tokens

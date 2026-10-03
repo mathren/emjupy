@@ -5,7 +5,31 @@
 Completion, documentation, definitions and the rest, from a language
 server that sees the environment the code will run in.
 
+* The server next to the kernel
+
+emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
+Jupyter server*, over that server's own WebSocket -- the same transport
+the notebook already uses, and the arrangement JupyterLab's
+=jupyterlab-lsp= uses.
+
+The consequences are worth stating plainly:
+
+- *Nothing written on the remote.* The code is sent in-band with
+  =didChange=, which is what LSP is for.  The local shadow file is
+  written once, when it is created, for =eglot= to attach to.
+- *No second connection.* Completion and documentation use no TRAMP, no
+  ssh and no directory probing: measured, zero remote filesystem
+  operations.  Only opening a definition that lives on the kernel's
+  machine goes over TRAMP, since that is a file there.
+- *The right environment.* The server runs beside the kernel, so
+  completions describe the packages the code will actually import, and
+  =M-.= finds your own modules because the server resolves them against
+  the notebook's own directory.
+
 * Requirements
+:PROPERTIES:
+:CUSTOM_ID: requirements
+:END:
 
 Two packages must be installed in the Python environment that runs
 =jupyter server=:
@@ -147,27 +171,6 @@ connection class.  Loaded is not started -- nothing connects to a
 language server until a notebook asks for completion or documentation,
 and =emjupy= works without one.
 
-* Language support: the server next to the kernel
-
-emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
-Jupyter server*, over that server's own WebSocket -- the same transport
-the notebook already uses, and the arrangement JupyterLab's
-=jupyterlab-lsp= uses.
-
-The consequences are worth stating plainly:
-
-- *Nothing written on the remote.* The code is sent in-band with
-  =didChange=, which is what LSP is for.  The local shadow file is
-  written once, when it is created, for =eglot= to attach to.
-- *No second connection.* Completion and documentation use no TRAMP, no
-  ssh and no directory probing: measured, zero remote filesystem
-  operations.  Only opening a definition that lives on the kernel's
-  machine goes over TRAMP, since that is a file there.
-- *The right environment.* The server runs beside the kernel, so
-  completions describe the packages the code will actually import, and
-  =M-.= finds your own modules because the server resolves them against
-  the notebook's own directory.
-
 * Language server requests
 
 Requests are asynchronous.  eldoc runs after every command, so a
@@ -222,11 +225,9 @@ until the host answers again.
 
 * Falling back
 
-Set =emjupy-lsp-enabled= to nil to use the older =eglot= shadow-file
-arrangement, which needs no =jupyter-lsp= on the server but has the
-costs described in the sections above: the language server runs on this
-machine, unless =emjupy-shadow-host= says how to reach the kernel's, in
-which case it runs there over TRAMP.
+Set =emjupy-lsp-enabled= to nil for the older arrangement, which needs no
+=jupyter-lsp= on the server: the language server runs on this machine, or
+over SSH beside the kernel -- set up as in [[file:remote.org][Working with a remote server]].
 
 * Checking it from the shell
 

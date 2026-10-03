@@ -38,19 +38,13 @@ The language server answering is on this machine, not beside the
 kernel, so it cannot see the files the kernel can.  =M-x
 emjupy-lsp-diagnose= will say "a local process", and =M-x emjupy-version=
 "language server on this machine".  Install =jupyter-lsp=
-and a language server in the environment running =jupyter server=:
-
-#+begin_src bash
-pip install jupyter-lsp 'python-lsp-server[all]'
-#+end_src
-
-and restart the server.  "Remote =M-.= needs remote LSP" in
-[[file:language-server.org][Language server support]] has the details.
+and a language server where =jupyter server= runs -- see [[file:language-server.org::#requirements][Requirements]]
+-- and restart the server.
 
 * A cell shows as running and never finishes
 
 If the cell is not really still working, the kernel most likely died --
 out of memory, or the code exited -- and the server restarted it without
 telling the notebook.  =C-c C-x C-c= reconnects to the kernel now there
-and ends the run; anything the old kernel held is gone.  See [[file:limitations.org][Known
-limitations]].
+and ends the run; anything the old kernel held is gone.  Why, in
+[[file:limitations.org][Known limitations]].

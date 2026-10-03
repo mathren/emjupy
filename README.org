@@ -24,7 +24,7 @@ whatever completion setup you already have (=vertico=, =corfu=,
 =orderless= or anything else).
 
 Interactive plots and widgets can be shown in an external window or
-browser (see [[file:docs/usage.org::*Interactive output][Interactive output]] and [[file:docs/appearance.org::*Gifs and Screenshots gallery][Gifs and Screenshots gallery]]).
+browser (see [[file:docs/usage.org::*Interactive output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]).
 
 * Try it in under 2 minutes with =emacs -Q=...
 
@@ -95,11 +95,16 @@ your own notebooks, jump to step 4.
 - completion, documentation and =M-.= through =eglot=, from a language
   server running beside the kernel via =jupyter-lsp=
 - resilient to connection drops (remote kernel keeps running,
-  reconnect emacs)
+  reconnect Emacs)
 - toggle hide/show output without re-running cells
+- interactive plotly figures open in a window of their own; =ipywidgets=
+  controls work in the buffer, and widgets that draw themselves open in
+  a live page
+- every cell command -- insert, delete, move, split, join -- is undone
+  and redone like any edit
 - =ein=-like workflow and key bindings
-- =emjupy-notebook-list= similar to =ein:notebooklist= allows to navigate
-  notebook and adjacent files
+- =emjupy-notebook-list=, like =ein:notebooklist=, to browse notebooks and
+  the files beside them
 
 * Installation
 
@@ -131,7 +136,7 @@ the package installs but =emjupy= cannot be loaded.
 Alternatively, =M-x package-install-file= on the tarball =make package=
 builds (see [[file:docs/development.org][Building & development]]).
 
-* Landscape of other emacs/jupyter packages
+* Landscape of other Emacs and Jupyter packages
 
 | Feature                                                           | =emjupy=       | =ein= | =emacs-jupyter= | =ob-jupyter= |
 |-------------------------------------------------------------------+--------------+-----+---------------+------------|
@@ -157,12 +162,6 @@ also talk to a server's REST API through TRAMP-style
 =/jpy:host#port:name= names. In exchange for notebook-level =eglot=
 integration, =emjupy= is Python only (other kernels untested), needs
 =jupyter-lsp= on the server, and requires Emacs 30.1+.
-
-=ein= was my working tool for more than a decade, but it is
-[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]], and the use of =polymode= makes it hard to use =eglot=. I
-need to share code with non-emacs users, so =ob-jupyter= isn't an
-option, and =emacs-jupyter= doesn't seem the right tool for me.
-
 
 * Documentation
 

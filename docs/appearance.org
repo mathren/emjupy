@@ -2,10 +2,10 @@
 #+PREVIOUS_PAGE: keybindings.org
 #+NEXT_PAGE: remote.org
 
-* Gifs and Screenshots gallery
+* GIFs and screenshots
 
-On a plain emacs installation, you should see something like:
-#+CAPTION: Notebook rendering in a fresh emacs with no customization.
+On a plain Emacs installation, you should see something like:
+#+CAPTION: Notebook rendering in a fresh Emacs with no customization.
 #+ATTR_HTML: :width 75%
 [[file:./images/screenshot-default-colored.png]]
 

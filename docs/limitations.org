@@ -26,21 +26,18 @@ tool, work as in any file; =C-c C-c= there writes the changes back.
 
 * A kernel that dies mid-cell leaves the cell running
 
-If the kernel process dies while a cell runs -- it runs out of memory,
-say -- the server restarts it but does not tell emjupy, and the cell
-goes on showing as running.  The new kernel works; interrupt with
-=C-c C-z= or run another cell.  A connection that drops is noticed, and
-the cells running on it are ended.
+If the kernel dies while a cell runs -- it runs out of memory, or the
+code exits the process -- the server restarts it but sends nothing over
+the notebook's connection to say so, and the cell goes on showing as
+running.  =C-c C-x C-c= reconnects to the new kernel and ends the run;
+the dead kernel's variables are gone.  A connection that drops, by
+contrast, is noticed, and the cells running on it are ended.
 
 * Language features need the language server beside the kernel
 
-Completion, documentation and =M-.= come from a language server.  For
-a kernel on another machine, only a server running *there* -- through
-=jupyter-lsp= -- can see your own modules and the kernel's Python.
-Without one, emjupy falls back to a language server on this machine,
-says so when it starts, and =M-.= into your own code finds nothing,
-while the standard library resolves to this machine's copy.  See
-[[file:language-server.org][Language server support]].
+For a kernel on another machine, completion of your own code and =M-.=
+into it need =jupyter-lsp= and a language server where the kernel runs.
+See [[file:language-server.org][Language server support]].
 
 * Rich output: what is drawn in the buffer
 
@@ -82,15 +79,6 @@ set up for them: cells borrow =python-mode='s syntax and comment
 settings (=emjupy-language-mode= changes that), the shadow document the
 language server reads is a =.py= file, and the language-server settings
 are written for =python-lsp-server=.  None of it has been tried.
-
-* A kernel that dies mid-cell
-
-If the kernel dies while a cell runs -- it runs out of memory, or the
-code exits the process -- the cell keeps showing as running.  The server
-restarts the kernel but sends nothing over the notebook's connection to
-say so.  =C-c C-x C-c= reconnects to the new kernel and ends the run;
-the dead kernel's variables are gone.  A dropped connection, by
-contrast, is noticed, and the cells running on it are ended.
 
 * Emacs 30.1 or later
 
