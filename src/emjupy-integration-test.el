@@ -1504,5 +1504,87 @@ c = Counter(); c" 60))
              (websocket-close ws)
              (remhash token emjupy--bridge-pages))))))))
 
+(ert-deftest emjupy-int-real-tqdm-is-one-bar-updated-in-place ()
+  "A real tqdm bar, with prints in its loop, is one line redrawn in place.
+
+The other progress-bar tests write the carriage returns themselves; this
+one runs tqdm, whose timing and width are its own.  Watched while it
+runs: never more than one bar line, its percentage only rising.  At the
+end: one bar at 100%, each printed line once and in order below it,
+nothing wider than the cell.  And what is kept, and saved, is the bar
+as it last stood, not every frame tqdm drew over."
+  (emjupy-int--with-live-kernel
+   (with-current-buffer emjupy-int--buffer
+     (let* ((cell (aref (emjupy-notebook-cells emjupy--buffer-notebook) 0))
+            (inhibit-read-only t)
+            (bar-lines
+             (lambda ()
+               (let ((ov (emjupy-cell-output-ov cell)))
+                 (when (overlayp ov)
+                   (cl-remove-if-not
+                    (lambda (l) (string-match-p "[0-9]+%|" l))
+                    (split-string (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))
+                                  "\n"))))))
+            (percent (lambda (line) (and line (string-match "\\([0-9]+\\)%|" line)
+                                         (string-to-number (match-string 1 line)))))
+            (seen nil))
+       (let ((ov (emjupy-cell-overlay cell)))
+         (delete-region (overlay-start ov) (1- (overlay-end ov)))
+         (goto-char (overlay-start ov))
+         (insert "import time
+from tqdm import tqdm
+for i in tqdm(range(50)):
+    if i % 10 == 0:
+        print('step', i)
+    time.sleep(0.05)
+print('done')"))
+       (emjupy-execute-cell-at-point)
+       ;; watched while it runs
+       (let ((deadline (+ (float-time) 30)))
+         (while (and (< (float-time) deadline)
+                     (not (member (emjupy-cell-id cell) emjupy--running-cells))
+                     (not (funcall bar-lines)))
+           (accept-process-output nil 0.05))
+         (while (and (< (float-time) deadline)
+                     (member (emjupy-cell-id cell) emjupy--running-cells))
+           (emjupy-flush-output (current-buffer))
+           (let ((bars (funcall bar-lines)))
+             (should (<= (length bars) 1))
+             (when bars (push (funcall percent (car bars)) seen)))
+           (accept-process-output nil 0.1)))
+       (emjupy-int--pump 2)
+       (emjupy-flush-output (current-buffer))
+       (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+         (ert-skip "tqdm is not installed where the kernel runs"))
+       ;; it was seen moving, and only forward
+       (setq seen (nreverse (delq nil seen)))
+       (should (> (length (delete-dups (copy-sequence seen))) 2))
+       (should (equal seen (sort (copy-sequence seen) #'<=)))
+       ;; one bar, finished
+       (let ((bars (funcall bar-lines)))
+         (should (= (length bars) 1))
+         (should (string-match-p "100%|" (car bars)))
+         (should (string-match-p "50/50" (car bars))))
+       ;; every printed line once, in order
+       (let ((text (buffer-substring-no-properties
+                    (overlay-start (emjupy-cell-output-ov cell))
+                    (overlay-end (emjupy-cell-output-ov cell)))))
+         (should (equal (cl-loop with start = 0
+                                 while (string-match "^\\(step [0-9]+\\|done\\)" text start)
+                                 collect (match-string 1 text)
+                                 do (setq start (match-end 0)))
+                        '("step 0" "step 10" "step 20" "step 30" "step 40" "done"))))
+       ;; nothing wider than the cell
+       (let ((width (emjupy--box-width)))
+         (dolist (l (funcall bar-lines))
+           (should (<= (string-width (string-trim-right l)) width))))
+       ;; and kept as its last state: the frames tqdm drew over are not
+       ;; saved, as JupyterLab saves them, so the notebook holds one bar
+       (let ((stderr (cl-loop for o across (emjupy-cell-outputs cell)
+                              when (equal (gethash "name" o) "stderr")
+                              concat (emjupy--mime-text (gethash "text" o)))))
+         (should (= (cl-count ?% stderr) 1))
+         (should (string-match-p "100%|.*50/50" stderr)))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here
