@@ -130,30 +130,45 @@ Pending on MELPA.
 
 * Landscape of other Emacs and Jupyter packages
 
-| Feature                                                           | =emjupy=       | =ein= | =emacs-jupyter= | =ob-jupyter= |
-|-------------------------------------------------------------------+--------------+-----+---------------+------------|
-| Notebook-style buffer of cells                                    | ✓            | ✓   | ✗             | ✗          |
-| Reads and writes standard =.ipynb=                                  | ✓            | ✓   | ✗             | ✗          |
-| Notebook list UI                                                  | ✓            | ✓   | ✗             | ✗          |
-| Interactive widgets                                               | ✓ (external) | ✗   | ?             | ?          |
-| Kernel via Jupyter server HTTP + WebSocket (ssh tunnel is enough) | ✓            | ✓   | ✓             | ✓          |
-| No =emacs-zmq= dynamic module required                              | ✓            | ✓   | ✗             | ✗          |
-| =eglot= (completion, =M-.=, rename across cells)                      | ✓            | ✗   | ✗             | ✗          |
-| Kernels other than Python                                         | ✗            | ✓   | ✓             | ✓          |
+| Feature                                                           | =emjupy= | =ein= | =emacs-jupyter=  | =ob-jupyter= |
+|-------------------------------------------------------------------+----------+-------+------------------+--------------|
+| Notebook-style buffer of cells                                    | ✓        | ✓     | ✗                | ✗            |
+| Reads and writes standard =.ipynb=                                | ✓        | ✓     | ✗                | ✗            |
+| Notebook list UI                                                  | ✓        | ✓     | ✗                | ✗            |
+| Undo across cell operations                                       | ✓        | ✗     | –                | ✓            |
+| Interactive widgets                                               | ✓        | ✗     | ~ (in a browser) | ?            |
+| Kernel via Jupyter server HTTP + WebSocket (ssh tunnel is enough) | ✓        | ✓     | ✓                | ✓            |
+| No =emacs-zmq= dynamic module required                            | ✓        | ✓     | ✗                | ✗            |
+| =eglot= (completion, =M-.=, rename across cells)                  | ✓        | ✗     | ✗                | ✗            |
+| Kernels other than Python                                         | ✗        | ✓     | ✓                | ✓            |
+| Oldest Emacs supported                                            | 30.1     | 26.1  | 27               | 27           |
+| Maintained                                                        | ✓        | ✗     | ✓                | ✓            |
 
-✓ = supported, ✗ = not supported (checked <2026-10-02 Fri>).
+✓ = supported, ✗ = not supported, ~ = partly, – = does not apply (a REPL
+has no cell operations), ? = not documented.  Checked <2026-10-03 Sat>
+against each project's README and package header.
 
 The packages differ mainly in what they edit and how they reach the
 kernel. =ein= and =emjupy= edit =.ipynb= notebooks in a buffer of cells over
 the HTTP and WebSocket API of a Jupyter server, which is why an ssh
 tunnel is enough. =emacs-jupyter= is a kernel client built around a REPL
 and Org-babel source blocks, so it has no notebook buffer and does not
-read =.ipynb=. Its ZMQ transport needs the =emacs-zmq= dynamic module and
-cannot reach the kernels behind a notebook server, although it can
-also talk to a server's REST API through TRAMP-style
-=/jpy:host#port:name= names. In exchange for notebook-level =eglot=
-integration, =emjupy= is Python only (other kernels untested), needs
-=jupyter-lsp= on the server, and requires Emacs 30.1+.
+read =.ipynb=. It requires the =emacs-zmq= dynamic module, whose ZMQ
+transport cannot reach the kernels behind a notebook server, although it
+can also talk to a server's REST API through TRAMP-style
+=/jpy:host#port:name= names; its widget support is experimental, through
+an external browser. In exchange for notebook-level =eglot= integration,
+=emjupy= is Python only (other kernels untested), needs =jupyter-lsp= on
+the server, and requires Emacs 30.1+.
+
+=ein= was my working tool for more than a decade, but it is
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]] -- its README has called it sunset since 2023, and its
+architecture "fundamentally incompatible with LSP".  That README now
+points to [[https://github.com/commercial-emacs/xjupyter][xjupyter]], a greenfield successor at version 0.0.1, which runs
+local kernels through a Python =jupyter_client= helper rather than a
+Jupyter server, and needs =mode-overlay=, which GNU Emacs 30.1 does not
+have.  I need to share code with non-emacs users, so =ob-jupyter= isn't
+an option, and =emacs-jupyter= doesn't seem the right tool for me.
 
 * Rest of these docs
 - [[file:usage.org][Using a notebook]]
