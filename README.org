@@ -138,19 +138,19 @@ builds (see [[file:docs/development.org][Building & development]]).
 
 * Landscape of other Emacs and Jupyter packages
 
-| Feature                                                           | =emjupy= | =ein= | =emacs-jupyter=  | =ob-jupyter= |
-|-------------------------------------------------------------------+----------+-------+------------------+--------------|
-| Notebook-style buffer of cells                                    | ✓        | ✓     | ✗                | ✗            |
-| Reads and writes standard =.ipynb=                                | ✓        | ✓     | ✗                | ✗            |
-| Notebook list UI                                                  | ✓        | ✓     | ✗                | ✗            |
-| Undo across cell operations                                       | ✓        | ✗     | –                | ✓            |
-| Interactive widgets                                               | ✓        | ✗     | ~ (in a browser) | ?            |
-| Kernel via Jupyter server HTTP + WebSocket (ssh tunnel is enough) | ✓        | ✓     | ✓                | ✓            |
-| No =emacs-zmq= dynamic module required                            | ✓        | ✓     | ✗                | ✗            |
-| =eglot= (completion, =M-.=, rename across cells)                  | ✓        | ✗     | ✗                | ✗            |
-| Kernels other than Python                                         | ✗        | ✓     | ✓                | ✓            |
-| Oldest Emacs supported                                            | 30.1     | 26.1  | 27               | 27           |
-| Maintained                                                        | ✓        | ✗     | ✓                | ✓            |
+| Feature                                                           | =emjupy= | =ein=  | =emacs-jupyter=    | =ob-jupyter= |
+|-------------------------------------------------------------------+--------+------+------------------+------------|
+| Notebook-style buffer of cells                                    | ✓      | ✓    | ✗                | ✗          |
+| Reads and writes standard =.ipynb=                                  | ✓      | ✓    | ✗                | ✗          |
+| Notebook list UI                                                  | ✓      | ✓    | ✗                | ✗          |
+| Undo across cell operations                                       | ✓      | ✗    | –                | ✓          |
+| Interactive widgets                                               | ✓      | ✗    | ~ (in a browser) | ?          |
+| Kernel via Jupyter server HTTP + WebSocket (ssh tunnel is enough) | ✓      | ✓    | ✓                | ✓          |
+| No =emacs-zmq= dynamic module required                              | ✓      | ✓    | ✗                | ✗          |
+| =eglot= (completion, =M-.=, rename across cells)                      | ✓      | ✗    | ✗                | ✗          |
+| Kernels other than Python                                         | ✗      | ✓    | ✓                | ✓          |
+| Oldest Emacs supported                                            | 30.1   | 26.1 | 27               | 27         |
+| Maintained                                                        | ✓      | ✗    | ✓                | ✓          |
 
 ✓ = supported, ✗ = not supported, ~ = partly, – = does not apply (a REPL
 has no cell operations), ? = not documented.  Checked <2026-10-03 Sat>
