@@ -7,7 +7,7 @@
 ;; needs it so package.el knows the name, version and dependencies without
 ;; loading any code.
 
-(define-package "emjupy" "0.1.7"
+(define-package "emjupy" "0.1.8"
   "Interactive Jupyter notebooks over HTTP and WebSocket"
   '((emacs "30.1")
     (websocket "1.15"))
