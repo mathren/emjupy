@@ -601,7 +601,11 @@ automatically, with nothing for the user to run."
                          (emjupy--shadow-block "timed out")
                          (cl-return-from emjupy--ensure-shadow-buffer nil))
             (make-directory (file-name-directory path) t))
-        (file-error
+        ;; What making a directory there can raise: a file error -- a host
+        ;; unreachable, a permission refused -- or, from TRAMP, a user error
+        ;; for a remote root misconfigured, a method it does not know.
+        ;; Either leaves the notebook open, without language support.
+        ((file-error user-error)
          (emjupy--shadow-block (error-message-string err))
          (cl-return-from emjupy--ensure-shadow-buffer nil))))
     (unless (buffer-live-p buf)

@@ -3317,8 +3317,10 @@ looks exactly like a hang."
         (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/")
               (emjupy-shadow-retry-interval 60))
           (cl-letf (((symbol-function 'make-directory)
-                     (lambda (&rest _) (setq attempts (1+ attempts))
-                       (error "host unreachable"))))
+                     ;; the host unreachable: TRAMP's file error
+                     (emjupy-test--failing-make-directory
+                      "nosuchhost" 'remote-file-error "host unreachable"
+                      (lambda () (setq attempts (1+ attempts))))))
             (dotimes (_ 5)
               (ignore-errors (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))))
           ;; tried once, then left alone
@@ -3327,6 +3329,21 @@ looks exactly like a hang."
           ;; and once the window passes it is willing again
           (setq emjupy--shadow-blocked-until nil)
           (should-not (emjupy--shadow-blocked-p)))))))
+
+(defconst emjupy-test--make-directory (symbol-function 'make-directory)
+  "The real `make-directory', for stubs that fail only for some directories.
+A stub failing every call broke whatever else made one -- TRAMP, loaded
+for the first time inside the test, makes one as it loads.")
+
+(defun emjupy-test--failing-make-directory (dirs error-symbol message &optional on-failure)
+  "Return a `make-directory' failing for directories matching DIRS, a regexp.
+They fail with ERROR-SYMBOL and MESSAGE; any other directory is made.
+ON-FAILURE, a function, is called at each failure -- to count them, say."
+  (lambda (dir &rest args)
+    (if (string-match-p dirs dir)
+        (progn (when on-failure (funcall on-failure))
+               (signal error-symbol (list message)))
+      (apply emjupy-test--make-directory dir args))))
 
 (ert-deftest emjupy-test-shadow-failure-does-not-break-the-notebook ()
   "Editing and running keep working when the language server cannot be set
@@ -3338,7 +3355,9 @@ up: the shadow buffer is a convenience, not the notebook."
         (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
         (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/"))
           (cl-letf (((symbol-function 'make-directory)
-                     (lambda (&rest _) (error "host unreachable"))))
+                     ;; a remote root misconfigured: TRAMP's user error
+                     (emjupy-test--failing-make-directory
+                      "nosuchhost" 'user-error "Method `sshh' is not known")))
             (should-not (emjupy--ensure-shadow-buffer emjupy--buffer-notebook))))
         ;; the notebook itself is untouched
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
@@ -3639,7 +3658,7 @@ first reported the refusal and stopped, the second asked and worked."
                  (setq attempts (1+ attempts))
                  (if (equal (emjupy-server-token server) "right")
                      "kernel-1"
-                   (error "[Jupyter HTTP 403] GET: Forbidden")))))
+                   (signal 'emjupy-http-status (list "[Jupyter HTTP 403] GET: Forbidden"))))))
       (should (eq (emjupy-login "localhost:9999" nil) 'done))
       (should (= asked 1))
       (should (= attempts 2)))))
@@ -3901,11 +3920,11 @@ none."
       ;; the endpoint is not there
       (should (string-match-p
                "jupyter-lsp"
-               (said (lambda (&rest _) (error "[Jupyter HTTP 404] GET: nope")))))
+               (said (lambda (&rest _) (signal 'emjupy-http-status (list "[Jupyter HTTP 404] GET: nope"))))))
       ;; the token is wrong -- which is a 403, not a missing endpoint
       (should (string-match-p
                "token"
-               (said (lambda (&rest _) (error "[Jupyter HTTP 403] GET: Forbidden")))))
+               (said (lambda (&rest _) (signal 'emjupy-http-status (list "[Jupyter HTTP 403] GET: Forbidden"))))))
       ;; present, but nothing installed to run
       (should (string-match-p
                "no language server"
