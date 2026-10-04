@@ -136,6 +136,42 @@ the package installs but =emjupy= cannot be loaded.
 Alternatively, =M-x package-install-file= on the tarball =make package=
 builds (see [[file:docs/development.org][Building & development]]).
 
+
+* Architecture
+
+emjupy speaks to a Jupyter server the way the browser does: HTTP for
+files and kernels, WebSockets for a kernel's messages and the language
+server's.  Everything goes over the server's one port, so a remote
+server needs one SSH tunnel and nothing started on the far side.
+
+#+begin_example
+ Emacs, on this machine                         Jupyter server, here or remote
+┌─────────────────────────────────────┐        ┌───────────────────────────────────────┐
+│ notebook buffer       (emjupy-mode) │  HTTP  │ Contents API ──── .ipynb files        │
+│   cells ⇄ structs ⇄ .ipynb JSON ────┼───────▶│ Sessions and Kernels APIs             │
+│     │ outputs, widget controls      │        │                                       │
+│     ▼                               │   WS   │                          ZMQ          │
+│   kernel connection ────────────────┼───────▶│ /api/kernels/…/channels ──▶ kernel    │
+│                                     │   WS   │                                       │
+│ shadow buffer (.py) ◀── Eglot ──────┼───────▶│ /lsp/ws/… ── jupyter-lsp ──▶ pylsp    │
+│                                     │        │                                       │
+│ figure window ◀── page ◀── bridge   │        └───────────────────────────────────────┘
+└─────────────────────────────────────┘
+   the bridge relays a widget page's messages over the
+   kernel connection above
+#+end_example
+
+- The *notebook buffer* is the notebook: cells drawn as text, kept in
+  step with the cell structs, which are what is saved as =.ipynb=.
+- The *kernel connection* carries execution and its output; widgets'
+  messages too.
+- The *shadow buffer* is every code cell as one Python file, for Eglot,
+  whose language server runs beside the kernel through =jupyter-lsp=.
+- The *figure window* shows what a text buffer cannot -- plotly figures,
+  widgets that draw themselves -- and a widget's page talks back through
+  the *bridge*, a WebSocket server in Emacs, not to the Jupyter server.
+
+
 * Landscape of other Emacs and Jupyter packages
 
 | Feature                                                           | =emjupy= | =ein=  | =emacs-jupyter=    | =ob-jupyter= |

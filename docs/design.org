@@ -2,7 +2,8 @@
 #+PREVIOUS_PAGE: troubleshooting.org
 #+NEXT_PAGE: development.org
 
-* Architecture
+* =emjupy= design
+** Architecture
 
 emjupy speaks to a Jupyter server the way the browser does: HTTP for
 files and kernels, WebSockets for a kernel's messages and the language
@@ -35,11 +36,6 @@ server needs one SSH tunnel and nothing started on the far side.
 - The *figure window* shows what a text buffer cannot -- plotly figures,
   widgets that draw themselves -- and a widget's page talks back through
   the *bridge*, a WebSocket server in Emacs, not to the Jupyter server.
-
-How the code is divided into files, and which may require which, is in
-[[file:development.org][Building and development]].
-
-* =emjupy= design
 
 ** The shadow buffer
 
