@@ -204,12 +204,29 @@ and the answer collected on the first request that needs it."
                  (emjupy--lsp-url server)
                  :on-message (lambda (_ws frame) (emjupy--lsp-handle session frame))
                  :on-close (lambda (_ws) (setf (emjupy-lsp-ready session) nil))
-                 :on-error (lambda (_ws _type _err) nil)))
+                 :on-error #'emjupy--lsp-socket-error))
           session)
+      ;; Everything: `websocket-open' reports a failed connection as a
+      ;; plain error.  What failed is then asked of the server and said.
       (error
        (ignore err)
        (emjupy--lsp-explain-failure server)
        nil))))
+
+(defvar emjupy--lsp-last-failure nil
+  "Why the WebSocket to the language server could not be opened.
+
+Kept so the warning about falling back can say what went wrong, rather
+than leaving the user to find out that anything did.")
+
+(defun emjupy--lsp-socket-error (_ws type err)
+  "Report ERR, raised in the language server WebSocket\='s TYPE callback.
+Given as the socket\='s error handler, which otherwise -- an empty one was
+given -- dropped every error unseen.  Recorded too, in
+`emjupy--lsp-last-failure', for when the echo area has moved on."
+  (let ((what (format "%s: %s" type (error-message-string err))))
+    (setq emjupy--lsp-last-failure what)
+    (message "[emjupy] Language server connection: %s" what)))
 
 (defun emjupy--lsp-explain-failure (server)
   "Say why SERVER has no language server, distinguishing the three causes.
@@ -225,7 +242,8 @@ The WebSocket refusing tells us nothing useful on its own, so ask
        and installs none."
   (let* ((status (condition-case err
                      (emjupy--http-request "GET" server "/lsp/status")
-                   (error (error-message-string err))))
+                   ;; a refusal is the answer looked for; a bug is not
+                   (emjupy-http-error (error-message-string err))))
          (label (emjupy--server-label server)))
     (cond
      ((and (stringp status) (string-match-p "404" status))
@@ -699,11 +717,6 @@ notebook ever opened.  CLEANUP is passed on."
     (when (and cleanup (buffer-live-p (process-buffer proc)))
       (kill-buffer (process-buffer proc)))))
 
-(defvar emjupy--lsp-last-failure nil
-  "Why the WebSocket to the language server could not be opened.
-
-Kept so the warning about falling back can say what went wrong, rather
-than leaving the user to find out that anything did.")
 
 (defcustom emjupy-tell-server-where-modules-are t
   "When non-nil, name the notebook\='s own directory to the language server.
@@ -765,8 +778,12 @@ Returns the server, or nil."
                  (websocket-open (emjupy--lsp-url server)
                                  :custom-header-alist
                                  (emjupy--websocket-auth-headers server)
+                                 ;; replaced by the Eglot connection made
+                                 ;; below, which takes the socket over
                                  :on-message (lambda (_ws _frame) nil)
-                                 :on-error (lambda (&rest _) nil))
+                                 :on-error #'emjupy--lsp-socket-error)
+               ;; Everything: `websocket-open' reports a failed connection
+               ;; as a plain error.
                (error (emjupy--lsp-explain-failure server)
                       (setq emjupy--lsp-last-failure (error-message-string err))
                       nil))))
@@ -814,6 +831,8 @@ Returns the server, or nil."
                 ;; request fell through to a local server instead.
                 (emjupy--ensure-managed-by connected)
                 connected)
+            ;; Everything: the socket is opened and Eglot started here, and
+            ;; either fails with plain errors; the socket is closed whatever.
             (error
              (when (websocket-openp ws) (websocket-close ws))
              ;; Recorded, not just said.  A message in the echo area during

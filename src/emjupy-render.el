@@ -784,6 +784,7 @@ BODY may bring its delimiters or not; see `emjupy--latex-math\='."
                                         (current-buffer) 'dvipng))
             (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
               (create-image file 'png nil :ascent 'center)))
+        ;; Everything: Org reports a failed LaTeX run as a plain error.
         (error
          (message "[emjupy] LaTeX preview failed: %s" (error-message-string err))
          nil)))))
@@ -1616,7 +1617,10 @@ widgets; nil, or a nil return, shows the output\'s `text/plain\=' instead.")
 (defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
   "MIME type of a plotly figure, sent as its JSON specification.")
 
-(declare-function emjupy-open-output "emjupy-figures" (&optional data))
+(defvar emjupy-open-output-function nil
+  "Function opening an output on its own, called with its MIME bundle.
+Set by `emjupy-figures', the layer that opens outputs, when a notebook
+buffer starts; this file is below it, so it does not call it by name.")
 
 (defun emjupy--scripted-html (data)
   "Return the `text/html' of DATA if it has a script in it, or nil.
@@ -1639,7 +1643,9 @@ table -- says the same in its `text/plain', which is shown instead."
 EVENT is the mouse event, when there was one."
   (interactive (list last-nonmenu-event))
   (let ((pos (if (mouse-event-p event) (posn-point (event-start event)) (point))))
-    (emjupy-open-output (get-text-property pos 'emjupy-output-data))))
+    (if emjupy-open-output-function
+        (funcall emjupy-open-output-function (get-text-property pos 'emjupy-output-data))
+      (user-error "Opening an output needs emjupy-figures"))))
 
 (defun emjupy--insert-open-line (what size data)
   "Insert a line standing for an output that is opened elsewhere.
@@ -1694,6 +1700,8 @@ happens inside the WebSocket callback, where websocket.el swallows the
       (condition-case err
           (progn (insert-image (emjupy--render-image-output (nth 2 image) (nth 1 image)))
                  (insert "\n"))
+        ;; Everything: the image is the notebook's data, which may be
+        ;; anything, and what Emacs makes of bad data is a plain error.
         (error
          (insert (format "[emjupy: could not render %s: %s]\n"
                          (nth 0 image) (error-message-string err)))

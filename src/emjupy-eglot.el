@@ -601,7 +601,7 @@ automatically, with nothing for the user to run."
                          (emjupy--shadow-block "timed out")
                          (cl-return-from emjupy--ensure-shadow-buffer nil))
             (make-directory (file-name-directory path) t))
-        (error
+        (file-error
          (emjupy--shadow-block (error-message-string err))
          (cl-return-from emjupy--ensure-shadow-buffer nil))))
     (unless (buffer-live-p buf)
@@ -1218,7 +1218,8 @@ cell in the notebook, automatically."
                         (condition-case err
                             (run-hook-with-args-until-success
                              'completion-at-point-functions)
-                          (error
+                          ;; a server gone between the check and the call
+                          (jsonrpc-error
                            (message "[emjupy] completion unavailable: %s"
                                     (error-message-string err))
                            nil)))))

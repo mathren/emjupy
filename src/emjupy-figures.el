@@ -306,6 +306,12 @@ and a notebook is a file people share."
        (image (emjupy--show-image (nth 1 image) (nth 0 image)))
        (t (user-error "This output has nothing to open"))))))
 
+(defun emjupy-figures-enable ()
+  "Let the lines standing for outputs open them, in this layer.
+Run when a notebook buffer starts, like the other links between layers,
+so that loading this file changes nothing."
+  (setq emjupy-open-output-function #'emjupy-open-output))
+
 (provide 'emjupy-figures)
 
 ;;; emjupy-figures.el ends here

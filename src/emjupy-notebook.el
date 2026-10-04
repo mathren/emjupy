@@ -195,8 +195,9 @@ different kernel. With a prefix argument, always prompt for the token."
     (let ((kernel-id
            (condition-case err
                (emjupy--bind-server-kernel server)
-             (error
-              (if (not (string-match-p "403" (error-message-string err)))
+             ;; Only a refusal is asked about; anything else goes on up.
+             (emjupy-http-status
+              (if (not (eql (emjupy--http-status-of err) 403))
                   (signal (car err) (cdr err))
                 (setf (emjupy-server-token server)
                       (emjupy--read-token
@@ -293,6 +294,9 @@ Returns the notebook buffer."
             (with-current-buffer buf
               (condition-case err
                   (emjupy-connect-kernel nb-struct kernel-id)
+                ;; Everything: connecting opens a WebSocket, and
+                ;; `websocket-open' reports a failure as a plain error.  The
+                ;; notebook opens either way; the kernel is connected later.
                 (error (message "[emjupy] Could not attach kernel %s: %s"
                                 kernel-id (error-message-string err))))))
           ;; Warm up the code shadow-buffer + Eglot now, in the background,
