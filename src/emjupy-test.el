@@ -7484,5 +7484,35 @@ does not exist, so the export overwrote it without asking.  Now a 404 is
                    (make-emjupy-notebook :server server :path "nb.ipynb")))
       (should (string-match-p "Could not start a session for nb.ipynb.*token refused" said)))))
 
+(ert-deftest emjupy-test-undo-map-positions-takes-every-entry-shape ()
+  "Every shape of `buffer-undo-list' entry has its positions moved, or is kept.
+A property change, (nil PROP VALUE BEG . END), is a dotted list, and was
+taken apart with `butlast', which fails on one: \"Wrong type argument:
+listp, END\", raised whenever a mode had put a text property on the
+notebook and output then arrived above it -- so running a cell failed."
+  (let ((plus5 (lambda (x) (+ x 5)))
+        (marker (with-temp-buffer (insert "x") (copy-marker 1))))
+    (dolist (case `((12 17)                                       ; point
+                    ((10 . 20) (15 . 25))                         ; insertion
+                    (("abc" . 10) ("abc" . 15))                   ; deletion
+                    (("abc" . -10) ("abc" . -15))                 ; ... point at its end
+                    ((nil face bold 100 . 1291) (nil face bold 105 . 1296)) ; property
+                    ((apply 3 10 20 ignore x) (apply 3 15 25 ignore x))     ; apply
+                    ((t . 0) (t . 0))                             ; first change
+                    ((,marker . 2) (,marker . 2))                 ; marker adjustment
+                    (nil nil)))                                   ; boundary
+      (ert-info ((format "%S" (car case)))
+        (should (equal (emjupy--undo-map-positions (car case) plus5) (cadr case)))))))
+
+(ert-deftest emjupy-test-a-property-change-survives-a-redraw ()
+  "A recorded property change after a redrawn region is shifted, not fatal."
+  (with-temp-buffer
+    (insert (make-string 100 ?x))
+    (setq buffer-undo-list (list '(nil face bold 50 . 60) '(nil face italic 2 . 4)))
+    ;; text 10..20 redrawn, 7 characters longer
+    (emjupy--undo-adjust 10 20 7)
+    (should (member '(nil face bold 57 . 67) buffer-undo-list))   ; after: shifted
+    (should (member '(nil face italic 2 . 4) buffer-undo-list)))) ; before: kept
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

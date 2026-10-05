@@ -1214,12 +1214,15 @@ text.  The shapes are those Emacs documents for `buffer-undo-list'."
    ;; (BEG . END) -- an insertion
    ((and (integerp (car entry)) (integerp (cdr entry)))
     (cons (funcall fn (car entry)) (funcall fn (cdr entry))))
-   ;; (nil PROP VAL BEG . END) -- a property change
-   ((and (null (car entry)) (consp (last entry))
-         (integerp (car (last entry))) (integerp (cdr (last entry))))
-    (append (butlast entry)
-            (list (cons (funcall fn (car (last entry)))
-                        (funcall fn (cdr (last entry)))))))
+   ;; (nil PROP VAL BEG . END) -- a property change, recorded when a mode
+   ;; puts a text property on the buffer.  A dotted list: `butlast' and
+   ;; `length' fail on it -- "listp, END" -- so it is taken apart by its
+   ;; shape, which is fixed: three elements, then BEG and END.
+   ((and (null (car entry)) (consp (cdr entry)) (consp (cddr entry))
+         (consp (cdddr entry))
+         (integerp (car (cdddr entry))) (integerp (cdr (cdddr entry))))
+    (pcase-let ((`(nil ,prop ,val ,beg . ,end) entry))
+      `(nil ,prop ,val ,(funcall fn beg) . ,(funcall fn end))))
    ;; (apply DELTA BEG END FUN . ARGS)
    ((and (eq (car entry) 'apply) (integerp (nth 2 entry)) (integerp (nth 3 entry)))
     (append (list (nth 0 entry) (nth 1 entry)
