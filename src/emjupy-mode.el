@@ -315,6 +315,7 @@ place to keep up to date, and would be wrong the moment the mode changed
   (add-hook 'emjupy-box-width-changed-functions #'emjupy--tell-kernel-width)
   ;; Closing the notebook closes the connections it opened.
   (add-hook 'kill-buffer-hook #'emjupy--release-notebook nil t)
+  (emjupy-cells-enable)
   (emjupy-figures-enable)
   (emjupy-widgets-enable)
   (emjupy-widget-page-enable)

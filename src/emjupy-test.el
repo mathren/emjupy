@@ -7745,6 +7745,104 @@ buffers is what leaves a notebook in a window not selected."
                   (should (< (string-match "a = 1" (buffer-string))
                              (string-match "b = 2" (buffer-string))))))
             (kill-buffer other)))))))
+(defun emjupy-test--fail-once (fn &optional insert)
+  "Make FN fail the next time it is called, and only then.
+With INSERT, it first inserts that text, so the failure leaves a redraw
+half done, as a real one would.  Returns a function that removes this."
+  (let* ((armed t)
+         (advice (lambda (orig &rest args)
+                   (if (not armed)
+                       (apply orig args)
+                     (setq armed nil)
+                     (when insert (insert insert))
+                     (error "Injected failure in %s" fn)))))
+    (advice-add fn :around advice)
+    (lambda () (advice-remove fn advice))))
+
+(defun emjupy-test--two-cells ()
+  "Return two code cells, the first with a stream output."
+  (let ((out (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" out)
+    (puthash "name" "stdout" out)
+    (puthash "text" "hello\n" out)
+    (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "print('hello')"
+                              :outputs (vector out) :metadata (make-hash-table))
+            (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "y = 2"
+                              :outputs [] :metadata (make-hash-table)))))
+
+(ert-deftest emjupy-test-an-output-redraw-that-fails-is-put-right ()
+  "Output drawn partway when an error strikes leaves no scrambled buffer.
+The error still reaches the user; the buffer is redrawn from the cells
+at once; and what was typed elsewhere, not yet synced, is kept."
+  (let ((cells (emjupy-test--two-cells)))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (emjupy-cells-enable)
+        ;; typed in the second cell, not synced
+        (goto-char (overlay-start (emjupy-cell-overlay (aref cells 1))))
+        (end-of-line)
+        (let ((inhibit-read-only t)) (insert " + 1"))
+        (let ((undo (emjupy-test--fail-once 'emjupy--render-cell-output "half an outp")))
+          (unwind-protect
+              (should-error (emjupy--refresh-cell-output (aref cells 0)))
+            (funcall undo)))
+        (should-not (emjupy--check-invariants))
+        (should (equal (emjupy-cell-source (aref cells 1)) "y = 2 + 1"))
+        (should (string-match-p "hello" (buffer-string)))
+        (should-not (string-match-p "half an outp" (buffer-string)))))))
+
+(ert-deftest emjupy-test-a-structural-redraw-that-fails-is-put-right ()
+  "A cell inserted partway when an error strikes leaves no scrambled buffer."
+  (let ((cells (emjupy-test--two-cells)))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (emjupy-cells-enable)
+        (let ((new (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "z = 3"
+                                     :outputs [] :metadata (make-hash-table)))
+              (undo (emjupy-test--fail-once 'emjupy--render-cell "z =")))
+          (unwind-protect
+              (should-error (emjupy-insert-cell-at nb 1 new))
+            (funcall undo)))
+        (should-not (emjupy--check-invariants))))))
+
+(ert-deftest emjupy-test-undo-adjustment-is-all-or-nothing ()
+  "An undo adjustment that fails partway changes no entry, and keeps no stale one.
+Changed in place one by one, a failure left some entries shifted and the
+rest not, and the next undo wrote text in the wrong places."
+  (with-temp-buffer
+    (insert (make-string 200 ?x))
+    (setq buffer-undo-list (list '(150 . 160) '(120 . 130) '(5 . 8)))
+    (let ((undo (emjupy-test--fail-once 'emjupy--undo-map-positions)))
+      (unwind-protect
+          ;; text 10..20 redrawn, 7 longer: the first entry after it fails
+          (emjupy--undo-adjust 10 20 7)
+        (funcall undo)))
+    ;; before the region: untouched
+    (should (member '(5 . 8) buffer-undo-list))
+    ;; at or after it: gone, none half shifted
+    (should-not (cl-some (lambda (e) (and (consp e) (integerp (car e)) (>= (car e) 10)))
+                         buffer-undo-list))))
+
+(ert-deftest emjupy-test-a-broken-structure-is-put-right-but-typing-is-not-undone ()
+  "The check after redraws repairs a broken structure, never plain typing.
+Text typed and not yet synced differs from the cells; redrawing on that
+would undo the typing, so only the structure is checked."
+  (let ((cells (emjupy-test--two-cells)))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        ;; typing alone: nothing redrawn, the typing still there
+        (goto-char (overlay-start (emjupy-cell-overlay (aref cells 1))))
+        (end-of-line)
+        (let ((inhibit-read-only t)) (insert " + 1"))
+        (let ((text (buffer-string)))
+          (emjupy--check-integrity buf)
+          (should (equal (buffer-string) text)))
+        ;; a broken structure: the second cell's overlay over the first
+        (let ((ov (emjupy-cell-overlay (aref cells 1))))
+          (move-overlay ov (point-min) (overlay-end ov)))
+        (should (emjupy--check-invariants t))
+        (emjupy--check-integrity buf)
+        (should-not (emjupy--check-invariants t))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

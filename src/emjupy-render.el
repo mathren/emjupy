@@ -1201,6 +1201,42 @@ and restarted fontification from scratch each time."
           ;; they are.  An overlay face here would override all of them.
           (setf (emjupy-cell-output-ov cell) ov))))))
 
+(defvar emjupy-redraw-recover-function nil
+  "Function putting the buffer back in step with its cells, or nil.
+Called with one argument: non-nil if what is typed may not be in the
+cells yet, and is to be kept.  Set by `emjupy-cells', which can sync and
+redraw, when a notebook buffer starts; this file is below it.")
+
+(defvar emjupy-after-redraw-function nil
+  "Function called after a redraw finishes, or nil.
+Set by `emjupy-cells', which uses it to check the buffer when Emacs is
+next idle; this file is below it.")
+
+(defvar-local emjupy--recovering nil
+  "Non-nil while the buffer is being redrawn after a redraw failed.")
+
+(defmacro emjupy--atomic-redraw (keep-typing &rest body)
+  "Run BODY, a redraw, so that it happens whole or is put right.
+An error or a quit partway leaves the buffer half drawn -- text replaced
+and its overlays not yet, or the other way round -- which is scrambling:
+what is shown and what the cells hold come apart.  The cells are the
+notebook and the buffer a drawing of them, so when BODY does not finish
+the buffer is redrawn from them at once, and the error goes on up.
+KEEP-TYPING non-nil means text typed may not be in the cells yet and is
+synced first; a structural command syncs before it starts, and passes
+nil."
+  (declare (indent 1) (debug t))
+  (let ((done (make-symbol "done")))
+    `(let ((,done nil))
+       (unwind-protect
+           (prog1 (progn ,@body) (setq ,done t))
+         (cond
+          ((and (not ,done) (not emjupy--recovering) emjupy-redraw-recover-function)
+           (let ((emjupy--recovering t))
+             (funcall emjupy-redraw-recover-function ,keep-typing)))
+          ((and ,done (not emjupy--recovering) emjupy-after-redraw-function)
+           (funcall emjupy-after-redraw-function)))))))
+
 (defun emjupy--undo-entry-position (entry)
   "Return the largest buffer position ENTRY refers to, or nil.
 
@@ -1305,17 +1341,38 @@ entry shape is handled explicitly rather than by pattern-guessing."
     ;; so changing the entries in them reaches all three.  Each cell once:
     ;; the two lists share their tails.  An entry to drop cannot be
     ;; unlinked in place, so it becomes one that does nothing.
-    (dolist (entries (list buffer-undo-list pending-undo-list))
-      (when (consp entries)
-        (let ((c entries))
-          (while (consp c)
-            (unless (gethash c seen)
-              (puthash c t seen)
-              (let ((new (funcall transform (car c))))
-                (setcar c (if (eq new :emjupy-drop)
-                              (list 'apply #'ignore :emjupy-dropped)
-                            new))))
-            (setq c (cdr c))))))
+    ;; All or nothing.  Every new entry is worked out before any is
+    ;; changed: changed in place one by one, a failure partway left some
+    ;; entries shifted and the rest not, and the next undo wrote text in
+    ;; the wrong places -- scrambling the notebook.
+    (let ((changes nil))
+      (condition-case err
+          (progn
+            (dolist (entries (list buffer-undo-list pending-undo-list))
+              (when (consp entries)
+                (let ((c entries))
+                  (while (consp c)
+                    (unless (gethash c seen)
+                      (puthash c t seen)
+                      (push (cons c (funcall transform (car c))) changes))
+                    (setq c (cdr c))))))
+            (pcase-dolist (`(,c . ,new) changes)
+              (setcar c (if (eq new :emjupy-drop)
+                            (list 'apply #'ignore :emjupy-dropped)
+                          new))))
+        ;; Everything: an entry is whatever a mode recorded, and none of it
+        ;; has been changed yet.  The entries from START on are stale now,
+        ;; though, and replaying one writes in the wrong place, so they go:
+        ;; some undo history lost is safe, wrong history is not.
+        (error
+         (emjupy--undo-drop-from start)
+         (when (consp pending-undo-list)
+           (setq pending-undo-list
+                 (cl-remove-if (lambda (e) (let ((p (emjupy--undo-entry-position e)))
+                                             (and p (>= p start))))
+                               pending-undo-list)))
+         (message "[emjupy] Undo history after the redrawn output was dropped: %s"
+                  (error-message-string err)))))
     ;; Outside an undo the placeholders can go for good.
     (unless (or undo-in-progress (consp pending-undo-list))
       (when (consp buffer-undo-list)
@@ -1366,6 +1423,7 @@ means the caller should fall back to a full redraw."
                             (eq (overlay-buffer out) (current-buffer))))
              (start (if live-out (overlay-start out) (overlay-end src)))
              (end (if live-out (overlay-end out) start)))
+        (emjupy--atomic-redraw t
         (let ((new-end start))
           (let ((inhibit-read-only t)
                 (buffer-undo-list t)
@@ -1387,7 +1445,7 @@ means the caller should fall back to a full redraw."
             (emjupy--protect-non-cell-regions))
           ;; Done after the edit, since the shift is the size it turned out
           ;; to be rather than the size expected.
-          (emjupy--undo-adjust start end (- new-end end)))
+          (emjupy--undo-adjust start end (- new-end end))))
         t))))
 
 (defun emjupy--render-cell (cell)

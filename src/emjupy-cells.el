@@ -41,8 +41,10 @@
         (setf (emjupy-cell-source cell)
               (if (string-empty-p (string-trim-right trimmed "[\n]+")) "" trimmed))))))
 
-(defun emjupy--check-invariants ()
+(defun emjupy--check-invariants (&optional structure-only)
   "Return a list of ways this buffer and its cells disagree, or nil.
+With STRUCTURE-ONLY, whether each cell\'s text matches its source is not
+checked: it is false while typing has not yet been synced.
 
 `emjupy--overlays-sane-p' answers whether anything is wrong;  this says
 what, which is the difference between a test that fails and a test that
@@ -84,6 +86,7 @@ and what would be saved have come apart."
           ;; blank lines are not compared: an empty cell is drawn with a
           ;; newline so that it occupies a line and can be typed into, and
           ;; that line is display, not content.
+          (unless structure-only
           (let ((shown (string-trim-right
                         (buffer-substring-no-properties
                          (overlay-start ov) (overlay-end ov))
@@ -92,7 +95,7 @@ and what would be saved have come apart."
                                            "[\n]+")))
             (unless (equal shown stored)
               (push (format "cell %d shows %S but holds %S" index shown stored)
-                    problems)))
+                    problems))))
           (when (overlayp out)
             (if (not (eq (overlay-buffer out) (current-buffer)))
                 (push (format "cell %d's output box is in another buffer" index)
@@ -256,59 +259,60 @@ OLD-CELLS must be adjacent and in buffer order.  KNOWN-SANE skips the
 overlay check, for callers that have already added a cell which has no
 overlay yet.  Returns non-nil when it was done, nil when the caller
 should fall back to a full redraw."
-  (let ((regions (delq nil (mapcar #'emjupy--cell-region old-cells))))
-    (when (and regions
-               (= (length regions) (length old-cells))
-               ;; KNOWN-SANE is for callers that have already put a new cell
-               ;; into the notebook: it has no overlay yet, so the check
-               ;; would fail on the very cell about to be drawn.  They test
-               ;; before mutating instead.
-               (or known-sane (emjupy--overlays-sane-p)))
-      (let ((start (apply #'min (mapcar #'car regions)))
-            (end (apply #'max (mapcar #'cdr regions)))
-            (new-end nil)
-            (following-after nil))
-        (let ((inhibit-read-only t)
-              (buffer-undo-list t)
-              ;; emjupy's own drawing: not an edit to re-highlight
-              (emjupy--refontifying t))
-          (dolist (cell old-cells)
-            (when (overlayp (emjupy-cell-overlay cell))
-              (delete-overlay (emjupy-cell-overlay cell)))
-            (when (overlayp (emjupy-cell-output-ov cell))
-              (delete-overlay (emjupy-cell-output-ov cell)))
-            (setf (emjupy-cell-overlay cell) nil)
-            (setf (emjupy-cell-output-ov cell) nil))
-          ;; The cell that follows may start exactly where this region ends,
-          ;; in which case the text about to be inserted is taken into its
-          ;; overlay and the two come to share a region -- the same fault
-          ;; that inserting a cell had.  Its bounds are noted here and
-          ;; restored afterwards.
-          (setq following-after
-                (let ((cells (and emjupy--buffer-notebook
-                                  (append (emjupy-notebook-cells emjupy--buffer-notebook)
-                                          nil))))
-                  (cl-find-if (lambda (cell)
-                                (let ((ov (emjupy-cell-overlay cell)))
-                                  (and (overlayp ov)
-                                       (eq (overlay-buffer ov) (current-buffer))
-                                       (>= (overlay-start ov) end))))
-                              cells)))
-          (delete-region start end)
-          (save-excursion
-            (goto-char start)
-            (dolist (cell new-cells)
-              (emjupy--render-cell cell))
-            (setq new-end (point)))
-          ;; Put it back where it belongs if it swallowed the new text.
-          (let ((ov (and following-after (emjupy-cell-overlay following-after))))
-            (when (and (overlayp ov)
-                       (eq (overlay-buffer ov) (current-buffer))
-                       (< (overlay-start ov) new-end))
-              (move-overlay ov new-end (max new-end (overlay-end ov)))))
-          (emjupy--protect-non-cell-regions))
-        (emjupy--undo-adjust start end (- new-end end))
-        t))))
+  (emjupy--atomic-redraw nil
+    (let ((regions (delq nil (mapcar #'emjupy--cell-region old-cells))))
+      (when (and regions
+                 (= (length regions) (length old-cells))
+                 ;; KNOWN-SANE is for callers that have already put a new cell
+                 ;; into the notebook: it has no overlay yet, so the check
+                 ;; would fail on the very cell about to be drawn.  They test
+                 ;; before mutating instead.
+                 (or known-sane (emjupy--overlays-sane-p)))
+        (let ((start (apply #'min (mapcar #'car regions)))
+              (end (apply #'max (mapcar #'cdr regions)))
+              (new-end nil)
+              (following-after nil))
+          (let ((inhibit-read-only t)
+                (buffer-undo-list t)
+                ;; emjupy's own drawing: not an edit to re-highlight
+                (emjupy--refontifying t))
+            (dolist (cell old-cells)
+              (when (overlayp (emjupy-cell-overlay cell))
+                (delete-overlay (emjupy-cell-overlay cell)))
+              (when (overlayp (emjupy-cell-output-ov cell))
+                (delete-overlay (emjupy-cell-output-ov cell)))
+              (setf (emjupy-cell-overlay cell) nil)
+              (setf (emjupy-cell-output-ov cell) nil))
+            ;; The cell that follows may start exactly where this region ends,
+            ;; in which case the text about to be inserted is taken into its
+            ;; overlay and the two come to share a region -- the same fault
+            ;; that inserting a cell had.  Its bounds are noted here and
+            ;; restored afterwards.
+            (setq following-after
+                  (let ((cells (and emjupy--buffer-notebook
+                                    (append (emjupy-notebook-cells emjupy--buffer-notebook)
+                                            nil))))
+                    (cl-find-if (lambda (cell)
+                                  (let ((ov (emjupy-cell-overlay cell)))
+                                    (and (overlayp ov)
+                                         (eq (overlay-buffer ov) (current-buffer))
+                                         (>= (overlay-start ov) end))))
+                                cells)))
+            (delete-region start end)
+            (save-excursion
+              (goto-char start)
+              (dolist (cell new-cells)
+                (emjupy--render-cell cell))
+              (setq new-end (point)))
+            ;; Put it back where it belongs if it swallowed the new text.
+            (let ((ov (and following-after (emjupy-cell-overlay following-after))))
+              (when (and (overlayp ov)
+                         (eq (overlay-buffer ov) (current-buffer))
+                         (< (overlay-start ov) new-end))
+                (move-overlay ov new-end (max new-end (overlay-end ov)))))
+            (emjupy--protect-non-cell-regions))
+          (emjupy--undo-adjust start end (- new-end end))
+          t)))))
 
 (defun emjupy-insert-cell-at (nb index new-cell)
   "Put NEW-CELL into NB at INDEX and draw it without rebuilding the buffer.
@@ -321,85 +325,87 @@ are untouched, and those after it shift.  See notes_undo.org.
 
 Returns non-nil when it was done incrementally, nil when the caller
 should fall back to a full redraw."
-  (let* ((cells (append (emjupy-notebook-cells nb) nil))
-         (following (nth index cells))
-         (at (cond
-              ;; before an existing cell: at its start
-              (following (car (emjupy--cell-region following)))
-              ;; at the very end: after the last cell there is
-              (cells (cdr (emjupy--cell-region (car (last cells)))))
-              ;; an empty notebook has nowhere to be incremental about
-              (t nil))))
-    (when (and at (emjupy--overlays-sane-p))
-      (setf (emjupy-notebook-cells nb)
-            (vconcat (append (cl-subseq cells 0 index)
-                             (list new-cell)
-                             (cl-subseq cells index))))
-      (let ((following-ov (and following (emjupy-cell-overlay following)))
-            (inserted 0))
-        (setq inserted (emjupy--render-cell-incrementally new-cell at))
-        ;; Text inserted at an overlay's start may be taken INTO that
-        ;; overlay, depending on how the overlay was made and on the Emacs
-        ;; version.  Where it is, the following cell swallows the new one:
-        ;; two cells over one region, which shows as a doubled boundary,
-        ;; fails the consistency check and stops syncing -- so the next edit
-        ;; there is not saved and the cell appears to vanish.
-        ;;
-        ;; Tested for rather than assumed: the repair asks whether the two
-        ;; overlays actually overlap, which is the condition that matters
-        ;; and is true or false the same way everywhere.
-        (let ((new-ov (emjupy-cell-overlay new-cell))
-              (resume (+ at inserted)))
-          (when (and (overlayp following-ov)
-                     (overlayp new-ov)
-                     (eq (overlay-buffer following-ov) (current-buffer))
-                     (< (overlay-start following-ov) (overlay-end new-ov)))
-            ;; Past everything just inserted, which includes the blank line
-            ;; separating the new cell from this one -- starting at the new
-            ;; cell's own end would leave that newline inside the following
-            ;; cell, where it shows up as a stray line at the top of its
-            ;; source.
-            (move-overlay following-ov resume
-                          (max resume (overlay-end following-ov))))
-          ;; Again, now the following cell starts where it should.  The
-          ;; drawing protected the gaps while that cell's overlay still
-          ;; stretched back over the new one, so the gap between them
-          ;; counted as inside a cell and was left writable: a backspace
-          ;; at the new cell's start then deleted the separator, and the
-          ;; two cells ran together.  Found by the edit fuzz.  Not recorded
-          ;; for undo: marking text read-only edits nothing, and an entry
-          ;; for it would sit among the ones `emjupy--undo-adjust' shifts.
-          (let ((buffer-undo-list t))
-            (emjupy--protect-non-cell-regions)))
-        (emjupy--undo-adjust at at inserted))
-      t)))
+  (emjupy--atomic-redraw nil
+    (let* ((cells (append (emjupy-notebook-cells nb) nil))
+           (following (nth index cells))
+           (at (cond
+                ;; before an existing cell: at its start
+                (following (car (emjupy--cell-region following)))
+                ;; at the very end: after the last cell there is
+                (cells (cdr (emjupy--cell-region (car (last cells)))))
+                ;; an empty notebook has nowhere to be incremental about
+                (t nil))))
+      (when (and at (emjupy--overlays-sane-p))
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (append (cl-subseq cells 0 index)
+                               (list new-cell)
+                               (cl-subseq cells index))))
+        (let ((following-ov (and following (emjupy-cell-overlay following)))
+              (inserted 0))
+          (setq inserted (emjupy--render-cell-incrementally new-cell at))
+          ;; Text inserted at an overlay's start may be taken INTO that
+          ;; overlay, depending on how the overlay was made and on the Emacs
+          ;; version.  Where it is, the following cell swallows the new one:
+          ;; two cells over one region, which shows as a doubled boundary,
+          ;; fails the consistency check and stops syncing -- so the next edit
+          ;; there is not saved and the cell appears to vanish.
+          ;;
+          ;; Tested for rather than assumed: the repair asks whether the two
+          ;; overlays actually overlap, which is the condition that matters
+          ;; and is true or false the same way everywhere.
+          (let ((new-ov (emjupy-cell-overlay new-cell))
+                (resume (+ at inserted)))
+            (when (and (overlayp following-ov)
+                       (overlayp new-ov)
+                       (eq (overlay-buffer following-ov) (current-buffer))
+                       (< (overlay-start following-ov) (overlay-end new-ov)))
+              ;; Past everything just inserted, which includes the blank line
+              ;; separating the new cell from this one -- starting at the new
+              ;; cell's own end would leave that newline inside the following
+              ;; cell, where it shows up as a stray line at the top of its
+              ;; source.
+              (move-overlay following-ov resume
+                            (max resume (overlay-end following-ov))))
+            ;; Again, now the following cell starts where it should.  The
+            ;; drawing protected the gaps while that cell's overlay still
+            ;; stretched back over the new one, so the gap between them
+            ;; counted as inside a cell and was left writable: a backspace
+            ;; at the new cell's start then deleted the separator, and the
+            ;; two cells ran together.  Found by the edit fuzz.  Not recorded
+            ;; for undo: marking text read-only edits nothing, and an entry
+            ;; for it would sit among the ones `emjupy--undo-adjust' shifts.
+            (let ((buffer-undo-list t))
+              (emjupy--protect-non-cell-regions)))
+          (emjupy--undo-adjust at at inserted))
+        t))))
 
 (defun emjupy-delete-cell-at (nb cell)
   "Remove CELL from NB and erase it without rebuilding the buffer.
 
 Returns non-nil when it was done incrementally."
-  (let ((region (emjupy--cell-region cell)))
-    (when (and region (emjupy--overlays-sane-p))
-      (let ((start (car region))
-            (end (cdr region)))
-        (setf (emjupy-notebook-cells nb)
-              (vconcat (delq cell (append (emjupy-notebook-cells nb) nil))))
-        (let ((inhibit-read-only t)
-              (buffer-undo-list t)
-              ;; emjupy's own drawing: not an edit to re-highlight
-              (emjupy--refontifying t))
-          (when (overlayp (emjupy-cell-overlay cell))
-            (delete-overlay (emjupy-cell-overlay cell)))
-          (when (overlayp (emjupy-cell-output-ov cell))
-            (delete-overlay (emjupy-cell-output-ov cell)))
-          (setf (emjupy-cell-overlay cell) nil)
-          (setf (emjupy-cell-output-ov cell) nil)
-          (delete-region start end)
-          (emjupy--protect-non-cell-regions))
-        ;; The deleted text is gone, so entries describing it go; what
-        ;; followed it moves up by its length.
-        (emjupy--undo-adjust start end (- (- end start)))
-        t))))
+  (emjupy--atomic-redraw nil
+    (let ((region (emjupy--cell-region cell)))
+      (when (and region (emjupy--overlays-sane-p))
+        (let ((start (car region))
+              (end (cdr region)))
+          (setf (emjupy-notebook-cells nb)
+                (vconcat (delq cell (append (emjupy-notebook-cells nb) nil))))
+          (let ((inhibit-read-only t)
+                (buffer-undo-list t)
+                ;; emjupy's own drawing: not an edit to re-highlight
+                (emjupy--refontifying t))
+            (when (overlayp (emjupy-cell-overlay cell))
+              (delete-overlay (emjupy-cell-overlay cell)))
+            (when (overlayp (emjupy-cell-output-ov cell))
+              (delete-overlay (emjupy-cell-output-ov cell)))
+            (setf (emjupy-cell-overlay cell) nil)
+            (setf (emjupy-cell-output-ov cell) nil)
+            (delete-region start end)
+            (emjupy--protect-non-cell-regions))
+          ;; The deleted text is gone, so entries describing it go; what
+          ;; followed it moves up by its length.
+          (emjupy--undo-adjust start end (- (- end start)))
+          t)))))
 
 (defun emjupy--rerender-notebook (&optional target-cell)
   "Re-render this notebook, leaving point at TARGET-CELL if given.
@@ -779,6 +785,82 @@ elsewhere threw you across the buffer mid-keystroke."
       (when (overlayp ov)
         (goto-char (min (overlay-end ov)
                         (+ (overlay-start ov) (or offset 0))))))))
+
+(defun emjupy--recover-from-broken-redraw (keep-typing)
+  "Redraw the notebook from its cells, after a redraw that stopped partway.
+With KEEP-TYPING, what is typed is synced first: for output redrawn, the
+cells\='s text was not being touched, so it is what the user typed.  A
+structural command synced before it started, and its cells are whole."
+  (let ((inhibit-quit t))
+    (condition-case err
+        (progn
+          (when keep-typing (emjupy--sync-sound-cells))
+          (setq emjupy--sync-refused nil)
+          (emjupy--rerender-preserving-point)
+          (message "[emjupy] A redraw stopped partway; the notebook was redrawn from its cells."))
+      ;; Everything: this runs while an error is already unwinding, and a
+      ;; second one raised here would hide the first, which is the one to see.
+      (error (message "[emjupy] A redraw stopped partway, and redrawing failed too (%s); %s"
+                      (error-message-string err)
+                      (substitute-command-keys "\\[emjupy-re-render] redraws it."))))))
+
+(defun emjupy--sync-sound-cells ()
+  "Sync every cell whose own overlay still spans exactly its text.
+Where the overlays as a whole no longer describe the cells, syncing them
+all would read misplaced text into the cells, and is refused; but a cell
+whose overlay is live, in order and clear of its neighbours still spans
+exactly what was typed in it, and keeping that is the point."
+  (let ((prev-end (point-min)))
+    (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+             do (let ((ov (emjupy-cell-overlay cell)))
+                  (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer))
+                             (<= prev-end (overlay-start ov) (overlay-end ov) (point-max)))
+                    (emjupy--sync-cell-source-from-buffer cell)
+                    (setq prev-end (overlay-end ov)))))))
+
+(defvar-local emjupy--integrity-timer nil
+  "Timer that checks this buffer when Emacs is next idle, or nil.")
+
+(defun emjupy--check-after-redraw ()
+  "Check this buffer\='s structure when Emacs is next idle, once.
+Many redraws in a row -- output streaming in -- cost one check."
+  (unless (timerp emjupy--integrity-timer)
+    (setq emjupy--integrity-timer
+          (run-with-idle-timer 1 nil #'emjupy--check-integrity (current-buffer)))))
+
+(defun emjupy--check-integrity (buffer)
+  "Put BUFFER right if its structure and its cells have come apart.
+Only the structure is checked -- overlays live, in order, not
+overlapping, each output box after its source -- never whether the text
+matches the cells, which is false whenever something has been typed and
+not yet synced: redrawing on that would undo the typing.  The problems
+found are said, so that what caused them can be found too."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq emjupy--integrity-timer nil)
+      (when-let* ((problems (and emjupy--buffer-notebook
+                                 (not emjupy--recovering)
+                                 (emjupy--check-invariants t))))
+        (let ((emjupy--recovering t))
+          (emjupy--sync-sound-cells)
+          (setq emjupy--sync-refused nil)
+          (emjupy--rerender-preserving-point))
+        (message "[emjupy] The notebook was redrawn: its display had come apart from its cells (%s)."
+                 (string-join problems "; "))))))
+
+(defun emjupy-cells-enable ()
+  "Let the drawing layer put a broken redraw right, and check after redraws.
+Run when a notebook buffer starts, like the other links between layers."
+  (setq emjupy-redraw-recover-function #'emjupy--recover-from-broken-redraw
+        emjupy-after-redraw-function #'emjupy--check-after-redraw)
+  ;; A notebook closed before Emacs is idle again takes its check with it.
+  (add-hook 'kill-buffer-hook #'emjupy--cancel-integrity-check nil t))
+
+(defun emjupy--cancel-integrity-check ()
+  "Cancel this buffer\'s pending structure check, if there is one."
+  (when (timerp emjupy--integrity-timer)
+    (cancel-timer emjupy--integrity-timer)
+    (setq emjupy--integrity-timer nil)))
 
 (defun emjupy-re-render ()
   "Rebuild the notebook display from the cells.
