@@ -224,6 +224,7 @@ jobs:
       run: |
         sudo apt-get install emacs && emacs --version
         git clone https://github.com/riscy/melpazoid.git ~/melpazoid
+        pip install -e ~/melpazoid[dev]
     - name: Run
       env:
         LOCAL_REPO: ${{ github.workspace }}
