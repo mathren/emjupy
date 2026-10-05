@@ -458,25 +458,43 @@ cannot leave one behind."
             (cond
              ;; after a box: on its last newline, as continuation lines
              ((and anchor (eq (char-after anchor) ?\n))
-              (unless (string-empty-p rules)
-                (let ((o (make-overlay anchor (1+ anchor) nil t nil))
-                      (text (concat "\n" rules)))
-                  ;; point there shows at the end of the text, before the rule
-                  (put-text-property 0 1 'cursor t text)
-                  (overlay-put o 'before-string text)
-                  (overlay-put o 'emjupy-overlay 'rules)
-                  (overlay-put o 'emjupy-rules-of prev)
-                  (push o (overlay-get prev 'emjupy-companions))))
-              ;; the separator after the box takes no line of its own --
-              ;; between boxes; the last one is left alone, since Emacs
-              ;; draws the end of the buffer whatever is hidden before it
-              (let ((gap-end (and ov (overlay-start ov))))
-                (when (and gap-end (< (overlay-end prev) gap-end))
-                  (let ((o (make-overlay (overlay-end prev) gap-end)))
-                    (overlay-put o 'invisible t)
+              (let* ((gap-end (and ov (overlay-start ov)))
+                     (gap (and gap-end (< (overlay-end prev) gap-end))))
+                (cond
+                 ;; Between two boxes, with the separator line between
+                 ;; them.  It must not begin a screen line: one is numbered
+                 ;; by the line it starts on, so the line after a hidden
+                 ;; separator showed the separator's number, and its own was
+                 ;; never seen -- each cell's numbers went 29, 31.  So the
+                 ;; box's last newline is hidden instead, the rules hang on
+                 ;; the separator as continuation lines, which are never
+                 ;; numbered, and the separator's newline ends them: the
+                 ;; cell after starts a screen line of its own, numbered.
+                 (gap
+                  ;; The box's last newline is drawn as itself followed by
+                  ;; the rules: a `display' replacing it, not a hidden
+                  ;; newline -- Emacs draws no overlay string at a hidden
+                  ;; position, so the rules vanished.  The screen lines the
+                  ;; rules make begin mid-line, and are never numbered; the
+                  ;; separator's newline, still there, ends the last of them.
+                  (let ((o (make-overlay anchor (1+ anchor) nil t nil))
+                        (text (concat "\n" rules)))
+                    ;; point there shows at the end of the text, before the rule
+                    (put-text-property 0 1 'cursor t text)
+                    (overlay-put o 'display text)
                     (overlay-put o 'emjupy-overlay 'rules)
                     (overlay-put o 'emjupy-rules-of prev)
-                    (push o (overlay-get prev 'emjupy-companions))))))
+                    (push o (overlay-get prev 'emjupy-companions))))
+                 ;; Followed at once by another box -- a cell by its output
+                 ;; -- or the last box: the rules hang on its own last line.
+                 ((not (string-empty-p rules))
+                  (let ((o (make-overlay anchor (1+ anchor) nil t nil))
+                        (text (concat "\n" rules)))
+                    (put-text-property 0 1 'cursor t text)
+                    (overlay-put o 'before-string text)
+                    (overlay-put o 'emjupy-overlay 'rules)
+                    (overlay-put o 'emjupy-rules-of prev)
+                    (push o (overlay-get prev 'emjupy-companions)))))))
              ;; the first box, or one whose line above cannot carry it
              (ov (overlay-put ov 'before-string header)
                  (when prev (overlay-put prev 'after-string footer)))

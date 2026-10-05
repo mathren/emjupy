@@ -7514,5 +7514,38 @@ notebook and output then arrived above it -- so running a cell failed."
     (should (member '(nil face bold 57 . 67) buffer-undo-list))   ; after: shifted
     (should (member '(nil face italic 2 . 4) buffer-undo-list)))) ; before: kept
 
+(ert-deftest emjupy-test-a-cell-first-line-keeps-its-line-number ()
+  "Between two cells the separator starts no screen line, so it is not numbered.
+A screen line is numbered by the line it begins on.  The separator was
+hidden, so the screen line with the next cell's first line began on the
+separator and showed its number; the first line's own was never seen,
+and each cell's numbers ran 29, 31.  Now the box's last newline is drawn
+as itself with the rules after it -- a `display', since Emacs draws no
+overlay string at a hidden position -- and the separator is left as it
+is, ending the rules' last screen line."
+  (let ((cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1\nc = 3"
+                                         :outputs [] :metadata (make-hash-table))
+                       (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "d = 4"
+                                         :outputs [] :metadata (make-hash-table)))))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (let* ((ov (emjupy-cell-overlay (aref cells 0)))
+               (anchor (1- (overlay-end ov)))
+               (separator (overlay-end ov))
+               (next (overlay-start (emjupy-cell-overlay (aref cells 1)))))
+          ;; the rules: a display on the box's last newline, the next header in it
+          (should (cl-some (lambda (o)
+                             (let ((d (overlay-get o 'display)))
+                               (and (stringp d) (string-prefix-p "\n" d)
+                                    (string-match-p "In:" d))))
+                           (overlays-at anchor)))
+          ;; the separator: there, neither hidden nor drawn over
+          (should (< separator next))
+          (should-not (invisible-p separator))
+          (should-not (get-char-property separator 'display))
+          ;; and the next cell begins a line of its own, visible
+          (should (save-excursion (goto-char next) (bolp)))
+          (should-not (invisible-p next)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
