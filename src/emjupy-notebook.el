@@ -998,11 +998,22 @@ JupyterLab, or by someone else -- ask before overwriting it."
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
     (message "Successfully saved %s!" path)))
 
-(defcustom emjupy-recovery-directory (locate-user-emacs-file "emjupy-recovery/")
+(defcustom emjupy-recovery-directory
+  (expand-file-name (format "emjupy-recovery-%s/" (user-login-name))
+                    temporary-file-directory)
   "Where notebooks with unsaved changes are copied, until they are saved.
 A copy is written a few seconds after a change, when Emacs is idle, and
 when Emacs quits; it is local, so it is written with the server gone.
-Opening the notebook again offers to restore it."
+Opening the notebook again offers to restore it.
+
+By default a directory of your own under the variable
+`temporary-file-directory' -- /tmp/emjupy-recovery-USER/ on most systems.
+That is emptied when the machine restarts on many systems, so a copy
+outlives Emacs crashing but not the machine: for one that outlives both,
+choose a directory under `user-emacs-directory', which
+\(locate-user-emacs-file \"emjupy-recovery/\") gives.  Copies
+are only written into a directory you own that is not a symbolic link,
+so another user of a shared /tmp cannot have them written elsewhere."
   :type 'directory
   :group 'emjupy)
 
@@ -1046,6 +1057,7 @@ written; readable by its owner only, as the notebook may hold anything."
                           ",\"written\":" (json-serialize (format-time-string "%F %T"))
                           ",\"notebook\":" (emjupy--serialize-notebook nb) "}")))
       (with-file-modes #o700 (make-directory (file-name-directory file) t))
+      (emjupy--recovery-directory-check (file-name-directory file))
       (let ((partial (with-file-modes #o600
                        (make-temp-file (expand-file-name "partial-" (file-name-directory file))))))
         (let ((coding-system-for-write 'no-conversion))
@@ -1053,6 +1065,18 @@ written; readable by its owner only, as the notebook may hold anything."
         (rename-file partial file t))
       (setq emjupy--recovery-tick (buffer-modified-tick))
       file)))
+
+(defun emjupy--recovery-directory-check (dir)
+  "Signal a `file-error' unless DIR is a directory of the user\'s own.
+In a shared /tmp another user could have made it first, or left a
+symbolic link there pointing elsewhere, and the copies -- which may hold
+anything the notebook does -- would be written where they choose."
+  (let ((attributes (file-attributes (directory-file-name dir))))
+    (when (or (file-symlink-p (directory-file-name dir))
+              (not (eq (file-attribute-type attributes) t))
+              (not (eql (file-attribute-user-id attributes) (user-uid))))
+      (signal 'file-error
+              (list "Not writing recovery copies" "not a directory of your own" dir)))))
 
 (defun emjupy--recovery-delete (nb)
   "Delete NB's recovery copy, if there is one."

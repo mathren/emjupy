@@ -174,11 +174,18 @@ so, until it is saved by hand.
 
 Unsaved edits are never only in the buffer.  A few seconds after a
 change, when Emacs is idle, the notebook is copied to
-=emjupy-recovery-directory= (=~/.emacs.d/emjupy-recovery/=), and again as
-Emacs quits.  The copy is local, so it is written with the tunnel down or
+=emjupy-recovery-directory= (=/tmp/emjupy-recovery-USER/= by default), and
+again as Emacs quits.  The copy is local, so it is written with the tunnel down or
 the server gone, and a save deletes it.  Opening the notebook again,
 after a crash say, offers to restore it; =M-x emjupy-recover-notebook=
 does too.  A copy you decline is set aside in that directory, not deleted.
+
+Many systems empty =/tmp= when the machine restarts, so by default a copy
+outlives Emacs crashing but not the machine.  For one that outlives both,
+set =emjupy-recovery-directory= to a directory under your home, such as
+=~/.emacs.d/emjupy-recovery/=.  Copies are only written into a directory
+you own that is not a symbolic link, so another user of a shared =/tmp=
+cannot have them written elsewhere.
 
 Closing a notebook with unsaved edits asks whether to save them, keep
 them in the recovery copy, or discard them.  Quitting Emacs offers to

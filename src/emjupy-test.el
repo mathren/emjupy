@@ -7692,5 +7692,26 @@ It was fetched again, and its cells replaced by the server's."
     (emjupy--recovery-write-all)
     (should (file-exists-p (emjupy--recovery-file nb)))))
 
+(ert-deftest emjupy-test-recovery-directory-is-the-users-own-in-tmp ()
+  "Recovery copies go to a directory of the user's own under the temporary one.
+In a shared /tmp it could be made first by someone else, or be a symbolic
+link to elsewhere; then no copy is written there."
+  (let ((default (eval (car (get 'emjupy-recovery-directory 'standard-value)))))
+    (should (string-prefix-p (expand-file-name temporary-file-directory) default))
+    (should (string-match-p (regexp-quote (user-login-name)) default)))
+  (emjupy-test--with-saving (buf nb requests lm)
+    (let* ((elsewhere (make-temp-file "emjupy-elsewhere" t))
+           (emjupy-recovery-directory
+            (file-name-as-directory (concat (make-temp-name
+                                             (expand-file-name "emjupy-link" temporary-file-directory))))))
+      (unwind-protect
+          (progn
+            (make-symbolic-link elsewhere (directory-file-name emjupy-recovery-directory))
+            (emjupy-test--type-in-first-cell " + 6")
+            (should-error (emjupy--recovery-write nb) :type 'file-error)
+            (should-not (directory-files elsewhere nil "\\.json\\'")))
+        (delete-file (directory-file-name emjupy-recovery-directory))
+        (delete-directory elsewhere t)))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
