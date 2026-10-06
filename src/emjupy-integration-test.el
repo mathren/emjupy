@@ -1586,5 +1586,49 @@ print('done')"))
          (should (= (cl-count ?% stderr) 1))
          (should (string-match-p "100%|.*50/50" stderr)))))))
 
+(ert-deftest emjupy-int-autosave-saves-and-never-overwrites-elsewhere ()
+  "Auto-save writes what was typed to the server, but never over a change made elsewhere.
+Against a real server: a save fetches when the file last changed and
+compares it with what was opened, so a notebook saved from JupyterLab
+meanwhile is left alone, and auto-saving stops for it."
+  (emjupy-int--with-live-kernel
+   (with-current-buffer emjupy-int--buffer
+     (let* ((emjupy-autosave-interval 0)
+            (emjupy-recovery-directory (make-temp-file "emjupy-recovery" t))
+            (nb emjupy--buffer-notebook)
+            (server (emjupy-notebook-server nb))
+            (path (emjupy-notebook-path nb))
+            (fetch (lambda ()
+                     (json-serialize (gethash "content" (emjupy--http-request
+                                                         "GET" server (emjupy--contents-path path)))))))
+       (unwind-protect
+           (progn
+             (setq emjupy--autosave-paused nil emjupy--autosave-last nil)
+             (setf (emjupy-notebook-last-modified nb) (emjupy--server-last-modified nb))
+             ;; typed, then saved on its own
+             (goto-char (1- (overlay-end (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0)))))
+             (let ((inhibit-read-only t)) (insert "  # autosaved"))
+             (emjupy--idle-save)
+             (should-not (buffer-modified-p))
+             (should (string-match-p "# autosaved" (funcall fetch)))
+             ;; written meanwhile by another client
+             (let ((body (make-hash-table :test 'equal))
+                   (content (gethash "content" (emjupy--http-request
+                                                "GET" server (emjupy--contents-path path)))))
+               (puthash "source" "# from elsewhere" (aref (gethash "cells" content) 0))
+               (puthash "type" "notebook" body) (puthash "format" "json" body)
+               (puthash "content" content body)
+               (sleep-for 1.1)                ; a later last_modified
+               (emjupy--http-request "PUT" server (emjupy--contents-path path) (json-serialize body)))
+             (let ((inhibit-read-only t)) (insert "  # mine"))
+             (setq emjupy--autosave-last nil)
+             (emjupy--idle-save)
+             (should emjupy--autosave-paused)
+             (should (buffer-modified-p))
+             (should (string-match-p "# from elsewhere" (funcall fetch)))
+             (should-not (string-match-p "# mine" (funcall fetch))))
+         (set-buffer-modified-p nil)
+         (delete-directory emjupy-recovery-directory t))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

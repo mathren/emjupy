@@ -7547,5 +7547,150 @@ is, ending the rules' last screen line."
           (should (save-excursion (goto-char next) (bolp)))
           (should-not (invisible-p next)))))))
 
+(defmacro emjupy-test--with-saving (spec &rest body)
+  "Run BODY with a notebook, a fake server and a temporary recovery directory.
+SPEC is (BUF NB REQUESTS SERVER-MODIFIED): BUF and NB are bound to the
+notebook, REQUESTS to the list of (METHOD PATH) made, newest first, and
+SERVER-MODIFIED to the cons whose car is the server copy's last_modified.
+The server answers a GET with it, and a PUT by setting a new one."
+  (declare (indent 1))
+  (let ((buf (nth 0 spec)) (nb (nth 1 spec)) (requests (nth 2 spec)) (lm (nth 3 spec)))
+    `(let* ((emjupy-recovery-directory (make-temp-file "emjupy-recovery" t))
+            (,requests nil)
+            (,lm (list "2026-01-01T00:00:00Z"))
+            (cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                             :outputs [] :metadata (make-hash-table)))))
+       (unwind-protect
+           (cl-letf (((symbol-function 'emjupy--http-request)
+                      (lambda (method _server path &rest _)
+                        (push (list method path) ,requests)
+                        (let ((model (make-hash-table :test 'equal)))
+                          (when (equal method "PUT")
+                            (setcar ,lm (format "2026-01-01T00:00:%02dZ" (length ,requests))))
+                          (puthash "last_modified" (car ,lm) model)
+                          model))))
+             (emjupy-test--with-notebook cells ,buf ,nb
+               (with-current-buffer ,buf
+                 (setf (emjupy-notebook-server ,nb) (make-emjupy-server :base-url "localhost:9" :token "t")
+                       (emjupy-notebook-path ,nb) "work.ipynb"
+                       (emjupy-notebook-buffer ,nb) ,buf
+                       (emjupy-notebook-last-modified ,nb) (car ,lm))
+                 ,@body)))
+         (delete-directory emjupy-recovery-directory t)))))
+
+(defun emjupy-test--type-in-first-cell (text)
+  "Type TEXT at the end of the first cell, as a user would."
+  (goto-char (1- (overlay-end (emjupy-cell-overlay
+                               (aref (emjupy-notebook-cells emjupy--buffer-notebook) 0)))))
+  (let ((inhibit-read-only t)) (insert text)))
+
+(ert-deftest emjupy-test-unsaved-changes-are-copied-and-a-save-removes-the-copy ()
+  "What is typed is copied for recovery; saving it removes the copy."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (let ((emjupy-autosave-interval nil))
+      (emjupy-test--type-in-first-cell " + 41")
+      (emjupy--idle-save)
+      (let ((file (emjupy--recovery-file nb)))
+        (should (file-exists-p file))
+        (should (string-match-p "x = 1 \\+ 41" (with-temp-buffer (insert-file-contents file)
+                                                                  (buffer-string))))
+        (emjupy-save-notebook)
+        (should-not (file-exists-p file))
+        (should-not (buffer-modified-p))
+        (should (equal (emjupy-notebook-last-modified nb) (car lm)))))))
+
+(ert-deftest emjupy-test-a-save-never-overwrites-changes-made-elsewhere ()
+  "A server copy changed since it was opened is not saved over without asking."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (emjupy-test--type-in-first-cell " + 1")
+    (setcar lm "2026-06-01T00:00:00Z")          ; saved from JupyterLab meanwhile
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+      (should-error (emjupy-save-notebook) :type 'user-error))
+    (should-not (assoc "PUT" requests))
+    (should (buffer-modified-p))
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+      (emjupy-save-notebook))
+    (should (assoc "PUT" requests))
+    (should-not (buffer-modified-p))))
+
+(ert-deftest emjupy-test-autosave-stops-on-a-conflict-and-survives-a-dead-server ()
+  "Auto-saving stops rather than overwrite, and a failure raises nothing."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (let ((emjupy-autosave-interval 0))
+      (emjupy-test--type-in-first-cell " + 1")
+      (setcar lm "2026-06-01T00:00:00Z")
+      (emjupy--idle-save)
+      (should emjupy--autosave-paused)
+      (should-not (assoc "PUT" requests))
+      (setq requests nil)
+      (emjupy--idle-save)
+      (should-not requests)                     ; not tried again
+      ;; the server unreachable: said, not raised; the copy holds the changes
+      (setq emjupy--autosave-paused nil)
+      (cl-letf (((symbol-function 'emjupy--http-request)
+                 (lambda (&rest _) (signal 'emjupy-http-error (list "no server")))))
+        (emjupy--idle-save))
+      (should (buffer-modified-p))
+      (should (file-exists-p (emjupy--recovery-file nb))))))
+
+(ert-deftest emjupy-test-reopening-offers-the-unsaved-changes ()
+  "A recovery copy is offered back; declined, it is kept aside, never deleted."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (let ((noninteractive nil))
+      ;; a copy no different from what was opened: deleted, nothing asked
+      (emjupy--recovery-write nb)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) (error "Asked"))))
+        (emjupy--offer-recovery nb))
+      (should-not (file-exists-p (emjupy--recovery-file nb)))
+      ;; changes, then the notebook as the server has it again
+      (emjupy-test--type-in-first-cell " + 2")
+      (emjupy--recovery-write nb)
+      (setf (emjupy-cell-source (aref (emjupy-notebook-cells nb) 0)) "x = 1")
+      (emjupy--rerender-notebook)
+      (set-buffer-modified-p nil)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (emjupy--offer-recovery nb))
+      (should (equal (emjupy-cell-source (aref (emjupy-notebook-cells nb) 0)) "x = 1 + 2"))
+      (should (buffer-modified-p))
+      ;; declined: kept aside
+      (emjupy--recovery-write nb)
+      (setf (emjupy-cell-source (aref (emjupy-notebook-cells nb) 0)) "x = 1")
+      (emjupy--rerender-notebook)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+        (emjupy--offer-recovery nb))
+      (should-not (file-exists-p (emjupy--recovery-file nb)))
+      (should (directory-files emjupy-recovery-directory nil "-declined-")))))
+
+(ert-deftest emjupy-test-opening-an-open-notebook-keeps-its-changes ()
+  "Opening a notebook open with unsaved changes shows it, and fetches nothing.
+It was fetched again, and its cells replaced by the server's."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (rename-buffer (emjupy--notebook-buffer-name "work.ipynb" (emjupy-notebook-server nb)) t)
+    (emjupy-test--type-in-first-cell " + 3")
+    (should (eq (emjupy-open-notebook "work.ipynb" (emjupy-notebook-server nb)) buf))
+    (should-not requests)
+    (should (string-match-p "x = 1 \\+ 3" (buffer-string)))))
+
+(ert-deftest emjupy-test-closing-a-modified-notebook-asks ()
+  "Closing a notebook with unsaved changes asks; cancelling keeps it open."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (let ((noninteractive nil))
+      (add-hook 'kill-buffer-query-functions #'emjupy--kill-buffer-query nil t)
+      (emjupy-test--type-in-first-cell " + 4")
+      (cl-letf (((symbol-function 'read-multiple-choice) (lambda (&rest _) '(?c "cancel"))))
+        (should-not (kill-buffer buf)))
+      (should (buffer-live-p buf))
+      (cl-letf (((symbol-function 'read-multiple-choice) (lambda (&rest _) '(?k "keep"))))
+        (should (emjupy--kill-buffer-query)))
+      (should (file-exists-p (emjupy--recovery-file nb)))
+      (remove-hook 'kill-buffer-query-functions #'emjupy--kill-buffer-query t))))
+
+(ert-deftest emjupy-test-quitting-emacs-keeps-unsaved-notebooks ()
+  "As Emacs quits, every notebook with unsaved changes is copied for recovery."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (emjupy-test--type-in-first-cell " + 5")
+    (emjupy--recovery-write-all)
+    (should (file-exists-p (emjupy--recovery-file nb)))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

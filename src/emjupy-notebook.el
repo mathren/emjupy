@@ -241,75 +241,90 @@ different servers, and one buffer cannot represent both."
 (defun emjupy-open-notebook (path &optional server)
   "Fetch PATH from SERVER, parse it, and render it in `emjupy-mode'.
 Returns the notebook buffer."
-  (let* ((server (or server (emjupy--server))))
-    (message "Fetching notebook: %s..." path)
-    (let* ((response-data (emjupy--http-request "GET" server (emjupy--contents-path path)))
-           (content-hash (and response-data (gethash "content" response-data))))
-      (if (not content-hash)
-          (error "Failed to fetch notebook content from server")
-        (let* ((ipynb-json (json-serialize content-hash))
-               (nb-struct (emjupy--parse-ipynb ipynb-json))
-               (buf-name (emjupy--notebook-buffer-name path server))
-               ;; Whether this notebook is already on screen decides where
-               ;; point ends up below.
-               (already-open (get-buffer buf-name))
-               (buf (get-buffer-create buf-name)))
+  (let* ((server (or server (emjupy--server)))
+         (open (get-buffer (emjupy--notebook-buffer-name path server))))
+    ;; Already open with unsaved changes: show it as it is.  Fetching it
+    ;; again replaced its cells with the server's, and the changes were lost.
+    (if (and open (buffer-live-p open)
+             (with-current-buffer open (buffer-modified-p)))
+        (progn (switch-to-buffer open)
+               (message "[emjupy] %s is open with unsaved changes; shown as it is." path)
+               open)
+      (message "Fetching notebook: %s..." path)
+      (let* ((response-data (emjupy--http-request "GET" server (emjupy--contents-path path)))
+             (content-hash (and response-data (gethash "content" response-data))))
+	(if (not content-hash)
+            (error "Failed to fetch notebook content from server")
+          (let* ((ipynb-json (json-serialize content-hash))
+		 (nb-struct (emjupy--parse-ipynb ipynb-json))
+		 (buf-name (emjupy--notebook-buffer-name path server))
+		 ;; Whether this notebook is already on screen decides where
+		 ;; point ends up below.
+		 (already-open (get-buffer buf-name))
+		 (buf (get-buffer-create buf-name)))
 
-          (setf (emjupy-notebook-server nb-struct) server)
-          (setf (emjupy-notebook-path nb-struct) path)
-          (setf (emjupy-notebook-buffer nb-struct) buf)
+            (setf (emjupy-notebook-server nb-struct) server)
+            (setf (emjupy-notebook-path nb-struct) path)
+            (setf (emjupy-notebook-buffer nb-struct) buf)
+            (setf (emjupy-notebook-last-modified nb-struct)
+                  (gethash "last_modified" response-data))
 
-          (with-current-buffer buf
-            ;; `emjupy-mode' lives in emjupy.el, which this file cannot
-            ;; require at load time without a cycle -- emjupy.el requires
-            ;; this one.  Autoloading `emjupy-open-notebook' therefore
-            ;; pulled in every file EXCEPT the one defining the mode, and
-            ;; opening a notebook failed with the mode undefined.  Required
-            ;; here, where there is no cycle to create.
-            (require 'emjupy)
-            (emjupy-mode)
-            ;; Set the notebook BEFORE drawing, and draw through
-            ;; `emjupy--rerender-notebook' rather than looping over the cells
-            ;; here.  Re-opening a notebook reuses its buffer but parses
-            ;; fresh cell structs, so the previous structs' overlays become
-            ;; unreachable -- and this path used to erase the text without
-            ;; deleting them, leaving each one collapsed at position 1 still
-            ;; drawing its rule.  That is the stack of stray box borders at
-            ;; the top of a re-opened notebook.
-            (setq emjupy--buffer-notebook nb-struct)
-            (emjupy--rerender-notebook)
-            ;; A freshly opened notebook starts at the top, as a file does.
-            ;; One already open keeps where you were: re-opening it to get
-            ;; back to what you were reading should not lose your place.
-            (unless already-open
-              (goto-char (point-min))))
-
-          (switch-to-buffer buf)
-          (unless already-open
-            (goto-char (point-min)))
-          ;; Attach this notebook to the kernel bound to its port, so opening
-          ;; it drops you into the REPL already running behind that tunnel
-          ;; rather than into a dead buffer needing a separate connect step.
-          (when-let* ((kernel-id (emjupy-server-kernel-id server)))
             (with-current-buffer buf
-              (condition-case err
-                  (emjupy-connect-kernel nb-struct kernel-id)
-                ;; Everything: connecting opens a WebSocket, and
-                ;; `websocket-open' reports a failure as a plain error.  The
-                ;; notebook opens either way; the kernel is connected later.
-                (error (message "[emjupy] Could not attach kernel %s: %s"
-                                kernel-id (error-message-string err))))))
-          ;; Warm up the code shadow-buffer + Eglot now, in the background,
-          ;; so completions are ready once the user starts typing instead of
-          ;; paying the LSP server startup cost on the first keystroke.
-          (with-demoted-errors "[emjupy] Language support did not start: %S"
-            (with-current-buffer buf (emjupy--ensure-shadow-buffer nb-struct)))
-          (message "Opened notebook: %s%s" path
-                   (if (emjupy-server-kernel-id server)
-                       ""
-                     (format ". Press %s to select or spawn a kernel."
-                             (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
-          buf)))))
+              ;; `emjupy-mode' lives in emjupy.el, which this file cannot
+              ;; require at load time without a cycle -- emjupy.el requires
+              ;; this one.  Autoloading `emjupy-open-notebook' therefore
+              ;; pulled in every file EXCEPT the one defining the mode, and
+              ;; opening a notebook failed with the mode undefined.  Required
+              ;; here, where there is no cycle to create.
+              (require 'emjupy)
+              (emjupy-mode)
+              ;; Set the notebook BEFORE drawing, and draw through
+              ;; `emjupy--rerender-notebook' rather than looping over the cells
+              ;; here.  Re-opening a notebook reuses its buffer but parses
+              ;; fresh cell structs, so the previous structs' overlays become
+              ;; unreachable -- and this path used to erase the text without
+              ;; deleting them, leaving each one collapsed at position 1 still
+              ;; drawing its rule.  That is the stack of stray box borders at
+              ;; the top of a re-opened notebook.
+              (setq emjupy--buffer-notebook nb-struct)
+              (emjupy--rerender-notebook)
+              ;; A freshly opened notebook starts at the top, as a file does.
+              ;; One already open keeps where you were: re-opening it to get
+              ;; back to what you were reading should not lose your place.
+              (unless already-open
+		(goto-char (point-min)))
+              ;; As drawn, it is the server copy: nothing unsaved yet.
+              (set-buffer-modified-p nil)
+              (emjupy--save-machinery-start)
+              (add-hook 'kill-buffer-query-functions #'emjupy--kill-buffer-query nil t)
+              (emjupy--offer-recovery nb-struct))
+
+            (switch-to-buffer buf)
+            (unless already-open
+              (goto-char (point-min)))
+            ;; Attach this notebook to the kernel bound to its port, so opening
+            ;; it drops you into the REPL already running behind that tunnel
+            ;; rather than into a dead buffer needing a separate connect step.
+            (when-let* ((kernel-id (emjupy-server-kernel-id server)))
+              (with-current-buffer buf
+		(condition-case err
+                    (emjupy-connect-kernel nb-struct kernel-id)
+                  ;; Everything: connecting opens a WebSocket, and
+                  ;; `websocket-open' reports a failure as a plain error.  The
+                  ;; notebook opens either way; the kernel is connected later.
+                  (error (message "[emjupy] Could not attach kernel %s: %s"
+                                  kernel-id (error-message-string err))))))
+            ;; Warm up the code shadow-buffer + Eglot now, in the background,
+            ;; so completions are ready once the user starts typing instead of
+            ;; paying the LSP server startup cost on the first keystroke.
+            (with-demoted-errors "[emjupy] Language support did not start: %S"
+              (with-current-buffer buf (emjupy--ensure-shadow-buffer nb-struct)))
+            (message "Opened notebook: %s%s" path
+                     (if (emjupy-server-kernel-id server)
+			 ""
+                       (format ". Press %s to select or spawn a kernel."
+                               (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
+            buf))))))
 
 (defun emjupy-create-notebook (&optional server)
   "Create a brand new blank notebook on SERVER and open it."
@@ -913,27 +928,271 @@ validation even though it looks fine in emjupy."
       (puthash "cells" cells-vec data))
     (json-serialize data)))
 
+;;;; Saving, and never losing what is not saved
+
+(defvar-local emjupy--autosave-paused nil
+  "Non-nil when the server copy changed elsewhere, and is not to be saved over.")
+
+(defvar-local emjupy--autosave-last nil
+  "When this notebook was last saved, or a save last tried, as a float time.")
+
+(define-error 'emjupy-save-conflict
+              "The notebook changed on the server since it was opened")
+
+(defun emjupy--server-last-modified (nb)
+  "Return when NB's copy on its server last changed, or nil if there is none."
+  (condition-case err
+      (let ((model (emjupy--http-request
+                    "GET" (emjupy-notebook-server nb)
+                    (concat (emjupy--contents-path (emjupy-notebook-path nb)) "?content=0"))))
+        (and (hash-table-p model) (gethash "last_modified" model)))
+    ;; Gone from the server: there is nothing a save would overwrite.
+    (emjupy-http-status
+     (if (eql (emjupy--http-status-of err) 404) nil (signal (car err) (cdr err))))))
+
+(defun emjupy--save-to-server (nb &optional overwrite)
+  "Save NB to its server, and return non-nil.
+Unless OVERWRITE, first make sure the server copy is the one opened or
+last saved here, and signal `emjupy-save-conflict' if it changed since --
+saved from JupyterLab, say -- rather than overwrite that."
+  (with-current-buffer (emjupy-notebook-buffer nb)
+    (emjupy--sync-all-cells)
+    (let ((known (emjupy-notebook-last-modified nb)))
+      (unless overwrite
+        (let ((current (and known (emjupy--server-last-modified nb))))
+          (when (and current (not (equal current known)))
+            (signal 'emjupy-save-conflict (list (emjupy-notebook-path nb) current)))))
+      (let ((body (make-hash-table :test 'equal)))
+        (puthash "type" "notebook" body)
+        (puthash "format" "json" body)
+        (puthash "content" (json-parse-string (emjupy--serialize-notebook nb)
+                                              :object-type 'hash-table :array-type 'array)
+                 body)
+        (let ((model (emjupy--http-request "PUT" (emjupy-notebook-server nb)
+                                           (emjupy--contents-path (emjupy-notebook-path nb))
+                                           (json-serialize body))))
+          (setf (emjupy-notebook-last-modified nb)
+                (and (hash-table-p model) (gethash "last_modified" model)))))
+      (set-buffer-modified-p nil)
+      (setq emjupy--autosave-paused nil
+            emjupy--autosave-last (float-time))
+      (emjupy--recovery-delete nb)
+      t)))
+
 (defun emjupy-save-notebook ()
-  "Sync cell buffer contents and save notebook back to the Jupyter server."
+  "Save the notebook to its Jupyter server.
+If the server copy changed since it was opened here -- saved from
+JupyterLab, or by someone else -- ask before overwriting it."
   (interactive)
   (unless emjupy--buffer-notebook
     (user-error "No emjupy notebook associated with this buffer"))
-  (emjupy--sync-all-cells)
   (let* ((nb emjupy--buffer-notebook)
-         (path (emjupy-notebook-path nb))
-         (server (emjupy-notebook-server nb))
-         (req-body (make-hash-table :test 'equal))
-         (serialized-str (emjupy--serialize-notebook nb))
-         (parsed-json (json-parse-string serialized-str :object-type 'hash-table :array-type 'array)))
-
-    (puthash "type" "notebook" req-body)
-    (puthash "format" "json" req-body)
-    (puthash "content" parsed-json req-body)
-
+         (path (emjupy-notebook-path nb)))
     (message "Saving notebook %s..." path)
-    (emjupy--http-request "PUT" server (emjupy--contents-path path) (json-serialize req-body))
-    (set-buffer-modified-p nil)
+    (condition-case err
+        (emjupy--save-to-server nb)
+      (emjupy-save-conflict
+       (if (yes-or-no-p (format "%s changed on the server since it was opened here (%s).  Overwrite it? "
+                                path (nth 2 err)))
+           (emjupy--save-to-server nb t)
+         (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
     (message "Successfully saved %s!" path)))
+
+(defcustom emjupy-recovery-directory (locate-user-emacs-file "emjupy-recovery/")
+  "Where notebooks with unsaved changes are copied, until they are saved.
+A copy is written a few seconds after a change, when Emacs is idle, and
+when Emacs quits; it is local, so it is written with the server gone.
+Opening the notebook again offers to restore it."
+  :type 'directory
+  :group 'emjupy)
+
+(defcustom emjupy-recovery-delay 3
+  "Seconds of idle time before unsaved changes are copied for recovery."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-autosave-interval 120
+  "Seconds between saves to the server of a notebook with unsaved changes.
+As Jupyter does.  A save that would overwrite changes made on the server
+since the notebook was opened is not made, and auto-saving that notebook
+stops until it is saved by hand.  nil never saves on its own."
+  :type '(choice (const :tag "Never" nil) number)
+  :group 'emjupy)
+
+(defvar-local emjupy--recovery-tick nil
+  "`buffer-modified-tick' when the recovery copy was last written.")
+
+(defvar emjupy--idle-save-timer nil
+  "Timer writing recovery copies and saving, when Emacs is idle.")
+
+(defun emjupy--recovery-file (nb)
+  "Return the file NB's recovery copy is written to."
+  (expand-file-name
+   (concat (md5 (format "%s|%s" (emjupy-server-base-url (emjupy-notebook-server nb))
+                        (emjupy-notebook-path nb)))
+           ".json")
+   emjupy-recovery-directory))
+
+(defun emjupy--recovery-write (nb)
+  "Copy NB, as it is in its buffer, to its recovery file.
+Written whole to a temporary file and renamed, so a copy is never half
+written; readable by its owner only, as the notebook may hold anything."
+  (with-current-buffer (emjupy-notebook-buffer nb)
+    (emjupy--sync-all-cells)
+    (let ((file (emjupy--recovery-file nb))
+          (record (concat "{\"server\":" (json-serialize (emjupy-server-base-url
+                                                          (emjupy-notebook-server nb)))
+                          ",\"path\":" (json-serialize (emjupy-notebook-path nb))
+                          ",\"written\":" (json-serialize (format-time-string "%F %T"))
+                          ",\"notebook\":" (emjupy--serialize-notebook nb) "}")))
+      (with-file-modes #o700 (make-directory (file-name-directory file) t))
+      (let ((partial (with-file-modes #o600
+                       (make-temp-file (expand-file-name "partial-" (file-name-directory file))))))
+        (let ((coding-system-for-write 'no-conversion))
+          (write-region record nil partial nil 'quiet))
+        (rename-file partial file t))
+      (setq emjupy--recovery-tick (buffer-modified-tick))
+      file)))
+
+(defun emjupy--recovery-delete (nb)
+  "Delete NB's recovery copy, if there is one."
+  (let ((file (emjupy--recovery-file nb)))
+    (when (file-exists-p file) (delete-file file))))
+
+(defun emjupy--modified-notebook-buffers ()
+  "Return the notebook buffers with unsaved edits."
+  (seq-filter (lambda (b) (with-current-buffer b
+                            (and emjupy--buffer-notebook (buffer-modified-p))))
+              (emjupy--notebook-buffers)))
+
+(defun emjupy--idle-save ()
+  "Copy unsaved edits for recovery, and save to the server when due.
+Run when Emacs is idle, so that neither interrupts typing.  A failure is
+said and left: the recovery copy, written first, keeps the changes."
+  (dolist (buf (emjupy--modified-notebook-buffers))
+    (with-current-buffer buf
+      (let ((nb emjupy--buffer-notebook))
+        (unless (eql emjupy--recovery-tick (buffer-modified-tick))
+          (condition-case err
+              (emjupy--recovery-write nb)
+            (file-error (message "[emjupy] Could not write a recovery copy of %s: %s"
+                                 (emjupy-notebook-path nb) (error-message-string err)))))
+        (when (and emjupy-autosave-interval (not emjupy--autosave-paused)
+                   (>= (- (float-time) (or emjupy--autosave-last 0)) emjupy-autosave-interval))
+          (setq emjupy--autosave-last (float-time))
+          (condition-case err
+              (emjupy--save-to-server nb)
+            (emjupy-save-conflict
+             (setq emjupy--autosave-paused t)
+             (message "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
+                      (emjupy-notebook-path nb)
+                      (substitute-command-keys "\\[emjupy-save-notebook] asks what to do.")))
+            ;; The server unreachable, or refusing: tried again later, and
+            ;; the recovery copy holds the changes meanwhile.
+            (file-error
+             (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
+                      (emjupy-notebook-path nb) (error-message-string err)))))))))
+
+(defun emjupy--recovery-write-all ()
+  "Copy every notebook with unsaved edits for recovery, as Emacs quits."
+  (dolist (buf (emjupy--modified-notebook-buffers))
+    (with-current-buffer buf
+      (condition-case err
+          (emjupy--recovery-write emjupy--buffer-notebook)
+        (file-error (message "[emjupy] Could not write a recovery copy: %s"
+                             (error-message-string err)))))))
+
+(defun emjupy--kill-buffer-query ()
+  "Ask before closing a notebook with unsaved edits.
+Return non-nil when it may be closed."
+  (or (not emjupy--buffer-notebook) (not (buffer-modified-p)) noninteractive
+      (let ((nb emjupy--buffer-notebook))
+        (pcase (car (read-multiple-choice
+                     (format "%s has unsaved changes" (emjupy-notebook-path nb))
+                     '((?s "save" "Save it to the server, then close it")
+                       (?k "keep" "Close it; the changes stay in a recovery copy")
+                       (?d "discard" "Close it and discard the changes")
+                       (?c "cancel" "Do not close it"))))
+          (?s (emjupy-save-notebook) t)
+          (?k (emjupy--recovery-write nb) t)
+          (?d (emjupy--recovery-delete nb) t)
+          (_ nil)))))
+
+(defun emjupy--kill-emacs-query ()
+  "Offer to save notebooks with unsaved edits before Emacs quits.
+Non-nil lets it quit.  Quitting without saving keeps them in recovery
+copies, written as Emacs quits."
+  (let ((modified (emjupy--modified-notebook-buffers)))
+    (or (null modified) noninteractive
+        (pcase (car (read-multiple-choice
+                     (format "%d notebook%s with unsaved changes" (length modified)
+                             (if (cdr modified) "s" ""))
+                     '((?s "save" "Save them to their servers, then quit")
+                       (?q "quit" "Quit; the changes stay in recovery copies")
+                       (?c "cancel" "Do not quit"))))
+          (?s (dolist (buf modified)
+                (with-current-buffer buf
+                  ;; A notebook that cannot be saved is said, and kept in a
+                  ;; recovery copy; the others are still saved.
+                  (condition-case err
+                      (emjupy-save-notebook)
+                    ((file-error user-error)
+                     (message "[emjupy] %s not saved: %s" (buffer-name)
+                              (error-message-string err))))))
+              t)
+          (?q t)
+          (_ nil)))))
+
+(defun emjupy--offer-recovery (nb)
+  "Offer to restore unsaved edits to NB from its recovery copy.
+A copy no different from what was opened is deleted.  One declined is
+kept aside, never deleted, in the recovery directory."
+  (let ((file (emjupy--recovery-file nb)))
+    (when (file-exists-p file)
+      (let* ((record (json-parse-string
+                      (with-temp-buffer
+                        (let ((coding-system-for-read 'utf-8))
+                          (insert-file-contents file))
+                        (buffer-string))
+                      :object-type 'hash-table :array-type 'array))
+             (saved (json-serialize (gethash "notebook" record))))
+        (cond
+         ((equal saved (emjupy--serialize-notebook nb))
+          (delete-file file))
+         ((or noninteractive
+              (not (y-or-n-p (format "Unsaved changes to %s from %s were kept.  Restore them? "
+                                     (emjupy-notebook-path nb) (gethash "written" record)))))
+          (let ((aside (concat (file-name-sans-extension file)
+                               (format-time-string "-declined-%Y%m%d-%H%M%S.json"))))
+            (rename-file file aside t)
+            (message "[emjupy] The unsaved changes are kept in %s." aside)))
+         (t
+          (let ((restored (emjupy--parse-ipynb saved)))
+            (with-current-buffer (emjupy-notebook-buffer nb)
+              (setf (emjupy-notebook-cells nb) (emjupy-notebook-cells restored)
+                    (emjupy-notebook-metadata nb) (emjupy-notebook-metadata restored))
+              (emjupy--rerender-notebook)
+              (set-buffer-modified-p t)
+              (message "[emjupy] Unsaved changes restored; %s"
+                       (substitute-command-keys "\\[emjupy-save-notebook] saves them."))))))))))
+
+(defun emjupy-recover-notebook ()
+  "Restore unsaved edits to this notebook from its recovery copy."
+  (interactive)
+  (let ((nb (emjupy--notebook)))
+    (unless (file-exists-p (emjupy--recovery-file nb))
+      (user-error "No recovery copy of %s" (emjupy-notebook-path nb)))
+    (emjupy--offer-recovery nb)))
+
+(defun emjupy--save-machinery-start ()
+  "Start copying and saving unsaved edits, and asking before losing them.
+Started when the first notebook is opened, so that loading emjupy changes
+nothing."
+  (unless (timerp emjupy--idle-save-timer)
+    (setq emjupy--idle-save-timer
+          (run-with-idle-timer emjupy-recovery-delay t #'emjupy--idle-save)))
+  (add-hook 'kill-emacs-query-functions #'emjupy--kill-emacs-query)
+  (add-hook 'kill-emacs-hook #'emjupy--recovery-write-all))
 
 (defun emjupy-switch-notebook ()
   "Switch to another open emjupy notebook, labelled by server."

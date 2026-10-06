@@ -106,6 +106,10 @@ language server beside the kernel, of =M-.= into your own modules.
 For a notebook whose kernel runs elsewhere the file goes to a temporary
 directory on this machine, and nothing is written on the remote.
 
+A notebook with unsaved edits is also copied to =emjupy-recovery-directory=
+until it is saved -- see [[#saving][Saving, and not losing work]].  Those copies are
+readable by you alone; delete them once you no longer want them.
+
 * Hiding output
 
 =C-c C-o= collapses the output of the cell at point, and restores it.  A
@@ -153,6 +157,33 @@ takes tens of milliseconds to draw.
 Stream output continues the output it belongs to rather than starting a
 new one, as in Jupyter, so a cell that prints a thousand lines has one
 output, not a thousand.
+
+* Saving, and not losing work
+:PROPERTIES:
+:CUSTOM_ID: saving
+:END:
+
+=C-x C-s= saves the notebook to its server.  It is also saved on its own,
+as Jupyter does: every =emjupy-autosave-interval= seconds (120) of a
+notebook with unsaved edits, when Emacs is idle.
+
+A save never overwrites a copy changed elsewhere.  If the notebook was
+saved from JupyterLab, or by someone else, since it was opened here,
+=C-x C-s= asks before overwriting it, and auto-saving it stops, saying
+so, until it is saved by hand.
+
+Unsaved edits are never only in the buffer.  A few seconds after a
+change, when Emacs is idle, the notebook is copied to
+=emjupy-recovery-directory= (=~/.emacs.d/emjupy-recovery/=), and again as
+Emacs quits.  The copy is local, so it is written with the tunnel down or
+the server gone, and a save deletes it.  Opening the notebook again,
+after a crash say, offers to restore it; =M-x emjupy-recover-notebook=
+does too.  A copy you decline is set aside in that directory, not deleted.
+
+Closing a notebook with unsaved edits asks whether to save them, keep
+them in the recovery copy, or discard them.  Quitting Emacs offers to
+save every such notebook.  And opening a notebook already open with
+unsaved edits shows it as it is, rather than fetching it again.
 
 * Interactive output
 :PROPERTIES:

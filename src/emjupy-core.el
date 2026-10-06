@@ -109,7 +109,10 @@ gets a definite answer rather than a local one.")
   ;; Where the kernel says it is running.  Absolute, on the kernel's own
   ;; filesystem, so only meaningful here when the kernel is local or
   ;; `emjupy-shadow-host' says how to reach it.
-  kernel-cwd)
+  kernel-cwd
+  ;; The server copy's `last_modified' when it was opened or last saved:
+  ;; what a save checks, so as not to overwrite changes made elsewhere.
+  last-modified)
 
 ;; --- Lookups ---------------------------------------------------------------
 
