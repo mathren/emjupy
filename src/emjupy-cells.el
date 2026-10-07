@@ -539,7 +539,11 @@ changed nothing -- the history is left intact."
           ;; inside target-cell's own overlay (which then grows to swallow
           ;; them), shoving it -- and its output -- to the end of the buffer.
           (cl-loop for cell across cells
-                   do (let ((start (point)))
+                   ;; Each at the end, wherever point has got to: drawn at
+                   ;; point, one call that moved it -- measuring a window,
+                   ;; which selects it -- drew the rest on top of each other.
+                   do (goto-char (point-max))
+                      (let ((start (point)))
                         (emjupy--render-cell cell)
                         (when (eq cell target-cell)
                           (setq target-start start))))

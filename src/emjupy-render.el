@@ -238,22 +238,33 @@ the numbers are widest and the overshoot wraps a whole line."
       ;; A window can die between a resize being scheduled and this
       ;; running; a dead one has no width to give, so the default stands.
       emjupy-box-min-width
-    (let ((cols (window-max-chars-per-line win))
-        (numbers (with-selected-window win
-                     (if (bound-and-true-p display-line-numbers)
-                         ;; What Emacs reports, or what the column will need --
-                         ;; the digits of the last line number and the space
-                         ;; either side -- whichever is more: the report is 0
-                         ;; until the window has been displayed once, which is
-                         ;; when a notebook is first drawn, and leaves out the
-                         ;; gap before the text.  Either way the rule fits.
-                         (max (line-number-display-width)
-                              (+ 2 (max (length (number-to-string
-                                                 (line-number-at-pos (point-max) t)))
-                                        (or (bound-and-true-p display-line-numbers-width)
-                                            0))))
-                       0))))
-      (max 1 (- cols numbers)))))
+    ;; Measured keeping point: `window-max-chars-per-line', Emacs's own,
+    ;; selects WIN to measure it, and selecting a window moves its buffer's
+    ;; point to the window's.  Midway through a redraw that is a stale
+    ;; position near the top, and every cell after it was drawn there, on
+    ;; top of the one before: the notebook came out backwards, cells
+    ;; overlapping and text lost -- when it was shown in a window other
+    ;; than the selected one, as opening and closing buffers leaves it.
+    (save-excursion
+      (let ((cols (window-max-chars-per-line win))
+            ;; Read from the window's buffer rather than by selecting it.
+            ;; Emacs reports the column's width for the selected window only,
+            ;; so for any other it is worked out from the last line's number.
+            (numbers (with-current-buffer (window-buffer win)
+                       (if (bound-and-true-p display-line-numbers)
+                           ;; What Emacs reports, or what the column will need --
+                           ;; the digits of the last line number and the space
+                           ;; either side -- whichever is more: the report is 0
+                           ;; until the window has been displayed once, which is
+                           ;; when a notebook is first drawn, and leaves out the
+                           ;; gap before the text.  Either way the rule fits.
+                           (max (if (eq win (selected-window)) (line-number-display-width) 0)
+				(+ 2 (max (length (number-to-string
+                                                   (line-number-at-pos (point-max) t)))
+                                          (or (bound-and-true-p display-line-numbers-width)
+                                              0))))
+			 0))))
+	(max 1 (- cols numbers))))))
 
 (defcustom emjupy-box-right-margin 2
   "Columns left free at the right edge when fitting rules to the window.

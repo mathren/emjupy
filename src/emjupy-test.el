@@ -7713,5 +7713,38 @@ link to elsewhere; then no copy is written there."
         (delete-file (directory-file-name emjupy-recovery-directory))
         (delete-directory elsewhere t)))))
 
+(ert-deftest emjupy-test-redraw-in-a-window-not-selected-keeps-its-place ()
+  "A notebook redrawn while shown in a window other than the selected one stays whole.
+Measuring that window for the line numbers selected it, and selecting a
+window moves its buffer's point to the window's.  Midway through a
+redraw that is a stale position near the top, so every cell after the
+first was drawn there, on top of the one before: the notebook came out
+backwards, cells overlapping and text lost.  Opening and closing other
+buffers is what leaves a notebook in a window not selected."
+  (let ((cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown :source "# Title\n\nSome prose."
+                                         :outputs [] :metadata (make-hash-table))
+                       (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a = 1"
+                                         :outputs [] :metadata (make-hash-table))
+                       (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "b = 2"
+                                         :outputs [] :metadata (make-hash-table)))))
+    (emjupy-test--with-notebook cells buf nb
+      (save-window-excursion
+        (delete-other-windows)
+        (let ((shown (split-window))
+              (other (get-buffer-create "*emjupy-test-other*")))
+          (unwind-protect
+              (progn
+                (set-window-buffer shown buf)
+                (set-window-buffer (selected-window) other)
+                (with-current-buffer buf
+                  (display-line-numbers-mode 1)
+                  (set-window-point shown 2)
+                  (emjupy--rerender-notebook)
+                  (should-not (emjupy--check-invariants))
+                  (should (string-prefix-p "# Title" (buffer-string)))
+                  (should (< (string-match "a = 1" (buffer-string))
+                             (string-match "b = 2" (buffer-string))))))
+            (kill-buffer other)))))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
