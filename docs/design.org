@@ -121,7 +121,16 @@ How wide output is drawn, and when the kernel is told the width, is in
 [[file:usage.org][Using a notebook]].
 
 Output is redrawn at most a few times a second, however many messages
-arrive, and only in the cell it belongs to.
+arrive, and only in the cell it belongs to.  A stream that has only grown
+at its end has just the new text drawn, after what is already there, so
+an update costs what it adds, not what the output already holds -- a long
+run would otherwise slow down with every line.  That is done only when
+nothing already drawn can look different: the same outputs, the stream
+grown at its end, drawn at the same width, what was drawn ending in a
+whole line, and no carriage return or colour escape in it, since those
+rewrite or recolour what came before.  Anything else redraws the cell's
+output box whole.  Either way only that box is marked read-only again,
+not the rest of the notebook.
 
 * Closing a notebook
 
@@ -152,6 +161,25 @@ A few redraw the whole notebook: changing a cell's type,
 change.  They erase the buffer and draw it again from the cells, which
 moves every held position to the start.
 
+A redraw happens whole or is put right.  One stopped partway -- by an
+error, or by =C-g= -- would leave text replaced and its overlays not, or
+the reverse, and the buffer would show something the cells do not hold:
+the notebook "scrambled".  So when a redraw does not finish, the notebook
+is drawn again from its cells at once, and the error is still reported.
+One cause was found, and removed: measuring a window to size the rules
+selects it, and selecting a window moves its buffer's point to the
+window's, so a notebook shown in a window other than the selected one --
+as opening and closing buffers leaves it -- was drawn on top of itself.
+Measuring now keeps point, and a full redraw measures once.
+
+As a last safeguard, after redraws, when Emacs is idle, the buffer's
+structure is checked: every cell's overlay there, in order, none
+overlapping, each output box after its source.  Anything wrong is put
+right by drawing the notebook again, and what was wrong is said, so that
+its cause can be found.  Only the structure is checked, never whether the
+text matches the cells -- that differs whenever something typed is not
+yet synced, and redrawing on it would undo the typing.
+
 * Undo
 
 Every cell command -- inserting, deleting, moving, splitting, joining,
@@ -176,8 +204,12 @@ Undo entries hold plain buffer positions, so a redraw that is not an
 undo step -- output arriving, say -- keeps them meaningful directly:
 entries before the change are untouched, those after it are shifted by
 the amount it moved things, and those inside the redrawn region are
-dropped.  It changes the entries in place, since an undo already under
-way replays from a list that is shared, not copied.
+dropped.  The entries are changed in place, since an undo already under
+way replays from a list that is shared, not copied -- but all or nothing:
+every new entry is worked out before any is changed.  If one cannot be,
+none is, and the entries from the redrawn region on are dropped instead
+and that is said.  Some history lost is safe; history half shifted is
+not, since the next undo would write text in the wrong places.
 
 * Use the browser's transport, not ZMQ
 

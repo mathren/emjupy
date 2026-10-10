@@ -59,7 +59,11 @@ emjupy determines it in this order:
 1. =emjupy-remote-root=, if set.  A complete path, used as given.
 2. The address, if it names a host other than =localhost=.
 3. =emjupy-ssh-host=, if set.
-4. The command line of the =ssh= process forwarding the port.
+4. The command line of the =ssh= process forwarding the port.  It is
+   read with =ps=, on this machine whatever the current directory, and
+   the answer -- none too -- is remembered for a minute per port: a
+   search for references maps every result, and would otherwise run
+   =ps= for each.
 
 Cases 2 to 4 supply only the host name.  The directory is taken from the
 kernel, which reports the notebook's own directory, so notebooks in

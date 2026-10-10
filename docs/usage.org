@@ -195,7 +195,13 @@ Emacs gives =.ipynb= files no mode of their own.  To bind it as EIN's
 
 =C-x C-s= saves the notebook to its server.  It is also saved on its own,
 as Jupyter does: every =emjupy-autosave-interval= seconds (120) of a
-notebook with unsaved edits, when Emacs is idle.
+notebook with unsaved edits, when Emacs is idle.  Emacs does not wait for
+an automatic save: over a remote link it costs two round trips and the
+upload of the whole notebook, and waiting for them froze Emacs.  What is
+saved is the notebook as it was when the save started; edits made while
+it is on its way stay unsaved, for the next save.  =C-x C-s= does wait --
+and first lets an automatic save already on its way finish, so the newer
+save is the one that arrives last.
 
 A save never overwrites a copy changed elsewhere.  If the notebook was
 saved from JupyterLab, or by someone else, since it was opened here,

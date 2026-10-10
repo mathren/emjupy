@@ -33,23 +33,23 @@ was being tested.
 The sources are in =src/=, listed here from the bottom layer up.  Each
 file requires only files earlier in this table, never later ones.
 
-| File                 | Contains                                                   |
-|----------------------+------------------------------------------------------------|
-| =emjupy-core.el=     | structs, state, server registry, lookups                   |
-| =emjupy-http.el=     | REST transport, URL parsing, the HTTP error types          |
-| =emjupy-render.el=   | faces, colours, outlines, drawing output, text helpers     |
-| =emjupy-cells.el=    | buffer<->struct syncing, cell editing and cell commands    |
-| =emjupy-kernel.el=   | kernel WebSocket, execution, message routing               |
-| =emjupy-figures.el=  | opening an output on its own: plotly figures, HTML, images |
-| =emjupy-widgets.el=  | widget controls in the buffer, and what they cause         |
+| File                    | Contains                                                    |
+|-------------------------+-------------------------------------------------------------|
+| =emjupy-core.el=        | structs, state, server registry, lookups                    |
+| =emjupy-http.el=        | REST transport, URL parsing, the HTTP error types           |
+| =emjupy-render.el=      | faces, colours, outlines, drawing output, text helpers      |
+| =emjupy-cells.el=       | buffer<->struct syncing, cell editing and cell commands     |
+| =emjupy-kernel.el=      | kernel WebSocket, execution, message routing                |
+| =emjupy-figures.el=     | opening an output on its own: plotly figures, HTML, images  |
+| =emjupy-widgets.el=     | widget controls in the buffer, and what they cause          |
 | =emjupy-widget-page.el= | widgets that draw themselves, live in a page, through Emacs |
-| =emjupy-remote.el=   | where a server's files live: roots, SSH tunnels, TRAMP     |
-| =emjupy-lsp.el=      | language-server WebSocket transport, shadow document text  |
-| =emjupy-eglot.el=    | shadow buffer, Eglot integration, completion, eldoc        |
-| =emjupy-mode.el=     | =emjupy-mode=, its keymap and menu                         |
-| =emjupy-notebook.el= | login, the notebook browser, .ipynb parse and serialize    |
-| =emjupy.el=          | package header, version, and the entry point that loads it |
-| =emjupy-pkg.el=      | package metadata for =make package= (MELPA makes its own)  |
+| =emjupy-remote.el=      | where a server's files live: roots, SSH tunnels, TRAMP      |
+| =emjupy-lsp.el=         | language-server WebSocket transport, shadow document text   |
+| =emjupy-eglot.el=       | shadow buffer, Eglot integration, completion, eldoc         |
+| =emjupy-mode.el=        | =emjupy-mode=, its keymap and menu                          |
+| =emjupy-notebook.el=    | login, the notebook browser, .ipynb parse and serialize     |
+| =emjupy.el=             | package header, version, and the entry point that loads it  |
+| =emjupy-pkg.el=         | package metadata for =make package= (MELPA makes its own)   |
 
 ** Dependencies run one way
 
@@ -113,33 +113,33 @@ done nothing for months looks exactly like one that works.
 
 * Makefile targets
 
-| Target             | Effect                                                      |
-|--------------------+-------------------------------------------------------------|
-| =make compile=       | byte-compile the sources, with =src/= first on the load path  |
-| =make test=          | the unit tests; integration tests skip without a server     |
-| =make check=         | unit and integration tests; refuses to run without a server |
-| =make lint=          | checkdoc, and package-lint if it is installed               |
-| =make docs=          | export =docs/*.org= to the site in =html-content/=              |
-| =make package=       | build =emjupy-VERSION.tar=                                    |
-| =make install=       | install that tar via =package-install-file=                   |
-| =make coverage=      | line coverage of the suite, as lcov, with a per-file table  |
-| =make set-version=   | write a new version everywhere: =make set-version VERSION=X.Y.Z= |
-| =make check-version= | the version header, =emjupy-version= and the pkg file agree   |
-| =make versions=      | which Emacs this is, against the one development targets    |
-| =make clean=         | remove =.elc= files and the tar                               |
-| =make timestamps=    | touch every source, to force a full rebuild                 |
+| Target               | Effect                                                                        |
+|----------------------+-------------------------------------------------------------------------------|
+| =make compile=       | byte-compile the sources, with =src/= first on the load path                  |
+| =make test=          | the unit tests; integration tests skip without a server                       |
+| =make check=         | unit and integration tests; refuses to run without a server                   |
+| =make lint=          | checkdoc, and package-lint if it is installed                                 |
+| =make docs=          | export =docs/*.org= to the site in =html-content/=                            |
+| =make package=       | build =emjupy-VERSION.tar=                                                    |
+| =make install=       | install that tar via =package-install-file=                                   |
+| =make coverage=      | line coverage of the suite, as lcov, with a per-file table                    |
+| =make set-version=   | write a new version everywhere: =make set-version X.Y.Z= (or =VERSION=X.Y.Z=) |
+| =make check-version= | the version header, =emjupy-version= and the pkg file agree                   |
+| =make versions=      | which Emacs this is, against the one development targets                      |
+| =make clean=         | remove =.elc= files and the tar                                               |
+| =make timestamps=    | touch every source, to force a full rebuild                                   |
 
 * Continuous integration
 
 Each check runs once per event, in one workflow unless only another can
 do it:
 
-| Event                           | Runs                                        |
-|---------------------------------+---------------------------------------------|
-| push to =main=, pull request    | =build-package.yml=: compile, lint, melpazoid, docs, and the tests -- unit and integration, once |
-| push to =main= changing =src/=  | and =coverage.yml=, for the Codecov badge   |
-| tag                             | =release.yml= only                          |
-| by hand                         | =set-version.yml=, or any of the above from the Actions tab |
+| Event                          | Runs                                                                                             |
+|--------------------------------+--------------------------------------------------------------------------------------------------|
+| push to =main=, pull request   | =build-package.yml=: compile, lint, melpazoid, docs, and the tests -- unit and integration, once |
+| push to =main= changing =src/= | and =coverage.yml=, for the Codecov badge                                                        |
+| tag                            | =release.yml= only                                                                               |
+| by hand                        | =set-version.yml=, or any of the above from the Actions tab                                      |
 
 Pushes to other branches run nothing until a pull request is opened, and
 a newer push to the same branch cancels a run still going.  Build also
@@ -280,12 +280,12 @@ this Emacs cannot display, a WebSocket URL that drops its base path, a
 saved notebook no other tool will open -- so they are worth running
 before trusting a change.
 
-| Variable           | Meaning                                                   |
-|--------------------+-----------------------------------------------------------|
+| Variable             | Meaning                                                     |
+|----------------------+-------------------------------------------------------------|
 | =EMJUPY_TEST_URL=    | =host:port= of a running server (the LOCAL end of a tunnel) |
-| =EMJUPY_TEST_TOKEN=  | its token                                                 |
-| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test         |
-| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests               |
+| =EMJUPY_TEST_TOKEN=  | its token                                                   |
+| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test           |
+| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests                 |
 | =EMJUPY_TEST_TOKEN2= | its token (defaults to =EMJUPY_TEST_TOKEN=)                 |
 
 To exercise the *remote* path, point =EMJUPY_TEST_URL= at the local end
@@ -315,14 +315,14 @@ found.
 inputs.  They run with the rest of =make test=, and each found a bug
 the hand-written tests had not.
 
-| Test                            | What it tries                                           |
-|---------------------------------+---------------------------------------------------------|
-| message order                   | random interleavings of a kernel's replies and outputs  |
-| random edits                    | random sequences of cell commands, invariants after each |
-| undo everything                 | random edits, then undo to the start                    |
-| round-trip                      | every notebook in =src/test-corpus/=, saved and reloaded |
-| hostile content                 | escape floods, huge SVGs, deep JSON, awkward file names |
-| leaks                           | many sessions; timers, processes, hooks, tables after   |
+| Test            | What it tries                                            |
+|-----------------+----------------------------------------------------------|
+| message order   | random interleavings of a kernel's replies and outputs   |
+| random edits    | random sequences of cell commands, invariants after each |
+| undo everything | random edits, then undo to the start                     |
+| round-trip      | every notebook in =src/test-corpus/=, saved and reloaded |
+| hostile content | escape floods, huge SVGs, deep JSON, awkward file names  |
+| leaks           | many sessions; timers, processes, hooks, tables after    |
 
 ** Seeds
 
@@ -449,7 +449,7 @@ support]].
    version everywhere the current one appears -- the =;; Version:=
    header, =emjupy-version=, =src/emjupy-pkg.el= and the sample output in
    =docs/usage.org= -- checks they agree, and commits the change.  Or
-   locally, the same script: =make set-version VERSION=X.Y.Z=.
+   locally, the same script: =make set-version X.Y.Z=.
 
 
 2. *Tag the commit* with the same version and push the tag.  That starts
