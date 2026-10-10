@@ -44,7 +44,7 @@ SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
 # the release tarball and a MELPA install describe themselves alike.
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el $(SRC)/emjupy-figure-window.py
 
-.PHONY: all compile test check lint docs coverage set-version versions check-version package install clean timestamps
+.PHONY: all compile test check lint docs coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
 
 all: compile
 
@@ -95,6 +95,14 @@ versions:
 # a site is set to publish from the docs/ folder.
 docs:
 	$(EMACS) -batch -Q -l publish.el all
+
+# Every file the package ships: what the MELPA recipe must list.
+print-package-files:
+	@for f in $(SOURCES) $(filter-out $(SRC)/emjupy-pkg.el,$(PKGFILES)); do echo $$f; done | sort -u
+
+# The MELPA recipe lists every file, and the package builds from it alone.
+recipe-check:
+	@tools/check-recipe.sh $(EMACS)
 
 lint:
 	cd $(SRC) && $(EMACS) -batch -Q -L . $(if $(WEBSOCKET),-L $(abspath $(WEBSOCKET)),) -l lint.el

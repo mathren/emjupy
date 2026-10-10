@@ -230,6 +230,17 @@ make docs                   # then open html-content/index.html
 python3 tools/check-links.py
 #+end_src
 
+The MELPA recipe, =.github/melpa-recipe=, must list every file the
+package ships, or MELPA builds a package missing it.  CI checks that too,
+as =make recipe-check=: every file the Makefile ships is in the recipe,
+nothing listed is missing, and built as MELPA builds it -- the recipe's
+files alone, in an empty directory -- each byte-compiles.  Run it after
+adding a file:
+
+#+begin_src bash
+make recipe-check
+#+end_src
+
 Both the build and the release run that one script; a link to a section
 of another page is checked to its anchor, so link to a heading by a
 =CUSTOM_ID= -- Org cannot resolve a heading searched for in another file.

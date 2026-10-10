@@ -114,6 +114,9 @@ jobs:
           EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make lint
 
+      - name: Check the MELPA recipe builds the package
+        run: make recipe-check
+
   # The documentation is Org, and Org export is the thing most likely to
   # break silently: a stale link renders fine on GitHub and 404s in the
   # exported site.  Built here so that cannot happen unnoticed, and
