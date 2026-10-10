@@ -859,6 +859,14 @@ Nothing is rewritten unless that machine is known to be another one."
                (not (file-remote-p file)))
       (concat prefix file))))
 
+(defun emjupy--local-truename (file)
+  "Return FILE\'s true name if it is on this machine, else FILE as written.
+`file-truename\' on a TRAMP name asks the other machine, once for every
+symbolic link it follows, and this is asked for each item a search
+returns.  A remote name is compared as written: the shadow\'s is one
+emjupy made, with no link in it to follow."
+  (if (file-remote-p file) (expand-file-name file) (file-truename file)))
+
 (defun emjupy--xref-remap (nb items)
   "Rewrite ITEMS pointing into NB's shadow file so they point at its cells.
 
@@ -869,6 +877,8 @@ right destination there."
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (shadow-file (and (buffer-live-p buf)
                            (buffer-local-value 'buffer-file-name buf)))
+         ;; once for the search, not once per item it returned
+         (shadow-name (and shadow-file (emjupy--local-truename shadow-file)))
          (nb-buf (emjupy-notebook-buffer nb)))
     (if (not (and items shadow-file (buffer-live-p nb-buf)))
         items
@@ -876,8 +886,7 @@ right destination there."
        (lambda (item)
          (let* ((loc (xref-item-location item))
                 (file (and (xref-file-location-p loc) (xref-location-group loc)))
-                (same (and file (equal (file-truename file)
-                                       (file-truename shadow-file)))))
+                (same (and file (equal (emjupy--local-truename file) shadow-name))))
            (if (not same)
                (emjupy--xref-on-the-right-machine nb item)
              (let* ((line (xref-location-line loc))

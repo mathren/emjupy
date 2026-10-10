@@ -6567,12 +6567,12 @@ moment ago.  A missed tunnel means no host, so no remote name, so
       (cl-letf (((symbol-function 'shell-command-to-string)
                  (lambda (&rest _) (concat line "\n")))
                 ((symbol-function 'executable-find) (lambda (&rest _) "/bin/ps")))
-        (should (equal (emjupy--ssh-host-forwarding 9999) "me@box"))))
+        (should (equal (let ((emjupy--tunnel-hosts (make-hash-table))) (emjupy--ssh-host-forwarding 9999)) "me@box"))))
     ;; and something that merely mentions ssh is not a tunnel
     (cl-letf (((symbol-function 'shell-command-to-string)
                (lambda (&rest _) "emacs --eval (ssh -L 9999:localhost:9999)\n"))
               ((symbol-function 'executable-find) (lambda (&rest _) "/bin/ps")))
-      (should-not (emjupy--ssh-host-forwarding 9999)))))
+      (should-not (let ((emjupy--tunnel-hosts (make-hash-table))) (emjupy--ssh-host-forwarding 9999))))))
 
 (ert-deftest emjupy-test-definition-elsewhere-says-so-rather-than-inventing ()
   "A definition on the kernel\='s machine that cannot be reached says so.
@@ -6629,7 +6629,7 @@ file name is checked here, because the failure it caused was invisible
                                          :root "/home/me/scripts"))
              (nb (make-emjupy-notebook :cells [] :path "t.ipynb" :server server
                                        :kernel-cwd "/home/me/scripts")))
-        (should (equal (emjupy--ssh-host-forwarding 9999) "ua_w"))
+        (should (equal (let ((emjupy--tunnel-hosts (make-hash-table))) (emjupy--ssh-host-forwarding 9999)) "ua_w"))
         (should (equal (emjupy--tramp-root-for server) "/ssh:ua_w:/home/me/scripts"))
         (should (equal (emjupy--remote-name-for nb "/home/me/scripts/plot_aux.py")
                        "/ssh:ua_w:/home/me/scripts/plot_aux.py"))))))
@@ -7843,6 +7843,53 @@ would undo the typing, so only the structure is checked."
         (should (emjupy--check-invariants t))
         (emjupy--check-integrity buf)
         (should-not (emjupy--check-invariants t))))))
+
+(ert-deftest emjupy-test-tunnel-lookup-runs-ps-once-and-here ()
+  "Finding the SSH tunnel for a port runs ps once a minute, on this machine.
+It is asked for every item a search for definitions returns; ps ran for
+each.  And it ran in the current buffer's directory, which beside a
+remote notebook is a TRAMP one: ps then ran on the remote machine,
+through TRAMP, where the tunnel is not."
+  (let ((emjupy--tunnel-hosts (make-hash-table))
+        (emjupy-probe-environment t)
+        (runs 0) (where nil))
+    (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) "/bin/ps"))
+              ((symbol-function 'shell-command-to-string)
+               (lambda (&rest _)
+                 (setq runs (1+ runs) where default-directory)
+                 "/usr/bin/ssh -N -L 8888:localhost:8888 analysis-box\n")))
+      (let ((default-directory "/ssh:analysis-box:/home/me/"))
+        (dotimes (_ 30)
+          (should (equal (emjupy--ssh-host-forwarding 8888) "analysis-box"))))
+      (should (= runs 1))
+      (should-not (file-remote-p where))
+      ;; no tunnel is remembered as well
+      (should-not (emjupy--ssh-host-forwarding 9999))
+      (should-not (emjupy--ssh-host-forwarding 9999))
+      (should (= runs 2)))))
+
+(ert-deftest emjupy-test-remote-names-are-not-asked-for-their-true-name ()
+  "A remote file's true name is not asked of the other machine.
+`file-truename' on a TRAMP name asks the remote machine, per link it
+follows, and it was asked twice for each item a search returned."
+  (cl-letf (((symbol-function 'file-truename)
+             (lambda (f) (if (file-remote-p f) (error "Asked the remote machine for %s" f) f))))
+    (should (equal (emjupy--local-truename "/ssh:box:/tmp/emjupy-shadow/x.py")
+                   "/ssh:box:/tmp/emjupy-shadow/x.py"))
+    (should (equal (emjupy--local-truename "/tmp/here.py") "/tmp/here.py"))))
+
+(ert-deftest emjupy-test-opening-from-the-listing-builds-the-tramp-root-once ()
+  "Opening a file from the notebook listing works out its TRAMP root once."
+  (let ((built 0) (opened nil)
+        (emjupy-list--server (make-emjupy-server :base-url "box:8888" :token "")))
+    (cl-letf (((symbol-function 'emjupy--configured-root-for) (lambda (&rest _) nil))
+              ((symbol-function 'emjupy--server-side-root-for) (lambda (&rest _) "/home/me"))
+              ((symbol-function 'emjupy--tramp-root-for)
+               (lambda (&rest _) (setq built (1+ built)) "/ssh:box:/home/me"))
+              ((symbol-function 'find-file) (lambda (f &rest _) (setq opened f))))
+      (emjupy-list-open-file "data/table.csv"))
+    (should (= built 1))
+    (should (equal opened "/ssh:box:/home/me/data/table.csv"))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

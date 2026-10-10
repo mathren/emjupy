@@ -164,26 +164,50 @@ tedious to work out but not ambiguous."
        ((string-prefix-p "-" word) nil)
        (t (setq destination word))))))
 
+(defvar emjupy--tunnel-hosts (make-hash-table)
+  "The tunnel found forwarding each local port: (TIME . HOST), HOST nil if none.")
+
+(defconst emjupy--tunnel-hosts-seconds 60
+  "How long the tunnel found for a port is taken as still the one.")
+
 (defun emjupy--ssh-host-forwarding (port)
   "Return the host of a running SSH tunnel forwarding local PORT, or nil.
 
 The tunnel is invisible in the HTTP conversation, but it is a process on
 this machine and its command line says where it goes.  Reading it back
-is how emjupy learns a name nobody told it."
-  (when (and port emjupy-probe-environment (executable-find "ps"))
-    (let ((lines (split-string
-                  (shell-command-to-string "ps -eo args= 2>/dev/null") "\n" t))
-          (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))
-          (found nil))
-      (dolist (line lines found)
-        ;; The command may be a full path, and may be a wrapper that keeps
-        ;; a tunnel alive.  Matching only a line beginning "ssh" missed
-        ;; /usr/bin/ssh and autossh, which is most tunnels that were not
-        ;; typed by hand a moment ago.
-        (when (and (not found)
-                   (string-match-p "\\`\\(?:[^ ]*/\\)?\\(?:auto\\)?ssh\\(?: \\|\\'\\)" line)
-                   (string-match-p pattern line))
-          (setq found (emjupy--ssh-destination line)))))))
+is how emjupy learns a name nobody told it.
+
+It is asked for each item a search for definitions returns, so the
+answer -- none, too -- is kept for `emjupy--tunnel-hosts-seconds\='
+rather than running ps for every one.  Tunnels outlive that easily."
+  (when (and port emjupy-probe-environment)
+    (let ((known (gethash port emjupy--tunnel-hosts)))
+      (if (and known (< (- (float-time) (car known)) emjupy--tunnel-hosts-seconds))
+          (cdr known)
+        (let ((host (emjupy--ssh-host-forwarding-1 port)))
+          (puthash port (cons (float-time) host) emjupy--tunnel-hosts)
+          host)))))
+
+(defun emjupy--ssh-host-forwarding-1 (port)
+  "Look through this machine\='s processes for an SSH tunnel forwarding PORT.
+Run from a local directory whatever the current buffer\='s: from a TRAMP
+one -- a shadow file beside a remote notebook -- `ps\=' ran on the remote
+machine, through TRAMP, where the tunnel is not."
+  (let ((default-directory temporary-file-directory))
+    (when (executable-find "ps")
+      (let ((lines (split-string
+                    (shell-command-to-string "ps -eo args= 2>/dev/null") "\n" t))
+            (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))
+            (found nil))
+        (dolist (line lines found)
+          ;; The command may be a full path, and may be a wrapper that keeps
+          ;; a tunnel alive.  Matching only a line beginning "ssh" missed
+          ;; /usr/bin/ssh and autossh, which is most tunnels that were not
+          ;; typed by hand a moment ago.
+          (when (and (not found)
+                     (string-match-p "\\`\\(?:[^ ]*/\\)?\\(?:auto\\)?ssh\\(?: \\|\\'\\)" line)
+                     (string-match-p pattern line))
+            (setq found (emjupy--ssh-destination line))))))))
 
 (defun emjupy--ssh-host-for (server)
   "Return the name of the host SERVER is on, or nil."

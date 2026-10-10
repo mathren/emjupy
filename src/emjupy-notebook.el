@@ -565,6 +565,7 @@ can be edited:
   over HTTP and writing it back is a different job from reading it."
   (let* ((server emjupy-list--server)
          (configured (emjupy--configured-root-for server))
+         (tramp-root (and (not configured) (emjupy--tramp-root-for server)))
          (server-side (emjupy--server-side-root-for server)))
     (cond
      ;; A root set by hand is addressable by definition: that is why it was
@@ -574,9 +575,8 @@ can be edited:
      ;; The address names a real machine, so a TRAMP path can be built from
      ;; it and the path the kernel reported.  Not so for a tunnel, which
      ;; answers at localhost and never mentions the host it leads to.
-     ((emjupy--tramp-root-for server)
-      (find-file (expand-file-name
-                  path (file-name-as-directory (emjupy--tramp-root-for server)))))
+     (tramp-root
+      (find-file (expand-file-name path (file-name-as-directory tramp-root))))
      ;; The server is on this machine, so its own path is ours too.
      ((and server-side
            (file-exists-p (expand-file-name path
