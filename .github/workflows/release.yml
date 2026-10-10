@@ -11,7 +11,12 @@ on:
       - '*'
 
 jobs:
-  package:
+  # One job: each job checks out the code and installs Emacs, and the
+  # package and the site were two.  Everything is built and checked before
+  # anything is published -- the site's links included, which were checked
+  # only after the release was already up, leaving a release without its
+  # documentation when one was broken.
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,8 +45,6 @@ jobs:
         run: make test
 
       - name: Package
-        env:
-          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make package
 
       - name: Verify the tar is the tagged version
@@ -50,39 +53,28 @@ jobs:
           test -s "emjupy-${version}.tar"
           tar -tf "emjupy-${version}.tar"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: '*.tar'
-          generate_release_notes: true
-
-  docs:
-    needs: package
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Emacs
-        uses: purcell/setup-emacs@master
-        with:
-          version: '30.1'
-
       - name: Export the docs
         run: make docs
 
       - name: Check every internal link resolves
         run: python3 tools/check-links.py html-content
 
+      # Published only now, everything above having passed.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.tar'
+          generate_release_notes: true
+
       - name: Package the site for Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: html-content
 
-  # Only after the package job has succeeded: a tag whose tests fail must
+  # Only after the release job has succeeded: a tag whose tests fail must
   # not replace the documentation of the last good release.
   deploy-docs:
-    needs: docs
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       pages: write

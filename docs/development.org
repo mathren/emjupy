@@ -134,12 +134,20 @@ done nothing for months looks exactly like one that works.
 Each check runs once per event, in one workflow unless only another can
 do it:
 
-| Event                          | Runs                                                                                             |
-|--------------------------------+--------------------------------------------------------------------------------------------------|
-| push to =main=, pull request   | =build-package.yml=: compile, lint, melpazoid, docs, and the tests -- unit and integration, once |
-| push to =main= changing =src/= | and =coverage.yml=, for the Codecov badge                                                        |
-| tag                            | =release.yml= only                                                                               |
-| by hand                        | =set-version.yml=, or any of the above from the Actions tab                                      |
+| Event                          | Runs                                                                                                           |
+|--------------------------------+----------------------------------------------------------------------------------------------------------------|
+| pull request                   | =build-package.yml=: check (lint, the recipe compiled, package, docs), melpazoid, and the tests, unit and live |
+| push to =main=                 | =build-package.yml=: check and melpazoid                                                                       |
+| push to =main= changing =src/= | and =coverage.yml=: the tests, unit and live, once, instrumented -- what fails them fails it                   |
+| tag                            | =release.yml= only                                                                                             |
+| by hand                        | =set-version.yml=, or any of the above from the Actions tab                                                    |
+
+Every check that needs only Emacs is one job, =check=, since each job
+checks out the code and installs Emacs afresh.  On a push to =main= the
+tests run once, in =coverage.yml=; the tests that time things, skipped
+under coverage, run on pull requests.  A release is one job too, and
+publishes nothing -- release, tarball or site -- until all of it has
+passed.
 
 Pushes to other branches run nothing until a pull request is opened, and
 a newer push to the same branch cancels a run still going.  Build also

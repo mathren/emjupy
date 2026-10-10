@@ -3,8 +3,10 @@ name: Build
 # One workflow for everything a change can break; the others do what
 # only they do.  What runs on each event, so each check runs once:
 #
-#   push to main, pull request   this workflow (the tests, once)
-#   push to main                 + coverage.yml, for the badge
+#   pull request                 this workflow: check, integration, melpazoid
+#   push to main                 this workflow's check and melpazoid, and
+#                                coverage.yml, which runs the whole suite
+#                                once, instrumented, in place of integration
 #   tag                          release.yml only -- it tests what it ships
 #
 # Pushes to other branches run nothing until a pull request is opened, and
@@ -48,45 +50,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Compiles with warnings as errors and builds the package tar.  The tests
-  # run once, in the integration job -- unit tests included -- not here too.
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Emacs
-        uses: purcell/setup-emacs@master
-        with:
-          version: '30.1'
-
-      # The one dependency.  Vendored rather than installed from an archive,
-      # so the build does not depend on MELPA being reachable.
-      - name: Fetch websocket.el
-        run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
-
-      - name: Compile
-        env:
-          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
-        run: |
-          make clean
-          make compile
-
-      - name: Package
-        env:
-          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
-        run: make package
-
-      - name: Serve Package as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: emjupy
-          path: '*.tar'
-
-  # What a MELPA review checks.  Separate from the tests, so a docstring
-  # complaint does not read as a broken build.
-  lint:
+  # One job for everything that needs only Emacs: each job checks out the
+  # code and installs Emacs, so three jobs did that three times, for a few
+  # make targets each.  Nothing is compiled twice: the recipe check
+  # byte-compiles every file -- as MELPA builds them, warnings failing it --
+  # so a separate `make compile' compiled them all again.
+  check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -114,23 +83,19 @@ jobs:
           EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make lint
 
-      - name: Check the MELPA recipe builds the package
+      - name: Compile, as MELPA builds the package from its recipe
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make recipe-check
 
-  # The documentation is Org, and Org export is the thing most likely to
-  # break silently: a stale link renders fine on GitHub and 404s in the
-  # exported site.  Built here so that cannot happen unnoticed, and
-  # published so the site is whatever main says it is.
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Package
+        run: make package
 
-      - name: Install Emacs
-        uses: purcell/setup-emacs@master
+      - name: Serve Package as Artifact
+        uses: actions/upload-artifact@v4
         with:
-          version: '30.1'
+          name: emjupy
+          path: '*.tar'
 
       - name: Export the docs
         run: make docs
@@ -138,9 +103,6 @@ jobs:
       - name: Check every internal link resolves
         run: python3 tools/check-links.py html-content
 
-      # Built and checked on every push, published only on a tag: the
-      # site documents the released package, not main as it stands.
-      # See release.yml.
       - name: Keep the exported site
         uses: actions/upload-artifact@v4
         with:
@@ -151,7 +113,13 @@ jobs:
   # server: the ones most likely to catch a regression in the WebSocket,
   # session or LSP paths.  Until now they ran only if someone remembered to
   # run them by hand.
+  # On a push to main, coverage.yml runs this same suite -- unit and live,
+  # against a server -- instrumented, and fails as this would; running it
+  # here too set up a second Python and server for the same tests.  So
+  # here for pull requests, and when run by hand.  The tests that time
+  # things, skipped under coverage, are run by these.
   integration:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

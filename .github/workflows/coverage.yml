@@ -9,6 +9,12 @@ name: Coverage
 
 # On main only, for the badge: pull requests are tested by build-package.yml,
 # and measuring coverage there too ran the whole suite a second time.
+#
+# On a push to main this is also the run of the whole suite: build-package
+# leaves its integration job, which ran the same tests against a server of
+# its own, to pull requests.  A test failing fails this run as it would
+# that one; only the tests that time things, skipped here, are left to
+# pull requests.
 on:
   workflow_dispatch:
 
