@@ -1609,6 +1609,8 @@ meanwhile is left alone, and auto-saving stops for it."
              (goto-char (1- (overlay-end (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0)))))
              (let ((inhibit-read-only t)) (insert "  # autosaved"))
              (emjupy--idle-save)
+             ;; not waited for by Emacs; the test waits for it
+             (emjupy-int--pump 10 (lambda () (not emjupy--autosave-in-flight)))
              (should-not (buffer-modified-p))
              (should (string-match-p "# autosaved" (funcall fetch)))
              ;; written meanwhile by another client
@@ -1623,6 +1625,8 @@ meanwhile is left alone, and auto-saving stops for it."
              (let ((inhibit-read-only t)) (insert "  # mine"))
              (setq emjupy--autosave-last nil)
              (emjupy--idle-save)
+             ;; not waited for by Emacs; the test waits for it
+             (emjupy-int--pump 10 (lambda () (not emjupy--autosave-in-flight)))
              (should emjupy--autosave-paused)
              (should (buffer-modified-p))
              (should (string-match-p "# from elsewhere" (funcall fetch)))

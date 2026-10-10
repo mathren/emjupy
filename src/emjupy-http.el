@@ -224,6 +224,49 @@ impossible to save: \"Multibyte text in HTTP request\"."
   (mapcar (lambda (h) (cons (emjupy--http-bytes (car h)) (emjupy--http-bytes (cdr h))))
           alist))
 
+(defun emjupy--http-read-response (buffer server)
+  "Read BUFFER, an HTTP response, as a cons of its status and its body.
+The status is nil if BUFFER holds no response at all.  Remember the XSRF
+cookie it sets, onto SERVER, and kill BUFFER.  Shared by requests that
+wait for their answer and those that do not, so both read it alike."
+  (with-current-buffer buffer
+    (goto-char (point-min))
+    (let ((status nil))
+      (when (re-search-forward "^HTTP/[0-9.]+ \\([0-9]+\\)" nil t)
+        (setq status (string-to-number (match-string 1))))
+      ;; Harvest XSRF cookie from response, onto THIS server
+      (goto-char (point-min))
+      (when (re-search-forward "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
+        (setf (emjupy-server-xsrf server) (match-string 1)))
+      (goto-char (point-min))
+      (re-search-forward "\r?\n\r?\n" nil t)
+      (prog1 (cons status (buffer-substring-no-properties (point) (point-max)))
+        (kill-buffer buffer)))))
+
+(defun emjupy--http-request-async (method server path body on-done on-fail)
+  "Send a request to SERVER without waiting for it.
+METHOD, PATH and BODY are as for `emjupy--http-request\='.  ON-DONE is
+called with the parsed answer, ON-FAIL with the error -- a refusal or a
+network failure.  For a remote server, where each request costs a round
+trip, this is the difference between Emacs waiting and not."
+  (emjupy--http-request
+   method server path body
+   (lambda (_status)
+     (let ((buffer (current-buffer)) (answer nil) (failure nil))
+       (condition-case err
+           (let ((response (emjupy--http-read-response buffer server)))
+             ;; An error status still comes with a response: only none at
+             ;; all is the network failing.
+             (if (not (car response))
+                 (signal 'emjupy-http-error
+                         (list "Network error: no answer from" (emjupy-server-base-url server)))
+               (setq answer (emjupy--http-interpret server method path
+                                                    (car response) (cdr response)))))
+         ;; What a request can fail with -- emjupy-http-error is a file
+         ;; error -- handed on; ON-DONE runs outside, its errors its own.
+         (file-error (setq failure err)))
+       (if failure (funcall on-fail failure) (funcall on-done answer))))))
+
 (defun emjupy--http-request (method server path &optional body callback retrying)
   "Send a request to SERVER and return the parsed JSON response.
 METHOD is an HTTP method string, PATH the API path, BODY an optional
@@ -287,21 +330,9 @@ cookie."
             (signal 'emjupy-http-error
                     (list "Network error: Could not reach"
                           (emjupy--redact-url full-url)))
-          (with-current-buffer buffer
-            (goto-char (point-min))
-            (let ((status 200))
-              (when (re-search-forward "^HTTP/[0-9.]+ \\([0-9]+\\)" nil t)
-                (setq status (string-to-number (match-string 1))))
-
-              ;; Harvest XSRF cookie from response, onto THIS server
-              (goto-char (point-min))
-              (when (re-search-forward "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
-                (setf (emjupy-server-xsrf server) (match-string 1)))
-
-              (goto-char (point-min))
-              (re-search-forward "\r?\n\r?\n" nil t)
-              (let ((json-str (buffer-substring-no-properties (point) (point-max))))
-                (kill-buffer buffer)
+          (let* ((response (emjupy--http-read-response buffer server))
+                 (status (or (car response) 200))
+                 (json-str (cdr response)))
                 (cond
                  ;; A missing or rotated cookie is recoverable: fetch a fresh
                  ;; one and try once more, rather than making the user
@@ -315,7 +346,7 @@ cookie."
                     (signal 'emjupy-http-status
                             (list (format "[Jupyter HTTP %d] %s" status method)
                                   json-str))))
-                 (t (emjupy--http-interpret server method path status json-str)))))))))))
+                 (t (emjupy--http-interpret server method path status json-str)))))))))
 
 (defun emjupy--websocket-auth-headers (server)
   "Return the headers a WebSocket to SERVER should carry.

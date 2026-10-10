@@ -936,6 +936,9 @@ validation even though it looks fine in emjupy."
 (defvar-local emjupy--autosave-last nil
   "When this notebook was last saved, or a save last tried, as a float time.")
 
+(defvar-local emjupy--autosave-in-flight nil
+  "Non-nil while an automatic save of this notebook is on its way.")
+
 (define-error 'emjupy-save-conflict
               "The notebook changed on the server since it was opened")
 
@@ -950,12 +953,82 @@ validation even though it looks fine in emjupy."
     (emjupy-http-status
      (if (eql (emjupy--http-status-of err) 404) nil (signal (car err) (cdr err))))))
 
+(defun emjupy--autosave-async (nb)
+  "Save NB to its server without waiting, as auto-save does.
+The same as saving by hand -- what is on the server checked first, and
+not saved over if it changed elsewhere -- but nothing waits for it:
+over a remote link both requests cost a round trip, and the upload as
+long as the notebook, and auto-save made Emacs freeze for it every two
+minutes.  The notebook is taken as it is now; edits made while it is on
+its way leave it unsaved, for the next save to take."
+  (let* ((buf (emjupy-notebook-buffer nb))
+         (server (emjupy-notebook-server nb))
+         (path (emjupy-notebook-path nb))
+         (contents-path (emjupy--contents-path path))
+         (known (emjupy-notebook-last-modified nb))
+         tick body)
+    (with-current-buffer buf
+      (emjupy--sync-all-cells)
+      (setq tick (buffer-modified-tick))
+      (let ((request (make-hash-table :test 'equal)))
+        (puthash "type" "notebook" request)
+        (puthash "format" "json" request)
+        (puthash "content" (json-parse-string (emjupy--serialize-notebook nb)
+                                              :object-type 'hash-table :array-type 'array)
+                 request)
+        (setq body (json-serialize request)))
+      (setq emjupy--autosave-in-flight t
+            emjupy--autosave-last (float-time)))
+    (cl-labels
+        ((finish ()
+           (when (buffer-live-p buf)
+             (with-current-buffer buf (setq emjupy--autosave-in-flight nil))))
+         (fail (err)
+           (finish)
+           (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
+                    path (error-message-string err)))
+         (upload ()
+           (emjupy--http-request-async
+            "PUT" server contents-path body
+            (lambda (model)
+              (finish)
+              (setf (emjupy-notebook-last-modified nb)
+                    (and (hash-table-p model) (gethash "last_modified" model)))
+              (when (buffer-live-p buf)
+                (with-current-buffer buf
+                  ;; saved as it was when sent; edited since, it is not
+                  (when (eql tick (buffer-modified-tick))
+                    (set-buffer-modified-p nil)
+                    (emjupy--recovery-delete nb)))))
+            #'fail)))
+      (if (not known)
+          (upload)
+        (emjupy--http-request-async
+         "GET" server (concat contents-path "?content=0") nil
+         (lambda (model)
+           (let ((current (and (hash-table-p model) (gethash "last_modified" model))))
+             (if (or (not current) (equal current known))
+                 (upload)
+               (finish)
+               (when (buffer-live-p buf)
+                 (with-current-buffer buf (setq emjupy--autosave-paused t)))
+               (message "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
+                        path (substitute-command-keys "\\[emjupy-save-notebook] asks what to do.")))))
+         (lambda (err)
+           ;; gone from the server: nothing there to overwrite
+           (if (eql (emjupy--http-status-of err) 404) (upload) (fail err))))))))
+
 (defun emjupy--save-to-server (nb &optional overwrite)
   "Save NB to its server, and return non-nil.
 Unless OVERWRITE, first make sure the server copy is the one opened or
 last saved here, and signal `emjupy-save-conflict' if it changed since --
 saved from JupyterLab, say -- rather than overwrite that."
   (with-current-buffer (emjupy-notebook-buffer nb)
+    ;; An automatic save on its way finishes first: sent before, it could
+    ;; still reach the server after, and put back what this one replaces.
+    (let ((deadline (+ (float-time) 15)))
+      (while (and emjupy--autosave-in-flight (< (float-time) deadline))
+        (accept-process-output nil 0.05)))
     (emjupy--sync-all-cells)
     (let ((known (emjupy-notebook-last-modified nb)))
       (unless overwrite
@@ -1102,18 +1175,14 @@ said and left: the recovery copy, written first, keeps the changes."
             (file-error (message "[emjupy] Could not write a recovery copy of %s: %s"
                                  (emjupy-notebook-path nb) (error-message-string err)))))
         (when (and emjupy-autosave-interval (not emjupy--autosave-paused)
+                   (not emjupy--autosave-in-flight)
                    (>= (- (float-time) (or emjupy--autosave-last 0)) emjupy-autosave-interval))
-          (setq emjupy--autosave-last (float-time))
+          ;; Not waited for: it says itself how it went.  Starting it can
+          ;; still fail -- serializing, or a cookie to fetch first.
           (condition-case err
-              (emjupy--save-to-server nb)
-            (emjupy-save-conflict
-             (setq emjupy--autosave-paused t)
-             (message "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
-                      (emjupy-notebook-path nb)
-                      (substitute-command-keys "\\[emjupy-save-notebook] asks what to do.")))
-            ;; The server unreachable, or refusing: tried again later, and
-            ;; the recovery copy holds the changes meanwhile.
+              (emjupy--autosave-async nb)
             (file-error
+             (setq emjupy--autosave-in-flight nil)
              (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
                       (emjupy-notebook-path nb) (error-message-string err)))))))))
 

@@ -7568,7 +7568,16 @@ The server answers a GET with it, and a PUT by setting a new one."
                           (when (equal method "PUT")
                             (setcar ,lm (format "2026-01-01T00:00:%02dZ" (length ,requests))))
                           (puthash "last_modified" (car ,lm) model)
-                          model))))
+                          model)))
+                     ;; requests not waited for: answered at once, by the
+                     ;; same fake server, through whatever stands for it
+                     ((symbol-function 'emjupy--http-request-async)
+                      (lambda (method server path body on-done on-fail)
+                        (let ((answer nil) (failure nil))
+                          (condition-case err
+                              (setq answer (emjupy--http-request method server path body))
+                            (file-error (setq failure err)))
+                          (if failure (funcall on-fail failure) (funcall on-done answer))))))
              (emjupy-test--with-notebook cells ,buf ,nb
                (with-current-buffer ,buf
                  (setf (emjupy-notebook-server ,nb) (make-emjupy-server :base-url "localhost:9" :token "t")
@@ -7984,6 +7993,65 @@ Measuring a window selects it; a redraw did it six times a cell."
           (setf (emjupy-cell-source (aref (emjupy-notebook-cells nb) 2)) "changed = True")
           (should (string-match-p "changed = True" (emjupy--build-shadow-content nb)))
           (should (= builds 2)))))))
+
+(ert-deftest emjupy-test-autosave-does-not-wait-and-keeps-later-edits ()
+  "Auto-save is not waited for; edits made while it is on its way stay unsaved.
+Over a remote link each request is a round trip and the upload as long as
+the notebook, and auto-save froze Emacs for them every two minutes."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (let ((emjupy-autosave-interval 0) (pending nil))
+      (cl-letf (((symbol-function 'emjupy--http-request-async)
+                 (lambda (method _server path _body on-done _on-fail)
+                   (push (list method path on-done) pending))))
+        (emjupy-test--type-in-first-cell " + 1")
+        (emjupy--idle-save)
+        (should emjupy--autosave-in-flight)
+        (should (= (length pending) 1))          ; asked, not waited for
+        (emjupy--idle-save)
+        (should (= (length pending) 1))          ; one at a time
+        ;; the check answers: unchanged; the upload goes
+        (let ((check (pop pending)) (model (make-hash-table :test 'equal)))
+          (puthash "last_modified" (car lm) model)
+          (funcall (nth 2 check) model))
+        (should (equal (car (car pending)) "PUT"))
+        ;; typed while it is on its way
+        (emjupy-test--type-in-first-cell " + 2")
+        (let ((upload (pop pending)) (model (make-hash-table :test 'equal)))
+          (puthash "last_modified" "2026-01-02T00:00:00Z" model)
+          (funcall (nth 2 upload) model))
+        (should-not emjupy--autosave-in-flight)
+        (should (equal (emjupy-notebook-last-modified nb) "2026-01-02T00:00:00Z"))
+        (should (buffer-modified-p))))))          ; the later edit is not saved yet
+
+(ert-deftest emjupy-test-a-save-by-hand-waits-for-an-autosave-on-its-way ()
+  "Saving by hand waits for an automatic save already sent.
+Sent before, it could otherwise reach the server after, and put back
+what the save by hand replaces."
+  (emjupy-test--with-saving (buf nb requests lm)
+    (emjupy-test--type-in-first-cell " + 3")
+    (setq emjupy--autosave-in-flight t)
+    (let ((b buf))
+      (run-at-time 0.3 nil (lambda () (with-current-buffer b
+                                        (push (list "PUT-auto" "") requests)
+                                        (setq emjupy--autosave-in-flight nil)))))
+    (emjupy-save-notebook)
+    (let ((order (mapcar #'car (reverse requests))))
+      (should (equal (car order) "PUT-auto"))
+      (should (member "PUT" order)))))
+
+(ert-deftest emjupy-test-http-responses-are-read-alike ()
+  "A response is read the same whether it was waited for or not."
+  (let ((server (make-emjupy-server :base-url "localhost:9" :token "t")))
+    (should (equal (emjupy--http-read-response
+                    (with-current-buffer (generate-new-buffer " r")
+                      (insert "HTTP/1.1 404 Not Found\r\nSet-Cookie: _xsrf=abc; Path=/\r\n\r\n{\"message\": \"gone\"}")
+                      (current-buffer))
+                    server)
+                   '(404 . "{\"message\": \"gone\"}")))
+    (should (equal (emjupy-server-xsrf server) "abc"))
+    ;; no response at all
+    (should-not (car (emjupy--http-read-response
+                      (with-current-buffer (generate-new-buffer " r") (current-buffer)) server)))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
