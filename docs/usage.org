@@ -158,6 +158,36 @@ Stream output continues the output it belongs to rather than starting a
 new one, as in Jupyter, so a cell that prints a thousand lines has one
 output, not a thousand.
 
+* Opening an .ipynb file you are looking at as text
+
+Opened with =find-file=, a notebook is its JSON.  =M-x
+emjupy-open-this-notebook= there opens it as a notebook instead, in the
+same window, on a kernel of its own on this machine:
+
+- it asks for the Python environment to run it in -- a conda
+  environment's name, completed from =conda env list=, or the directory
+  of a venv or a conda prefix; empty means the =jupyter= first on the
+  =PATH=.  An =environment.yml= beside the notebook names the one
+  offered;
+- it starts =jupyter server= from that environment, serving the
+  notebook's directory, on this machine only, on a free port, with a
+  token of its own -- or uses the one it already started there;
+- it replaces the text with the notebook, and stops the server when the
+  last notebook it serves is closed, or Emacs quits.
+
+The environment needs =jupyter-server= and =ipykernel=.  Unsaved edits to
+the text are saved first, or the command stops: the notebook is read
+from the file.
+
+Emacs gives =.ipynb= files no mode of their own.  To bind it as EIN's
+=C-c C-o= is bound:
+
+#+begin_src emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.ipynb\\'" . js-json-mode))
+(with-eval-after-load 'js
+  (keymap-set js-json-mode-map "C-c C-o" #'emjupy-open-this-notebook))
+#+end_src
+
 * Saving, and not losing work
 :PROPERTIES:
 :CUSTOM_ID: saving

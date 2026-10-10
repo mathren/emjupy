@@ -1317,5 +1317,190 @@ nothing."
                           (t (format "kernel %s (disconnected)" (emjupy-kernel-id k)))))))
         buffers "\n")))))
 
+;;;; An .ipynb file opened as text, opened as a notebook
+
+(defcustom emjupy-local-server-timeout 60
+  "Seconds to wait for a Jupyter server emjupy starts to answer."
+  :type 'number
+  :group 'emjupy)
+
+(defvar emjupy--environment-history nil
+  "Environments given to `emjupy-open-this-notebook'.")
+
+(defvar emjupy--local-servers nil
+  "Jupyter servers emjupy started: plists of :dir, :jupyter, :process, :server.")
+
+(defun emjupy--environment-yml-name (dir)
+  "Return the `name:' of the conda environment file in DIR, or nil.
+That is environment.yml, or environment.yaml."
+  (cl-loop for file in '("environment.yml" "environment.yaml")
+           for path = (expand-file-name file dir)
+           when (file-readable-p path)
+           return (with-temp-buffer
+                    (insert-file-contents path)
+                    (goto-char (point-min))
+                    (when (re-search-forward
+                           "^name:[ \t]*[\"']?\\([^\"'#\n]*[^\"'#\n \t]\\)[\"']?[ \t]*\\(?:#.*\\)?$"
+                           nil t)
+                      (match-string 1)))))
+
+(defun emjupy--conda-environments ()
+  "Return conda's environments as an alist of name and directory, or nil.
+nil when there is no conda, mamba or micromamba to ask."
+  (let ((conda (or (executable-find "conda") (executable-find "mamba")
+                   (executable-find "micromamba")))
+        (default-directory temporary-file-directory))
+    (when conda
+      (with-temp-buffer
+        (when (eq 0 (call-process conda nil '(t nil) nil "env" "list" "--json"))
+          (goto-char (point-min))
+          ;; Output that is not JSON -- a warning first, an old conda -- is
+          ;; no list of environments: none are offered, and a name or a
+          ;; path can still be typed.
+          (let ((envs (condition-case nil
+                          (gethash "envs" (json-parse-buffer :object-type 'hash-table))
+                        (json-error nil))))
+            (cl-loop for dir across (or envs [])
+                     ;; a named environment lives in .../envs/NAME; the one
+                     ;; elsewhere is the installation's own, base
+                     collect (cons (if (string-match-p "/envs/[^/]+/?\\'" dir)
+                                       (file-name-nondirectory (directory-file-name dir))
+                                     "base")
+                                   dir))))))))
+
+(defun emjupy--read-environment (dir)
+  "Ask for the Python environment to run a notebook in DIR with.
+Offered first: the environment named in an environment.yml beside it."
+  (let* ((named (emjupy--environment-yml-name dir))
+         (envs (emjupy--conda-environments)))
+    (completing-read
+     (format-prompt "Environment (a conda name, or a venv's directory; empty for the PATH's)" named)
+     (mapcar #'car envs) nil nil nil 'emjupy--environment-history named)))
+
+(defun emjupy--environment-jupyter (env)
+  "Return the `jupyter' program of the environment ENV.
+ENV is a conda environment's name, an environment's directory -- a venv
+or a conda prefix -- or empty for the one first on the PATH."
+  (let ((in-dir (lambda (dir)
+                  (cl-loop for name in '("bin/jupyter" "Scripts/jupyter.exe")
+                           for path = (expand-file-name name dir)
+                           when (file-executable-p path) return path))))
+    (cond
+     ((or (null env) (string-empty-p (string-trim env)))
+      (or (executable-find "jupyter")
+          (user-error "No `jupyter' on the PATH: name an environment that has it")))
+     ((file-directory-p (expand-file-name env))
+      (or (funcall in-dir (expand-file-name env))
+          (user-error "No jupyter in %s: install jupyter-server there" env)))
+     (t
+      (let ((dir (cdr (assoc env (emjupy--conda-environments)))))
+        (cond ((null dir) (user-error "No environment named %s" env))
+              ((funcall in-dir dir))
+              (t (user-error "No jupyter in the environment %s: install jupyter-server there"
+                             env))))))))
+
+(defun emjupy--free-port ()
+  "Return a TCP port on this machine that nothing listens on."
+  (let ((probe (make-network-process :name "emjupy-port" :server t :host 'local
+                                     :service t :family 'ipv4 :noquery t)))
+    (prog1 (process-contact probe :service)
+      (delete-process probe))))
+
+(defun emjupy--start-local-server (dir jupyter)
+  "Return a Jupyter server serving DIR, run by JUPYTER, started if need be.
+One already started for DIR with the same JUPYTER is used again.  It
+listens on this machine only, on a free port, with a token of its own,
+and is stopped when the last notebook it serves is closed."
+  (or (cl-loop for s in emjupy--local-servers
+               when (and (equal (plist-get s :dir) dir) (equal (plist-get s :jupyter) jupyter)
+                         (process-live-p (plist-get s :process)))
+               return (plist-get s :server))
+      (let* ((port (emjupy--free-port))
+             (token (secure-hash 'sha256 (format "%s%s%s" (random) (float-time) (emacs-pid))))
+             (output (generate-new-buffer (format " *emjupy server %s*" dir)))
+             (default-directory dir)
+             (process (make-process
+                       :name "emjupy-server" :buffer output :noquery t
+                       :command (append
+                                 (list jupyter "server" "--no-browser"
+                                       "--ServerApp.ip=127.0.0.1"
+                                       (format "--ServerApp.port=%d" port)
+                                       "--ServerApp.port_retries=0"
+                                       (format "--IdentityProvider.token=%s" token)
+                                       (format "--ServerApp.root_dir=%s" (expand-file-name dir)))
+                                 ;; Jupyter refuses to run as root without it
+                                 (and (eql (user-uid) 0) (list "--allow-root")))))
+             (server (emjupy--intern-server (format "127.0.0.1:%d" port) token))
+             (deadline (+ (float-time) emjupy-local-server-timeout)))
+        (message "[emjupy] Starting a Jupyter server for %s..." (abbreviate-file-name dir))
+        (while (and (process-live-p process) (< (float-time) deadline)
+                    (not (emjupy--server-reachable-p server)))
+          (accept-process-output process 0.25))
+        (unless (and (process-live-p process) (emjupy--server-reachable-p server))
+          (let ((said (with-current-buffer output
+                        (buffer-substring-no-properties (max (point-min) (- (point-max) 600))
+                                                        (point-max)))))
+            (when (process-live-p process) (delete-process process))
+            (user-error "The Jupyter server did not start:\n%s" said)))
+        (push (list :dir dir :jupyter jupyter :process process :server server)
+              emjupy--local-servers)
+        server)))
+
+(defun emjupy--stop-local-server-if-unused (server)
+  "Stop SERVER, if emjupy started it and no notebook it serves is open."
+  (let ((entry (cl-find server emjupy--local-servers
+                        :key (lambda (s) (plist-get s :server)))))
+    (when (and entry
+               (not (cl-some (lambda (b)
+                               (and (not (eq b (current-buffer)))
+                                    (eq (emjupy-notebook-server
+                                         (buffer-local-value 'emjupy--buffer-notebook b))
+                                        server)))
+                             (emjupy--notebook-buffers))))
+      (when (process-live-p (plist-get entry :process))
+        (delete-process (plist-get entry :process)))
+      (setq emjupy--local-servers (delq entry emjupy--local-servers)))))
+
+;;;###autoload
+(defun emjupy-open-this-notebook ()
+  "Open the .ipynb file this buffer visits as a notebook, on a local kernel.
+For a notebook opened as a file -- its JSON shown as text.  Asks for the
+Python environment to run it in, offered first the one an
+environment.yml beside it names; starts a Jupyter server there, for the
+notebook\\='s directory, on this machine only; and replaces this buffer
+with the notebook.  The server stops when the last notebook it serves is
+closed, and with Emacs."
+  (interactive)
+  (let ((file buffer-file-name))
+    (unless (and file (string-suffix-p ".ipynb" file t))
+      (user-error "This buffer is not visiting a .ipynb file"))
+    (when (file-remote-p file)
+      (user-error "Only a notebook on this machine; for another, %s"
+                  (substitute-command-keys "\\[emjupy-login] to its server")))
+    (when (buffer-modified-p)
+      (if (y-or-n-p (format "The notebook opens from the file: save %s first? "
+                            (file-name-nondirectory file)))
+          (save-buffer)
+        (user-error "Not opened: save the file, or revert it, first")))
+    (let* ((dir (file-name-directory file))
+           (jupyter (emjupy--environment-jupyter (emjupy--read-environment dir)))
+           (server (emjupy--start-local-server dir jupyter))
+           ;; A kernel for the notebook to open on, as logging in binds one:
+           ;; a server just started has none of its own.
+           (_kernel (emjupy--bind-server-kernel server))
+           (text (current-buffer))
+           (window (selected-window))
+           (notebook (emjupy-open-notebook (file-name-nondirectory file) server)))
+      (setq emjupy--current-server server)
+      (when (buffer-live-p notebook)
+        (with-current-buffer notebook
+          (add-hook 'kill-buffer-hook
+                    (lambda () (emjupy--stop-local-server-if-unused server)) nil t))
+        (when (window-live-p window) (set-window-buffer window notebook))
+        ;; In place: the text is the same file, and would go stale as the
+        ;; notebook is saved.
+        (kill-buffer text))
+      notebook)))
+
 (provide 'emjupy-notebook)
 ;;; emjupy-notebook.el ends here

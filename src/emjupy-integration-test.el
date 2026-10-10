@@ -1634,5 +1634,49 @@ meanwhile is left alone, and auto-saving stops for it."
          (set-buffer-modified-p nil)
          (delete-directory emjupy-recovery-directory t))))))
 
+(ert-deftest emjupy-int-a-notebook-file-opened-as-text-opens-on-a-local-kernel ()
+  "An .ipynb file shown as text opens as a notebook, on a server started for it.
+The environment.yml beside it names the environment offered; a server is
+started there, the text replaced by the notebook, its kernel runs in the
+notebook's directory, and the server stops when the notebook is closed."
+  (let* ((jupyter (executable-find "jupyter"))
+         (dir (make-temp-file "emjupy-here" t))
+         (file (expand-file-name "analysis.ipynb" dir))
+         (offered nil))
+    (unless jupyter (ert-skip "No jupyter on the PATH"))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "{\"cells\": [{\"cell_type\": \"code\", \"execution_count\": null, \"id\": \"a1\", \"metadata\": {}, \"outputs\": [], \"source\": [\"x = 6 * 7\"]}], \"metadata\": {}, \"nbformat\": 4, \"nbformat_minor\": 5}"))
+          (with-temp-file (expand-file-name "environment.yml" dir) (insert "name: analysis\n"))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_p _c &rest args)
+                       (setq offered (nth 4 args))
+                       ;; the environment jupyter is in: its bin's parent
+                       (file-name-directory (directory-file-name (file-name-directory jupyter)))))
+                    ((symbol-function 'emjupy--offer-recovery) #'ignore))
+            (let* ((emjupy-language-support nil)
+                   (text (find-file-noselect file))
+                   (notebook (with-current-buffer text
+                               (switch-to-buffer text)
+                               (emjupy-open-this-notebook)))
+                   (process (plist-get (car emjupy--local-servers) :process))
+                   (answer nil))
+              (should (equal offered "analysis"))
+              (should-not (buffer-live-p text))
+              (should (eq (buffer-local-value 'major-mode notebook) 'emjupy-mode))
+              (with-current-buffer notebook
+                (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p)))
+                (emjupy--kernel-eval (emjupy-notebook-kernel emjupy--buffer-notebook)
+                                     "import os; print(os.path.basename(os.getcwd()), 6 * 7)"
+                                     (lambda (out) (setq answer (string-trim out))))
+                (emjupy-int--pump 20 (lambda () answer))
+                (should (equal answer (format "%s 42" (file-name-nondirectory dir))))
+                (set-buffer-modified-p nil))
+              (let ((kill-buffer-query-functions nil)) (kill-buffer notebook))
+              (emjupy-int--pump 1)
+              (should-not (process-live-p process)))))
+      (delete-directory dir t))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here
