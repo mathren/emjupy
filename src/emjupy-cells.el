@@ -518,6 +518,8 @@ changed nothing -- the history is left intact."
     (let ((inhibit-read-only t)
           ;; emjupy's own drawing: not an edit to re-highlight
           (emjupy--refontifying t)
+          ;; the window measured once for the whole redraw, not per rule
+          (emjupy--box-width-memo (list nil))
           (cells (emjupy-notebook-cells emjupy--buffer-notebook))
           (target-start nil)
           (snapshot (emjupy--snapshot-cells))

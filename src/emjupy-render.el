@@ -278,12 +278,26 @@ short."
   :type 'integer
   :group 'emjupy)
 
+(defvar emjupy--box-width-memo nil
+  "A cons holding the width worked out for the redraw in progress, or nil.
+Bound by a redraw: the width cannot change during one, and working it out
+measures each window, which selects it -- six times a cell.")
+
 (defun emjupy--box-width ()
   "Return the column width to draw cell outlines at.
 
 When fitting the window, the NARROWEST window showing this buffer wins:
 a rule sized to a wide window wraps onto a second line in a narrow one,
 and a wrapped rule is far uglier than a short one."
+  (cond
+   ((integerp emjupy-box-width) emjupy-box-width)
+   ((and (consp emjupy--box-width-memo) (car emjupy--box-width-memo)))
+   ((consp emjupy--box-width-memo)
+    (setcar emjupy--box-width-memo (emjupy--box-width-measured)))
+   (t (emjupy--box-width-measured))))
+
+(defun emjupy--box-width-measured ()
+  "Work out the width to draw cell outlines at, measuring the windows."
   (if (integerp emjupy-box-width)
       emjupy-box-width
     (let* ((windows (get-buffer-window-list (current-buffer) nil t))
@@ -1116,6 +1130,40 @@ really had."
             (forward-line 1)))))
     (cons (prog1 (marker-position end) (set-marker end nil)) widest)))
 
+(defun emjupy--finish-output-piece (out piece-start)
+  "Fold, paint and pad the output OUT just drawn from PIECE-START to point.
+Leave point after it, and return the width of its widest line.  Shared
+by drawing a whole output box and by adding to one, so that both draw
+the same text the same way."
+  (let ((widest 0))
+    (let ((folded (emjupy--fold-output-lines piece-start (point) (emjupy--box-width))))
+      (goto-char (car folded))
+      (setq widest (cdr folded)))
+    ;; Paint this piece, not the whole box: one cell can hold a figure, a
+    ;; warning and a traceback at once, and each should read as what it is.
+    ;; A text property rather than an overlay face, so it does not override
+    ;; the font-lock colours on the text underneath.
+    (let ((face (emjupy--output-face out)))
+      (when face
+        (font-lock-prepend-text-property piece-start (point) 'face face)
+        (font-lock-prepend-text-property piece-start (point) 'font-lock-face face)
+        ;; Fill out to the border, not to the window edge.
+        (goto-char (emjupy--pad-output-lines piece-start (point) face))
+        ;; A newline still carrying the face paints one more column after
+        ;; the padding ends, so the band poked out past the right-hand rule.
+        (emjupy--unface-newlines piece-start (point))))
+    widest))
+
+(defun emjupy--drawn-state (pieces)
+  "Return what drawing PIECES, a cell's outputs in order, drew, or nil.
+Recorded on the output box so output that only grew at its end can be
+added to it rather than drawn again: how many pieces, the last if it is
+a stream, its text as drawn, and the width it was folded at."
+  (let ((last-out (car (last pieces))))
+    (when (and last-out (equal (gethash "output_type" last-out) "stream"))
+      (list (length pieces) last-out (emjupy--mime-text (gethash "text" last-out))
+            (emjupy--box-width)))))
+
 (defun emjupy--render-cell-output (cell)
   "Insert CELL\='s output box at point and give it its overlay.
 
@@ -1126,10 +1174,11 @@ and restarted fontification from scratch each time."
   (let* ((outputs (emjupy-cell-outputs cell))
          (has-outputs (and outputs (> (length outputs) 0))))
     (when has-outputs
-      (let ((out-start (point))
-            ;; widest line as the kernel sent it, before folding
-            (widest 0))
-        (cl-loop for out in (emjupy--outputs-for-render outputs)
+      (let* ((out-start (point))
+             ;; widest line as the kernel sent it, before folding
+             (widest 0)
+             (pieces (emjupy--outputs-for-render outputs)))
+        (cl-loop for out in pieces
                  do (let ((out-type (gethash "output_type" out))
                           (piece-start (point)))
                       (cond
@@ -1155,28 +1204,7 @@ and restarted fontification from scratch each time."
                                                  (emjupy--mime-text line))
                                                 "\n"))))))
                       ;; Keep the piece inside the box, whatever kind of output it is.
-                      (let ((folded (emjupy--fold-output-lines
-                                     piece-start (point) (emjupy--box-width))))
-                        (goto-char (car folded))
-                        (setq widest (max widest (cdr folded))))
-                      ;; Paint this piece, not the whole box: one cell can
-                      ;; hold a figure, a warning and a traceback at once, and
-                      ;; each should read as what it is.  A text property
-                      ;; rather than an overlay face, so it does not override
-                      ;; the font-lock colours on the text underneath.
-                      (let ((face (emjupy--output-face out)))
-                        (when face
-                          (font-lock-prepend-text-property
-                           piece-start (point) 'face face)
-                          (font-lock-prepend-text-property
-                           piece-start (point) 'font-lock-face face)
-                          ;; Fill out to the border, not to the window edge.
-                          (goto-char (emjupy--pad-output-lines
-                                      piece-start (point) face))
-                          ;; A newline still carrying the face paints one more
-                          ;; column after the padding ends, so the band poked
-                          ;; out past the right-hand rule by a character.
-                          (emjupy--unface-newlines piece-start (point))))))
+                      (setq widest (max widest (emjupy--finish-output-piece out piece-start)))))
 
         (unless (string-suffix-p "\n" (buffer-substring-no-properties (max (point-min) (- (point) 1)) (point)))
           (insert "\n"))
@@ -1193,6 +1221,7 @@ and restarted fontification from scratch each time."
           ;; either, and is not redrawn.
           (overlay-put ov 'emjupy-fold-width (emjupy--box-width))
           (overlay-put ov 'emjupy-widest widest)
+          (overlay-put ov 'emjupy-drawn (emjupy--drawn-state pieces))
           (overlay-put ov 'emjupy-header nil)
           (overlay-put ov 'before-string header)
           (overlay-put ov 'after-string footer)
@@ -1410,43 +1439,117 @@ every edit made anywhere else in the notebook.  See notes_undo.org."
          (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
         (t (emjupy--rule nil)))))))
 
+(defcustom emjupy-protect-non-cell-regions t
+  "When non-nil, make everything outside a cell\='s source read-only.
+
+The rules, the gutters between cells and the output boxes belong to no
+cell.  Text typed there is stored nowhere and disappears at the next
+redraw, so it is better refused than silently lost."
+  :type 'boolean
+  :group 'emjupy)
+
+(defun emjupy--append-stream-output (cell)
+  "Draw only what CELL's last stream output gained, if that is all.
+Return non-nil if that was done -- nothing new to draw counts, when only
+the box\='s label changes.  Drawing the whole box again costs as
+much as the output is long, so a cell printing for minutes made each
+update slower than the last, and Emacs stuttered while it ran.  Taken
+only when nothing drawn can look different: the same pieces, the stream
+the same object grown at its end, the box folded at the same width, what
+was drawn ending in a whole line, and no carriage return or colour
+escape -- which rewrite or recolour what came before -- anywhere in it."
+  (let* ((out (emjupy-cell-output-ov cell))
+         (drawn (and (overlayp out) (eq (overlay-buffer out) (current-buffer))
+                     (overlay-get out 'emjupy-drawn)))
+         (pieces (and drawn (emjupy--outputs-for-render (emjupy-cell-outputs cell))))
+         (last-out (car (last pieces)))
+         (old (nth 2 drawn))
+         (new (and last-out (emjupy--mime-text (gethash "text" last-out)))))
+    (when (and drawn
+               (= (length pieces) (nth 0 drawn))
+               (eq last-out (nth 1 drawn))
+               (eql (nth 3 drawn) (emjupy--box-width))
+               (stringp old) (stringp new)
+               (string-suffix-p "\n" old)
+               (string-prefix-p old new)
+               (not (string-match-p "[\r\e]" new)))
+      (if (= (length new) (length old))
+          ;; Nothing new: the cell finished, say, and only its label
+          ;; changes.  That is redrawn; the output, the same, is not.
+          ;; Set as drawing the box sets it, then placed as a redraw places it.
+          (let ((inhibit-read-only t))
+            (overlay-put out 'emjupy-header nil)
+            (overlay-put out 'before-string (emjupy--rule (emjupy--cell-out-label cell) "├"))
+            (emjupy--refresh-cell-header cell)
+            (emjupy--refresh-cell-footer cell)
+            (emjupy--reconcile-rules)
+            t)
+      (let* ((start (overlay-end out))
+             (inhibit-read-only t)
+             (buffer-undo-list t)
+             (emjupy--refontifying t)
+             end)
+        (emjupy--atomic-redraw t
+          (save-excursion
+            (goto-char start)
+            (insert (substring new (length old)))
+            (let ((widest (emjupy--finish-output-piece last-out start)))
+              (unless (eq (char-before) ?\n) (insert "\n"))
+              (setq end (point))
+              (move-overlay out (overlay-start out) end)
+              (overlay-put out 'emjupy-widest (max widest (or (overlay-get out 'emjupy-widest) 0)))
+              (overlay-put out 'emjupy-drawn (emjupy--drawn-state pieces))))
+          (when emjupy-protect-non-cell-regions
+            (emjupy--make-read-only start end))
+          (emjupy--undo-adjust start start (- end start)))
+        t)))))
+
 (defun emjupy--refresh-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
 
 Only the text between the end of the cell's source and the end of its
 output box is replaced.  Returns non-nil when that could be done; nil
 means the caller should fall back to a full redraw."
-  (let ((src (emjupy-cell-overlay cell))
-        (out (emjupy-cell-output-ov cell)))
-    (when (and (overlayp src) (eq (overlay-buffer src) (current-buffer)))
-      (let* ((live-out (and (overlayp out)
-                            (eq (overlay-buffer out) (current-buffer))))
-             (start (if live-out (overlay-start out) (overlay-end src)))
-             (end (if live-out (overlay-end out) start)))
-        (emjupy--atomic-redraw t
-        (let ((new-end start))
-          (let ((inhibit-read-only t)
-                (buffer-undo-list t)
-                ;; emjupy's own drawing: not an edit to re-highlight
-                (emjupy--refontifying t))
-            (when live-out (delete-overlay out))
-            (setf (emjupy-cell-output-ov cell) nil)
-            (delete-region start end)
-            (save-excursion
-              (goto-char start)
-              (emjupy--render-cell-output cell)
-              (setq new-end (point)))
-            (emjupy--refresh-cell-header cell)
-            ;; The bottom edge belongs to whichever box is last.  With
-            ;; output, that is the output box's own footer and the cell has
-            ;; none; without, the cell must carry it again -- otherwise
-            ;; clearing output left the cell with no bottom at all.
-            (emjupy--refresh-cell-footer cell)
-            (emjupy--protect-non-cell-regions))
-          ;; Done after the edit, since the shift is the size it turned out
-          ;; to be rather than the size expected.
-          (emjupy--undo-adjust start end (- new-end end))))
-        t))))
+  ;; Output that only grew at its end is added to; done is done, and says
+  ;; so -- nil here means "redraw the whole notebook instead".
+  (or (emjupy--append-stream-output cell)
+      (let ((src (emjupy-cell-overlay cell))
+            (out (emjupy-cell-output-ov cell)))
+        (when (and (overlayp src) (eq (overlay-buffer src) (current-buffer)))
+          (let* ((live-out (and (overlayp out)
+                                (eq (overlay-buffer out) (current-buffer))))
+                 (start (if live-out (overlay-start out) (overlay-end src)))
+                 (end (if live-out (overlay-end out) start)))
+            (emjupy--atomic-redraw t
+                                   (let ((new-end start))
+                                     (let ((inhibit-read-only t)
+                                           (buffer-undo-list t)
+                                           ;; emjupy's own drawing: not an edit to re-highlight
+                                           (emjupy--refontifying t))
+                                       (when live-out (delete-overlay out))
+                                       (setf (emjupy-cell-output-ov cell) nil)
+                                       (delete-region start end)
+                                       (save-excursion
+                                         (goto-char start)
+                                         (emjupy--render-cell-output cell)
+                                         (setq new-end (point)))
+                                       (emjupy--refresh-cell-header cell)
+                                       ;; The bottom edge belongs to whichever box is last.  With
+                                       ;; output, that is the output box's own footer and the cell has
+                                       ;; none; without, the cell must carry it again -- otherwise
+                                       ;; clearing output left the cell with no bottom at all.
+                                       (emjupy--refresh-cell-footer cell)
+                                       ;; Only the box just drawn: it is all output, and marking the
+                                       ;; whole notebook again cost as much as all its output is long,
+                                       ;; for every update of every cell.  The marks are the same on
+                                       ;; every character, so a part is marked as the whole would be.
+                                       (when emjupy-protect-non-cell-regions
+                                         (emjupy--make-read-only start new-end))
+                                       (emjupy--reconcile-rules))
+                                     ;; Done after the edit, since the shift is the size it turned out
+                                     ;; to be rather than the size expected.
+                                     (emjupy--undo-adjust start end (- new-end end))))
+            t)))))
 
 (defun emjupy--render-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
@@ -1888,15 +1991,6 @@ the start of the line and the next write covers what was there."
                  (car (last parts))))
              (split-string text "\n" )
              "\n"))
-
-(defcustom emjupy-protect-non-cell-regions t
-  "When non-nil, make everything outside a cell\='s source read-only.
-
-The rules, the gutters between cells and the output boxes belong to no
-cell.  Text typed there is stored nowhere and disappears at the next
-redraw, so it is better refused than silently lost."
-  :type 'boolean
-  :group 'emjupy)
 
 (defun emjupy--make-read-only (start end)
   "Refuse edits between START and END, without walling off the cells.

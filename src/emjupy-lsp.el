@@ -483,7 +483,29 @@ notebook itself is untouched; only the copy the server sees is cleaned."
   "Return the `# %% [emjupy:ID]' section-header line text for cell ID."
   (format "# %%%% [emjupy:%d]" id))
 
+(defvar emjupy--shadow-content-memo (make-hash-table :test 'eq :weakness 'key)
+  "Each notebook's shadow content, with what it was built from.")
+
 (defun emjupy--build-shadow-content (nb)
+  "Concatenate every code cell in NB into one Python source, section-marked.
+Asked after every command, for completion and eldoc; rebuilt only when
+the cells changed.  A source is replaced, never changed in place, so the
+same cells holding the same source objects build the same content."
+  (let* ((key (mapcar (lambda (c) (list (emjupy-cell-id c) (emjupy-cell-type c)
+                                        (emjupy-cell-source c)))
+                      (append (emjupy-notebook-cells nb) nil)))
+         (memo (gethash nb emjupy--shadow-content-memo)))
+    (if (and memo
+             (= (length key) (length (car memo)))
+             (cl-every (lambda (a b) (and (eql (nth 0 a) (nth 0 b)) (eq (nth 1 a) (nth 1 b))
+                                          (eq (nth 2 a) (nth 2 b))))
+                       key (car memo)))
+        (cdr memo)
+      (let ((content (emjupy--build-shadow-content-1 nb)))
+        (puthash nb (cons key content) emjupy--shadow-content-memo)
+        content))))
+
+(defun emjupy--build-shadow-content-1 (nb)
   "Concatenate every code cell in NB into one Python source, section-marked."
   (mapconcat
    (lambda (cell) (concat (emjupy--shadow-cell-marker (emjupy-cell-id cell))

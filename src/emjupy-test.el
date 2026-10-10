@@ -7782,13 +7782,15 @@ at once; and what was typed elsewhere, not yet synced, is kept."
         (goto-char (overlay-start (emjupy-cell-overlay (aref cells 1))))
         (end-of-line)
         (let ((inhibit-read-only t)) (insert " + 1"))
+        ;; output changed so that it must be drawn whole: a different one
+        (puthash "text" "goodbye\n" (aref (emjupy-cell-outputs (aref cells 0)) 0))
         (let ((undo (emjupy-test--fail-once 'emjupy--render-cell-output "half an outp")))
           (unwind-protect
               (should-error (emjupy--refresh-cell-output (aref cells 0)))
             (funcall undo)))
         (should-not (emjupy--check-invariants))
         (should (equal (emjupy-cell-source (aref cells 1)) "y = 2 + 1"))
-        (should (string-match-p "hello" (buffer-string)))
+        (should (string-match-p "goodbye" (buffer-string)))
         (should-not (string-match-p "half an outp" (buffer-string)))))))
 
 (ert-deftest emjupy-test-a-structural-redraw-that-fails-is-put-right ()
@@ -7890,6 +7892,98 @@ follows, and it was asked twice for each item a search returned."
       (emjupy-list-open-file "data/table.csv"))
     (should (= built 1))
     (should (equal opened "/ssh:box:/home/me/data/table.csv"))))
+
+(defun emjupy-test--stream-named (name text)
+  "Return a stream output NAME holding TEXT."
+  (let ((o (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" o) (puthash "name" name o) (puthash "text" text o) o))
+
+(defun emjupy-test--drawn ()
+  "Return this buffer's text with the properties that make up its drawing."
+  (let ((text (buffer-string)))
+    (set-text-properties 0 (length text) nil text)
+    (list text
+          (cl-loop for pos from (point-min) below (point-max)
+                   collect (list (get-text-property pos 'face) (get-text-property pos 'read-only))))))
+
+(ert-deftest emjupy-test-appended-stream-output-is-drawn-as-a-redraw-would ()
+  "Output added to a stream that only grew is drawn exactly as drawing it all would.
+Drawing the whole box for each update cost as much as the output was
+long, so a long run grew slower with every line.  Now only what is new is
+drawn -- which must be the same text, folded, painted and protected the
+same way, or the notebook would drift from its cells."
+  (dolist (name '("stdout" "stderr"))
+    (let* ((out (emjupy-test--stream-named name "first line\n"))
+           (cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "run()"
+                                            :outputs (vector out) :metadata (make-hash-table))
+                          (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                            :outputs [] :metadata (make-hash-table))))
+           (appended 0))
+      (emjupy-test--with-notebook cells buf nb
+        (with-current-buffer buf
+          (cl-letf* ((real (symbol-function 'emjupy--append-stream-output))
+                     ((symbol-function 'emjupy--append-stream-output)
+                      (lambda (c) (let ((r (funcall real c))) (when r (cl-incf appended)) r))))
+            (dolist (more (list "second line\n" (concat (make-string 300 ?w) "\n") "third\nfourth\n"))
+              (puthash "text" (concat (gethash "text" out) more) out)
+              (emjupy--refresh-cell-output (aref cells 0)))
+            ;; finished: nothing new, only the label
+            (setf (emjupy-cell-exec-count (aref cells 0)) 7)
+            (emjupy--refresh-cell-output (aref cells 0)))
+          (ert-info ((format "%s: added to %d times" name appended))
+            (should (= appended 4))
+            (should (string-match-p "Out: 7" (emjupy--overlay-header (emjupy-cell-output-ov (aref cells 0)))))
+            (let ((shown (emjupy-test--drawn)))
+              (emjupy--rerender-notebook)
+              (should (equal shown (emjupy-test--drawn))))))))))
+
+(ert-deftest emjupy-test-appending-declines-what-could-change-earlier-lines ()
+  "A carriage return, a colour escape, or an unfinished line is drawn whole.
+Each can change how what came before looks; the result is still right."
+  (dolist (case '(("done\n" . "\rdone\n") ("done\n" . "\e[31mred\e[0m\n") ("half" . " done\n")))
+    (let* ((out (emjupy-test--stream-named "stdout" (car case)))
+           (cells (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "run()"
+                                            :outputs (vector out) :metadata (make-hash-table))))
+           (appended nil))
+      (emjupy-test--with-notebook cells buf nb
+        (with-current-buffer buf
+          (cl-letf* ((real (symbol-function 'emjupy--append-stream-output))
+                     ((symbol-function 'emjupy--append-stream-output)
+                      (lambda (c) (let ((r (funcall real c))) (when r (setq appended t)) r))))
+            (puthash "text" (concat (car case) (cdr case)) out)
+            (emjupy--refresh-cell-output (aref cells 0)))
+          (ert-info ((format "%S" case))
+            (should-not appended)
+            (let ((shown (emjupy-test--drawn)))
+              (emjupy--rerender-notebook)
+              (should (equal shown (emjupy-test--drawn))))))))))
+
+(ert-deftest emjupy-test-a-redraw-measures-the-window-once ()
+  "A full redraw measures the window once, not for every rule it draws.
+Measuring a window selects it; a redraw did it six times a cell."
+  (let ((cells (emjupy-test--big-notebook 20 3)) (measures 0))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (cl-letf* ((real (symbol-function 'window-max-chars-per-line))
+                   ((symbol-function 'window-max-chars-per-line)
+                    (lambda (&rest args) (cl-incf measures) (apply real args))))
+          (emjupy--rerender-notebook))
+        ;; once for the redraw: a window showing it, or the selected one
+        (should (<= measures 1))))))
+
+(ert-deftest emjupy-test-shadow-content-is-built-again-only-when-cells-change ()
+  "The shadow content, asked after every command, is rebuilt only when a cell changed."
+  (let ((cells (emjupy-test--big-notebook 10 3)) (builds 0))
+    (emjupy-test--with-notebook cells buf nb
+      (cl-letf* ((real (symbol-function 'emjupy--build-shadow-content-1))
+                 ((symbol-function 'emjupy--build-shadow-content-1)
+                  (lambda (n) (cl-incf builds) (funcall real n))))
+        (let ((first (emjupy--build-shadow-content nb)))
+          (dotimes (_ 20) (should (eq (emjupy--build-shadow-content nb) first)))
+          (should (= builds 1))
+          (setf (emjupy-cell-source (aref (emjupy-notebook-cells nb) 2)) "changed = True")
+          (should (string-match-p "changed = True" (emjupy--build-shadow-content nb)))
+          (should (= builds 2)))))))
 
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
