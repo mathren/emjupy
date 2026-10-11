@@ -8145,5 +8145,48 @@ what the save by hand replaces."
           (should-not emjupy--local-servers))
       (when (process-live-p process) (delete-process process)))))
 
+(defconst emjupy-test--terminal-cases
+  '(
+  ;; two bars, positions
+  ("two bars, positions"
+   ("\rA:   0%|                              | 0/4 [00:00<?, ?it/s]" "\n" "\rB:   0%|                              | 0/4 [00:00<?, ?it/s]" "\e[A" "\rA:  25%|####7              | 1/4 [00:00<00:00, 17924.38it/s]" "\n" "\rB:  25%|####7              | 1/4 [00:00<00:00, 23431.87it/s]" "\e[A" "\rA:  50%|#########5         | 2/4 [00:00<00:00, 14181.22it/s]" "\n" "\rB:  50%|#########5         | 2/4 [00:00<00:00, 15834.59it/s]" "\e[A" "\rA:  75%|##############2    | 3/4 [00:00<00:00, 13489.08it/s]" "\n" "\rB:  75%|##############2    | 3/4 [00:00<00:00, 14347.68it/s]" "\e[A" "\rA: 100%|###################| 4/4 [00:00<00:00, 13522.40it/s]" "\n" "\rB: 100%|###################| 4/4 [00:00<00:00, 14087.67it/s]" "\e[A" "" "\rA: 100%|###################| 4/4 [00:00<00:00, 10686.12it/s]" "\n" "" "\rB: 100%|###################| 4/4 [00:00<00:00, 10965.50it/s]" "\n")
+   ("A: 100%|###################| 4/4 [00:00<00:00, 10686.12it/s]" "B: 100%|###################| 4/4 [00:00<00:00, 10965.50it/s]"))
+  ;; colours and a clear
+  ("colours and a clear"
+   ("\e[31mred\e[0m line\n" "progress 1" "\rprogress 2" "\e[K\rdone\n" "\e[1mbold\e[0m end\n")
+   ("red line" "doneress 2" "bold end"))
+)
+  "Stream writes recorded from tqdm, and what a terminal shows of them.
+Each is (NAME CHUNKS LINES): the writes, as tqdm made them, and the
+screen pyte -- a terminal emulator -- showed, trailing blanks dropped.")
+
+(ert-deftest emjupy-test-stacked-progress-bars-are-shown-as-a-terminal-shows-them ()
+  "Cursor codes in stream output are applied, chunk by chunk, as a terminal would.
+Stacked progress bars -- tqdm nested, or with `position' -- move the
+cursor up a line to redraw the bar above.  Only carriage returns were
+applied, and stale bars piled up."
+  (dolist (case emjupy-test--terminal-cases)
+    (let ((out (make-hash-table :test 'equal)))
+      (puthash "output_type" "stream" out) (puthash "name" "stderr" out)
+      (emjupy--stream-write out "" (car (nth 1 case)))
+      (dolist (chunk (cdr (nth 1 case))) (emjupy--stream-write out (gethash "text" out) chunk))
+      (let* ((text (replace-regexp-in-string "\e\\[[0-9;]*m" "" (gethash "text" out)))
+             (lines (split-string text "\n")))
+        (while (and lines (string-empty-p (car (last lines)))) (setq lines (butlast lines)))
+        (ert-info ((car case))
+          (should (equal lines (nth 2 case)))
+          ;; where the cursor is, is the terminal's: never saved with the output
+          (should (equal (sort (hash-table-keys out) #'string<) '("name" "output_type" "text"))))))))
+
+(ert-deftest emjupy-test-terminal-codes-keep-colours-and-plain-text-as-it-was ()
+  "Colour codes survive the cursor codes around them; text without any is unchanged."
+  ;; x written over the red r is red too, as on a terminal; the line below stays
+  (should (equal (car (emjupy--terminal-apply "" "\e[31mred\e[0m\n\e[1Ax" nil))
+                 "\e[31mxed\e[0m\n"))
+  ;; no cursor codes: the carriage-return rule, as before
+  (let ((out (make-hash-table :test 'equal)))
+    (emjupy--stream-write out "" "a\rb\nc")
+    (should (equal (gethash "text" out) "b\nc"))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here

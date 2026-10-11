@@ -86,7 +86,10 @@ gets a definite answer rather than a local one.")
   id name server ws pending
   ;; Backlink to the notebook this kernel drives, so an incoming WebSocket
   ;; frame can be routed to the right buffer without consulting any global.
-  notebook)
+  notebook
+  ;; Non-nil once emjupy closes the socket itself: its closing is then no
+  ;; drop to recover from.
+  closing)
 
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")

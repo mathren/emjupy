@@ -324,7 +324,10 @@ Not drawn: a gamepad, shown by name.
 A progress bar redraws itself by returning to the start of the line with
 a carriage return and writing over what was there.  emjupy collapses
 those the way a terminal does, so a bar occupies one line and shows its
-latest state.
+latest state.  Bars that stack -- =tqdm= nested, or given a =position= --
+move the cursor up a line to redraw the one above, and clear what is left
+of a line; emjupy applies those too, as a terminal would, so each bar
+keeps its line and a bar that clears itself leaves nothing behind.
 
 What appears depends on what the program actually wrote, and =tqdm=
 writes a frame only every =mininterval= seconds, 0.1 by default.  A loop

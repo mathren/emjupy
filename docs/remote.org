@@ -154,9 +154,17 @@ path can exist on two servers and one buffer cannot stand for both. The
 =eglot= shadow file is qualified the same way, so two servers hosting
 =analysis.ipynb= don't clobber each other's code.
 
-If a tunnel drops and the remote kernel keeps running,
-use =emjupy-reconnect-kernel= to re-establish Emacs's
-socket and your session state survives.
+If a tunnel drops, the remote kernel keeps running, and emjupy reconnects
+by itself: every few seconds for =emjupy-reconnect-window= seconds (30).
+A cell running meanwhile is not lost.  The server keeps the kernel's
+messages while the connection is down, and hands them over when the same
+session reconnects, so the cell gets everything it printed, and finishes
+as it would have.  A cell whose run ended while the connection was down,
+its end not kept, is ended too, its output perhaps incomplete.  If the
+connection does not come back in time, the cells are ended, and
+=emjupy-reconnect-kernel= (=C-c C-x C-c=) reconnects by hand; your
+session state survives either way.  Set =emjupy-reconnect-window= to nil
+not to try.
 
 * Access tokens
 The token is resolved without bothering you where possible: an explicit

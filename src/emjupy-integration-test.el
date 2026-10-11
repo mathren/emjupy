@@ -1739,5 +1739,59 @@ kernel it took no input and answered no request for it."
        (should (string-match-p "KeyboardInterrupt" out))
        (should-not running)))))
 
+(ert-deftest emjupy-int-output-survives-a-dropped-connection ()
+  "A cell running when the connection drops keeps all its output.
+The server keeps a session's messages while its connection is down and
+replays them when the same session connects again.  emjupy connected
+under a new session each time, and ended the cells at the drop, so what
+the cell printed after it was lost.  Now the cells are kept, emjupy
+reconnects on its own under the same session, and the output arrives."
+  (emjupy-int--with-live-kernel
+   (with-current-buffer emjupy-int--buffer
+     (let* ((emjupy-reconnect-window 30)
+            (cell (aref (emjupy-notebook-cells emjupy--buffer-notebook) 0))
+            (inhibit-read-only t))
+       (let ((ov (emjupy-cell-overlay cell)))
+         (delete-region (overlay-start ov) (1- (overlay-end ov)))
+         (goto-char (overlay-start ov))
+         (insert "import time\nfor i in range(25):\n    print('tick', i, flush=True); time.sleep(0.2)"))
+       (emjupy-execute-cell-at-point)
+       (emjupy-int--pump 1.2)
+       ;; the link drops: the connection gone, not closed by emjupy
+       (let ((kernel (emjupy-notebook-kernel emjupy--buffer-notebook)))
+         (delete-process (websocket-conn (emjupy-kernel-ws kernel))))
+       (emjupy-int--pump 1)
+       ;; kept running meanwhile, not ended
+       (should (member (emjupy-cell-id cell) emjupy--running-cells))
+       ;; reconnected on its own; the run finishes, every tick there
+       (emjupy-int--pump 25 (lambda () (not (member (emjupy-cell-id cell) emjupy--running-cells))))
+       (emjupy-flush-output (current-buffer))
+       (should (emjupy--ws-live-p))
+       (should-not (member (emjupy-cell-id cell) emjupy--running-cells))
+       (let ((text (emjupy--mime-text (gethash "text" (aref (emjupy-cell-outputs cell) 0)))))
+         (dotimes (i 25)
+           (ert-info ((format "tick %d" i))
+             (should (string-match-p (format "^tick %d$" i) text)))))))))
+
+(ert-deftest emjupy-int-nested-tqdm-leaves-one-bar ()
+  "Nested tqdm bars end as a terminal shows them: one finished outer bar.
+The inner bar, leave=False, is cleared each time; it used to leave a
+stale copy behind for every pass of the outer loop."
+  (emjupy-int--with-live-kernel
+   (let ((cell (emjupy-int--run "from tqdm import tqdm\nimport time
+for i in tqdm(range(3), desc='outer', ncols=60):
+    for j in tqdm(range(10), desc='inner', leave=False, ncols=60): time.sleep(0.005)" 60)))
+     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (ert-skip "tqdm is not installed where the kernel runs"))
+     (with-current-buffer emjupy-int--buffer
+       (emjupy-flush-output (current-buffer))
+       (let* ((ov (emjupy-cell-output-ov cell))
+              (shown (split-string (string-trim (buffer-substring-no-properties
+                                                 (overlay-start ov) (overlay-end ov)))
+                                   "\n")))
+         (should (= (cl-count-if (lambda (l) (string-match-p "outer" l)) shown) 1))
+         (should (string-match-p "outer: 100%" (car (seq-filter (lambda (l) (string-match-p "outer" l)) shown))))
+         (should-not (seq-some (lambda (l) (string-match-p "inner" l)) shown)))))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here
