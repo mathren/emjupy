@@ -1179,6 +1179,29 @@ went, not the kernel."
      (let ((cell (emjupy-int--run "print(keep)" 30)))
        (should (equal (emjupy-int--stdout cell) "42\n"))))))
 
+(ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
+  "Opening a notebook with `emjupy-language-support' nil starts no language support.
+Opening one builds the shadow buffer and starts a server in the
+background, so that completion is ready by the first keystroke -- and did
+so whatever the switch said, then reported \"Language-server setup
+failed\" on a machine with no server.  Here the shadow buffer is counted
+instead of built: not asked for with the switch off, asked for once with
+it on."
+  (emjupy-int--skip-unless-live)
+  (dolist (case '((nil . 0) (t . 1)))
+    (let ((asked 0))
+      (cl-letf (((symbol-function 'emjupy--ensure-shadow-buffer)
+                 (lambda (&rest _) (cl-incf asked) nil)))
+        (let ((emjupy-language-support (car case)))
+          (emjupy-int--fresh-notebook)))
+      (unwind-protect
+          (ert-info ((format "switch %S" (car case)))
+            (should (= asked (cdr case))))
+        (let ((kill-buffer-query-functions nil))
+          (when (buffer-live-p emjupy-int--buffer)
+            (with-current-buffer emjupy-int--buffer (set-buffer-modified-p nil))
+            (kill-buffer emjupy-int--buffer)))))))
+
 (ert-deftest emjupy-int-fault-kernel-dying-mid-cell-ends-the-run ()
   "A kernel that dies while a cell runs does not leave it running for ever.
 

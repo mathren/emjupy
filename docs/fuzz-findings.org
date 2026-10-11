@@ -32,7 +32,7 @@ documentation.  Findings fixed since are marked so.
 | 2 | Stacked progress bars (nested tqdm, =position=) come out garbled | bug         | fixed    |
 | 3 | Output of a cell still running is lost when the link drops      | bug         | fixed    |
 | 4 | A kernel dying mid-cell leaves the cell "running" forever        | known       | medium   |
-| 5 | Language server tried with =emjupy-language-support= nil         | bug         | medium   |
+| 5 | Language server tried with =emjupy-language-support= nil         | bug         | fixed    |
 | 6 | 10 MB notebook: 5.3 s to open, 4.9 s to redraw, Emacs blocked    | slow        | medium   |
 | 7 | Starting a local server blocks Emacs (7.3 s cold)                | slow        | low      |
 | 8 | An invalid notebook gives a raw HTTP 400 with escaped JSON       | improvable  | low      |
@@ -122,7 +122,17 @@ documentation.  Findings fixed since are marked so.
   the kernel's =execution_state= over HTTP, could end the cell
   automatically.
 
-** 5. Language server tried with =emjupy-language-support= nil
+** 5. Language server tried with =emjupy-language-support= nil -- fixed
+- Fixed :: Three paths skipped the switch, not the two first suspected:
+  the warm-up when a notebook opens; =M-.=, whose xref backend was
+  registered for every notebook; and the Eglot attach inside
+  =emjupy--ensure-shadow-buffer=, which every command asking a server for
+  something passes through.  The attach checks the switch now, where they
+  converge, so no caller can forget it; the warm-up does not run, and
+  =M-.= is left to other backends.  The shadow buffer is still built when
+  asked for -- editing all the code in one buffer needs no server.  A live
+  test counts the warm-up, unit tests the server starts: one with the
+  switch off before, none after.
 - What :: With the variable set to nil after loading emjupy, opening a
   notebook printed:
   =[emjupy] Language-server setup failed (None of 'pylsp, pyls, ... are
@@ -133,8 +143,7 @@ documentation.  Findings fixed since are marked so.
   comes from language support.
 - Where :: The message comes from =emjupy--shadow-block=, called from
   =emjupy-start-language-support=, which checks the switch, and from
-  =emjupy--ensure-shadow-buffer=, which does not appear to.  Not
-  debugged further.
+  =emjupy--ensure-shadow-buffer=, which did not.
 
 ** 6. A 10 MB notebook is slow to open and redraw
 - What :: 100 cells, each with a 100 KB stream output (9.9 MB file):

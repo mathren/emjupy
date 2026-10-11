@@ -317,8 +317,9 @@ Returns the notebook buffer."
             ;; Warm up the code shadow-buffer + Eglot now, in the background,
             ;; so completions are ready once the user starts typing instead of
             ;; paying the LSP server startup cost on the first keystroke.
-            (with-demoted-errors "[emjupy] Language support did not start: %S"
-              (with-current-buffer buf (emjupy--ensure-shadow-buffer nb-struct)))
+            (when emjupy-language-support
+              (with-demoted-errors "[emjupy] Language support did not start: %S"
+                (with-current-buffer buf (emjupy--ensure-shadow-buffer nb-struct))))
             (message "Opened notebook: %s%s" path
                      (if (emjupy-server-kernel-id server)
 			 ""

@@ -10,7 +10,13 @@ First find which part is slow.
 
 =emjupy-language-support= set to nil disables every path that contacts a
 language server; notebooks, kernels, output and rendering are
-unaffected.  If the delay goes, it came from language support.
+unaffected.  If the delay goes, it came from language support.  That is
+completion, eldoc, =M-.= -- left to Emacs's other xref backends --
+starting a server when a notebook opens, and the commands that ask one
+for something, which say there is none.  Changing it in a notebook
+already open takes effect at once.  =emjupy-edit-cell-externally= still
+opens all the code in one buffer, without a server; set back to t, a
+server is started when next one is asked for.
 
 =emjupy-report-slow-hooks=, set to a number of seconds, reports any
 per-command work exceeding that duration, naming the function

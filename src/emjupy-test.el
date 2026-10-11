@@ -3764,6 +3764,87 @@ the notebook still works."
         ;; and the notebook itself is unaffected
         (should (string-match-p "import os" (buffer-string)))))))
 
+(defmacro emjupy-test--counting-server-starts (var &rest body)
+  "Run BODY with Eglot\\'s connecting counted in VAR, and no server really started."
+  (declare (indent 1))
+  `(let ((,var 0))
+     (cl-letf (((symbol-function 'eglot--connect) (lambda (&rest _) (cl-incf ,var) nil))
+               ((symbol-function 'eglot--guess-contact) (lambda (&rest _) '(python-mode "pylsp")))
+               ((symbol-function 'emjupy--warn-local-language-server) #'ignore))
+       ,@body)
+     ,var))
+
+(ert-deftest emjupy-test-language-support-off-attaches-no-server ()
+  "With `emjupy-language-support' nil no server is started for a notebook.
+The switch was read by completion, eldoc and `emjupy-start-language-support'
+only.  The warm-up when a notebook opens, and the commands that ask a
+server for something, all came through `emjupy--ensure-shadow-buffer',
+which attached Eglot whatever the switch said -- so a notebook opened with
+it off still tried to start a server, and failed, and said so.  The shadow
+buffer is still built: editing all the code in one buffer needs no server."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "import os"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (let ((emjupy-language-support nil))
+          (should (= 0 (emjupy-test--counting-server-starts starts
+                         ;; the buffer is built, and nothing is attached
+                         (should (buffer-live-p (emjupy--ensure-shadow-buffer nb)))))))
+        ;; a command asking a server for something says there is none, and starts none
+        (let ((emjupy-language-support nil))
+          (should (= 0 (emjupy-test--counting-server-starts starts
+                         (should-error (emjupy-eglot-delegate #'ignore) :type 'user-error)))))
+        ;; The control: the same, switched on, does start one -- so the counts
+        ;; above are of something that happens.
+        (let ((emjupy-language-support t))
+          (should (= 1 (emjupy-test--counting-server-starts starts
+                         (emjupy--ensure-shadow-buffer nb)))))))))
+
+(ert-deftest emjupy-test-language-support-off-leaves-m-dot-to-other-backends ()
+  "M-. is not taken by emjupy when `emjupy-language-support' is nil.
+Its xref backend was registered for every notebook and never looked at the
+switch, so M-. went through the shadow buffer and started a server."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((emjupy-language-support nil)) (should-not (emjupy--xref-backend)))
+        (let ((emjupy-language-support t)) (should (eq (emjupy--xref-backend) 'emjupy)))))
+    (with-temp-buffer (should-not (emjupy--xref-backend)))))
+
+(ert-deftest emjupy-test-the-edit-message-does-not-claim-a-server-that-is-off ()
+  "Editing all the code in one buffer says Eglot is active only when it can be."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (dolist (case '((nil . nil) (t . t)))
+          (let ((emjupy-language-support (car case)) (said nil))
+            (save-window-excursion
+              (cl-letf (((symbol-function 'message)
+                         (lambda (f &rest args) (when f (push (apply #'format f args) said))))
+                        ((symbol-function 'eglot--connect) #'ignore)
+                        ((symbol-function 'eglot--guess-contact) (lambda (&rest _) nil))
+                        ((symbol-function 'emjupy--warn-local-language-server) #'ignore))
+                (emjupy-edit-cell-externally)))
+            (should (cl-some (lambda (m) (string-match-p "Editing notebook code" m)) said))
+            (should (eq (cdr case)
+                        (and (cl-some (lambda (m) (string-match-p "Eglot active" m)) said) t)))))))))
+
+(ert-deftest emjupy-test-start-language-support-by-hand-says-when-it-is-off ()
+  "`M-x emjupy-start-language-support' in a notebook with the switch off says so.
+It did nothing, and said nothing."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "x = 1"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let ((emjupy-language-support nil))
+          (let ((err (should-error (call-interactively #'emjupy-start-language-support)
+                                   :type 'user-error)))
+            (should (string-match-p "Language support is off" (cadr err)))))))))
+
 (ert-deftest emjupy-test-slow-hook-reporting ()
   "`emjupy-report-slow-hooks\=' names the slow hook, or says nothing.
 

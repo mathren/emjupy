@@ -411,10 +411,14 @@ looked like a fault in the transport that was not being used.")
   "When non-nil, offer completion, eldoc and \\[xref-find-definitions].
 
 A single switch over every path that talks to a language server, on
-either transport.  Set it to nil to find out whether a slowdown comes
-from language support or from somewhere else: the notebook keeps
-working -- cells run, output arrives, everything renders -- and nothing
-runs after each command except emjupy\='s own bookkeeping."
+either transport: completion, eldoc, M-., starting one when a notebook
+opens, and the commands that ask one for something.  Set it to nil to
+find out whether a slowdown comes from language support or from
+somewhere else: the notebook keeps working -- cells run, output arrives,
+everything renders -- and nothing runs after each command except
+emjupy\='s own bookkeeping.  Editing all the code in one buffer, with
+\\[emjupy-edit-cell-externally], still works, without a server; set
+back to t, a server is started when next one is asked for."
   :type 'boolean
   :group 'emjupy)
 
@@ -430,6 +434,8 @@ the ordinary way.
 Called when a notebook learns where its kernel is, and available by
 hand.  Reports what it found rather than failing quietly."
   (interactive)
+  (when (and (called-interactively-p 'any) (not emjupy-language-support))
+    (user-error "Language support is off: set `emjupy-language-support\=' to t"))
   (let ((nb (or nb (emjupy--notebook))))
     (when (and nb emjupy-language-support
                ;; It is called when the kernel says where it runs, which may
@@ -711,7 +717,14 @@ automatically, with nothing for the user to run."
           ;; The flag lives in the NOTEBOOK buffer -- that is where the
           ;; next request comes from -- and this runs with the shadow
           ;; buffer current, where it would always read nil.
+          ;; The switch is checked here too, where every path that starts a
+          ;; server passes, and not only by its callers: the warm-up when a
+          ;; notebook opens, M-., and the commands that edit or rename all
+          ;; came through here, and most of them did not look at it.  The
+          ;; buffer above is still built -- editing all the code in one
+          ;; buffer needs no server -- but nothing is attached.
           (unless (or emjupy--suppress-plain-eglot
+                      (not emjupy-language-support)
                       (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
                       (and (boundp 'eglot--managed-mode) eglot--managed-mode))
             (with-timeout (emjupy-shadow-timeout
@@ -759,8 +772,11 @@ the right character of the right cell."
 ;; through to a backend that knew nothing about the code.
 
 (defun emjupy--xref-backend ()
-  "`xref-backend-functions' entry for notebook buffers."
-  (and emjupy--buffer-notebook 'emjupy))
+  "`xref-backend-functions\=' entry for notebook buffers.
+None when `emjupy-language-support\=' is nil, which leaves
+\\[xref-find-definitions] to the other backends rather than starting a
+language server."
+  (and emjupy-language-support emjupy--buffer-notebook 'emjupy))
 
 (defun emjupy--xref-in-shadow (fn)
   "Call FN with Eglot's own xref backend, inside the shadow buffer at point."
@@ -1106,7 +1122,8 @@ LSP awareness doesn't apply to prose."
         (let ((buf (emjupy--ensure-shadow-buffer nb)))
           (emjupy--goto-shadow-section buf (emjupy-cell-id cell))
           (pop-to-buffer buf)
-          (message "Editing notebook code (all cells, Eglot active) -- C-c C-c to commit, C-c C-k to discard."))
+          (message "Editing notebook code (all cells%s) -- C-c C-c to commit, C-c C-k to discard."
+                   (if emjupy-language-support ", Eglot active" "")))
       (emjupy--edit-markdown-cell-externally cell nb-buf))))
 
 ;; --- Automatic in-place completion/eldoc: no buffer-switching needed -------
