@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Compare a notebook with emjupy's save of it; exit 1 on any loss.
 
     check-roundtrip.py ORIGINAL SAVED

@@ -6,14 +6,9 @@
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; This file is part of emjupy.
-
-;; This program is free software; you can redistribute it and/or modify
-;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation, either version 3 of the License, or
-;; (at your option) any later version.
-
+;; This file is not part of GNU Emacs.
 
 ;;; Commentary:
 

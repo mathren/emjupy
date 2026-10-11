@@ -1,5 +1,13 @@
 ;;; emjupy-robustness-test.el --- Randomised and adversarial tests for emjupy  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
 ;;; Commentary:
 
 ;; Tests that generate their inputs: random message orders, random edit

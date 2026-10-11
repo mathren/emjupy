@@ -1,3 +1,5 @@
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 import numpy as np
 
 

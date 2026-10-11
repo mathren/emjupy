@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Write the notebook corpus the round-trip tests read: one notebook per
 shape a real .ipynb comes in.  Built with nbformat itself, so each is
 valid by Jupyter's own definition.  Run from the repository root:

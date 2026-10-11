@@ -1,7 +1,14 @@
 ;;; emjupy-run-tests.el --- Batch test runner for emjupy -*- lexical-binding: t; no-byte-compile: t -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
 
 ;; Run with: emacs -batch -Q -L . -l emjupy-run-tests.el
 ;;
@@ -14,6 +21,8 @@
 ;;   2. EMJUPY_WEBSOCKET_DIR environment variable
 ;;   3. package.el, installing from GNU ELPA if necessary
 ;; so the suite runs offline / in CI without reaching out to ELPA.
+
+;;; Code:
 
 (require 'package)
 

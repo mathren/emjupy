@@ -1,7 +1,14 @@
 ;;; emjupy-integration-test.el --- Live-server tests for emjupy -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
 
 ;; These tests talk to a REAL Jupyter server over a REAL connection and run
 ;; REAL Python in a REAL kernel. They are opt-in: without the environment
@@ -19,6 +26,8 @@
 ;; running Emacs can't display, a WebSocket URL that drops its base path, a
 ;; saved notebook that no other tool will open. Those only show up against a
 ;; live server.
+
+;;; Code:
 
 (require 'ert)
 (require 'emjupy)

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Show a page in a window of its own, for emjupy's interactive figures.
 
     emjupy-figure-window.py URL [TITLE]

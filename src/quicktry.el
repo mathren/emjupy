@@ -1,12 +1,21 @@
 ;;; quicktry.el --- Isolated test harness for emjupy -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
 
 ;; This file is not part of the package: it is a development tool, and the
 ;; MELPA recipe lists the files that ship.
 
 ;; Run from the repository root with: emacs -Q -l src/quicktry.el
+
+;;; Code:
 
 (require 'package)
 (setq package-user-dir (expand-file-name "/tmp/emjupy-test-packages"))

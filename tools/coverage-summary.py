@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Summarise an lcov file: coverage per source file and in total.
 
 Written as Markdown, so the same output reads in a terminal and in a

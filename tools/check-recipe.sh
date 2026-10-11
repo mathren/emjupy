@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Check that the MELPA recipe builds the package -- run by `make recipe-check'
 # and by CI.  Two checks:
 #

@@ -1,7 +1,12 @@
 ;;; lint.el --- checkdoc and package-lint over the sources  -*- lexical-binding: t; no-byte-compile: t -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
 
 ;; This file is not part of the package: it is a development tool, and the
 ;; MELPA recipe lists the files that ship.

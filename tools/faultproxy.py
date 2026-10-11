@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 """A TCP proxy that misbehaves on command, for emjupy's network tests.
 
     faultproxy.py TARGET_HOST TARGET_PORT

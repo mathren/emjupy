@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Check that every internal link of the exported site resolves.
 
     check-links.py [SITE]        (SITE defaults to html-content)

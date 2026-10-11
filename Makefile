@@ -1,3 +1,5 @@
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 # emjupy -- build, test and package
 #
 # The layout follows the Emacs Lisp manual's "Multi-file Packages": the tar

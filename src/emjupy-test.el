@@ -1,7 +1,14 @@
 ;;; emjupy-test.el --- Tests for emjupy.el -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
 
 ;; Kept separate from emjupy.el on purpose: implementation and tests are
 ;; different files, this one requires the other.
@@ -11,6 +18,8 @@
 ;; or jedi-language-server) on PATH to fully exercise Eglot; those call
 ;; `ert-skip' when no such server is found rather than failing, so the rest
 ;; of the suite stays green on a machine without one installed.
+
+;;; Code:
 
 (require 'ert)
 (require 'emjupy)

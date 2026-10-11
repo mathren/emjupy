@@ -1,8 +1,9 @@
 ;;; emjupy-figures.el --- Open interactive figures and other outputs  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025-2026 Mathieu Renzo
+;; Copyright (C) 2026 Mathieu Renzo
 
-;; Author: Mathieu Renzo <mrenzo@flatironinstitute.org>
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.

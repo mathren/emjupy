@@ -1,5 +1,19 @@
-;; modified from  -*- lexical-binding: nil -*-
+;;; publish.el --- Build the documentation site  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026 Mathieu Renzo
+
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
+
+;; Builds docs/ into html-content/ for the project site.  Modified from
 ;; https://systemcrafters.net/publishing-websites-with-org-mode/building-the-site/
+
+;;; Code:
 
 (require 'package)
 (setq package-user-dir (expand-file-name "./.packages"))

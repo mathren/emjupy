@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026 Mathieu Renzo
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Set the package version everywhere the CURRENT version is written:
 #
 #   src/emjupy.el      the ";; Version:" header and `emjupy-version'
