@@ -44,9 +44,12 @@
 (defvar emjupy--session-id (emjupy--uuid)
   "Unique identifier for the current Emacs session.")
 
-(defun emjupy--make-execute-request (code)
+(defun emjupy--make-execute-request (code &optional allow-stdin)
   "Return a Jupyter `execute_request' payload for CODE.
-The value is a cons of the message id and the serialized message."
+The value is a cons of the message id and the serialized message.  With
+ALLOW-STDIN, the kernel may ask for input -- `input\=', `getpass\=', pdb
+-- as a cell run by the user does; emjupy\='s own questions never do, so
+none of them stops to wait on the user."
   (let* ((msg-id (emjupy--uuid))
          (header (make-hash-table :test 'equal))
          (content (make-hash-table :test 'equal))
@@ -62,7 +65,7 @@ The value is a cons of the message id and the serialized message."
     (puthash "silent" :false content)
     (puthash "store_history" t content)
     (puthash "user_expressions" (make-hash-table) content)
-    (puthash "allow_stdin" :false content)
+    (puthash "allow_stdin" (if allow-stdin t :false) content)
     (puthash "stop_on_error" t content)
 
     (puthash "header" header msg)
@@ -233,9 +236,11 @@ it.  Here the outputs are one list, so the widgets are what is kept."
         (cl-pushnew cell emjupy--cells-awaiting-output))
       (emjupy--schedule-render buf))))
 
-(defun emjupy--make-message (msg-type content)
-  "Return a shell-channel message of MSG-TYPE carrying CONTENT, a hash table.
-The value is a cons of the message id and the serialized message."
+(defun emjupy--make-message (msg-type content &optional channel parent-header)
+  "Return a message of MSG-TYPE carrying CONTENT, a hash table.
+It goes on CHANNEL, the shell channel by default, in answer to the
+message whose PARENT-HEADER is given, if any.  The value is a cons of the
+message id and the serialized message."
   (let ((msg-id (emjupy--uuid))
         (header (make-hash-table :test 'equal))
         (msg (make-hash-table :test 'equal)))
@@ -245,12 +250,49 @@ The value is a cons of the message id and the serialized message."
     (puthash "msg_type" msg-type header)
     (puthash "version" "5.3" header)
     (puthash "header" header msg)
-    (puthash "parent_header" (make-hash-table) msg)
-    (puthash "channel" "shell" msg)
+    (puthash "parent_header" (or parent-header (make-hash-table)) msg)
+    (puthash "channel" (or channel "shell") msg)
     (puthash "metadata" (make-hash-table) msg)
     (puthash "content" content msg)
     (puthash "buffers" [] msg)
     (cons msg-id (json-serialize msg))))
+
+(defvar emjupy--input-history nil
+  "Answers given to a kernel\'s requests for input -- pdb\'s commands, say.")
+
+(defun emjupy--input-requested (kernel data)
+  "Ask the user for what KERNEL\'s request for input, DATA, asks.
+A cell called `input\=', `getpass\=', or pdb, and the kernel waits for
+the answer.  Asked from a timer, not here in the process filter, where
+waiting on the minibuffer would hold up every other message."
+  (let ((content (gethash "content" data)))
+    (run-at-time 0 nil #'emjupy--answer-input-request kernel
+                 (or (gethash "prompt" content) "")
+                 (eq (gethash "password" content) t)
+                 (gethash "header" data))))
+
+(defun emjupy--answer-input-request (kernel prompt password parent-header)
+  "Ask PROMPT in the minibuffer and send the answer to KERNEL.
+PARENT-HEADER is the request\'s.  With PASSWORD the answer is not shown,
+and not kept in the history.  \\[keyboard-quit] interrupts the kernel,
+as Jupyter\'s own frontends do: it waits for an answer, and an empty one
+would count as one -- pdb would repeat its last command."
+  (let* ((nb (emjupy-kernel-notebook kernel))
+         (label (format "[%s] %s" (file-name-nondirectory (or (and nb (emjupy-notebook-path nb)) "kernel"))
+                        (if (string-empty-p prompt) "input: " prompt)))
+         (value (condition-case nil
+                    (if password
+                        (read-passwd label)
+                      (read-string label nil 'emjupy--input-history))
+                  (quit nil))))
+    (if value
+        (let ((content (make-hash-table :test 'equal)))
+          (puthash "value" value content)
+          (emjupy--ws-send (cdr (emjupy--make-message "input_reply" content "stdin" parent-header))
+                           kernel))
+      (when (and nb (buffer-live-p (emjupy-notebook-buffer nb)))
+        (with-current-buffer (emjupy-notebook-buffer nb)
+          (emjupy-interrupt-kernel))))))
 
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
@@ -407,6 +449,10 @@ kernels never cross-talk."
                       'emjupy-output-owner-functions parent-id))))
          (internal (when parent-id (gethash parent-id emjupy--internal-requests))))
 
+    ;; The kernel waiting on the user: a cell asked for input.
+    (when (equal msg-type "input_request")
+      (emjupy--input-requested kernel data))
+
     ;; One of emjupy's own questions: hand the answer to its callback and
     ;; keep it out of the notebook entirely.
     (when internal
@@ -550,7 +596,7 @@ kernels never cross-talk."
 
       ;; 3. Build execution payload
       (let* ((code (emjupy-cell-source cell))
-             (req (emjupy--make-execute-request code))
+             (req (emjupy--make-execute-request code t))
              (msg-id (car req))
              (json-payload (cdr req)))
 

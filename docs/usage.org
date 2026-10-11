@@ -188,6 +188,16 @@ Emacs gives =.ipynb= files no mode of their own.  To bind it as EIN's
   (keymap-set js-json-mode-map "C-c C-o" #'emjupy-open-this-notebook))
 #+end_src
 
+* A cell asking for input
+
+A cell calling =input()=, =getpass=, =pdb= or =breakpoint()= asks in the
+minibuffer, the prompt naming the notebook, and the kernel waits for the
+answer.  A password is not shown, nor kept; other answers are, so =M-p=
+brings back an earlier one -- the last pdb command, say.  =C-g= at the
+prompt interrupts the kernel, as an interrupt would: the cell stops with
+a =KeyboardInterrupt=, rather than waiting on an answer that is not
+coming.
+
 * Saving, and not losing work
 :PROPERTIES:
 :CUSTOM_ID: saving

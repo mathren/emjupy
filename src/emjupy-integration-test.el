@@ -1678,5 +1678,66 @@ notebook's directory, and the server stops when the notebook is closed."
               (should-not (process-live-p process)))))
       (delete-directory dir t))))
 
+(defun emjupy-int--run-answering (code answers &optional password-answer)
+  "Run CODE in the first cell, answering the kernel's prompts with ANSWERS.
+ANSWERS are given in turn to `read-string', or `quit' to press C-g; a
+password prompt gets PASSWORD-ANSWER.  Return the cell's output text and
+the prompts asked, once the cell has finished."
+  (let ((prompts nil))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (prompt &rest _)
+                 (push prompt prompts)
+                 (let ((a (pop answers)))
+                   (if (eq a 'quit) (signal 'quit nil) a))))
+              ((symbol-function 'read-passwd)
+               (lambda (prompt &rest _) (push prompt prompts) password-answer)))
+      (let ((cell (emjupy-int--run code 30)))
+        (with-current-buffer emjupy-int--buffer
+          (emjupy-int--pump 20 (lambda () (not (member (emjupy-cell-id cell) emjupy--running-cells))))
+          (emjupy-flush-output (current-buffer))
+          (list (mapconcat (lambda (o) (if (gethash "text" o)
+                                           (emjupy--mime-text (gethash "text" o))
+                                         (or (gethash "ename" o) "")))
+                           (append (emjupy-cell-outputs cell) nil) "")
+                (reverse prompts)
+                (member (emjupy-cell-id cell) emjupy--running-cells)))))))
+
+(ert-deftest emjupy-int-a-cell-asking-for-input-is-answered ()
+  "input(), getpass, pdb and breakpoint() ask in the minibuffer, and are answered.
+They failed at once -- StdinNotImplementedError -- as emjupy told the
+kernel it took no input and answered no request for it."
+  (emjupy-int--with-live-kernel
+   (let ((emjupy--input-history nil))
+     ;; input()
+     (pcase-let ((`(,out ,prompts ,running) (emjupy-int--run-answering
+                                             "x = input('name? ')\nprint('hi', x)" '("Ada"))))
+       (should (string-match-p "hi Ada" out))
+       (should (string-match-p "name\\? \\'" (car prompts)))
+       (should-not running))
+     ;; getpass: a password prompt, not kept
+     (pcase-let ((`(,out ,_ ,_) (emjupy-int--run-answering
+                                 "import getpass\np = getpass.getpass('pw: ')\nprint('length', len(p))"
+                                 nil "s3cret")))
+       (should (string-match-p "length 6" out))
+       (should-not (member "s3cret" emjupy--input-history)))
+     ;; pdb: a command evaluated, then continue
+     (pcase-let ((`(,out ,prompts ,running) (emjupy-int--run-answering
+                                             "import pdb\nz = 6\npdb.set_trace()\nprint('after', z)"
+                                             '("p z * 7" "c"))))
+       (should (string-match-p "42" out))
+       (should (string-match-p "after 6" out))
+       (should (cl-every (lambda (p) (string-match-p "(Pdb)\\|ipdb>" p)) prompts))
+       (should-not running))
+     ;; breakpoint()
+     (pcase-let ((`(,out ,_ ,running) (emjupy-int--run-answering
+                                       "w = 2\nbreakpoint()\nprint('done', w)" '("c"))))
+       (should (string-match-p "done 2" out))
+       (should-not running))
+     ;; C-g at the prompt: the kernel interrupted, not left waiting
+     (pcase-let ((`(,out ,_ ,running) (emjupy-int--run-answering
+                                       "y = input('never answered: ')" '(quit))))
+       (should (string-match-p "KeyboardInterrupt" out))
+       (should-not running)))))
+
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

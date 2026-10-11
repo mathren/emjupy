@@ -1,0 +1,259 @@
+#+TITLE: emjupy: fuzz and user-test findings
+#+DATE: <2026-10-10 Sat>
+#+STARTUP: content
+
+Tested at =main= =40f030b= (0.1.15), without changing any code: what was
+weird, slow or could be better, with the numbers measured and how to
+reproduce each.  Emacs 30.1, jupyter-server 2.x, Python 3.12.
+
+A working log, kept in the repository but not published with the
+documentation.  Findings fixed since are marked so.
+
+* How it was tested
+
+- *Local kernel*: a Jupyter server from a full venv (numpy, matplotlib,
+  plotly, ipywidgets, anywidget, tqdm, PIL; *no pandas*).
+- *A second environment*: a minimal venv (no plotly, widgets or tqdm),
+  through =emjupy-open-this-notebook=.
+- *Simulated remote kernel*: a TCP proxy adding 150 ms each way in front
+  of the server.  *No real SSH or TRAMP*: this sandbox has no SSH server,
+  so tunnels, =emjupy-remote-root= over TRAMP and the shadow file on a
+  remote host were not exercised.
+- *Batch Emacs* for most scenarios, each step logged with its timings and
+  a check of the buffer's structure; *graphical Emacs* (Xvfb) for images,
+  figures, widgets, colours and scrolling, with screenshots.
+- Language support was off (=emjupy-language-support= nil) unless noted.
+
+* Summary
+
+| # | Finding                                                         | Kind        | Severity |
+|---+-----------------------------------------------------------------+-------------+----------|
+| 1 | =input()= does not work: stdin requests are not answered         | missing     | fixed    |
+| 2 | Stacked progress bars (nested tqdm, =position=) come out garbled | bug         | medium   |
+| 3 | Output of a cell still running is lost when the link drops      | bug         | medium   |
+| 4 | A kernel dying mid-cell leaves the cell "running" forever        | known       | medium   |
+| 5 | Language server tried with =emjupy-language-support= nil         | bug         | medium   |
+| 6 | 10 MB notebook: 5.3 s to open, 4.9 s to redraw, Emacs blocked    | slow        | medium   |
+| 7 | Starting a local server blocks Emacs (7.3 s cold)                | slow        | low      |
+| 8 | An invalid notebook gives a raw HTTP 400 with escaped JSON       | improvable  | low      |
+| 9 | An empty notebook opens with no cell to type in                  | improvable  | low      |
+| 10 | A =.py= file cannot be opened from the listing before a kernel  | improvable  | low      |
+| 11 | =display(HTML)= / =display(Markdown)= shown as their repr       | missing     | low      |
+| 12 | Output printed before a widget is drawn after it                | edge        | low      |
+| 13 | Long lines are folded mid-word                                  | improvable  | low      |
+| 14 | An error's summary line is not folded to the cell width        | bug         | low      |
+| 15 | Wide images are drawn at full size, past the window's edge     | improvable  | low      |
+| 16 | =environment.yml= naming a missing environment is still offered | improvable  | low      |
+| 17 | The same file can be open twice, through two servers           | edge        | low      |
+| 18 | =tqdm.auto= draws on three lines                                | cosmetic    | low      |
+| 19 | =test_notebook/interactive.ipynb= text is out of date           | docs        | low      |
+| 20 | First import of numpy and matplotlib: 7.2 s, no feedback        | observation | low      |
+
+* Findings
+
+** 1. =input()= does not work -- fixed
+- Fixed :: A cell's request for input is asked in the minibuffer and
+  answered: =input()=, =getpass= (as a password, kept out of the
+  history), =pdb= and =breakpoint()=, with a history for =M-p=.  =C-g= at
+  the prompt interrupts the kernel.  A live test covers each.
+- What :: A cell calling =input()= fails at once:
+  =StdinNotImplementedError: raw_input was called, but this frontend does
+  not support input requests.=
+- Why it matters :: Common in teaching notebooks and quick scripts;
+  =getpass=, =pdb= and =breakpoint()= fail the same way.
+- Likely cause :: Execute requests are sent with =allow_stdin= false, or
+  the stdin channel's =input_request= is not answered.  A minibuffer
+  prompt replying with =input_reply= would cover it.
+- Repro :: =x = input('name? ')=
+
+** 2. Stacked progress bars come out garbled
+- What :: Nested =tqdm= bars, or bars with =position=, leave stale
+  lines.  Shown after a nested run:
+  #+begin_example
+  outer:   0%|          | 0/3 [00:00<?, ?it/s]
+  inner:   0%|          | 0/10 [00:00<?, ?it/s]
+
+  inner:   0%|          | 0/10 [00:00<?, ?it/s]
+  outer:  67%|██████▋   | 2/3 [00:00<00:00, 17.05it/s]
+  inner:   0%|          | 0/10 [00:00<?, ?it/s]
+  outer: 100%|██████
+  #+end_example
+  Two bars with =position=0= and =1=: a stale =A:   0%= line stays above
+  the finished =A= and =B=.
+- Likely cause :: These use cursor movement -- =ESC [ A= (up a line) and
+  =ESC [ K= (clear to end of line) -- which is not interpreted; only =\r=
+  is.  A single bar, =\r= without a final newline, and =end=''=
+  streaming all end up right.
+- Repro :: =for i in tqdm(range(3)):= with an inner
+  =tqdm(range(10), leave=False)=
+
+** 3. Output of a cell still running is lost when the link drops
+- What :: Through the proxy, a cell printing a tick every 0.2 s for 6 s.
+  The proxy was killed at 1.5 s, restarted, and the kernel reconnected
+  (=emjupy-reconnect-kernel=, fast).  The kernel went on running the
+  cell, but only ticks 0 to 5 are ever shown, and the cell is marked
+  stopped.
+- Handled well :: The drop itself: "kernel connection closed; 1 running
+  cell stopped.", the output so far kept, the structure intact.
+- Improvable :: Jupyter servers buffer a session's messages for a short
+  while after a WebSocket closes and replay them to a reconnecting
+  client with the same session id.  Reconnecting with the same session
+  could keep the run's output, and its "running" state.
+
+** 4. A kernel dying mid-cell leaves the cell "running"
+- What :: After =os._exit(1)= the cell still showed as running 15 s
+  later.  The next cell ran fine (0.47 s) on the kernel the server
+  restarted.
+- Known :: In =limitations.org=, with =C-c C-x C-c= as the remedy.
+- Improvable :: The server's status message for a restarting kernel, or
+  the kernel's =execution_state= over HTTP, could end the cell
+  automatically.
+
+** 5. Language server tried with =emjupy-language-support= nil
+- What :: With the variable set to nil after loading emjupy, opening a
+  notebook printed:
+  =[emjupy] Language-server setup failed (None of 'pylsp, pyls, ... are
+  valid executables); pausing 30s.=
+  Reproduced in a clean session.
+- Why it matters :: The docstring calls it "a single switch over every
+  path that talks to a language server", for telling whether a slowdown
+  comes from language support.
+- Where :: The message comes from =emjupy--shadow-block=, called from
+  =emjupy-start-language-support=, which checks the switch, and from
+  =emjupy--ensure-shadow-buffer=, which does not appear to.  Not
+  debugged further.
+
+** 6. A 10 MB notebook is slow to open and redraw
+- What :: 100 cells, each with a 100 KB stream output (9.9 MB file):
+  | open                    | 5.34 s, Emacs blocked |
+  | full redraw             | 4.87 s                |
+  | edit and sync           | 2 ms                  |
+  | recovery copy           | 0.08 s                |
+  | save (local)            | 0.79 s                |
+- Improvable :: Outputs past a size could be drawn collapsed, or only
+  their head and tail, expanding on demand: what is shown, not what is
+  stored, is the cost.  Opening is probably dominated by drawing, so the
+  same would help both.
+
+** 7. Starting a local server blocks Emacs
+- What :: =emjupy-open-this-notebook= with the minimal venv: 7.3 s, cold,
+  before the notebook appeared, with Emacs unresponsive apart from
+  "Starting a Jupyter server for ...".  1.9 s warm.
+- Improvable :: Start the server and open the notebook when it answers,
+  asynchronously, with a progress message.
+
+** 8. An invalid notebook gives a raw HTTP error
+- What :: Opening a truncated =.ipynb= signals
+  =(emjupy-http-status "[Jupyter HTTP 400] GET" "{\"message\": \"Unreadable
+  Notebook: ... NotJSONError('Notebook does not appear to be JSON: ...')\"
+  ...)= -- accurate, but the JSON is shown escaped and nested.
+- Improvable :: Say the file is not a valid notebook, with the server's
+  reason, and offer to open it as text.
+
+** 9. An empty notebook has no cell to type in
+- What :: A notebook with =cells: []= opens as an empty buffer: 0 cells,
+  nothing drawn.  Jupyter shows one empty code cell.
+- Improvable :: Draw one empty code cell, not saved until typed in.
+
+** 10. A =.py= file cannot be opened from the listing before a kernel
+- What :: =emjupy-list-open-file= on =helper.py=:
+  =Cannot tell where this server's files are. Open a notebook so a kernel
+  can say, or set `emjupy-remote-root'=.
+- Improvable :: For a server on this machine -- 127.0.0.1, or one emjupy
+  started, whose directory it knows -- the root is known without asking
+  a kernel; otherwise the Contents API can fetch the file.
+
+** 11. HTML and Markdown display output shown as its repr
+- What :: =display(HTML(...))= and =display(Markdown(...))= show as
+  =<IPython.core.display.HTML object>= and
+  =<IPython.core.display.Markdown object>=.
+- Known :: HTML is a documented limitation.
+- Improvable :: Markdown output could be drawn the way markdown cells
+  are; simple HTML tables could be drawn as text tables.
+
+** 12. Output printed before a widget is drawn after it
+- What :: =print(...)= then a =tqdm.auto= bar: the bar is drawn first,
+  the printed line below it.
+- Why :: Widget views are drawn before a cell's other outputs on purpose,
+  so an =interact= slider stays above its figure.
+- Improvable :: Only views that came first, or =interact= controls,
+  might be lifted, rather than every widget.
+
+** 13. Long lines are folded mid-word
+- What :: A warning folded as =... divide by zero encountered i= /
+  =g=.
+- Improvable :: Fold at the last space before the width when there is
+  one -- output, not code, so nothing depends on the exact columns.
+
+** 14. An error's summary line is not folded
+- What :: =Error (NotImplementedError): Pandas installation is required
+  if no dataframe is prov...= runs past the cell's right edge; the
+  traceback under it is folded.
+- Repro :: Any error whose message is longer than the cell is wide.
+
+** 15. Wide images are drawn at full size
+- What :: A 4000×4000 figure is drawn at its own size, so only its
+  top-left corner shows; the rest is past the window's edge, with no
+  sign of it.  Redisplay is quick: 0.22 s first, scrolling fine.
+- Improvable :: Scale down to the cell's width by default, with
+  =emjupy-open-output= (=C-c C-f=) for the full image -- or at least say
+  the image is cropped.
+
+** 16. A missing environment is still offered
+- What :: =environment.yml= naming =does-not-exist=: it is offered as the
+  default, and accepting it gives "No environment named does-not-exist".
+- Improvable :: Check it first; say in the prompt that it was not found.
+
+** 17. The same file can be open twice, through two servers
+- What :: =two.ipynb= opened with the minimal venv, then again with the
+  full one: two buffers, on two servers, editing the same file.
+- Mitigated :: A save would not overwrite the other's: the conflict check
+  sees the file changed.
+- Improvable :: Notice the file is already open in another notebook
+  buffer, and offer to switch to it.
+
+** 18. =tqdm.auto= draws on three lines
+- What :: Its widget -- label, bar, counts -- draws as three lines,
+  =auto: 100%= / =█████ 30= / =30/30 [00:00<00:00, 94.33it/s]=, where a
+  terminal shows one.
+- Improvable :: Draw a box's children side by side when it is a
+  horizontal box (=HBox=) and they fit.
+
+** 19. The interactive test notebook's text is out of date
+- What :: =test_notebook/interactive.ipynb= says figures open "in an
+  xwidget where this Emacs has one, in the browser otherwise"; they open
+  in a window of their own by default, xwidgets being opt-in.
+
+** 20. A cold first import takes 7 s, with no feedback
+- What :: =import numpy, matplotlib= in a fresh kernel: 7.2 s, the cell
+  showing as running, nothing else -- matplotlib building its font
+  cache.  Not emjupy's doing; only the spinner says anything is
+  happening.
+
+* What held up well
+
+- *Large output*: 50,000 lines in 3.4 s, a 2.5 MB buffer, editing after
+  it under 1 ms.  A 1 MB single line folded, drawn and scrolled quickly.
+- *Graphics*: 30 figures drawn and scrolled smoothly (redisplay 0.01 s);
+  colours from escape codes right.
+- *Remote latency*: through 150 ms each way, opening 0.9 s, a cell
+  0.6 s, 20,000 lines 1.4 s, a figure 1.2 s, a manual save 0.8 s.
+- *Interrupt*: a running cell stopped in 0.6 s, =KeyboardInterrupt= shown.
+- *Odd notebooks*: nbformat 3, raw cells, attachments, list-form
+  sources, Unicode and emoji all opened and round-tripped.
+- *Environments*: clear errors for a missing environment, a venv
+  without =jupyter=, no =jupyter= on the PATH; the kernel runs the chosen
+  venv's Python; two notebooks in one folder share a server; servers
+  stop with their last notebook, and with Emacs.
+- *Structure*: the structure check found nothing wrong after any
+  scenario.
+
+* Not covered
+
+- Real SSH tunnels and TRAMP: shadow files on a remote host, =M-.= into
+  remote modules, a remote root.
+- Language support (pylsp, Eglot): off, apart from finding 5.
+- Kernels other than Python.
+- Very slow links (seconds of latency), and links that lose packets
+  rather than closing.
+- Widgets drawn in pages (=FigureWidget=, anywidget) in a real browser.

@@ -223,7 +223,7 @@ All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
              :base-directory "./docs/"
 	     :publishing-directory "./html-content"
 	     :recursive nil
-	     :exclude "README.org\\|LICENSE\\|\\.gitignore\\|\\*.tar\\|\\Makefile\\|\\.dir-locals.el"
+	     :exclude "README.org\\|LICENSE\\|\\.gitignore\\|\\*.tar\\|\\Makefile\\|\\.dir-locals.el\\|fuzz-findings.org"
              :publishing-function 'org-html-publish-to-html
 	     :html-doctype "html5"
 	     :language "en"
