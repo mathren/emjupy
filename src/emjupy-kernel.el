@@ -561,11 +561,7 @@ kernels never cross-talk."
           (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
             (when (buffer-live-p buf)
               (with-current-buffer buf
-                (emjupy--rerender-preserving-point))))
-          ;; (message "[emjupy] %s: cell execution complete. [In: %s]"
-          ;;          (if notebook (emjupy-notebook-path notebook) "notebook")
-          ;;          count)
-	  ))))))
+                (emjupy--rerender-preserving-point))))))))))
 
 (cl-defun emjupy-execute-cell-at-point ()
   "Sync cell code and send to this notebook's kernel for execution."
@@ -626,9 +622,7 @@ kernels never cross-talk."
         (emjupy--ws-send json-payload kernel)
         ;; Show that it is running.  Long cells otherwise look identical to
         ;; cells that were never run: an empty box and no execution count.
-        (emjupy--mark-running cell)
-        ;; (message "[emjupy] Executing cell (%s)..." msg-id)
-	))))
+        (emjupy--mark-running cell)))))
 
 (defun emjupy-execute-cell-and-goto-next ()
   "Execute the cell at point, then move to the start of the next cell.
@@ -979,7 +973,7 @@ attaching two notebooks to one kernel makes them share state."
              for label = (format "%s (%s)%s" name id
                                  (if (member id in-use) " [in use]" ""))
              do (push label kernel-options)
-                (puthash label id kernel-map))
+             (puthash label id kernel-map))
 
     (let ((choice (completing-read (format "Kernel for %s on %s: "
                                            (emjupy-notebook-path nb)

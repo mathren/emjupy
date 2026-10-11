@@ -53,7 +53,7 @@
   ;; undercover only reports under a recognised CI unless forced; forced
   ;; always, so the report is the same locally and on GitHub
   (setq undercover-force-coverage t)
-;; The patterns are resolved against the directory Emacs was started in,
+  ;; The patterns are resolved against the directory Emacs was started in,
   ;; which is the repository root under make; absolute names avoid the
   ;; question.  The tests and these scripts are not measured.
   (let ((src (file-name-directory (or load-file-name buffer-file-name))))

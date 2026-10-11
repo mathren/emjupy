@@ -13,11 +13,11 @@
 ;; loading any code.
 
 (define-package "emjupy" "0.1.16"
-  "Interactive Jupyter notebooks over HTTP and WebSocket"
-  '((emacs "30.1")
+                "Interactive Jupyter notebooks over HTTP and WebSocket"
+                '((emacs "30.1")
     (websocket "1.15"))
-  :keywords '("languages" "tools" "python" "jupyter")
-  :url "https://github.com/mathren/emjupy")
+                :keywords '("languages" "tools" "python" "jupyter")
+                :url "https://github.com/mathren/emjupy")
 
 
 ;; Local Variables:

@@ -128,7 +128,7 @@ stripped the Content-Length framing LSP uses over a pipe."
                   (remhash id (emjupy-lsp-callbacks session))
                   (setf (emjupy-lsp-warmed session) t)
                   (funcall callback (and (not (gethash "error" msg))
-                                          (gethash "result" msg))))
+                                         (gethash "result" msg))))
               (puthash id msg (emjupy-lsp-pending session)))))))))
 
 (defun emjupy--lsp-async (session method params callback)
@@ -501,7 +501,7 @@ same cells holding the same source objects build the same content."
                           (emjupy--sanitize-for-lsp (emjupy-cell-source cell))
                           "\n"))
    (cl-remove-if-not (lambda (c) (eq (emjupy-cell-type c) 'code))
-                      (append (emjupy-notebook-cells nb) nil))
+                     (append (emjupy-notebook-cells nb) nil))
    "\n"))
 
 (defun emjupy--parse-shadow-sections (text)
@@ -750,8 +750,8 @@ Eglot reads that variable while connecting, before the buffer counts as
 one it manages, so a value set there arrives as an empty settings object
 -- measured on the wire, not assumed."
   (when-let* ((cwd (and emjupy-tell-server-where-modules-are
-                       server
-                       (emjupy-notebook-kernel-cwd nb))))
+                        server
+                        (emjupy-notebook-kernel-cwd nb))))
     (when (jsonrpc-running-p server)
       (jsonrpc-notify
        server :workspace/didChangeConfiguration
@@ -827,11 +827,11 @@ Returns the server, or nil."
           (condition-case err
               (let ((connected
                      (eglot--connect (list major-mode) project
-      'emjupy-eglot-server
-      ;; A process must exist for the base class;
-      ;; this one is never written to or read from.
-      (list emjupy-eglot-idle-command)
-      "python")))
+                                     'emjupy-eglot-server
+                                     ;; A process must exist for the base class;
+                                     ;; this one is never written to or read from.
+                                     (list emjupy-eglot-idle-command)
+                                     "python")))
                 (emjupy--set-workspace-configuration nb connected)
                 ;; Make sure this buffer is one the server manages.  Eglot
                 ;; activates that through hooks tied to the project a buffer

@@ -82,31 +82,31 @@ Only the headers matter."
     (cl-loop for path in emjupy--xsrf-endpoints
              until found
              do (condition-case nil
-                  ;; An endpoint that is not there, or a server that has
-                  ;; gone, fails to connect -- `file-error' -- and the next
-                  ;; is tried.  Anything else is a fault, and is not hidden.
-                  (let* ((url-request-method "GET")
-                         (url-request-data nil)
-                         ;; Do not chase redirects: /tree answers 302 to
-                         ;; /login and the cookie is on neither the 302 nor,
-                         ;; reliably, whatever url.el leaves in the buffer
-                         ;; afterwards.  Each endpoint is asked on its own.
-                         (url-max-redirections 0)
-                         (url-cookie-storage nil)
-                         (url-cookie-secure-storage nil)
-                         (url-request-extra-headers
-                          (when (and token (not (string-empty-p token)))
-                            `(("Authorization" . ,(format "token %s" token)))))
-                         (buffer (url-retrieve-synchronously
-                                  (concat prefix base-url path) t nil 5)))
-                    (when buffer
-                      (with-current-buffer buffer
-                        (goto-char (point-min))
-                        (when (re-search-forward
-                               "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
-                          (setq found (emjupy--http-bytes (match-string-no-properties 1)))))
-                      (kill-buffer buffer)))
-                (file-error nil)))
+                    ;; An endpoint that is not there, or a server that has
+                    ;; gone, fails to connect -- `file-error' -- and the next
+                    ;; is tried.  Anything else is a fault, and is not hidden.
+                    (let* ((url-request-method "GET")
+                           (url-request-data nil)
+                           ;; Do not chase redirects: /tree answers 302 to
+                           ;; /login and the cookie is on neither the 302 nor,
+                           ;; reliably, whatever url.el leaves in the buffer
+                           ;; afterwards.  Each endpoint is asked on its own.
+                           (url-max-redirections 0)
+                           (url-cookie-storage nil)
+                           (url-cookie-secure-storage nil)
+                           (url-request-extra-headers
+                            (when (and token (not (string-empty-p token)))
+                              `(("Authorization" . ,(format "token %s" token)))))
+                           (buffer (url-retrieve-synchronously
+                                    (concat prefix base-url path) t nil 5)))
+                      (when buffer
+                        (with-current-buffer buffer
+                          (goto-char (point-min))
+                          (when (re-search-forward
+                                 "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
+                            (setq found (emjupy--http-bytes (match-string-no-properties 1)))))
+                        (kill-buffer buffer)))
+                  (file-error nil)))
     (when found (setf (emjupy-server-xsrf server) found))
     found))
 
@@ -292,14 +292,14 @@ cookie."
          (url-request-extra-headers
           (emjupy--http-bytes-alist
            (append `(("Content-Type" . "application/json"))
-                  (when (and token (not (string-empty-p token)))
-                    `(("Authorization" . ,(format "token %s" token))))
-                  ;; Automatically inject XSRF tokens to bypass Jupyter 403 CSRF blocks.
-                  ;; Read from THIS server: a cookie issued by another server
-                  ;; (a second tunnel, say) would just earn a 403.
-                  (when (emjupy-server-xsrf server)
-                    `(("X-XSRFToken" . ,(emjupy-server-xsrf server))
-                      ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server))))))))
+                   (when (and token (not (string-empty-p token)))
+                     `(("Authorization" . ,(format "token %s" token))))
+                   ;; Automatically inject XSRF tokens to bypass Jupyter 403 CSRF blocks.
+                   ;; Read from THIS server: a cookie issued by another server
+                   ;; (a second tunnel, say) would just earn a 403.
+                   (when (emjupy-server-xsrf server)
+                     `(("X-XSRFToken" . ,(emjupy-server-xsrf server))
+                       ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server))))))))
          (base-url (emjupy-server-base-url server))
          ;; Tornado's check reads an `_xsrf' ARGUMENT or the X-XSRFToken
          ;; header -- "'_xsrf' argument missing from POST" is what it says
@@ -316,8 +316,8 @@ cookie."
                                    (float-time))
                          ""))
          (full-url (emjupy--http-bytes
-                   (concat (if (string-prefix-p "http" base-url) "" "http://")
-                           base-url path xsrf-arg cache-buster))))
+                    (concat (if (string-prefix-p "http" base-url) "" "http://")
+                            base-url path xsrf-arg cache-buster))))
 
     (if callback
         (url-retrieve full-url callback)
@@ -329,20 +329,20 @@ cookie."
           (let* ((response (emjupy--http-read-response buffer server))
                  (status (or (car response) 200))
                  (json-str (cdr response)))
-                (cond
-                 ;; A missing or rotated cookie is recoverable: fetch a fresh
-                 ;; one and try once more, rather than making the user
-                 ;; reconnect over a cookie that has simply aged out.
-                 ((and (= status 403)
-                       (not retrying)
-                       (let ((case-fold-search t)) (string-match-p "xsrf" json-str)))
-                  (setf (emjupy-server-xsrf server) nil)
-                  (if (emjupy--harvest-xsrf server)
-                      (emjupy--http-request method server path body callback t)
-                    (signal 'emjupy-http-status
-                            (list (format "[Jupyter HTTP %d] %s" status method)
-                                  json-str))))
-                 (t (emjupy--http-interpret server method path status json-str)))))))))
+            (cond
+             ;; A missing or rotated cookie is recoverable: fetch a fresh
+             ;; one and try once more, rather than making the user
+             ;; reconnect over a cookie that has simply aged out.
+             ((and (= status 403)
+                   (not retrying)
+                   (let ((case-fold-search t)) (string-match-p "xsrf" json-str)))
+              (setf (emjupy-server-xsrf server) nil)
+              (if (emjupy--harvest-xsrf server)
+                  (emjupy--http-request method server path body callback t)
+                (signal 'emjupy-http-status
+                        (list (format "[Jupyter HTTP %d] %s" status method)
+                              json-str))))
+             (t (emjupy--http-interpret server method path status json-str)))))))))
 
 (defun emjupy--websocket-auth-headers (server)
   "Return the headers a WebSocket to SERVER should carry.

@@ -19,6 +19,7 @@
 
 ;;; Code:
 
+(require 'loadhist)                     ; `feature-file'
 (require 'transient)
 (require 'emjupy-core)
 (require 'emjupy-render)
@@ -294,8 +295,51 @@ place to keep up to date, and would be wrong the moment the mode changed
       (pcase-dolist (`(,var . ,value) vars)
         (set (make-local-variable var) value)))))
 
+;;;; Two installations at once
+
+(defconst emjupy--home
+  (file-name-directory (or load-file-name buffer-file-name default-directory))
+  "The directory this file was loaded from, where every emjupy file belongs.")
+
+(defconst emjupy--modules
+  '(emjupy-core emjupy-http emjupy-render emjupy-cells emjupy-kernel
+    emjupy-figures emjupy-widgets emjupy-widget-page emjupy-remote emjupy-lsp
+    emjupy-eglot emjupy-mode emjupy-notebook emjupy)
+  "The files emjupy is made of, as features.")
+
+(defun emjupy--stray-modules ()
+  "Return the emjupy files loaded from a directory other than this one\='s.
+Each is a cons of the feature and the file.  Two installations on the
+`load-path\=' at once -- a package and a checkout -- give a mix, and a
+mix fails in ways that look like bugs: a command named where its key
+should be, widgets drawn as text."
+  (cl-loop for feature in emjupy--modules
+           for file = (and (featurep feature) (feature-file feature))
+           when (and file (not (file-equal-p (file-name-directory file) emjupy--home)))
+           collect (cons feature file)))
+
+(defvar emjupy--strays-checked nil
+  "Non-nil once this session has looked for a mixed installation.")
+
+(defun emjupy--warn-about-strays ()
+  "Warn, once a session, if emjupy\='s files come from two installations.
+Run when a notebook first opens rather than when emjupy is loaded, so
+that loading it does nothing but define, and every file is loaded by
+then however emjupy was -- by a `require\=', or an autoloaded command."
+  (unless emjupy--strays-checked
+    (setq emjupy--strays-checked t)
+    (when-let* ((strays (emjupy--stray-modules)))
+      (display-warning
+       'emjupy
+       (format "emjupy is loaded from two places: %s, but %s.  Two installations
+are on the `load-path' -- remove one, or put the one you want first."
+               emjupy--home
+               (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s))) strays ", "))
+       :warning))))
+
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
+  (emjupy--warn-about-strays)
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
   (emjupy--adopt-language-settings)

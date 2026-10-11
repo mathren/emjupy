@@ -24,11 +24,11 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-lsp)
-
-(defvar python-indent-guess-indent-offset-verbose)
 (require 'xref)
 (require 'emjupy-kernel)
 (require 'emjupy-remote)
+
+(defvar python-indent-guess-indent-offset-verbose)
 
 ;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it, because the
 ;; WebSocket transport inherits from Eglot's own server class.  It is
@@ -340,7 +340,7 @@ plainly not here.  A remote name is not here by definition."
        kernel "import os as _o; print(_o.getcwd())"
        (lambda (out)
          (setq out (string-trim (or out "")))
-         (when (not (string-empty-p out))
+         (unless (string-empty-p out)
            (setf (emjupy-notebook-kernel-cwd nb) out)
            ;; Now that a kernel has said where it runs, the server's root
            ;; can be worked out from it -- so browsing its files needs no
@@ -946,9 +946,9 @@ right destination there."
 (cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
   "Return definitions of IDENTIFIER, mapped back onto notebook cells."
   (let ((nb emjupy--buffer-notebook))
-        (emjupy--xref-remap
-         nb (emjupy--xref-in-shadow
-             (lambda (b) (xref-backend-definitions b identifier))))))
+    (emjupy--xref-remap
+     nb (emjupy--xref-in-shadow
+         (lambda (b) (xref-backend-definitions b identifier))))))
 
 (cl-defmethod xref-backend-references ((_backend (eql emjupy)) identifier)
   "Return references to IDENTIFIER, mapped back onto notebook cells."
@@ -1211,23 +1211,23 @@ value, or nil if point isn't in a code cell."
              (not (emjupy--lsp-in-charge-p)))
     (emjupy--warn-shadow-is-local emjupy--buffer-notebook))
   (unless (and emjupy--buffer-notebook
-                (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
-  (let ((cell (get-text-property (point) 'emjupy-cell))
-        (nb emjupy--buffer-notebook))
-    (when (and cell nb (eq (emjupy-cell-type cell) 'code) (emjupy-cell-overlay cell))
-      (emjupy--sync-all-cells)
-      (let* ((main-point (point))
-             (cell-start (overlay-start (emjupy-cell-overlay cell)))
-             (buf (emjupy--ensure-shadow-buffer nb))
-             (shadow-start (emjupy--shadow-section-start buf (emjupy-cell-id cell))))
-        (with-current-buffer buf
-          ;; Clamp: if the cell's shadow section is shorter than the offset
-          ;; (mid-edit, before a resync), an unclamped goto-char signals
-          ;; `args-out-of-range' and kills completion for the whole buffer.
-          (goto-char (max (point-min)
-                          (min (point-max)
-                               (+ shadow-start (- main-point cell-start)))))
-          (funcall fn cell-start shadow-start buf)))))))
+               (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
+    (let ((cell (get-text-property (point) 'emjupy-cell))
+          (nb emjupy--buffer-notebook))
+      (when (and cell nb (eq (emjupy-cell-type cell) 'code) (emjupy-cell-overlay cell))
+        (emjupy--sync-all-cells)
+        (let* ((main-point (point))
+               (cell-start (overlay-start (emjupy-cell-overlay cell)))
+               (buf (emjupy--ensure-shadow-buffer nb))
+               (shadow-start (emjupy--shadow-section-start buf (emjupy-cell-id cell))))
+          (with-current-buffer buf
+            ;; Clamp: if the cell's shadow section is shorter than the offset
+            ;; (mid-edit, before a resync), an unclamped goto-char signals
+            ;; `args-out-of-range' and kills completion for the whole buffer.
+            (goto-char (max (point-min)
+                            (min (point-max)
+                                 (+ shadow-start (- main-point cell-start)))))
+            (funcall fn cell-start shadow-start buf)))))))
 
 (defun emjupy--cell-completion-at-point ()
   "Return completions for the cell at point.
@@ -1291,22 +1291,22 @@ and does not hold the editor while the server thinks."
      (when (and (emjupy--eglot-live-server)
                 (emjupy--eglot-capable-p :hoverProvider))
        (let ((server (emjupy--eglot-live-server)))
-           ;; Asked for, not waited for.  This runs after every command, so
-           ;; a blocking request costs a round trip per keystroke -- which
-           ;; went unnoticed while the server was a local process and did
-           ;; not once it moved to the far end of a WebSocket.  eldoc is
-           ;; built for a late answer: that is what the callback is for.
-           (jsonrpc-async-request
-            server :textDocument/hover (eglot--TextDocumentPositionParams)
-            :success-fn
-            (lambda (resp)
-              (let ((contents (plist-get resp :contents)))
-                (unless (seq-empty-p contents)
-                  (funcall callback
-                           (eglot--hover-info contents
-                                              (plist-get resp :range))))))
-            :error-fn #'ignore
-            :timeout-fn #'ignore))
+         ;; Asked for, not waited for.  This runs after every command, so
+         ;; a blocking request costs a round trip per keystroke -- which
+         ;; went unnoticed while the server was a local process and did
+         ;; not once it moved to the far end of a WebSocket.  eldoc is
+         ;; built for a late answer: that is what the callback is for.
+         (jsonrpc-async-request
+          server :textDocument/hover (eglot--TextDocumentPositionParams)
+          :success-fn
+          (lambda (resp)
+            (let ((contents (plist-get resp :contents)))
+              (unless (seq-empty-p contents)
+                (funcall callback
+                         (eglot--hover-info contents
+                                            (plist-get resp :range))))))
+          :error-fn #'ignore
+          :timeout-fn #'ignore))
        t))))
 
 (defun emjupy--release-notebook ()

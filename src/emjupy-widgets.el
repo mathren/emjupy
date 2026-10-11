@@ -219,7 +219,7 @@ ID is the widget's comm id."
   (let ((labels (append (gethash "_options_labels" s) nil)))
     (list (emjupy--widget-button
            (format "%s ▾" (if (seq-empty-p (gethash "index" s)) "(none)"
-                             (mapconcat (lambda (i) (nth i labels)) (gethash "index" s) ", ")))
+                            (mapconcat (lambda (i) (nth i labels)) (gethash "index" s) ", ")))
            id 'choose-several))))
 
 (defun emjupy--widget-choose-p (s)

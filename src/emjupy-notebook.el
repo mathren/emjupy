@@ -24,8 +24,6 @@
 (require 'cl-lib)
 (require 'json)
 (require 'emjupy-core)
-(declare-function dired-goto-file "dired" (file))
-(defvar python-indent-guess-indent-offset-verbose)
 (require 'emjupy-http)
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
@@ -33,8 +31,8 @@
 (require 'emjupy-remote)
 (require 'emjupy-mode)
 
-;; Defined in emjupy.el, which requires this file: the mode function is
-;; only ever called at runtime, so the cycle is harmless.
+(declare-function dired-goto-file "dired" (file))
+(defvar python-indent-guess-indent-offset-verbose)
 
 (defvar emjupy--port-history nil
   "Minibuffer history for server ports and URLs.")
@@ -266,13 +264,6 @@ Returns the notebook buffer."
                   (gethash "last_modified" response-data))
 
             (with-current-buffer buf
-              ;; `emjupy-mode' lives in emjupy.el, which this file cannot
-              ;; require at load time without a cycle -- emjupy.el requires
-              ;; this one.  Autoloading `emjupy-open-notebook' therefore
-              ;; pulled in every file EXCEPT the one defining the mode, and
-              ;; opening a notebook failed with the mode undefined.  Required
-              ;; here, where there is no cycle to create.
-              (require 'emjupy)
               (emjupy-mode)
               ;; Set the notebook BEFORE drawing, and draw through
               ;; `emjupy--rerender-notebook' rather than looping over the cells
@@ -846,7 +837,7 @@ file name works there, if you would rather push it somewhere else."
                        :exec-count (gethash "execution_count" c-data)
                        :source (let ((src (gethash "source" c-data)))
                                  (if (vectorp src) (mapconcat #'identity src "") src))
-                                              :outputs (gethash "outputs" c-data)
+                       :outputs (gethash "outputs" c-data)
                        :metadata (gethash "metadata" c-data)
                        :attachments (gethash "attachments" c-data))))
     nb))

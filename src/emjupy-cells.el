@@ -83,15 +83,15 @@ and what would be saved have come apart."
           ;; newline so that it occupies a line and can be typed into, and
           ;; that line is display, not content.
           (unless structure-only
-          (let ((shown (string-trim-right
-                        (buffer-substring-no-properties
-                         (overlay-start ov) (overlay-end ov))
-                        "[\n]+"))
-                (stored (string-trim-right (or (emjupy-cell-source cell) "")
-                                           "[\n]+")))
-            (unless (equal shown stored)
-              (push (format "cell %d shows %S but holds %S" index shown stored)
-                    problems))))
+            (let ((shown (string-trim-right
+                          (buffer-substring-no-properties
+                           (overlay-start ov) (overlay-end ov))
+                          "[\n]+"))
+                  (stored (string-trim-right (or (emjupy-cell-source cell) "")
+                                             "[\n]+")))
+              (unless (equal shown stored)
+                (push (format "cell %d shows %S but holds %S" index shown stored)
+                      problems))))
           (when (overlayp out)
             (if (not (eq (overlay-buffer out) (current-buffer)))
                 (push (format "cell %d's output box is in another buffer" index)
@@ -536,7 +536,7 @@ changed nothing -- the history is left intact."
               (delete-overlay ov)))
           (cl-loop for cell across cells
                    do (setf (emjupy-cell-overlay cell) nil)
-                      (setf (emjupy-cell-output-ov cell) nil))
+                   (setf (emjupy-cell-output-ov cell) nil))
           (erase-buffer)
           ;; Render every cell first; only move point afterward. Jumping point
           ;; back to target-cell mid-loop would make later `insert' calls land
@@ -547,10 +547,10 @@ changed nothing -- the history is left intact."
                    ;; point, one call that moved it -- measuring a window,
                    ;; which selects it -- drew the rest on top of each other.
                    do (goto-char (point-max))
-                      (let ((start (point)))
-                        (emjupy--render-cell cell)
-                        (when (eq cell target-cell)
-                          (setq target-start start))))
+                   (let ((start (point)))
+                     (emjupy--render-cell cell)
+                     (when (eq cell target-cell)
+                       (setq target-start start))))
           (when target-start
             (goto-char target-start))
           ;; Nothing may be left drawing a rule that belongs to no cell.
@@ -676,39 +676,39 @@ records nothing."
   "Insert a new empty code cell below the cell at point."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((nb emjupy--buffer-notebook)
-         (curr-cell (emjupy--cell-at-point))
-         (cells (append (emjupy-notebook-cells nb) nil))
-         (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
-         (idx (cl-position curr-cell cells)))
-    (let ((index (if idx (1+ idx) (length cells))))
-      (unless (emjupy-insert-cell-at nb index new-cell)
-        (setf (emjupy-notebook-cells nb)
-              (vconcat (append (cl-subseq cells 0 index)
-                               (list new-cell)
-                               (cl-subseq cells index))))
-        (emjupy--rerender-notebook new-cell)))
-    (emjupy--goto-cell new-cell 'start))))
+    (emjupy--sync-all-cells)
+    (let* ((nb emjupy--buffer-notebook)
+           (curr-cell (emjupy--cell-at-point))
+           (cells (append (emjupy-notebook-cells nb) nil))
+           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
+           (idx (cl-position curr-cell cells)))
+      (let ((index (if idx (1+ idx) (length cells))))
+        (unless (emjupy-insert-cell-at nb index new-cell)
+          (setf (emjupy-notebook-cells nb)
+                (vconcat (append (cl-subseq cells 0 index)
+                                 (list new-cell)
+                                 (cl-subseq cells index))))
+          (emjupy--rerender-notebook new-cell)))
+      (emjupy--goto-cell new-cell 'start))))
 
 (defun emjupy-insert-cell-above ()
   "Insert a new empty code cell above the cell at point."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((nb emjupy--buffer-notebook)
-         (curr-cell (emjupy--cell-at-point))
-         (cells (append (emjupy-notebook-cells nb) nil))
-         (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
-         (idx (cl-position curr-cell cells)))
-    (let ((index (or idx 0)))
-      (unless (emjupy-insert-cell-at nb index new-cell)
-        (setf (emjupy-notebook-cells nb)
-              (vconcat (append (cl-subseq cells 0 index)
-                               (list new-cell)
-                               (cl-subseq cells index))))
-        (emjupy--rerender-notebook new-cell)))
-    (emjupy--goto-cell new-cell 'start))))
+    (emjupy--sync-all-cells)
+    (let* ((nb emjupy--buffer-notebook)
+           (curr-cell (emjupy--cell-at-point))
+           (cells (append (emjupy-notebook-cells nb) nil))
+           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
+           (idx (cl-position curr-cell cells)))
+      (let ((index (or idx 0)))
+        (unless (emjupy-insert-cell-at nb index new-cell)
+          (setf (emjupy-notebook-cells nb)
+                (vconcat (append (cl-subseq cells 0 index)
+                                 (list new-cell)
+                                 (cl-subseq cells index))))
+          (emjupy--rerender-notebook new-cell)))
+      (emjupy--goto-cell new-cell 'start))))
 
 (defun emjupy-move-cell-up ()
   "Move the cell at point up, swapping it with the cell above.
@@ -716,47 +716,47 @@ Since a cell's output lives inside its own struct rather than as a
 separate entity, the output always travels with its cell automatically."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
-         (cell (emjupy--cell-at-point))
-         (idx (cl-position cell cells)))
-    (if (or (not idx) (= idx 0))
-        (message "[emjupy] Cell is already at the top.")
-      (let* ((above (aref cells (1- idx)))
-             (sane (emjupy--overlays-sane-p)))
-        (aset cells (1- idx) cell)
-        (aset cells idx above)
-        ;; Only the two cells swapped change, so only they are redrawn --
-        ;; a rebuild moves every buffer position that an undo entry holds,
-        ;; and takes the history with it.
-        (unless (and sane
+    (emjupy--sync-all-cells)
+    (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
+           (cell (emjupy--cell-at-point))
+           (idx (cl-position cell cells)))
+      (if (or (not idx) (= idx 0))
+          (message "[emjupy] Cell is already at the top.")
+        (let* ((above (aref cells (1- idx)))
+               (sane (emjupy--overlays-sane-p)))
+          (aset cells (1- idx) cell)
+          (aset cells idx above)
+          ;; Only the two cells swapped change, so only they are redrawn --
+          ;; a rebuild moves every buffer position that an undo entry holds,
+          ;; and takes the history with it.
+          (unless (and sane
                        (emjupy--redraw-cells-in-place (list above cell)
                                                       (list cell above) t))
             (emjupy--rerender-notebook cell))
-        ;; The move is its own undo step, so an edit in the cell it
-        ;; rewrites is recovered by undoing the move rather than lost.
-        (emjupy--goto-cell cell 'start))))))
+          ;; The move is its own undo step, so an edit in the cell it
+          ;; rewrites is recovered by undoing the move rather than lost.
+          (emjupy--goto-cell cell 'start))))))
 
 (defun emjupy-move-cell-down ()
   "Move the cell at point down, swapping it with the cell below."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
-         (cell (emjupy--cell-at-point))
-         (idx (cl-position cell cells)))
-    (if (or (not idx) (= idx (1- (length cells))))
-        (message "[emjupy] Cell is already at the bottom.")
-      (let* ((below (aref cells (1+ idx)))
-             (sane (emjupy--overlays-sane-p)))
-        (aset cells (1+ idx) cell)
-        (aset cells idx below)
-        ;; As for moving up: two cells change, so two cells are redrawn.
-        (unless (and sane
+    (emjupy--sync-all-cells)
+    (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
+           (cell (emjupy--cell-at-point))
+           (idx (cl-position cell cells)))
+      (if (or (not idx) (= idx (1- (length cells))))
+          (message "[emjupy] Cell is already at the bottom.")
+        (let* ((below (aref cells (1+ idx)))
+               (sane (emjupy--overlays-sane-p)))
+          (aset cells (1+ idx) cell)
+          (aset cells idx below)
+          ;; As for moving up: two cells change, so two cells are redrawn.
+          (unless (and sane
                        (emjupy--redraw-cells-in-place (list cell below)
                                                       (list below cell) t))
             (emjupy--rerender-notebook cell))
-        (emjupy--goto-cell cell 'start))))))
+          (emjupy--goto-cell cell 'start))))))
 
 (defun emjupy--rerender-preserving-point ()
   "Re-render the notebook without disturbing where the user is typing.
@@ -927,40 +927,40 @@ Neither half has been run as it now stands, so keeping the results would
 attribute them to source that never produced them."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((nb (emjupy--notebook))
-         (cell (emjupy--cell-at-point)))
-    ;; Output text carries no cell property and lies outside the source
-    ;; overlay, so this also catches point sitting in an output box.
-    (unless cell
-      (user-error "Point is not in a cell"))
-    (let* ((ov (emjupy-cell-overlay cell))
-           (source (or (emjupy-cell-source cell) ""))
-           (offset (max 0 (min (- (point) (overlay-start ov)) (length source))))
-           (new-cell (make-emjupy-cell
-                      :id (emjupy--new-cell-id)
-                      :type (emjupy-cell-type cell)
-                      :source (substring source offset)
-                      :outputs []
-                      :metadata (make-hash-table :test 'equal)))
-           (cells (append (emjupy-notebook-cells nb) nil))
-           (idx (cl-position cell cells)))
-      (setq emjupy--split-was-sane (emjupy--overlays-sane-p))
-      (setf (emjupy-cell-source cell) (substring source 0 offset))
-      ;; Neither half produced what is on screen any more.
-      (setf (emjupy-cell-outputs cell) [])
-      (setf (emjupy-cell-exec-count cell) nil)
-      (setf (emjupy-notebook-cells nb)
-            (vconcat (append (cl-subseq cells 0 (1+ idx))
-                             (list new-cell)
-                             (cl-subseq cells (1+ idx)))))
-      (unless (emjupy--redraw-cells-in-place (list cell) (list cell new-cell)
-                                             emjupy--split-was-sane)
-        (emjupy--rerender-notebook new-cell))
-      (let ((ov (emjupy-cell-overlay new-cell)))
-        (when (overlayp ov) (goto-char (overlay-start ov))))
-      new-cell)))))
+    (emjupy--as-one-undo-step
+      (emjupy--sync-all-cells)
+      (let* ((nb (emjupy--notebook))
+             (cell (emjupy--cell-at-point)))
+        ;; Output text carries no cell property and lies outside the source
+        ;; overlay, so this also catches point sitting in an output box.
+        (unless cell
+          (user-error "Point is not in a cell"))
+        (let* ((ov (emjupy-cell-overlay cell))
+               (source (or (emjupy-cell-source cell) ""))
+               (offset (max 0 (min (- (point) (overlay-start ov)) (length source))))
+               (new-cell (make-emjupy-cell
+                          :id (emjupy--new-cell-id)
+                          :type (emjupy-cell-type cell)
+                          :source (substring source offset)
+                          :outputs []
+                          :metadata (make-hash-table :test 'equal)))
+               (cells (append (emjupy-notebook-cells nb) nil))
+               (idx (cl-position cell cells)))
+          (setq emjupy--split-was-sane (emjupy--overlays-sane-p))
+          (setf (emjupy-cell-source cell) (substring source 0 offset))
+          ;; Neither half produced what is on screen any more.
+          (setf (emjupy-cell-outputs cell) [])
+          (setf (emjupy-cell-exec-count cell) nil)
+          (setf (emjupy-notebook-cells nb)
+                (vconcat (append (cl-subseq cells 0 (1+ idx))
+                                 (list new-cell)
+                                 (cl-subseq cells (1+ idx)))))
+          (unless (emjupy--redraw-cells-in-place (list cell) (list cell new-cell)
+                                                 emjupy--split-was-sane)
+            (emjupy--rerender-notebook new-cell))
+          (let ((ov (emjupy-cell-overlay new-cell)))
+            (when (overlayp ov) (goto-char (overlay-start ov))))
+          new-cell)))))
 
 (defun emjupy-join-cell-above ()
   "Merge the cell at point into the one above it.
@@ -976,46 +976,46 @@ The cells must be of the same type; merging code into prose, or the
 reverse, would silently reinterpret one of them."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((nb (emjupy--notebook))
-         (cell (emjupy--cell-at-point)))
-    (unless cell
-      (user-error "Point is not in a cell"))
-    (let* ((cells (append (emjupy-notebook-cells nb) nil))
-           (idx (cl-position cell cells)))
-      (when (zerop idx)
-        (user-error "No cell above this one"))
-      (let* ((above (nth (1- idx) cells)))
-        (unless (eq (emjupy-cell-type above) (emjupy-cell-type cell))
-          (user-error "Cannot merge a %s cell into a %s cell"
-                      (emjupy-cell-type cell) (emjupy-cell-type above)))
-        (let* ((sane (emjupy--overlays-sane-p))
-               (upper (or (emjupy-cell-source above) ""))
-               (lower (or (emjupy-cell-source cell) ""))
-               (seam (length (if (string-suffix-p "\n" upper)
-                                 upper
-                               (concat upper "\n")))))
-          (setf (emjupy-cell-source above)
-                (concat (if (string-suffix-p "\n" upper) upper (concat upper "\n"))
-                        lower))
-          ;; Neither cell's results describe the merged source any more.
-          (setf (emjupy-cell-outputs above) [])
-          (setf (emjupy-cell-exec-count above) nil)
-          (setf (emjupy-notebook-cells nb)
-                (vconcat (append (cl-subseq cells 0 idx)
-                                 (cl-subseq cells (1+ idx)))))
-          ;; The check has to happen before the cell list is rewritten: the
-          ;; merged-away cell is no longer in it, so asking afterwards says
-          ;; the overlays disagree and sends this to a full rebuild, which
-          ;; loses the undo history.  The same trap splitting fell into.
-          (unless (emjupy--redraw-cells-in-place (list above cell) (list above) sane)
-              (emjupy--rerender-notebook above))
-          ;; Leave point at the seam, where the merged-in cell begins.
-          (let ((ov (emjupy-cell-overlay above)))
-            (when (overlayp ov)
-              (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
-          above)))))))
+    (emjupy--as-one-undo-step
+      (emjupy--sync-all-cells)
+      (let* ((nb (emjupy--notebook))
+             (cell (emjupy--cell-at-point)))
+        (unless cell
+          (user-error "Point is not in a cell"))
+        (let* ((cells (append (emjupy-notebook-cells nb) nil))
+               (idx (cl-position cell cells)))
+          (when (zerop idx)
+            (user-error "No cell above this one"))
+          (let* ((above (nth (1- idx) cells)))
+            (unless (eq (emjupy-cell-type above) (emjupy-cell-type cell))
+              (user-error "Cannot merge a %s cell into a %s cell"
+                          (emjupy-cell-type cell) (emjupy-cell-type above)))
+            (let* ((sane (emjupy--overlays-sane-p))
+                   (upper (or (emjupy-cell-source above) ""))
+                   (lower (or (emjupy-cell-source cell) ""))
+                   (seam (length (if (string-suffix-p "\n" upper)
+                                     upper
+                                   (concat upper "\n")))))
+              (setf (emjupy-cell-source above)
+                    (concat (if (string-suffix-p "\n" upper) upper (concat upper "\n"))
+                            lower))
+              ;; Neither cell's results describe the merged source any more.
+              (setf (emjupy-cell-outputs above) [])
+              (setf (emjupy-cell-exec-count above) nil)
+              (setf (emjupy-notebook-cells nb)
+                    (vconcat (append (cl-subseq cells 0 idx)
+                                     (cl-subseq cells (1+ idx)))))
+              ;; The check has to happen before the cell list is rewritten: the
+              ;; merged-away cell is no longer in it, so asking afterwards says
+              ;; the overlays disagree and sends this to a full rebuild, which
+              ;; loses the undo history.  The same trap splitting fell into.
+              (unless (emjupy--redraw-cells-in-place (list above cell) (list above) sane)
+                (emjupy--rerender-notebook above))
+              ;; Leave point at the seam, where the merged-in cell begins.
+              (let ((ov (emjupy-cell-overlay above)))
+                (when (overlayp ov)
+                  (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
+              above)))))))
 
 (defun emjupy--cell-at-point-including-output (&optional pos)
   "Return the cell owning POS, counting its output box as part of it.
@@ -1054,11 +1054,11 @@ The state is kept in the cell's metadata where Jupyter keeps it, so it
 survives saving and means the same thing elsewhere."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let ((cell (emjupy--cell-at-point-including-output)))
-    (unless cell (user-error "Point is not in a cell"))
-    (emjupy-toggle-output-of-cell cell)))))
+    (emjupy--as-one-undo-step
+      (emjupy--sync-all-cells)
+      (let ((cell (emjupy--cell-at-point-including-output)))
+        (unless cell (user-error "Point is not in a cell"))
+        (emjupy-toggle-output-of-cell cell)))))
 
 (defun emjupy--cell-by-id (id)
   "Return the cell of this notebook whose id is ID, or nil."
@@ -1121,23 +1121,23 @@ clearing it is not something the kernel can be asked to repeat cheaply.
 `emjupy-confirm-clear-output\=' turns the question off."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let ((cell (emjupy--cell-at-point)))
-    (unless cell (user-error "Point is not in a cell"))
-    (if (zerop (length (or (emjupy-cell-outputs cell) [])))
-        (message "[emjupy] This cell has no output.")
-      (if (not (emjupy--confirm-clearing cell))
-          (message "[emjupy] Left it alone.")
-      (setf (emjupy-cell-outputs cell) [])
-      (setf (emjupy-cell-exec-count cell) nil)
-      ;; Only this cell's box goes, so only this cell need be redrawn -- and
-      ;; redrawing just it keeps the undo history, where rebuilding the
-      ;; notebook threw it away.  Nothing was lost even then, but an edit
-      ;; made before clearing could not be undone afterwards.
-        (unless (emjupy--refresh-cell-output cell)
-          (emjupy--rerender-notebook cell))
-        (message "[emjupy] Cleared this cell's output.")))))))
+    (emjupy--as-one-undo-step
+      (emjupy--sync-all-cells)
+      (let ((cell (emjupy--cell-at-point)))
+        (unless cell (user-error "Point is not in a cell"))
+        (if (zerop (length (or (emjupy-cell-outputs cell) [])))
+            (message "[emjupy] This cell has no output.")
+          (if (not (emjupy--confirm-clearing cell))
+              (message "[emjupy] Left it alone.")
+            (setf (emjupy-cell-outputs cell) [])
+            (setf (emjupy-cell-exec-count cell) nil)
+            ;; Only this cell's box goes, so only this cell need be redrawn -- and
+            ;; redrawing just it keeps the undo history, where rebuilding the
+            ;; notebook threw it away.  Nothing was lost even then, but an edit
+            ;; made before clearing could not be undone afterwards.
+            (unless (emjupy--refresh-cell-output cell)
+              (emjupy--rerender-notebook cell))
+            (message "[emjupy] Cleared this cell's output.")))))))
 
 (defun emjupy-clear-all-outputs ()
   "Discard the output of every cell in the notebook.
@@ -1149,36 +1149,36 @@ Only the buffer is touched.  The notebook on the server keeps its
 outputs until you save."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((cells (emjupy-notebook-cells (emjupy--notebook)))
-         (with-output (cl-count-if (lambda (c)
-                                     (> (length (or (emjupy-cell-outputs c) [])) 0))
-                                   cells)))
-    (cond
-     ((zerop with-output)
-      (message "[emjupy] No cell has any output."))
-     ((not (yes-or-no-p (format "Clear the output of %d cell%s? "
-                                with-output (if (= with-output 1) "" "s"))))
-      (message "[emjupy] Left them alone."))
-     (t
-      (let ((cleared (cl-loop for cell across cells
-                              collect (progn
-                                        (setf (emjupy-cell-outputs cell) [])
-                                        (setf (emjupy-cell-exec-count cell) nil)
-                                        cell))))
-        ;; Each cell loses its own box, so each is redrawn on its own.
-        ;; Rebuilding the notebook for it moved every buffer position an
-        ;; undo entry holds, and took the history with it.  If any cell
-        ;; cannot be patched in place, the whole thing falls back rather
-        ;; than leaving half the notebook redrawn two different ways.
-        (unless (cl-every (lambda (cell)
-                            (and (emjupy--refresh-cell-header cell)
-                                 (emjupy--refresh-cell-output cell)))
-                          cleared)
-          (emjupy--rerender-notebook)))
-      (message "[emjupy] Cleared the output of %d cell%s."
-               with-output (if (= with-output 1) "" "s"))))))))
+    (emjupy--as-one-undo-step
+      (emjupy--sync-all-cells)
+      (let* ((cells (emjupy-notebook-cells (emjupy--notebook)))
+             (with-output (cl-count-if (lambda (c)
+                                         (> (length (or (emjupy-cell-outputs c) [])) 0))
+                                       cells)))
+        (cond
+         ((zerop with-output)
+          (message "[emjupy] No cell has any output."))
+         ((not (yes-or-no-p (format "Clear the output of %d cell%s? "
+                                    with-output (if (= with-output 1) "" "s"))))
+          (message "[emjupy] Left them alone."))
+         (t
+          (let ((cleared (cl-loop for cell across cells
+                                  collect (progn
+                                            (setf (emjupy-cell-outputs cell) [])
+                                            (setf (emjupy-cell-exec-count cell) nil)
+                                            cell))))
+            ;; Each cell loses its own box, so each is redrawn on its own.
+            ;; Rebuilding the notebook for it moved every buffer position an
+            ;; undo entry holds, and took the history with it.  If any cell
+            ;; cannot be patched in place, the whole thing falls back rather
+            ;; than leaving half the notebook redrawn two different ways.
+            (unless (cl-every (lambda (cell)
+                                (and (emjupy--refresh-cell-header cell)
+                                     (emjupy--refresh-cell-output cell)))
+                              cleared)
+              (emjupy--rerender-notebook)))
+          (message "[emjupy] Cleared the output of %d cell%s."
+                   with-output (if (= with-output 1) "" "s"))))))))
 
 (defun emjupy--cell-index (cell)
   "Return the position of CELL in the notebook, or nil."
@@ -1189,41 +1189,41 @@ outputs until you save."
   "Delete current cell at point."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let* ((nb emjupy--buffer-notebook)
-         (curr-cell (emjupy--cell-at-point))
-         (cells (append (emjupy-notebook-cells nb) nil)))
-    (when curr-cell
-      (let* ((idx (cl-position curr-cell cells))
-             (remaining (remq curr-cell cells))
-             ;; The cell that slides up into the deleted one's place, or the
-             ;; last one if it was at the end.  Leaving point at the end of
-             ;; the notebook, as it used to, loses your place entirely.
-             (next (and remaining
-                        (nth (min idx (1- (length remaining))) remaining))))
-        (unless ;; undoing the delete puts this exact text back, so
-                  ;; edits recorded inside it are kept for then
-                  (emjupy-delete-cell-at nb curr-cell)
-          (setf (emjupy-notebook-cells nb) (vconcat remaining))
-          (emjupy--rerender-notebook next))
-        ;; An entry undo can act on.  The text deletion itself is made with
-        ;; recording off -- a redraw moves positions that undo entries hold
-        ;; literally -- so the way back is a function, not a region.
-        (when (and next (overlayp (emjupy-cell-overlay next)))
+    (emjupy--sync-all-cells)
+    (let* ((nb emjupy--buffer-notebook)
+           (curr-cell (emjupy--cell-at-point))
+           (cells (append (emjupy-notebook-cells nb) nil)))
+      (when curr-cell
+        (let* ((idx (cl-position curr-cell cells))
+               (remaining (remq curr-cell cells))
+               ;; The cell that slides up into the deleted one's place, or the
+               ;; last one if it was at the end.  Leaving point at the end of
+               ;; the notebook, as it used to, loses your place entirely.
+               (next (and remaining
+                          (nth (min idx (1- (length remaining))) remaining))))
+          (unless ;; undoing the delete puts this exact text back, so
+              ;; edits recorded inside it are kept for then
+              (emjupy-delete-cell-at nb curr-cell)
+            (setf (emjupy-notebook-cells nb) (vconcat remaining))
+            (emjupy--rerender-notebook next))
+          ;; An entry undo can act on.  The text deletion itself is made with
+          ;; recording off -- a redraw moves positions that undo entries hold
+          ;; literally -- so the way back is a function, not a region.
+          (when (and next (overlayp (emjupy-cell-overlay next)))
             (emjupy--goto-cell next 'start)))))))
 
 (defun emjupy-cycle-cell-type ()
   "Cycle the cell at point between `code' and `markdown'."
   (interactive)
   (emjupy--as-one-undo-step
-(emjupy--as-one-undo-step
-(emjupy--sync-all-cells)
-  (let ((cell (emjupy--cell-at-point)))
-    (unless cell
-      (user-error "No cell found at point"))
-    (setf (emjupy-cell-type cell)
-          (if (eq (emjupy-cell-type cell) 'code) 'markdown 'code))
-    (emjupy--rerender-notebook cell)))))
+    (emjupy--as-one-undo-step
+      (emjupy--sync-all-cells)
+      (let ((cell (emjupy--cell-at-point)))
+        (unless cell
+          (user-error "No cell found at point"))
+        (setf (emjupy-cell-type cell)
+              (if (eq (emjupy-cell-type cell) 'code) 'markdown 'code))
+        (emjupy--rerender-notebook cell)))))
 
 (defvar emjupy--cell-clipboard nil
   "The cell most recently copied, as a (TYPE . SOURCE) pair.
@@ -1253,30 +1253,30 @@ text anywhere else."
 The new cell has no output and no execution count."
   (interactive)
   (emjupy--as-one-undo-step
-(unless emjupy--cell-clipboard
-    (user-error "No cell has been copied yet"))
-  (emjupy--sync-all-cells)
-  (let* ((nb (emjupy--notebook))
-         (cell (emjupy--cell-at-point))
-         (cells (append (emjupy-notebook-cells nb) nil))
-         (idx (and cell (cl-position cell cells)))
-         (new-cell (make-emjupy-cell
-                    :id (emjupy--new-cell-id)
-                    :type (car emjupy--cell-clipboard)
-                    :source (cdr emjupy--cell-clipboard)
-                    :outputs []
-                    :metadata (make-hash-table :test 'equal))))
-    ;; Inserting one cell moves only what follows it, by a known amount,
-    ;; so the history survives -- the same path `emjupy-insert-cell-below'
-    ;; takes.  Rebuilding for it lost the history.
-    (let ((at (if idx (1+ idx) (length cells))))
-      (unless (emjupy-insert-cell-at nb at new-cell)
-        (setf (emjupy-notebook-cells nb)
-              (vconcat (append (cl-subseq cells 0 at)
-                               (list new-cell)
-                               (cl-subseq cells at))))
-        (emjupy--rerender-notebook new-cell)))
-    new-cell)))
+    (unless emjupy--cell-clipboard
+      (user-error "No cell has been copied yet"))
+    (emjupy--sync-all-cells)
+    (let* ((nb (emjupy--notebook))
+           (cell (emjupy--cell-at-point))
+           (cells (append (emjupy-notebook-cells nb) nil))
+           (idx (and cell (cl-position cell cells)))
+           (new-cell (make-emjupy-cell
+                      :id (emjupy--new-cell-id)
+                      :type (car emjupy--cell-clipboard)
+                      :source (cdr emjupy--cell-clipboard)
+                      :outputs []
+                      :metadata (make-hash-table :test 'equal))))
+      ;; Inserting one cell moves only what follows it, by a known amount,
+      ;; so the history survives -- the same path `emjupy-insert-cell-below'
+      ;; takes.  Rebuilding for it lost the history.
+      (let ((at (if idx (1+ idx) (length cells))))
+        (unless (emjupy-insert-cell-at nb at new-cell)
+          (setf (emjupy-notebook-cells nb)
+                (vconcat (append (cl-subseq cells 0 at)
+                                 (list new-cell)
+                                 (cl-subseq cells at))))
+          (emjupy--rerender-notebook new-cell)))
+      new-cell)))
 
 (defvar-local emjupy--indent-cycling nil
   "Non-nil when the last command was also an indent, so TAB cycles.")
@@ -1320,7 +1320,7 @@ In a markdown cell, and outside any cell, TAB simply inserts."
                                         'indent-for-tab-command
                                       last-command)))
                   (let ((tab-always-indent t))
-                      (indent-for-tab-command)))
+                    (indent-for-tab-command)))
                 (cons (buffer-substring-no-properties (point-min) (point-max))
                       (- (point) (point-min))))))
         (unless (equal (car result) source)

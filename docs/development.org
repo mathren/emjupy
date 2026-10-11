@@ -46,9 +46,9 @@ file requires only files earlier in this table, never later ones.
 | =emjupy-remote.el=      | where a server's files live: roots, SSH tunnels, TRAMP      |
 | =emjupy-lsp.el=         | language-server WebSocket transport, shadow document text   |
 | =emjupy-eglot.el=       | shadow buffer, Eglot integration, completion, eldoc         |
-| =emjupy-mode.el=        | =emjupy-mode=, its keymap and menu                          |
+| =emjupy-mode.el=        | =emjupy-mode=, its keymap and menu, the mixed-install check |
 | =emjupy-notebook.el=    | login, the notebook browser, .ipynb parse and serialize     |
-| =emjupy.el=             | package header, version, and the entry point that loads it  |
+| =emjupy.el=             | package header, version, and requiring every file in order  |
 | =emjupy-pkg.el=         | package metadata for =make package= (MELPA makes its own)   |
 
 ** Dependencies run one way
@@ -110,6 +110,45 @@ done nothing for months looks exactly like one that works.
 - Background work that must not abort the command it runs under -- the
   language server warming up while a notebook opens -- uses
   =with-demoted-errors=, so a failure is reported rather than lost.
+
+** Style
+
+Every file starts with the same header.  A Lisp file:
+
+#+begin_src emacs-lisp
+;;; emjupy-example.el --- One line saying what it is  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026 Mathieu Renzo
+
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
+
+;;; Code:
+#+end_src
+
+The licence is said by its SPDX identifier alone, never the GPL's text.
+Python, shell and the Makefile carry the copyright and SPDX lines as
+comments, after any =#!= line.
+
+The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs Lisp style guide]]:
+
+- Requires at the top, in one block.  A library that is optional or
+  heavy -- =xwidget=, =org= for LaTeX -- is required inside the function
+  that needs it, with a comment saying why.
+- Loading a file defines things and does nothing else: hooks are added
+  when =emjupy-mode= starts, and the check for a mixed installation runs
+  when the first notebook opens.
+- Emacs's own indentation, a quoted data list aligned as data; spaces,
+  no trailing whitespace, no closing parentheses on a line of their own.
+- =#'= for a function passed as an argument; =when= and =unless= for a
+  condition with one branch; a docstring for every variable defined with
+  a value; =;;;;= for a section heading.
+- No code left commented out: it is in the history if it is wanted.
 
 * Makefile targets
 

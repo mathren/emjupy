@@ -22,6 +22,7 @@
 (require 'cl-lib)
 (require 'color)
 (require 'subr-x)
+(require 'ansi-color)
 (require 'emjupy-core)
 
 ;; --- Page colours ----------------------------------------------------------
@@ -580,7 +581,7 @@ markers and the undo history are all untouched."
                       (overlay-put ov 'emjupy-header nil)
                       (overlay-put ov 'before-string
                                    (emjupy--rule (emjupy--cell-label cell)))
-                                  ;; A cell with output has no footer of its own: the
+                      ;; A cell with output has no footer of its own: the
                       ;; output box's header doubles as its bottom edge.
                       (overlay-put ov 'after-string
                                    (if (overlayp out) "" (emjupy--rule nil))))
@@ -835,10 +836,10 @@ BODY may bring its delimiters or not; see `emjupy--latex-math\='."
       (pcase-let ((`(,beg ,fin ,body) frag))
         (unless (string-empty-p (string-trim (or body "")))
           (when-let* ((image (emjupy--latex-image
-                               ;; with its delimiters: they say whether the
-                               ;; math is inline or display, and put LaTeX
-                               ;; in math mode at all
-                               (buffer-substring-no-properties beg fin))))
+                              ;; with its delimiters: they say whether the
+                              ;; math is inline or display, and put LaTeX
+                              ;; in math mode at all
+                              (buffer-substring-no-properties beg fin))))
             (let ((ov (make-overlay beg fin)))
               (overlay-put ov 'display image)
               (overlay-put ov 'emjupy-latex t)
@@ -952,8 +953,8 @@ inside it lasted only until the next pass."
     ;; of their own; it is cheaper to respect it than to rely on the region
     ;; always being right.
     (emjupy--without-pads start (+ start len)
-      (lambda (from to)
-        (remove-text-properties from to '(face nil font-lock-face nil))))
+                          (lambda (from to)
+                            (remove-text-properties from to '(face nil font-lock-face nil))))
     (while (< i len)
       (let* ((next (or (next-single-property-change i 'face string) len))
              (f (get-text-property i 'face string)))
@@ -1340,69 +1341,69 @@ wrong is worse than dropping everything -- a wrong position does not
 raise an error, it quietly rewrites the wrong text -- which is why each
 entry shape is handled explicitly rather than by pattern-guessing."
   (unless (bound-and-true-p emjupy--in-cell-step)
-  (let ((transform
-         (lambda (entry)
-           (let ((p (emjupy--undo-entry-position entry)))
-             (cond
-              ((null p) entry)
-              ((< p start) entry)
-              ((< p old-end)
-               ;; Text inside the region is gone, so an entry describing it
-               ;; goes too.  Structural commands never get here -- they
-               ;; suspend this and are undone as a whole -- so this is for
-               ;; redraws that are not undo steps, such as output arriving.
-               :emjupy-drop)
-              (t (emjupy--undo-map-positions
-                  entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
-        (seen (make-hash-table :test 'eq)))
-    ;; In place, cell by cell.  An undo in progress replays from
-    ;; `pending-undo-list', and `primitive-undo' walks that through a local
-    ;; variable it writes back when it is done -- so a structural change
-    ;; made BY an undo, deleting the cell an insertion made, could not be
-    ;; seen by rebinding the list: the next step replayed at the old
-    ;; position and rewrote the wrong text, a typed character surviving
-    ;; while its neighbour was deleted.  The list's cons cells are shared,
-    ;; though -- by it, by `buffer-undo-list' and by that local variable --
-    ;; so changing the entries in them reaches all three.  Each cell once:
-    ;; the two lists share their tails.  An entry to drop cannot be
-    ;; unlinked in place, so it becomes one that does nothing.
-    ;; All or nothing.  Every new entry is worked out before any is
-    ;; changed: changed in place one by one, a failure partway left some
-    ;; entries shifted and the rest not, and the next undo wrote text in
-    ;; the wrong places -- scrambling the notebook.
-    (let ((changes nil))
-      (condition-case err
-          (progn
-            (dolist (entries (list buffer-undo-list pending-undo-list))
-              (when (consp entries)
-                (let ((c entries))
-                  (while (consp c)
-                    (unless (gethash c seen)
-                      (puthash c t seen)
-                      (push (cons c (funcall transform (car c))) changes))
-                    (setq c (cdr c))))))
-            (pcase-dolist (`(,c . ,new) changes)
-              (setcar c (if (eq new :emjupy-drop)
-                            (list 'apply #'ignore :emjupy-dropped)
-                          new))))
-        ;; Everything: an entry is whatever a mode recorded, and none of it
-        ;; has been changed yet.  The entries from START on are stale now,
-        ;; though, and replaying one writes in the wrong place, so they go:
-        ;; some undo history lost is safe, wrong history is not.
-        (error
-         (emjupy--undo-drop-from start)
-         (when (consp pending-undo-list)
-           (setq pending-undo-list
-                 (cl-remove-if (lambda (e) (let ((p (emjupy--undo-entry-position e)))
-                                             (and p (>= p start))))
-                               pending-undo-list)))
-         (message "[emjupy] Undo history after the redrawn output was dropped: %s"
-                  (error-message-string err)))))
-    ;; Outside an undo the placeholders can go for good.
-    (unless (or undo-in-progress (consp pending-undo-list))
-      (when (consp buffer-undo-list)
-        (setq buffer-undo-list
-              (delete (list 'apply #'ignore :emjupy-dropped) buffer-undo-list)))))))
+    (let ((transform
+           (lambda (entry)
+             (let ((p (emjupy--undo-entry-position entry)))
+               (cond
+                ((null p) entry)
+                ((< p start) entry)
+                ((< p old-end)
+                 ;; Text inside the region is gone, so an entry describing it
+                 ;; goes too.  Structural commands never get here -- they
+                 ;; suspend this and are undone as a whole -- so this is for
+                 ;; redraws that are not undo steps, such as output arriving.
+                 :emjupy-drop)
+                (t (emjupy--undo-map-positions
+                    entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
+          (seen (make-hash-table :test 'eq)))
+      ;; In place, cell by cell.  An undo in progress replays from
+      ;; `pending-undo-list', and `primitive-undo' walks that through a local
+      ;; variable it writes back when it is done -- so a structural change
+      ;; made BY an undo, deleting the cell an insertion made, could not be
+      ;; seen by rebinding the list: the next step replayed at the old
+      ;; position and rewrote the wrong text, a typed character surviving
+      ;; while its neighbour was deleted.  The list's cons cells are shared,
+      ;; though -- by it, by `buffer-undo-list' and by that local variable --
+      ;; so changing the entries in them reaches all three.  Each cell once:
+      ;; the two lists share their tails.  An entry to drop cannot be
+      ;; unlinked in place, so it becomes one that does nothing.
+      ;; All or nothing.  Every new entry is worked out before any is
+      ;; changed: changed in place one by one, a failure partway left some
+      ;; entries shifted and the rest not, and the next undo wrote text in
+      ;; the wrong places -- scrambling the notebook.
+      (let ((changes nil))
+        (condition-case err
+            (progn
+              (dolist (entries (list buffer-undo-list pending-undo-list))
+                (when (consp entries)
+                  (let ((c entries))
+                    (while (consp c)
+                      (unless (gethash c seen)
+                        (puthash c t seen)
+                        (push (cons c (funcall transform (car c))) changes))
+                      (setq c (cdr c))))))
+              (pcase-dolist (`(,c . ,new) changes)
+                (setcar c (if (eq new :emjupy-drop)
+                              (list 'apply #'ignore :emjupy-dropped)
+                            new))))
+          ;; Everything: an entry is whatever a mode recorded, and none of it
+          ;; has been changed yet.  The entries from START on are stale now,
+          ;; though, and replaying one writes in the wrong place, so they go:
+          ;; some undo history lost is safe, wrong history is not.
+          (error
+           (emjupy--undo-drop-from start)
+           (when (consp pending-undo-list)
+             (setq pending-undo-list
+                   (cl-remove-if (lambda (e) (let ((p (emjupy--undo-entry-position e)))
+                                               (and p (>= p start))))
+                                 pending-undo-list)))
+           (message "[emjupy] Undo history after the redrawn output was dropped: %s"
+                    (error-message-string err)))))
+      ;; Outside an undo the placeholders can go for good.
+      (unless (or undo-in-progress (consp pending-undo-list))
+        (when (consp buffer-undo-list)
+          (setq buffer-undo-list
+                (delete (list 'apply #'ignore :emjupy-dropped) buffer-undo-list)))))))
 
 (defun emjupy--undo-drop-from (pos)
   "Drop undo entries referring to POS or later in this buffer.
@@ -1480,25 +1481,25 @@ escape -- which rewrite or recolour what came before -- anywhere in it."
             (emjupy--refresh-cell-footer cell)
             (emjupy--reconcile-rules)
             t)
-      (let* ((start (overlay-end out))
-             (inhibit-read-only t)
-             (buffer-undo-list t)
-             (emjupy--refontifying t)
-             end)
-        (emjupy--atomic-redraw t
-          (save-excursion
-            (goto-char start)
-            (insert (substring new (length old)))
-            (let ((widest (emjupy--finish-output-piece last-out start)))
-              (unless (eq (char-before) ?\n) (insert "\n"))
-              (setq end (point))
-              (move-overlay out (overlay-start out) end)
-              (overlay-put out 'emjupy-widest (max widest (or (overlay-get out 'emjupy-widest) 0)))
-              (overlay-put out 'emjupy-drawn (emjupy--drawn-state pieces))))
-          (when emjupy-protect-non-cell-regions
-            (emjupy--make-read-only start end))
-          (emjupy--undo-adjust start start (- end start)))
-        t)))))
+        (let* ((start (overlay-end out))
+               (inhibit-read-only t)
+               (buffer-undo-list t)
+               (emjupy--refontifying t)
+               end)
+          (emjupy--atomic-redraw t
+            (save-excursion
+              (goto-char start)
+              (insert (substring new (length old)))
+              (let ((widest (emjupy--finish-output-piece last-out start)))
+                (unless (eq (char-before) ?\n) (insert "\n"))
+                (setq end (point))
+                (move-overlay out (overlay-start out) end)
+                (overlay-put out 'emjupy-widest (max widest (or (overlay-get out 'emjupy-widest) 0)))
+                (overlay-put out 'emjupy-drawn (emjupy--drawn-state pieces))))
+            (when emjupy-protect-non-cell-regions
+              (emjupy--make-read-only start end))
+            (emjupy--undo-adjust start start (- end start)))
+          t)))))
 
 (defun emjupy--refresh-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
@@ -1517,34 +1518,34 @@ means the caller should fall back to a full redraw."
                  (start (if live-out (overlay-start out) (overlay-end src)))
                  (end (if live-out (overlay-end out) start)))
             (emjupy--atomic-redraw t
-                                   (let ((new-end start))
-                                     (let ((inhibit-read-only t)
-                                           (buffer-undo-list t)
-                                           ;; emjupy's own drawing: not an edit to re-highlight
-                                           (emjupy--refontifying t))
-                                       (when live-out (delete-overlay out))
-                                       (setf (emjupy-cell-output-ov cell) nil)
-                                       (delete-region start end)
-                                       (save-excursion
-                                         (goto-char start)
-                                         (emjupy--render-cell-output cell)
-                                         (setq new-end (point)))
-                                       (emjupy--refresh-cell-header cell)
-                                       ;; The bottom edge belongs to whichever box is last.  With
-                                       ;; output, that is the output box's own footer and the cell has
-                                       ;; none; without, the cell must carry it again -- otherwise
-                                       ;; clearing output left the cell with no bottom at all.
-                                       (emjupy--refresh-cell-footer cell)
-                                       ;; Only the box just drawn: it is all output, and marking the
-                                       ;; whole notebook again cost as much as all its output is long,
-                                       ;; for every update of every cell.  The marks are the same on
-                                       ;; every character, so a part is marked as the whole would be.
-                                       (when emjupy-protect-non-cell-regions
-                                         (emjupy--make-read-only start new-end))
-                                       (emjupy--reconcile-rules))
-                                     ;; Done after the edit, since the shift is the size it turned out
-                                     ;; to be rather than the size expected.
-                                     (emjupy--undo-adjust start end (- new-end end))))
+              (let ((new-end start))
+                (let ((inhibit-read-only t)
+                      (buffer-undo-list t)
+                      ;; emjupy's own drawing: not an edit to re-highlight
+                      (emjupy--refontifying t))
+                  (when live-out (delete-overlay out))
+                  (setf (emjupy-cell-output-ov cell) nil)
+                  (delete-region start end)
+                  (save-excursion
+                    (goto-char start)
+                    (emjupy--render-cell-output cell)
+                    (setq new-end (point)))
+                  (emjupy--refresh-cell-header cell)
+                  ;; The bottom edge belongs to whichever box is last.  With
+                  ;; output, that is the output box's own footer and the cell has
+                  ;; none; without, the cell must carry it again -- otherwise
+                  ;; clearing output left the cell with no bottom at all.
+                  (emjupy--refresh-cell-footer cell)
+                  ;; Only the box just drawn: it is all output, and marking the
+                  ;; whole notebook again cost as much as all its output is long,
+                  ;; for every update of every cell.  The marks are the same on
+                  ;; every character, so a part is marked as the whole would be.
+                  (when emjupy-protect-non-cell-regions
+                    (emjupy--make-read-only start new-end))
+                  (emjupy--reconcile-rules))
+                ;; Done after the edit, since the shift is the size it turned out
+                ;; to be rather than the size expected.
+                (emjupy--undo-adjust start end (- new-end end))))
             t)))))
 
 (defun emjupy--render-cell (cell)
@@ -1594,7 +1595,7 @@ means the caller should fall back to a full redraw."
                     (t (emjupy--rule nil)))))
       (overlay-put ov 'emjupy-overlay 'cell)
       (overlay-put ov 'emjupy-header nil)
-          (overlay-put ov 'before-string header)
+      (overlay-put ov 'before-string header)
       (overlay-put ov 'after-string footer)
       ;; No face: source cells keep the buffer's normal background, and are
       ;; marked out by their rules alone.
@@ -1737,7 +1738,6 @@ them raw; both now go through here."
   (let ((s (or text "")))
     (if (not emjupy-render-ansi-colors)
         (replace-regexp-in-string "\033\\[[0-9;]*m" "" s)
-      (require 'ansi-color)
       (let ((coloured (ansi-color-apply s)))
         ;; `ansi-color-apply' marks its output with `font-lock-face', which
         ;; is only honoured where font-lock is running.  emjupy paints cells

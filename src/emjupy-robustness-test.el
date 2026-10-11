@@ -192,27 +192,27 @@ several requests in flight, against the order with every reply last."
       ;; A command that declines -- nothing to hide, no cell above to join
       ;; -- says so with `user-error\=', and that is a correct answer.
       (let ((emjupy-confirm-clear-output nil))
-       (ignore-error user-error
-        (pcase op
-          ('type (insert (emjupy-fuzz-pick '("x" " = 1" "\n" "# note" "é"))))
-          ('delete-char (unless (bobp)
-                          (ignore-error (text-read-only buffer-read-only)
-                            (delete-char -1))))
-          ('insert-above (call-interactively #'emjupy-insert-cell-above))
-          ('insert-below (call-interactively #'emjupy-insert-cell-below))
-          ('delete-cell (when (> n 1) (call-interactively #'emjupy-delete-cell)))
-          ('move-up (ignore-error user-error (call-interactively #'emjupy-move-cell-up)))
-          ('move-down (ignore-error user-error (call-interactively #'emjupy-move-cell-down)))
-          ('split (ignore-error user-error (call-interactively #'emjupy-split-cell)))
-          ('join (ignore-error user-error (call-interactively #'emjupy-join-cell-above)))
-          ('cycle-type (call-interactively #'emjupy-cycle-cell-type))
-          ('clear-output (call-interactively #'emjupy-clear-cell-output))
-          ('toggle-output (call-interactively #'emjupy-toggle-cell-output))
-          ('output-arrives
-           (when (eq (emjupy-cell-type cell) 'code)
-             (emjupy--append-output-to-cell cell (emjupy-fuzz--stream "out\n") nb)
-             (emjupy-flush-output buf)))
-          ('undo (let ((last-command nil)) (undo)))))))))
+        (ignore-error user-error
+          (pcase op
+            ('type (insert (emjupy-fuzz-pick '("x" " = 1" "\n" "# note" "é"))))
+            ('delete-char (unless (bobp)
+                            (ignore-error (text-read-only buffer-read-only)
+                              (delete-char -1))))
+            ('insert-above (call-interactively #'emjupy-insert-cell-above))
+            ('insert-below (call-interactively #'emjupy-insert-cell-below))
+            ('delete-cell (when (> n 1) (call-interactively #'emjupy-delete-cell)))
+            ('move-up (ignore-error user-error (call-interactively #'emjupy-move-cell-up)))
+            ('move-down (ignore-error user-error (call-interactively #'emjupy-move-cell-down)))
+            ('split (ignore-error user-error (call-interactively #'emjupy-split-cell)))
+            ('join (ignore-error user-error (call-interactively #'emjupy-join-cell-above)))
+            ('cycle-type (call-interactively #'emjupy-cycle-cell-type))
+            ('clear-output (call-interactively #'emjupy-clear-cell-output))
+            ('toggle-output (call-interactively #'emjupy-toggle-cell-output))
+            ('output-arrives
+             (when (eq (emjupy-cell-type cell) 'code)
+               (emjupy--append-output-to-cell cell (emjupy-fuzz--stream "out\n") nb)
+               (emjupy-flush-output buf)))
+            ('undo (let ((last-command nil)) (undo)))))))))
 
 (defun emjupy-fuzz--sources (nb)
   "Return NB's cells as (TYPE SOURCE) pairs, after syncing the buffer."
@@ -261,7 +261,7 @@ the cells -- type and source -- as they read back from the buffer."
                           (emjupy-test--cell-like 'markdown "# Title")
                           (emjupy-test--cell-like 'code "b = 2\nc = 3")))
            (edits (remq 'undo (remq 'output-arrives (remq 'toggle-output
-                                                         (remq 'clear-output emjupy-fuzz--edits)))))
+                                                          (remq 'clear-output emjupy-fuzz--edits)))))
            (trail nil))
       (emjupy-test--with-notebook cells buf nb
         (with-current-buffer buf
@@ -349,7 +349,7 @@ Written by tools/make-notebook-corpus.py, with nbformat itself.")
 
 (defconst emjupy-fuzz--checker
   (expand-file-name "../tools/check-roundtrip.py" (file-name-directory
-                                                  (or load-file-name buffer-file-name)))
+                                                   (or load-file-name buffer-file-name)))
   "The script that compares a notebook with emjupy's save of it.")
 
 (defun emjupy-fuzz--read-bytes (file)

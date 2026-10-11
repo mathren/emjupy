@@ -42,13 +42,13 @@
          (inner (funcall orig-fun src-block contents info)))
     (format
      (concat "<div class=\"src-block-wrapper\">"
-               "<div class=\"src-block-header\">"
-                 "<span class=\"src-lang\">%s</span>"
-                 "<button class=\"copy-btn\""
-                         " onclick=\"mrCopyCode(this)\""
-                         " aria-label=\"Copy code\">Copy</button>"
-               "</div>"
-               "%s"
+             "<div class=\"src-block-header\">"
+             "<span class=\"src-lang\">%s</span>"
+             "<button class=\"copy-btn\""
+             " onclick=\"mrCopyCode(this)\""
+             " aria-label=\"Copy code\">Copy</button>"
+             "</div>"
+             "%s"
              "</div>")
      (or lang "")
      inner)))
@@ -68,8 +68,7 @@
     (let ((modified-files (mr/get-modified-org-files)))
       (if modified-files
 	  (org-publish-project "org-site:main")
-	(message "No modified Org files found.")))
-    ))
+	(message "No modified Org files found.")))))
 
 
 (defun mr/read-file (file)
@@ -87,8 +86,8 @@
   "Read the keywords #+PREVIOUS_PAGE and #+NEXT_PAGE from the current Org file.
 Return them as two values: previous-page and next-page."
   (let* ((keywords (org-element-map (org-element-parse-buffer) 'keyword
-                                   (lambda (el) (cons (org-element-property :key el)
-                                                      (org-element-property :value el)))))
+                                    (lambda (el) (cons (org-element-property :key el)
+                                                       (org-element-property :value el)))))
          (previous (cdr (assoc "PREVIOUS_PAGE" keywords)))
          (next (cdr (assoc "NEXT_PAGE" keywords))))
     (list previous next)))
@@ -227,8 +226,7 @@ All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
       org-html-head mr/site-html-head
       org-html-preamble mr/site-html-preamble
       org-html-postamble #'mr/site-html-postamble
-      org-display-custom-times t
-      )
+      org-display-custom-times t)
 
 ;; Define the publishing project
 (setq org-publish-project-alist
@@ -255,8 +253,7 @@ All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
              :with-timestamps t					;; Include time stamp in file
              :with-toc nil					;; Don't include a table of contents
              :section-numbers nil				;; Don't include section numbers
-             :file-list (mr/get-modified-org-files)		;; Use the list of modified files only
-	     )))
+             :file-list (mr/get-modified-org-files)))) ; Use the list of modified files only
 
 (mr/check-for-all-flag-and-publish)
 (message "Build complete!")

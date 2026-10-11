@@ -33,14 +33,14 @@
 (require 'emjupy)
 (require 'cl-lib)
 
-;;; --------------------------------------------------------------------
-;;; Harness
-;;; --------------------------------------------------------------------
+;;;; Harness
 
-(defvar emjupy-int--server nil)
+(defvar emjupy-int--server nil
+  "The Jupyter server the live tests talk to.")
 (defvar emjupy-int--buffer nil
   "The notebook buffer the current test is driving.")
-(defvar emjupy-int--notebook "emjupy-integration.ipynb")
+(defvar emjupy-int--notebook "emjupy-integration.ipynb"
+  "The scratch notebook, on the server, that the live tests open.")
 
 (defun emjupy-int--url () (getenv "EMJUPY_TEST_URL"))
 (defun emjupy-int--token () (or (getenv "EMJUPY_TEST_TOKEN") ""))
@@ -146,9 +146,7 @@ first -- setting the struct alone would be silently overwritten."
          (when (buffer-live-p emjupy-int--buffer)
            (kill-buffer emjupy-int--buffer))))))
 
-;;; --------------------------------------------------------------------
-;;; 1. Remote kernel through an SSH tunnel
-;;; --------------------------------------------------------------------
+;;;; 1. Remote kernel through an SSH tunnel
 
 (ert-deftest emjupy-int-tunnel-rest-api ()
   "The REST half of the transport works through whatever is in front of
@@ -205,9 +203,7 @@ session state -- this is the `resilient to connection drops' claim
               "7" (mapconcat (lambda (o) (emjupy--mime-text (gethash "text" o)))
                              (append (emjupy-cell-outputs cell) nil) ""))))))
 
-;;; --------------------------------------------------------------------
-;;; 2. Python support: results, tracebacks, execution counts
-;;; --------------------------------------------------------------------
+;;;; 2. Python support: results, tracebacks, execution counts
 
 (ert-deftest emjupy-int-python-execute-result ()
   "A bare expression comes back as execute_result with a text/plain repr."
@@ -240,9 +236,7 @@ session state -- this is the `resilient to connection drops' claim
               (mapconcat (lambda (o) (emjupy--mime-text (gethash "text" o)))
                          (append (emjupy-cell-outputs cell) nil) ""))))))
 
-;;; --------------------------------------------------------------------
-;;; 3. Inline images
-;;; --------------------------------------------------------------------
+;;;; 3. Inline images
 
 (ert-deftest emjupy-int-matplotlib-emits-png ()
   "A matplotlib figure arrives as image/png in a display_data message
@@ -298,9 +292,7 @@ graphical Emacs and on emacs-nox alike."
          ;; either way the output region is non-empty
          (should (> (length (string-trim body)) 0)))))))
 
-;;; --------------------------------------------------------------------
-;;; 4. Saving: what we write back must open elsewhere
-;;; --------------------------------------------------------------------
+;;;; 4. Saving: what we write back must open elsewhere
 
 (ert-deftest emjupy-int-saved-notebook-is-valid-nbformat ()
   "Round-trip a notebook WITH outputs through the server and validate it
@@ -325,9 +317,7 @@ nbformat.validate(nb)
 print('VALID')" path))))))
        (should (string-match-p "VALID" out))))))
 
-;;; --------------------------------------------------------------------
-;;; 5. Eglot against a real language server
-;;; --------------------------------------------------------------------
+;;;; 5. Eglot against a real language server
 
 (defun emjupy-int--lsp-available-p ()
   (or (executable-find "pylsp") (executable-find "pyright-langserver")
@@ -403,7 +393,7 @@ shadow buffer deliberately never is)."
                    until got
                    do (emjupy--cell-eldoc-function
                        (lambda (doc &rest _) (setq got doc)))
-                      (unless got (emjupy-int--pump 1)))
+                   (unless got (emjupy-int--pump 1)))
           (should (stringp got))
           (should (string-match-p "dump" got)))
       (let ((kill-buffer-query-functions nil))
@@ -441,7 +431,7 @@ just silently returned nothing for every notebook after the first."
                             (emjupy-mode)
                             (setq emjupy--buffer-notebook nb)
                             (setf (emjupy-notebook-buffer nb) buf)
-                                              (emjupy--rerender-notebook)
+                            (emjupy--rerender-notebook)
                             (unless (emjupy-int--wait-for-eglot nb)
                               (ert-skip "Eglot did not connect"))
                             (goto-char (overlay-start (emjupy-cell-overlay cell)))
@@ -449,7 +439,7 @@ just silently returned nothing for every notebook after the first."
                             (cl-loop repeat 15 until got
                                      do (emjupy--cell-eldoc-function
                                          (lambda (doc &rest _) (setq got doc)))
-                                        (unless got (emjupy-int--pump 1)))
+                                     (unless got (emjupy-int--pump 1)))
                             got)))))
           ;; BOTH notebooks, not just the first one opened
           (should (stringp (nth 0 results)))
@@ -508,12 +498,10 @@ what is asserted is that every distinct picture appears exactly once."
                     for d = (get-text-property p 'display)
                     do (when (and (consp d) (eq (car d) 'image) (not (eq d prev)))
                          (setq n (1+ n)))
-                       (setq prev d))
+                    (setq prev d))
            (should (= n (length distinct)))))))))
 
-;;; --------------------------------------------------------------------
-;;; 6. Several notebooks, and several servers, at once
-;;; --------------------------------------------------------------------
+;;;; 6. Several notebooks, and several servers, at once
 
 (defun emjupy-int--shutdown-all-kernels (server)
   "Shut down every kernel on SERVER.
@@ -1075,9 +1063,7 @@ for each server it saw die."
           (dotimes (_ 20) (accept-process-output nil 0.1))))
       (should (equal (funcall count) before)))))
 
-;;; --------------------------------------------------------------------
-;;; Network faults, through tools/faultproxy.py
-;;; --------------------------------------------------------------------
+;;;; Network faults, through tools/faultproxy.py
 
 (defconst emjupy-int--proxy-script
   (expand-file-name "../tools/faultproxy.py"
