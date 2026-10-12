@@ -55,7 +55,16 @@ file requires only files earlier in this table, never later ones.
 
 No file calls, or names, anything defined in a file later in the table,
 and there are no =declare-function= forms for emjupy's own functions.
-Each file requires the files whose functions it uses, and only those.  Every
+Each file requires the files whose functions it uses, and only those.
+
+The graph, drawn from the code by =tools/dependency-graph.py= each time
+the site is built (=make dependency-graph= draws it alone): each file
+above the files it requires.  A line a longer path implies is left out;
+=dependencies.dot= beside it has every require, for Graphviz.
+
+[[file:dependencies.svg]]
+
+Every
 module can be loaded on its own, which is what makes that checkable:
 =(require 'emjupy-lsp)= in a fresh Emacs must work without anything else
 having been loaded first.

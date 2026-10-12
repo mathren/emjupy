@@ -109,6 +109,14 @@ jobs:
           name: docs-html
           path: html-content
 
+      # Drawn from the code by `make docs', above: the files and the
+      # requires between them, as an SVG and as Graphviz's DOT.
+      - name: Keep the dependency graph
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph
+          path: html-content/dependencies.*
+
   # The tests that talk to a real server, a real kernel and a real language
   # server: the ones most likely to catch a regression in the WebSocket,
   # session or LSP paths.  Until now they ran only if someone remembered to

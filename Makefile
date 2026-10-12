@@ -46,7 +46,7 @@ SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
 # the release tarball and a MELPA install describe themselves alike.
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el $(SRC)/emjupy-figure-window.py
 
-.PHONY: all compile test check lint docs coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
+.PHONY: all compile test check lint docs dependency-graph coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
 
 all: compile
 
@@ -95,7 +95,12 @@ versions:
 
 # Export docs/*.org to docs/html/, which is what GitHub Pages serves when
 # a site is set to publish from the docs/ folder.
-docs:
+# The dependency graph between the files, drawn from their requires, into
+# the site: docs builds it, so the site's is always the code's.
+dependency-graph:
+	@python3 tools/dependency-graph.py html-content
+
+docs: dependency-graph
 	$(EMACS) -batch -Q -l publish.el all
 
 # Every file the package ships: what the MELPA recipe must list.
