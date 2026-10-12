@@ -154,6 +154,11 @@ same object, so notebooks already pointing at it stay valid."
   "Return a short human label for SERVER."
   (emjupy-server-base-url server))
 
+(defvar emjupy--in-cell-step nil
+  "Non-nil while a command recorded by `emjupy--as-one-undo-step' runs.
+Its redraws record nothing of their own: the command records one step,
+from a snapshot taken before it changed anything.")
+
 ;;;; The cell at a position
 
 ;; Lookups over the cells and their overlays, nothing more: every layer

@@ -99,87 +99,10 @@ DELETE is passed through to `buffer-substring--filter'."
   (emjupy--strip-internal-properties
    (buffer-substring--filter beg end delete)))
 
-;; `C-c\' followed by a plain letter is reserved for USERS by the Emacs Lisp
-;; manual (Key Binding Conventions), so a package may not take `C-c s\' or
-;; `C-c w\'; package-lint reports it as an error.  Those keys are left free
-;; for you -- see the README for a snippet that puts the cell commands there.
-(defvar emjupy-mode-map
-  (let ((map (make-sparse-keymap)))
-    ;; Execution
-    (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-and-goto-next)
-    ;; Shift-RET runs the cell and stays put, the way a notebook front-end
-    ;; does. Bound in both spellings: a terminal Emacs reports it as
-    ;; "S-<return>" only if the terminal distinguishes it at all.
-    (define-key map (kbd "S-<return>") #'emjupy-execute-cell-at-point)
-    (define-key map (kbd "<S-return>") #'emjupy-execute-cell-at-point)
-    (define-key map (kbd "C-c C-e")    #'emjupy-execute-cell-at-point)
-
-    ;; Cell Operations (EIN style)
-    (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
-    (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
-    (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
-    (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
-    ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
-    (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
-    (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
-    ;; A prefix, not a plain letter: `C-c' followed by a letter is reserved
-    ;; for users, and package-lint -- which MELPA requires to be clean --
-    ;; reports any such binding as an error.  `C-c C-u C-l' is all control
-    ;; characters and so belongs to the mode.
-    (define-key map (kbd "C-c C-u C-l") #'emjupy-clear-all-outputs)
-    (define-key map (kbd "C-c C-s") #'emjupy-split-cell)
-    (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
-    (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
-    (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
-    ;; Deleting against a rendered formula reveals it rather than removing
-    ;; a character that cannot be seen.
-    ;; Both spellings: a graphical Emacs sends <backspace>, and although it
-    ;; normally translates to DEL, a configuration that binds <backspace>
-    ;; itself takes precedence and the DEL binding is never reached.
-    (define-key map (kbd "DEL")         #'emjupy-latex-unrender-or-delete)
-    (define-key map (kbd "<backspace>") #'emjupy-latex-unrender-or-delete)
-    (define-key map (kbd "C-$")     #'emjupy-show-traceback)
-    (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
-    (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)
-    (define-key map (kbd "C-c <up>")   #'emjupy-move-cell-up)
-    (define-key map (kbd "C-c <down>") #'emjupy-move-cell-down)
-    (define-key map (kbd "C-c '")    #'emjupy-edit-cell-externally)
-
-    ;; Kernel
-    (define-key map (kbd "C-c C-x C-r") #'emjupy-restart-kernel)
-    (define-key map (kbd "C-c C-x C-c") #'emjupy-reconnect-kernel)
-
-    ;; Multiple notebooks / servers
-    (define-key map (kbd "C-c C-x b") 'emjupy-switch-notebook)
-    (define-key map (kbd "C-c C-x s") 'emjupy-status)
-    (define-key map (kbd "C-c C-x l") 'emjupy-login)
-    (define-key map (kbd "C-c C-x C-e") 'emjupy-export-py)
-
-    ;; Navigation
-    (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
-    (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
-    (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
-    ;; Same axis one level out: C-c moves within this cell, M- moves to a
-    ;; neighbouring one.
-    (define-key map (kbd "M-<prior>") #'emjupy-beginning-of-previous-cell)
-    (define-key map (kbd "M-<next>")  #'emjupy-end-of-previous-cell)
-    (define-key map (kbd "M-<up>")    #'emjupy-beginning-of-next-cell)
-    (define-key map (kbd "M-<down>")  #'emjupy-end-of-next-cell)
-    (define-key map (kbd "C-c C-x C-l") #'emjupy-re-render)
-    (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
-
-    ;; Persistence & Server/Kernel Connection
-    (define-key map (kbd "C-x C-s") 'emjupy-save-notebook)
-    ;; C-c C-z stops what is running, like C-c in a terminal; picking a
-    ;; kernel is the rarer act and moves one modifier away.
-    (define-key map (kbd "C-c C-z") #'emjupy-interrupt-kernel)
-    (define-key map (kbd "C-c M-z") #'emjupy-connect-kernel-interactive)
-    ;; The menu.  Not `C-c C-h': `C-h' after a prefix is reserved for the
-    ;; list of that prefix's bindings, which is the very thing this improves
-    ;; on, so taking the key would remove the fallback.
-    (define-key map (kbd "C-c C-v") #'emjupy-menu)
-    map)
-  "Keymap for `emjupy-mode'.")
+(defvar emjupy-mode-map (make-sparse-keymap)
+  "Keymap for `emjupy-mode'.
+Its keys are bound, with the menu, in emjupy-notebook.el: they name
+commands of every file, so they are bound above them all.")
 
 (defcustom emjupy-electric-pairs t
   "When non-nil, pair brackets and quotes as you type in cells.
@@ -190,70 +113,6 @@ less like a Python buffer than the code in it deserves.  Set to nil to
 leave the matter to your own configuration."
   :type 'boolean
   :group 'emjupy)
-
-;;;###autoload (autoload 'emjupy-menu "emjupy" nil t)
-(transient-define-prefix emjupy-menu ()
-  "Show what emjupy can do, grouped by what you are trying to do.
-
-There are some forty bindings, and `C-h m' lists them in the order they
-were defined rather than the order anyone thinks in.  This groups them,
-and can be used as a menu in its own right: everything here runs from
-this buffer."
-  [:description
-   (lambda ()
-     (let ((nb (and (bound-and-true-p emjupy--buffer-notebook)
-                    emjupy--buffer-notebook)))
-       (if nb
-           (format "emjupy  %s"
-                   (or (emjupy-notebook-path nb) "unsaved"))
-         "emjupy")))
-   ["Run"
-    ("c" "this cell, then move on" emjupy-execute-cell-and-goto-next)
-    ("e" "this cell, stay here" emjupy-execute-cell-at-point)
-    ("z" "interrupt the kernel" emjupy-interrupt-kernel)
-    ("$" "show the last traceback" emjupy-show-traceback)]
-   ["Cells"
-    ("a" "new cell above" emjupy-insert-cell-above)
-    ("b" "new cell below" emjupy-insert-cell-below)
-    ("k" "delete this cell" emjupy-delete-cell)
-    ("s" "split here" emjupy-split-cell)
-    ("j" "join to the one above" emjupy-join-cell-above)
-    ("t" "code or markdown" emjupy-cycle-cell-type)
-    ("w" "copy this cell" emjupy-copy-cell)
-    ("y" "paste a cell" emjupy-yank-cell)]
-   ["Output"
-    ("o" "hide or show this output" emjupy-toggle-cell-output)
-    ("f" "open this output on its own" emjupy-open-output)
-    ("l" "clear this output" emjupy-clear-cell-output)
-    ("L" "clear every output" emjupy-clear-all-outputs)
-    ("r" "redraw the notebook" emjupy-re-render)]]
-  [["Moving"
-    ("n" "next cell" emjupy-next-cell)
-    ("p" "previous cell" emjupy-previous-cell)
-    ("<" "start of this cell" emjupy-beginning-of-cell)
-    (">" "end of this cell" emjupy-end-of-cell)
-    ("M-p" "start of the previous cell" emjupy-beginning-of-previous-cell)
-    ("M-n" "start of the next cell" emjupy-beginning-of-next-cell)
-    ("M-P" "end of the previous cell" emjupy-end-of-previous-cell)
-    ("M-N" "end of the next cell" emjupy-end-of-next-cell)
-    ("<up>" "move this cell up" emjupy-move-cell-up)
-    ("<down>" "move this cell down" emjupy-move-cell-down)]
-   ["Notebook"
-    ("S" "save to the server" emjupy-save-notebook)
-    ("B" "switch notebook" emjupy-switch-notebook)
-    ("X" "export as .py" emjupy-export-py)
-    ("'" "edit this cell in a buffer" emjupy-edit-cell-externally)]]
-  ;; A row of its own: four groups side by side came to some 120 columns,
-  ;; so in an ordinary frame the last column wrapped mid-word.
-  [["Server"
-    ("g" "log in to a server" emjupy-login)
-    ("R" "restart the kernel" emjupy-restart-kernel)
-    ("C" "reconnect the kernel" emjupy-reconnect-kernel)
-    ("K" "choose a kernel" emjupy-connect-kernel-interactive)
-    ("?" "what is going on" emjupy-status)]
-   ["Language server"
-    ("d" "diagnose it" emjupy-lsp-diagnose)
-    ("v" "which emjupy is this" emjupy-version)]])
 
 (defcustom emjupy-language-mode 'python-mode
   "The major mode whose settings a notebook borrows for its cells.

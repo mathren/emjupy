@@ -1050,7 +1050,7 @@ The interactive arguments are still read in the notebook buffer, before
 this runs, so prompts like `eglot-rename\'s see the symbol under the
 real cursor rather than whatever is under point in the shadow buffer."
   (cond
-   ((not (and (derived-mode-p 'emjupy-mode) emjupy--buffer-notebook))
+   ((not emjupy--buffer-notebook)
     (apply orig args))
    ;; Every command goes the same way now: to the shadow buffer, where
    ;; Eglot is attached -- over the Jupyter WebSocket when that server has

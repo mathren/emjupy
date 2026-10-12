@@ -657,11 +657,6 @@ back, and the move\'s undo then did nothing."
         (push (list 'apply #'emjupy--restore-cells-snapshot now)
               buffer-undo-list)))))
 
-(defvar emjupy--in-cell-step nil
-  "Non-nil while a command recorded by `emjupy--as-one-undo-step' runs.
-Its redraws record nothing of their own: the command records one step,
-from a snapshot taken before it changed anything.")
-
 (defmacro emjupy--as-one-undo-step (&rest body)
   "Run BODY, a change to the notebook\='s cells, as one step undo takes back.
 
@@ -1544,6 +1539,10 @@ EVENT is the mouse event."
     (emjupy--toggle-output-from-string
      (posn-string posn)
      (window-buffer (posn-window posn)))))
+
+;; Bound here, beside the command, rather than in the drawing layer that
+;; makes the map: the click toggles a cell's output, which is this layer's.
+(define-key emjupy-hidden-output-map [mouse-1] #'emjupy-toggle-output-at-click)
 
 (provide 'emjupy-cells)
 ;;; emjupy-cells.el ends here

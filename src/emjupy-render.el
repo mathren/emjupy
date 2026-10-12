@@ -544,7 +544,7 @@ cannot leave one behind."
   "Redraw the rules after line numbers are turned on or off.
 The number column takes width from the page, so the rules were drawn
 too wide for it, and wrapped."
-  (when (derived-mode-p 'emjupy-mode)
+  (when emjupy--buffer-notebook
     (emjupy--refresh-box-rules t)))
 
 (defun emjupy--rule (label &optional corner)
@@ -1091,7 +1091,6 @@ survives saving and means the same thing to other front ends."
 
 (defvar emjupy-hidden-output-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [mouse-1] 'emjupy-toggle-output-at-click)
     ;; Without this, the press begins a drag-selection and the release is
     ;; never delivered as a click.
     (define-key map [down-mouse-1] #'ignore)
@@ -1379,7 +1378,7 @@ worth keeping are precisely the ones that moved.  Getting the shift
 wrong is worse than dropping everything -- a wrong position does not
 raise an error, it quietly rewrites the wrong text -- which is why each
 entry shape is handled explicitly rather than by pattern-guessing."
-  (unless (bound-and-true-p emjupy--in-cell-step)
+  (unless emjupy--in-cell-step
     (let ((transform
            (lambda (entry)
              (let ((p (emjupy--undo-entry-position entry)))
