@@ -21,6 +21,7 @@
 
 (require 'cl-lib)
 (require 'emjupy-core)
+(require 'emjupy-http)
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-lsp)

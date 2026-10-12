@@ -46,8 +46,6 @@
 (require 'emjupy-core)
 (require 'emjupy-http)
 (require 'jsonrpc)
-(require 'emjupy-cells)
-(require 'emjupy-remote)
 ;; Eglot and websocket.el are hard requirements: Eglot ships with the
 ;; Emacs this package requires, websocket is a declared dependency, and
 ;; the transport below inherits from Eglot's own server class, so a

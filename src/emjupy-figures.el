@@ -24,7 +24,6 @@
 
 (require 'emjupy-core)
 (require 'emjupy-render)
-(require 'emjupy-cells)
 (require 'emjupy-kernel)
 
 (defcustom emjupy-figure-viewer 'window

@@ -30,7 +30,6 @@
 
 (require 'emjupy-core)
 (require 'emjupy-render)
-(require 'emjupy-cells)
 (require 'emjupy-kernel)
 (require 'emjupy-figures)
 

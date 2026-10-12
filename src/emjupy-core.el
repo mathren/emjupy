@@ -154,5 +154,79 @@ same object, so notebooks already pointing at it stay valid."
   "Return a short human label for SERVER."
   (emjupy-server-base-url server))
 
+;;;; The cell at a position
+
+;; Lookups over the cells and their overlays, nothing more: every layer
+;; asks "which cell is this?", and each required the cells layer for it.
+
+(defun emjupy--cell-at-point (&optional pos)
+  "Return the cell containing POS (default point), or nil.
+
+Looks at the cell overlays rather than the `emjupy-cell\' text property.
+The property is stamped once at render time and plain `insert\' does not
+carry it onto new text, so anything typed at a cell boundary -- the end
+of its last line, the obvious place to type -- was invisible to a lookup
+by property.  Overlays move with insertions, so they always know."
+  (let ((pos (or pos (point)))
+        (found nil))
+    (when emjupy--buffer-notebook
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               until found
+               do (let ((ov (emjupy-cell-overlay cell)))
+                    (when (and (overlayp ov)
+                               (>= pos (overlay-start ov))
+                               (<= pos (overlay-end ov)))
+                      (setq found cell)))))
+    (or found
+        (get-text-property pos 'emjupy-cell)
+        ;; Past the end of the last cell -- point-max, or a gutter line --
+        ;; no overlay covers the position and no property was stamped there.
+        ;; Fall back to the nearest cell rather than nothing: returning nil
+        ;; made `emjupy-insert-cell-below' think there was no current cell,
+        ;; so it appended to the END of the notebook instead of inserting
+        ;; below the one you were looking at.
+        (emjupy--nearest-cell pos))))
+
+(defun emjupy--nearest-cell (pos)
+  "Return the cell whose overlay is closest to POS, or nil."
+  (when emjupy--buffer-notebook
+    (let ((best nil) (best-d most-positive-fixnum))
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               do (let ((ov (emjupy-cell-overlay cell)))
+                    (when (overlayp ov)
+                      (let ((d (cond ((< pos (overlay-start ov))
+                                      (- (overlay-start ov) pos))
+                                     ((> pos (overlay-end ov))
+                                      (- pos (overlay-end ov)))
+                                     (t 0))))
+                        (when (< d best-d) (setq best-d d best cell))))))
+      best)))
+
+(defun emjupy--cell-at-point-including-output (&optional pos)
+  "Return the cell owning POS, counting its output box as part of it.
+
+`emjupy--cell-at-point\' answers for the source only, which is right for
+editing: output is not text the user is writing.  Commands about the
+output itself need the other answer -- with point in an output box, the
+cell meant is the one above, whose output that is."
+  (let ((pos (or pos (point))))
+    ;; The output box is asked about FIRST.  A position inside one lies
+    ;; between two cells as far as the source lookup is concerned, and that
+    ;; lookup answers with the cell below -- which has its own, usually
+    ;; empty, output, so the command reported nothing to hide while point
+    ;; sat in the very output meant.
+    (or (when emjupy--buffer-notebook
+          (cl-find-if
+           (lambda (cell)
+             (let ((out (emjupy-cell-output-ov cell)))
+               (and (overlayp out)
+                    (eq (overlay-buffer out) (current-buffer))
+                    (>= pos (overlay-start out))
+                    (<= pos (overlay-end out)))))
+           (append (emjupy-notebook-cells emjupy--buffer-notebook) nil)))
+        (emjupy--cell-at-point pos))))
+
 (provide 'emjupy-core)
 ;;; emjupy-core.el ends here

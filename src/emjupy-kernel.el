@@ -27,6 +27,7 @@
 (require 'websocket)
 (require 'emjupy-core)
 (require 'emjupy-http)
+(require 'emjupy-render)
 (require 'emjupy-cells)
 
 (defun emjupy--uuid ()
