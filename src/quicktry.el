@@ -33,7 +33,8 @@
 ;; Load emjupy from the directory this file is in, not from wherever Emacs
 ;; was started: `emacs -Q -L src -l src/quicktry.el' from the repository
 ;; root works as well as starting in src/.
-(add-to-list 'load-path (file-name-directory (or load-file-name buffer-file-name)))
+(add-to-list 'load-path (file-name-directory (or load-file-name
+                                                 buffer-file-name)))
 (require 'emjupy)
 
 

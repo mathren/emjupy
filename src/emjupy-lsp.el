@@ -190,7 +190,8 @@ and the answer collected on the first request that needs it."
           (setf (emjupy-lsp-ws session)
                 (websocket-open
                  (emjupy--lsp-url server)
-                 :on-message (lambda (_ws frame) (emjupy--lsp-handle session frame))
+                 :on-message (lambda (_ws frame)
+                               (emjupy--lsp-handle session frame))
                  :on-close (lambda (_ws) (setf (emjupy-lsp-ready session) nil))
                  :on-error #'emjupy--lsp-socket-error))
           session)
@@ -244,9 +245,10 @@ The WebSocket refusing tells us nothing useful on its own, so ask
         (if servers
             (message "[emjupy] %s offers %s but %s did not start."
                      label (string-join servers ", ") emjupy-lsp-server)
-          (message "%s %s"
-                   (format "[emjupy] jupyter-lsp on %s lists no language server." label)
-                   "Install one where the kernel runs, e.g. python-lsp-server."))))
+          (message
+           "%s %s"
+           (format "[emjupy] jupyter-lsp on %s lists no language server." label)
+           "Install one where the kernel runs, e.g. python-lsp-server."))))
      (t
       (message "[emjupy] No language server on %s (%s)." label status)))))
 
@@ -415,9 +417,11 @@ nonsense that still looks plausible."
                            (start (gethash "start" range))
                            (end (gethash "end" range)))
                       (list (emjupy--lsp-offset-of-position
-                             text (gethash "line" start) (gethash "character" start))
+                             text (gethash "line" start)
+                             (gethash "character" start))
                             (emjupy--lsp-offset-of-position
-                             text (gethash "line" end) (gethash "character" end))
+                             text (gethash "line" end)
+                             (gethash "character" end))
                             (or (gethash "newText" edit) ""))))
                   (append edits nil)))
          (sorted (sort prepared (lambda (a b) (> (car a) (car b))))))
@@ -439,7 +443,8 @@ nonsense that still looks plausible."
                    until found
                    do (let* ((doc (and (hash-table-p change)
                                        (gethash "textDocument" change)))
-                             (this (and (hash-table-p doc) (gethash "uri" doc))))
+                             (this (and (hash-table-p doc)
+                                        (gethash "uri" doc))))
                         (when (equal this uri)
                           (setq found (gethash "edits" change)))))
           found))))))
@@ -485,7 +490,8 @@ same cells holding the same source objects build the same content."
          (memo (gethash nb emjupy--shadow-content-memo)))
     (if (and memo
              (= (length key) (length (car memo)))
-             (cl-every (lambda (a b) (and (eql (nth 0 a) (nth 0 b)) (eq (nth 1 a) (nth 1 b))
+             (cl-every (lambda (a b) (and (eql (nth 0 a) (nth 0 b))
+                                          (eq (nth 1 a) (nth 1 b))
                                           (eq (nth 2 a) (nth 2 b))))
                        key (car memo)))
         (cdr memo)
@@ -505,19 +511,24 @@ same cells holding the same source objects build the same content."
    "\n"))
 
 (defun emjupy--parse-shadow-sections (text)
-  "Return an alist of (ID . SOURCE) parsed from TEXT's `# %% [emjupy:ID]' markers."
+  "Return (ID . SOURCE) pairs parsed from TEXT's `# %% [emjupy:ID]' markers."
   (let (sections current-id current-lines)
     (dolist (line (split-string text "\n"))
       (if (string-match "\\`# %% \\[emjupy:\\([0-9]+\\)\\]\\'" line)
           (progn
             (when current-id
-              (push (cons current-id (string-trim (mapconcat #'identity (nreverse current-lines) "\n")))
+              (push (cons current-id
+                          (string-trim (mapconcat #'identity
+                                                  (nreverse current-lines)
+                                                  "\n")))
                     sections))
             (setq current-id (string-to-number (match-string 1 line)))
             (setq current-lines nil))
         (when current-id (push line current-lines))))
     (when current-id
-      (push (cons current-id (string-trim (mapconcat #'identity (nreverse current-lines) "\n")))
+      (push (cons current-id (string-trim (mapconcat #'identity
+                                                     (nreverse current-lines)
+                                                     "\n")))
             sections))
     (nreverse sections)))
 
@@ -579,10 +590,14 @@ WebSocket in.  It is left here instead and collected on the way past.")
 (cl-defmethod initialize-instance :after ((server emjupy-eglot-server) &rest _)
   "Collect the WebSocket and URIs left by `emjupy--eglot-connect'."
   (setf (emjupy-eglot-server-ws server) (plist-get emjupy--eglot-pending :ws)
-        (emjupy-eglot-server-local-uri server) (plist-get emjupy--eglot-pending :local-uri)
-        (emjupy-eglot-server-server-uri server) (plist-get emjupy--eglot-pending :server-uri)
-        (emjupy-eglot-server-local-doc server) (plist-get emjupy--eglot-pending :local-doc)
-        (emjupy-eglot-server-server-doc server) (plist-get emjupy--eglot-pending :server-doc))
+        (emjupy-eglot-server-local-uri server)
+        (plist-get emjupy--eglot-pending :local-uri)
+        (emjupy-eglot-server-server-uri server)
+        (plist-get emjupy--eglot-pending :server-uri)
+        (emjupy-eglot-server-local-doc server)
+        (plist-get emjupy--eglot-pending :local-doc)
+        (emjupy-eglot-server-server-doc server)
+        (plist-get emjupy--eglot-pending :server-doc))
   (let ((ws (emjupy-eglot-server-ws server)))
     (when ws
       ;; The socket was opened before the server existed, so its handler is
@@ -637,9 +652,10 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
     (puthash "jsonrpc" "2.0" msg)
     (when id (puthash "id" id msg))
     (when method
-      (puthash "method" (cond ((keywordp method) (substring (symbol-name method) 1))
-                              ((symbolp method) (symbol-name method))
-                              (t method))
+      (puthash "method"
+               (cond ((keywordp method) (substring (symbol-name method) 1))
+                     ((symbolp method) (symbol-name method))
+                     (t method))
                msg))
     (when params
       (puthash "params"
@@ -803,14 +819,17 @@ Returns the server, or nil."
                     ;; Directory prefixes, not the one file: the same
                     ;; substitution then fixes rootUri, the document URI and
                     ;; anything else naming a path under them.
-                    :local-uri (concat "file://" (file-name-directory local-file))
+                    :local-uri (concat "file://"
+                                       (file-name-directory local-file))
                     :server-uri (concat "file://"
                                         (file-name-as-directory
-                                         (or (emjupy-notebook-kernel-cwd nb) "/")))
+                                         (or (emjupy-notebook-kernel-cwd nb)
+                                             "/")))
                     :local-doc (concat "file://" local-file)
                     :server-doc (concat "file://"
                                         (file-name-as-directory
-                                         (or (emjupy-notebook-kernel-cwd nb) "/"))
+                                         (or (emjupy-notebook-kernel-cwd nb)
+                                             "/"))
                                         (file-name-nondirectory local-file))))
              ;; The root has to be the directory the SERVER will resolve
              ;; against, not the one holding the shadow file here.  Eglot
@@ -828,8 +847,9 @@ Returns the server, or nil."
               (let ((connected
                      (eglot--connect (list major-mode) project
                                      'emjupy-eglot-server
-                                     ;; A process must exist for the base class;
-                                     ;; this one is never written to or read from.
+                                     ;; A process must exist for the base
+                                     ;; class; this one is never written to or
+                                     ;; read from.
                                      (list emjupy-eglot-idle-command)
                                      "python")))
                 (emjupy--set-workspace-configuration nb connected)
@@ -851,7 +871,8 @@ Returns the server, or nil."
              ;; attach to it -- left the diagnostic reporting no failure at
              ;; all while a local server quietly took over.
              (setq emjupy--lsp-last-failure
-                   (format "Eglot would not attach: %s" (error-message-string err)))
+                   (format "Eglot would not attach: %s"
+                           (error-message-string err)))
              (message "[emjupy] Could not attach Eglot over the WebSocket: %s"
                       (error-message-string err))
              nil)))))))

@@ -138,7 +138,8 @@ that genuinely came later is not moved above what came before it."
       (let ((recent (seq-find (lambda (o) (emjupy--stream-p o name))
                               (reverse existing))))
         (and recent
-             (not (string-suffix-p "\n" (emjupy--mime-text (gethash "text" recent))))
+             (not (string-suffix-p "\n"
+                                   (emjupy--mime-text (gethash "text" recent))))
              recent)))))
 
 (defvar emjupy--stream-cursors (make-hash-table :test 'eq :weakness 'key)
@@ -158,7 +159,8 @@ its carriage returns applied, as it always had."
           (if (cdr written)
               (puthash output (cdr written) emjupy--stream-cursors)
             (remhash output emjupy--stream-cursors)))
-      (puthash "text" (emjupy--collapse-carriage-returns (concat old chunk)) output))))
+      (puthash "text"
+               (emjupy--collapse-carriage-returns (concat old chunk)) output))))
 
 (defun emjupy--merge-stream-output (existing output-hash)
   "Return EXISTING with OUTPUT-HASH merged in, or nil if it cannot be.
@@ -169,7 +171,8 @@ each message separately is what let a `tqdm\=' bar leave thousands of
 entries behind, every one walked on every redraw, so the notebook got
 slower for the rest of the session."
   (when (emjupy--stream-p output-hash)
-    (let ((target (emjupy--open-stream-output existing (gethash "name" output-hash))))
+    (let ((target (emjupy--open-stream-output existing (gethash "name"
+                                                                output-hash))))
       (when target
         (emjupy--stream-write target (emjupy--mime-text (gethash "text" target))
                               (emjupy--mime-text (gethash "text" output-hash)))
@@ -208,7 +211,8 @@ since patching one region only makes sense while the rest still matches."
     ;; in the buffer and never reach the cell it belongs to.
     (when cells (emjupy--sync-all-cells))
     (if (and cells (emjupy--overlays-sane-p)
-             (cl-every (lambda (cell) (emjupy--refresh-cell-output cell)) cells))
+             (cl-every (lambda (cell)
+                         (emjupy--refresh-cell-output cell)) cells))
         t
       (emjupy--rerender-preserving-point))))
 
@@ -226,7 +230,8 @@ Asked only for a request no cell is waiting on: one emjupy sent itself,
 such as moving a widget\'s slider, whose redrawn figure belongs to the
 cell showing the widget.")
 
-(defvar emjupy--clear-before-next-output (make-hash-table :test 'eq :weakness 'key)
+(defvar emjupy--clear-before-next-output (make-hash-table :test 'eq
+                                                          :weakness 'key)
   "Cells whose outputs are cleared when their next output arrives.")
 
 (defun emjupy--widget-view-output-p (output)
@@ -290,7 +295,9 @@ and not kept in the history.  \\[keyboard-quit] interrupts the kernel,
 as Jupyter\'s own frontends do: it waits for an answer, and an empty one
 would count as one -- pdb would repeat its last command."
   (let* ((nb (emjupy-kernel-notebook kernel))
-         (label (format "[%s] %s" (file-name-nondirectory (or (and nb (emjupy-notebook-path nb)) "kernel"))
+         (label (format "[%s] %s"
+                        (file-name-nondirectory
+                         (or (and nb (emjupy-notebook-path nb)) "kernel"))
                         (if (string-empty-p prompt) "input: " prompt)))
          (value (condition-case nil
                     (if password
@@ -300,7 +307,8 @@ would count as one -- pdb would repeat its last command."
     (if value
         (let ((content (make-hash-table :test 'equal)))
           (puthash "value" value content)
-          (emjupy--ws-send (cdr (emjupy--make-message "input_reply" content "stdin" parent-header))
+          (emjupy--ws-send (cdr (emjupy--make-message "input_reply" content
+                                                      "stdin" parent-header))
                            kernel))
       (when (and nb (buffer-live-p (emjupy-notebook-buffer nb)))
         (with-current-buffer (emjupy-notebook-buffer nb)
@@ -314,7 +322,8 @@ would count as one -- pdb would repeat its last command."
     (remhash cell emjupy--clear-before-next-output)
     (setf (emjupy-cell-outputs cell)
           (vconcat (seq-filter #'emjupy--widget-view-output-p
-                               (append (or (emjupy-cell-outputs cell) []) nil)))))
+                               (append (or (emjupy-cell-outputs cell)
+                                           []) nil)))))
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
     ;; Stream text that starts an output of its own still has its carriage
@@ -322,7 +331,8 @@ would count as one -- pdb would repeat its last command."
     ;; that -- nothing before it to merge into -- and rendering it as it came
     ;; put a literal ^M at the start of the line.
     (when (and (not merged) (emjupy--stream-p output-hash))
-      (emjupy--stream-write output-hash "" (emjupy--mime-text (gethash "text" output-hash))))
+      (emjupy--stream-write output-hash ""
+                            (emjupy--mime-text (gethash "text" output-hash))))
     (setf (emjupy-cell-outputs cell)
           (vconcat (or merged (append existing (list output-hash)))))
     (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
@@ -352,9 +362,11 @@ Return a cons of the message\'s JSON text and a list of the buffers, as
 unibyte strings.  The format is the Jupyter server\'s: a count of parts,
 the offset of each, then the parts -- the JSON first, then the buffers."
   (let* ((n (emjupy--u32 bytes 0))
-         (offsets (cl-loop for i from 1 to n collect (emjupy--u32 bytes (* 4 i))))
+         (offsets (cl-loop for i from 1 to n collect (emjupy--u32 bytes
+                                                                  (* 4 i))))
          (ends (append (cdr offsets) (list (length bytes))))
-         (parts (cl-mapcar (lambda (from to) (substring bytes from to)) offsets ends)))
+         (parts (cl-mapcar (lambda (from to) (substring bytes from to))
+                           offsets ends)))
     (cons (decode-coding-string (car parts) 'utf-8) (cdr parts))))
 
 (defun emjupy--encode-binary-message (json buffers)
@@ -375,14 +387,16 @@ unibyte strings.  The format `emjupy--decode-binary-message\=' reads."
   "Return FRAME\'s message as a cons of its JSON text and its buffers.
 A message carrying binary data comes as a binary frame, read here; any
 other has no buffers."
-  (if (and (websocket-frame-p frame) (eq (websocket-frame-opcode frame) 'binary))
+  (if (and (websocket-frame-p frame)
+           (eq (websocket-frame-opcode frame) 'binary))
       (emjupy--decode-binary-message (websocket-frame-payload frame))
     (cons (emjupy--ws-payload frame) nil)))
 
 (defun emjupy--ws-send-binary (bytes kernel)
   "Send the binary frame BYTES on KERNEL\'s WebSocket."
   (websocket-send (emjupy-kernel-ws kernel)
-                  (make-websocket-frame :opcode 'binary :payload bytes :completep t)))
+                  (make-websocket-frame :opcode 'binary :payload bytes
+                                        :completep t)))
 
 (defun emjupy--ws-payload (frame)
   "Return the text payload of FRAME.
@@ -442,7 +456,8 @@ KERNEL carries both the pending-request table and the backlink to the
 notebook whose buffer should be refreshed, so frames from several
 kernels never cross-talk."
   (let* ((parts (emjupy--ws-message-parts frame))
-         (data (json-parse-string (car parts) :object-type 'hash-table :array-type 'array))
+         (data (json-parse-string (car parts) :object-type 'hash-table
+                                  :array-type 'array))
          (buffers (mapcar #'emjupy-bytes-make (cdr parts)))
          (header (gethash "header" data))
          (parent-header (gethash "parent_header" data))
@@ -456,7 +471,8 @@ kernels never cross-talk."
                      ;; emjupy sent itself, such as moving a slider
                      (run-hook-with-args-until-success
                       'emjupy-output-owner-functions parent-id))))
-         (internal (when parent-id (gethash parent-id emjupy--internal-requests))))
+         (internal (when parent-id (gethash parent-id
+                                            emjupy--internal-requests))))
 
     ;; The kernel waiting on the user: a cell asked for input.
     (when (equal msg-type "input_request")
@@ -515,7 +531,8 @@ kernels never cross-talk."
           (puthash "metadata" (or (gethash "metadata" content)
                                   (make-hash-table :test 'equal))
                    out-hash)
-          (puthash "execution_count" (or (gethash "execution_count" content) :null)
+          (puthash "execution_count"
+                   (or (gethash "execution_count" content) :null)
                    out-hash)
           (emjupy--append-output-to-cell cell out-hash notebook)))
 
@@ -695,7 +712,8 @@ this is what lets well-behaved output not need that."
            (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
                    columns)
            #'ignore)
-          (setq emjupy--kernel-width-told (cons (emjupy-kernel-id kernel) columns)))))))
+          (setq emjupy--kernel-width-told
+                (cons (emjupy-kernel-id kernel) columns)))))))
 
 (defun emjupy--ensure-kernel-width (nb)
   "Tell NB\='s kernel the box width, unless it already has this one."
@@ -748,7 +766,8 @@ the cells get their output after all."
     (cond
      ;; A connection that never came up, while reconnecting: the timer
      ;; tries again, and the kept cells stay kept.
-     ((and (buffer-live-p buf) (buffer-local-value 'emjupy--reconnect-timer buf)))
+     ((and (buffer-live-p buf)
+           (buffer-local-value 'emjupy--reconnect-timer buf)))
      ((or (emjupy-kernel-closing kernel) (not emjupy-reconnect-window)
           (not (buffer-live-p buf)) (not (emjupy-kernel-id kernel)))
       (when (hash-table-p pending)
@@ -764,7 +783,8 @@ the cells get their output after all."
           (setq emjupy--kept-runs (cons (emjupy-kernel-id kernel) kept)))
         (setq emjupy--reconnect-timer
               (run-with-timer 3 3 #'emjupy--try-reconnect buf
-                              (emjupy-kernel-id kernel) (emjupy-kernel-name kernel)
+                              (emjupy-kernel-id kernel)
+                              (emjupy-kernel-name kernel)
                               (+ (float-time) emjupy-reconnect-window) label)))
       (message "[emjupy] %s: kernel connection dropped; reconnecting%s..." label
                (if cells (format ", %d running cell%s kept" (length cells)
@@ -793,7 +813,8 @@ ended as a closed connection ends them."
           (setq emjupy--reconnect-timer nil)
           (let ((cells nil))
             (when emjupy--kept-runs
-              (maphash (lambda (id cell) (push cell cells) (remhash id emjupy--request-halves))
+              (maphash (lambda (id cell) (push cell cells)
+                         (remhash id emjupy--request-halves))
                        (cdr emjupy--kept-runs)))
             (setq emjupy--kept-runs nil)
             (emjupy--end-runs cells buf label
@@ -819,8 +840,10 @@ the cell is ended too -- its output may have missed the end."
          (buf (and nb (emjupy-notebook-buffer nb))))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (when (and emjupy--kept-runs (equal (car emjupy--kept-runs) (emjupy-kernel-id kernel)))
-          (maphash (lambda (id cell) (puthash id cell (emjupy-kernel-pending kernel)))
+        (when (and emjupy--kept-runs (equal (car emjupy--kept-runs)
+                                            (emjupy-kernel-id kernel)))
+          (maphash (lambda (id cell) (puthash id cell
+                                              (emjupy-kernel-pending kernel)))
                    (cdr emjupy--kept-runs))
           (setq emjupy--kept-runs nil)
           (run-with-timer 4 nil #'emjupy--settle-adopted-runs kernel))))))
@@ -830,16 +853,20 @@ the cell is ended too -- its output may have missed the end."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb)))
          (pending (emjupy-kernel-pending kernel)))
-    (when (and (buffer-live-p buf) (hash-table-p pending) (> (hash-table-count pending) 0))
+    (when (and (buffer-live-p buf) (hash-table-p pending)
+               (> (hash-table-count pending) 0))
       (let ((state (condition-case nil
                        (gethash "execution_state"
-                                (emjupy--http-request "GET" (emjupy-notebook-server nb)
-                                                      (format "/api/kernels/%s" (emjupy-kernel-id kernel))))
+                                (emjupy--http-request
+                                 "GET" (emjupy-notebook-server nb)
+                                 (format "/api/kernels/%s"
+                                         (emjupy-kernel-id kernel))))
                      ;; unknown: the cells stay running, as they may be
                      (emjupy-http-error nil))))
         (when (equal state "idle")
           (let ((cells nil))
-            (maphash (lambda (id cell) (push cell cells) (remhash id emjupy--request-halves)) pending)
+            (maphash (lambda (id cell) (push cell cells)
+                       (remhash id emjupy--request-halves)) pending)
             (clrhash pending)
             (emjupy--end-runs cells buf (emjupy-notebook-path nb)
                               "a run ended while the connection was down, its output perhaps incomplete")))))))
@@ -851,7 +878,8 @@ while its connection is down, and replays them to the next connection
 of that session -- one with a new id, every connection did, got none."
   (let ((h (md5 (format "%s|%s|%s" emjupy--session-id kernel-id
                         (or (emjupy-notebook-path notebook) "")))))
-    (format "%s-%s-%s-%s-%s" (substring h 0 8) (substring h 8 12) (substring h 12 16)
+    (format "%s-%s-%s-%s-%s" (substring h 0 8) (substring h 8 12)
+            (substring h 12 16)
             (substring h 16 20) (substring h 20 32))))
 
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
@@ -871,10 +899,12 @@ several notebooks -- from several servers -- stay live at once."
                          (plist-get parts :port)
                          (plist-get parts :path)
                          kernel-id
-                         (concat "?session_id=" (emjupy--ws-session-id notebook kernel-id)
+                         (concat "?session_id="
+                                 (emjupy--ws-session-id notebook kernel-id)
                                  (if (string-empty-p token)
                                      ""
-                                   (concat "&token=" (url-hexify-string token))))))
+                                   (concat "&token="
+                                           (url-hexify-string token))))))
          ;; Belt and braces: some deployments (and some reverse proxies in
          ;; front of a tunnel) strip or ignore the query-string token but
          ;; honour the Authorization header.  Shared with the language
@@ -893,11 +923,16 @@ several notebooks -- from several servers -- stay live at once."
           (websocket-open
            ws-url
            :custom-header-alist headers
-           :on-message (lambda (_ws frame) (emjupy--handle-ws-message kernel frame))
-           :on-open (lambda (_ws) (message "[emjupy] %s connected to kernel %s" label kernel-id))
-           :on-close (lambda (_ws) (emjupy--kernel-connection-closed kernel label))
+           :on-message (lambda (_ws frame)
+                         (emjupy--handle-ws-message kernel frame))
+           :on-open (lambda (_ws)
+                      (message "[emjupy] %s connected to kernel %s" label
+                               kernel-id))
+           :on-close (lambda (_ws)
+                       (emjupy--kernel-connection-closed kernel label))
            :on-error (lambda (_ws type err)
-                       (message "[emjupy] %s WebSocket error (%s): %s" label type err))))
+                       (message "[emjupy] %s WebSocket error (%s): %s" label
+                                type err))))
     (setf (emjupy-notebook-kernel notebook) kernel)
     ;; cells kept running when the last connection dropped
     (emjupy--adopt-kept-runs kernel)
@@ -1023,8 +1058,10 @@ itself thrown away."
     (unless (and kernel (emjupy-kernel-id kernel))
       (user-error "This notebook has no kernel"))
     (emjupy--http-request "POST" (emjupy-notebook-server nb)
-                          (format "/api/kernels/%s/interrupt" (emjupy-kernel-id kernel)))
-    (message "[emjupy] Interrupt sent to kernel %s." (emjupy-kernel-id kernel))))
+                          (format "/api/kernels/%s/interrupt"
+                                  (emjupy-kernel-id kernel)))
+    (message "[emjupy] Interrupt sent to kernel %s."
+             (emjupy-kernel-id kernel))))
 
 (defun emjupy-restart-kernel ()
   "Restart THIS notebook's kernel and reconnect its websocket.
@@ -1048,7 +1085,8 @@ Other open notebooks, and their kernels, are untouched."
       ;; Old in-flight requests will never get a reply from the restarted
       ;; kernel process, so drop them rather than leave them pending forever.
       (emjupy--disconnect-kernel nb)
-      (emjupy--http-request "POST" server (format "/api/kernels/%s/restart" kernel-id))
+      (emjupy--http-request "POST" server (format "/api/kernels/%s/restart"
+                                                  kernel-id))
       (message "Kernel %s restarting..." kernel-id)
       (emjupy-connect-kernel nb kernel-id name))))
 
@@ -1086,7 +1124,8 @@ kernel's state is intact, only Emacs's socket needs re-establishing."
       (emjupy--disconnect-kernel nb)
       (emjupy-connect-kernel nb id name)
       (emjupy--repair-if-scrambled nb)
-      (message "[emjupy] Reconnecting %s to kernel %s..." (emjupy-notebook-path nb) id))))
+      (message "[emjupy] Reconnecting %s to kernel %s..."
+               (emjupy-notebook-path nb) id))))
 
 (provide 'emjupy-kernel)
 ;;; emjupy-kernel.el ends here

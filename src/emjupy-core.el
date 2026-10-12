@@ -129,7 +129,8 @@ same object, so notebooks already pointing at it stay valid."
 
 (defun emjupy--server ()
   "Return the server this buffer's notebook belongs to, else the default."
-  (or (and emjupy--buffer-notebook (emjupy-notebook-server emjupy--buffer-notebook))
+  (or (and emjupy--buffer-notebook
+           (emjupy-notebook-server emjupy--buffer-notebook))
       emjupy--current-server
       (user-error "Not logged in! Call `emjupy-login' first")))
 
@@ -140,7 +141,8 @@ same object, so notebooks already pointing at it stay valid."
 
 (defun emjupy--kernel ()
   "Return the `emjupy-kernel' driving this buffer's notebook, or nil."
-  (and emjupy--buffer-notebook (emjupy-notebook-kernel emjupy--buffer-notebook)))
+  (and emjupy--buffer-notebook
+       (emjupy-notebook-kernel emjupy--buffer-notebook)))
 
 (defun emjupy--notebook-buffers ()
   "Return the list of live emjupy notebook buffers."

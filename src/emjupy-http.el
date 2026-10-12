@@ -42,7 +42,8 @@ to survive into the WebSocket URL as well as the REST calls."
                    (string-trim-right (substring stripped slash) "/+")
                  ""))
          (parts (split-string hostport ":"))
-         (host (if (string-empty-p (or (car parts) "")) "localhost" (car parts)))
+         (host (if (string-empty-p (or (car parts) "")) "localhost"
+                 (car parts)))
          (port (or (cadr parts) (if secure "443" "80"))))
     (list :scheme (if secure "https" "http")
           :ws-scheme (if secure "wss" "ws")
@@ -96,7 +97,8 @@ Only the headers matter."
                            (url-cookie-secure-storage nil)
                            (url-request-extra-headers
                             (when (and token (not (string-empty-p token)))
-                              `(("Authorization" . ,(format "token %s" token)))))
+                              `(("Authorization" .
+                                 ,(format "token %s" token)))))
                            (buffer (url-retrieve-synchronously
                                     (concat prefix base-url path) t nil 5)))
                       (when buffer
@@ -104,14 +106,17 @@ Only the headers matter."
                           (goto-char (point-min))
                           (when (re-search-forward
                                  "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
-                            (setq found (emjupy--http-bytes (match-string-no-properties 1)))))
+                            (setq found
+                                  (emjupy--http-bytes
+                                   (match-string-no-properties 1)))))
                         (kill-buffer buffer)))
                   (file-error nil)))
     (when found (setf (emjupy-server-xsrf server) found))
     found))
 
 (define-error 'emjupy-http-error "Jupyter server request failed" 'file-error)
-(define-error 'emjupy-http-status "Jupyter server refused the request" 'emjupy-http-error)
+(define-error 'emjupy-http-status "Jupyter server refused the request"
+              'emjupy-http-error)
 
 ;; Why a type of its own, and why under `file-error'.  Every failure used to
 ;; be a bare `error', so a caller could not tell a missing file from a dead
@@ -148,7 +153,8 @@ is not an answer, and is signalled."
   (condition-case err
       (progn (emjupy--http-request "GET" server (emjupy--contents-path path)) t)
     (emjupy-http-status
-     (if (eql (emjupy--http-status-of err) 404) nil (signal (car err) (cdr err))))))
+     (if (eql (emjupy--http-status-of err) 404) nil (signal (car err)
+                                                            (cdr err))))))
 
 (defun emjupy--http-interpret (server method path status body)
   "Turn a reply into a value, or signal.
@@ -217,7 +223,8 @@ impossible to save: \"Multibyte text in HTTP request\"."
 
 (defun emjupy--http-bytes-alist (alist)
   "Return the header ALIST with every name and value as UTF-8 bytes."
-  (mapcar (lambda (h) (cons (emjupy--http-bytes (car h)) (emjupy--http-bytes (cdr h))))
+  (mapcar (lambda (h) (cons (emjupy--http-bytes (car h))
+                            (emjupy--http-bytes (cdr h))))
           alist))
 
 (defun emjupy--http-read-response (buffer server)
@@ -255,15 +262,18 @@ trip, this is the difference between Emacs waiting and not."
              ;; all is the network failing.
              (if (not (car response))
                  (signal 'emjupy-http-error
-                         (list "Network error: no answer from" (emjupy-server-base-url server)))
+                         (list "Network error: no answer from"
+                               (emjupy-server-base-url server)))
                (setq answer (emjupy--http-interpret server method path
-                                                    (car response) (cdr response)))))
+                                                    (car response)
+                                                    (cdr response)))))
          ;; What a request can fail with -- emjupy-http-error is a file
          ;; error -- handed on; ON-DONE runs outside, its errors its own.
          (file-error (setq failure err)))
        (if failure (funcall on-fail failure) (funcall on-done answer))))))
 
-(defun emjupy--http-request (method server path &optional body callback retrying)
+(defun emjupy--http-request (method server path &optional body
+                                    callback retrying)
   "Send a request to SERVER and return the parsed JSON response.
 METHOD is an HTTP method string, PATH the API path, BODY an optional
 request body.  CALLBACK, if given, makes the request asynchronous.
@@ -294,12 +304,14 @@ cookie."
            (append `(("Content-Type" . "application/json"))
                    (when (and token (not (string-empty-p token)))
                      `(("Authorization" . ,(format "token %s" token))))
-                   ;; Automatically inject XSRF tokens to bypass Jupyter 403 CSRF blocks.
-                   ;; Read from THIS server: a cookie issued by another server
-                   ;; (a second tunnel, say) would just earn a 403.
+                   ;; Automatically inject XSRF tokens to bypass Jupyter 403
+                   ;; CSRF blocks.  Read from THIS server: a cookie issued by
+                   ;; another server (a second tunnel, say) would just earn a
+                   ;; 403.
                    (when (emjupy-server-xsrf server)
                      `(("X-XSRFToken" . ,(emjupy-server-xsrf server))
-                       ("Cookie" . ,(format "_xsrf=%s" (emjupy-server-xsrf server))))))))
+                       ("Cookie" . ,(format "_xsrf=%s"
+                                            (emjupy-server-xsrf server))))))))
          (base-url (emjupy-server-base-url server))
          ;; Tornado's check reads an `_xsrf' ARGUMENT or the X-XSRFToken
          ;; header -- "'_xsrf' argument missing from POST" is what it says
@@ -312,7 +324,8 @@ cookie."
                                (url-hexify-string (emjupy-server-xsrf server)))
                      ""))
          (cache-buster (if (string= method "GET")
-                           (format (if (string-match-p "\\?" path) "&_t=%s" "?_t=%s")
+                           (format (if (string-match-p "\\?" path) "&_t=%s"
+                                     "?_t=%s")
                                    (float-time))
                          ""))
          (full-url (emjupy--http-bytes
@@ -335,14 +348,16 @@ cookie."
              ;; reconnect over a cookie that has simply aged out.
              ((and (= status 403)
                    (not retrying)
-                   (let ((case-fold-search t)) (string-match-p "xsrf" json-str)))
+                   (let ((case-fold-search t))
+                     (string-match-p "xsrf" json-str)))
               (setf (emjupy-server-xsrf server) nil)
               (if (emjupy--harvest-xsrf server)
                   (emjupy--http-request method server path body callback t)
                 (signal 'emjupy-http-status
                         (list (format "[Jupyter HTTP %d] %s" status method)
                               json-str))))
-             (t (emjupy--http-interpret server method path status json-str)))))))))
+             (t (emjupy--http-interpret server method path
+                                        status json-str)))))))))
 
 (defun emjupy--websocket-auth-headers (server)
   "Return the headers a WebSocket to SERVER should carry.

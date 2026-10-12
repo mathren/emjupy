@@ -61,7 +61,8 @@ The seed and the case number are attached to any failure."
   "Return a random output message, as (TYPE . CONTENT), for request PARENT."
   (ignore parent)
   (pcase (random 5)
-    ((or 0 1) (list "stream" (cons "name" (emjupy-fuzz-pick '("stdout" "stderr")))
+    ((or 0 1) (list "stream" (cons "name" (emjupy-fuzz-pick '("stdout"
+                                                              "stderr")))
                     (cons "text" (format "line %d\n" (random 1000)))))
     (2 (let ((d (make-hash-table :test 'equal)))
          (puthash "text/plain" (format "%d" (random 1000)) d)
@@ -78,7 +79,8 @@ The seed and the case number are attached to any failure."
            collect (list :id (format "req-%d" i)
                          :count i
                          :outputs (cl-loop repeat (random 5)
-                                           collect (emjupy-fuzz--output-message i)))))
+                                           collect
+                                           (emjupy-fuzz--output-message i)))))
 
 (defun emjupy-fuzz--channels (requests)
   "Return the iopub and shell message sequences for REQUESTS, in order.
@@ -89,7 +91,8 @@ and the replies in request order."
     (dolist (r requests)
       (dolist (o (plist-get r :outputs))
         (push (list (car o) (plist-get r :id) (cdr o)) iopub))
-      (push (list "status" (plist-get r :id) '(("execution_state" . "idle"))) iopub)
+      (push (list "status" (plist-get r :id) '(("execution_state" . "idle")))
+            iopub)
       (push (list "execute_reply" (plist-get r :id)
                   `(("execution_count" . ,(plist-get r :count))))
             shell))
@@ -109,15 +112,18 @@ and the replies in request order."
 The result is a list of (OUTPUT-SUMMARY EXEC-COUNT) per request, and
 whether anything was left in the pending table."
   (clrhash emjupy--request-halves)
-  (let* ((cells (mapcar (lambda (_) (make-emjupy-cell :id (emjupy--new-cell-id)
-                                                      :type 'code :source "x"
-                                                      :outputs []
-                                                      :metadata (make-hash-table)))
+  (let* ((cells (mapcar (lambda (_) (make-emjupy-cell
+                                     :id (emjupy--new-cell-id)
+                                     :type 'code :source "x"
+                                     :outputs []
+                                     :metadata (make-hash-table)))
                         requests))
          (nb (make-emjupy-notebook :cells (vconcat cells)))
-         (kernel (make-emjupy-kernel :id "k" :pending (make-hash-table :test 'equal)
+         (kernel (make-emjupy-kernel :id "k"
+                                     :pending (make-hash-table :test 'equal)
                                      :notebook nb)))
-    (cl-mapc (lambda (r c) (puthash (plist-get r :id) c (emjupy-kernel-pending kernel)))
+    (cl-mapc (lambda (r c) (puthash (plist-get r :id) c
+                                    (emjupy-kernel-pending kernel)))
              requests cells)
     (dolist (m messages)
       (emjupy--handle-ws-message
@@ -149,7 +155,8 @@ several requests in flight, against the order with every reply last."
            (channels (emjupy-fuzz--channels requests))
            (iopub (nth 0 channels)) (shell (nth 1 channels))
            (reference (emjupy-fuzz--run-messages requests (append iopub shell)))
-           (shuffled (emjupy-fuzz--run-messages requests (emjupy-fuzz--riffle iopub shell))))
+           (shuffled (emjupy-fuzz--run-messages
+                      requests (emjupy-fuzz--riffle iopub shell))))
       ;; the same outputs, in the same cells, with the same counts
       (should (equal (nth 0 shuffled) (nth 0 reference)))
       ;; every count arrived
@@ -200,17 +207,23 @@ several requests in flight, against the order with every reply last."
                               (delete-char -1))))
             ('insert-above (call-interactively #'emjupy-insert-cell-above))
             ('insert-below (call-interactively #'emjupy-insert-cell-below))
-            ('delete-cell (when (> n 1) (call-interactively #'emjupy-delete-cell)))
-            ('move-up (ignore-error user-error (call-interactively #'emjupy-move-cell-up)))
-            ('move-down (ignore-error user-error (call-interactively #'emjupy-move-cell-down)))
-            ('split (ignore-error user-error (call-interactively #'emjupy-split-cell)))
-            ('join (ignore-error user-error (call-interactively #'emjupy-join-cell-above)))
+            ('delete-cell (when (> n 1)
+                            (call-interactively #'emjupy-delete-cell)))
+            ('move-up (ignore-error user-error
+                        (call-interactively #'emjupy-move-cell-up)))
+            ('move-down (ignore-error user-error
+                          (call-interactively #'emjupy-move-cell-down)))
+            ('split (ignore-error user-error
+                      (call-interactively #'emjupy-split-cell)))
+            ('join (ignore-error user-error
+                     (call-interactively #'emjupy-join-cell-above)))
             ('cycle-type (call-interactively #'emjupy-cycle-cell-type))
             ('clear-output (call-interactively #'emjupy-clear-cell-output))
             ('toggle-output (call-interactively #'emjupy-toggle-cell-output))
             ('output-arrives
              (when (eq (emjupy-cell-type cell) 'code)
-               (emjupy--append-output-to-cell cell (emjupy-fuzz--stream "out\n") nb)
+               (emjupy--append-output-to-cell cell
+                                              (emjupy-fuzz--stream "out\n") nb)
                (emjupy-flush-output buf)))
             ('undo (let ((last-command nil)) (undo)))))))))
 
@@ -260,8 +273,10 @@ the cells -- type and source -- as they read back from the buffer."
     (let* ((cells (vector (emjupy-test--cell-like 'code "a = 1")
                           (emjupy-test--cell-like 'markdown "# Title")
                           (emjupy-test--cell-like 'code "b = 2\nc = 3")))
-           (edits (remq 'undo (remq 'output-arrives (remq 'toggle-output
-                                                          (remq 'clear-output emjupy-fuzz--edits)))))
+           (edits (seq-remove
+                   (lambda (e)
+                     (memq e '(undo output-arrives toggle-output clear-output)))
+                   emjupy-fuzz--edits))
            (trail nil))
       (emjupy-test--with-notebook cells buf nb
         (with-current-buffer buf
@@ -298,7 +313,8 @@ shift."
                                                (vector (emjupy-fuzz--stream "hi\n")))
                        (emjupy-test--cell-like 'code "d = 4")))
         (steps '((move-down 725 472) (split 175 736) (join 666 603)
-                 (output-arrives 582 131) (type 27 195) (join 135 785) (undo 610 887))))
+                 (output-arrives 582 131) (type 27 195) (join 135 785)
+                 (undo 610 887))))
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
         (buffer-enable-undo)
@@ -310,7 +326,8 @@ shift."
                               (c (aref cs (mod (nth 1 st) (length cs))))
                               (ov (emjupy-cell-overlay c))
                               (len (length (emjupy-cell-source c))))
-                         (goto-char (+ (overlay-start ov) (mod (nth 2 st) (1+ len))))
+                         (goto-char (+ (overlay-start ov) (mod (nth 2 st)
+                                                               (1+ len))))
                          c))))
             (emjupy-fuzz--do-edit (nth 0 st) nb buf))
           (undo-boundary))
@@ -349,7 +366,8 @@ Written by tools/make-notebook-corpus.py, with nbformat itself.")
 
 (defconst emjupy-fuzz--checker
   (expand-file-name "../tools/check-roundtrip.py" (file-name-directory
-                                                   (or load-file-name buffer-file-name)))
+                                                   (or load-file-name
+                                                       buffer-file-name)))
   "The script that compares a notebook with emjupy's save of it.")
 
 (defun emjupy-fuzz--read-bytes (file)
@@ -403,7 +421,8 @@ images pasted into markdown cells, were dropped on save."
                       (write-region once nil saved nil 'quiet))
                     (with-temp-buffer
                       (let ((status (call-process "python3" nil t nil
-                                                  emjupy-fuzz--checker f saved)))
+                                                  emjupy-fuzz--checker
+                                                  f saved)))
                         (ert-info ((string-trim (buffer-string)))
                           (should (zerop status))))))
                 (delete-file saved)))))))))
@@ -419,13 +438,16 @@ megabytes, too heavy for the repository."
                 (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
                 (puthash "text" text o) o))
          (nb (make-emjupy-notebook
-              :cells (vector (make-emjupy-cell :id "c" :type 'code :source "big"
-                                               :outputs (vector out)
-                                               :metadata (make-hash-table :test 'equal)))))
+              :cells (vector (make-emjupy-cell
+                              :id "c" :type 'code :source "big"
+                              :outputs (vector out)
+                              :metadata (make-hash-table :test 'equal)))))
          (start (float-time))
          (saved (emjupy--serialize-notebook nb))
          (back (emjupy--parse-ipynb (decode-coding-string saved 'utf-8))))
-    (should (equal (gethash "text" (aref (emjupy-cell-outputs (aref (emjupy-notebook-cells back) 0)) 0))
+    (should (equal (gethash "text"
+                            (aref (emjupy-cell-outputs
+                                   (aref (emjupy-notebook-cells back) 0)) 0))
                    text))
     (should (< (- (float-time) start) 5.0))))
 
@@ -446,14 +468,17 @@ A program can write anything to a terminal: colour codes by the tens of
 thousands, sequences cut off half-way, codes no terminal knows."
   :tags '(:timing)
   (let ((text (concat (apply #'concat (make-list 20000 "\e[31;1mx\e[0m"))
-                      "\e[38;5;999m\e[?25l\e[" "\e]0;title\a" "unterminated \e[31")))
-    (should (< (emjupy-fuzz--draw-output-seconds (emjupy-fuzz--stream text)) 10.0))))
+                      "\e[38;5;999m\e[?25l\e[" "\e]0;title\a"
+                      "unterminated \e[31")))
+    (should (< (emjupy-fuzz--draw-output-seconds (emjupy-fuzz--stream text))
+               10.0))))
 
 (ert-deftest emjupy-fuzz-huge-svg-does-not-stall-drawing ()
   "A multi-megabyte SVG output is drawn, or declined, without stalling."
   :tags '(:timing)
   (let* ((svg (concat "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'>"
-                      (apply #'concat (make-list 60000 "<rect x='1' y='1' width='1' height='1'/>"))
+                      (apply #'concat
+                             (make-list 60000 "<rect x='1' y='1' width='1' height='1'/>"))
                       "</svg>"))
          (d (make-hash-table :test 'equal))
          (o (make-hash-table :test 'equal)))
@@ -473,10 +498,13 @@ They catch `json-error\=' now.  A reply that deep reaches callers as the
 `emjupy-http-error\=' they expect."
   (let ((json (concat "{\"cells\": [], \"metadata\": "
                       (apply #'concat (make-list 20000 "{\"a\": "))
-                      "1" (make-string 20000 ?}) ", \"nbformat\": 4, \"nbformat_minor\": 5}")))
+                      "1" (make-string 20000 ?})
+                      ", \"nbformat\": 4, \"nbformat_minor\": 5}")))
     (should-error (emjupy--parse-ipynb json) :type 'json-error)
-    (should-error (emjupy--http-interpret (make-emjupy-server :base-url "127.0.0.1:9" :token "")
-                                          "GET" "/api/contents/deep.ipynb" 200 json)
+    (should-error (emjupy--http-interpret
+                   (make-emjupy-server :base-url "127.0.0.1:9" :token "")
+                   "GET" "/api/contents/deep.ipynb"
+                   200 json)
                   :type 'emjupy-http-error)))
 
 (ert-deftest emjupy-fuzz-notebook-paths-are-encoded ()
@@ -493,15 +521,18 @@ a#b.ipynb was asked for as \"a\", and saved there."
       (dolist (path '("my notebook.ipynb" "données/café é.ipynb" "a/../b.ipynb"
                       "a#b.ipynb" "what?.ipynb"))
         (ignore (condition-case nil
-                    (emjupy--http-request "GET" server (emjupy--contents-path path))
+                    (emjupy--http-request "GET" server
+                                          (emjupy--contents-path path))
                   (emjupy-http-error nil)))))
     (dolist (url seen)
       (ert-info (url)
         (should-not (string-match-p " " url))
         (should-not (multibyte-string-p url))
         (should-not (string-match-p "[^\x00-\x7f]" url))))
-    (should (seq-find (lambda (u) (string-match-p "my%20notebook\\.ipynb" u)) seen))
-    (should (seq-find (lambda (u) (string-match-p "a/\\.\\./b\\.ipynb" u)) seen))
+    (should (seq-find (lambda (u) (string-match-p "my%20notebook\\.ipynb" u))
+                      seen))
+    (should (seq-find (lambda (u) (string-match-p "a/\\.\\./b\\.ipynb" u))
+                      seen))
     ;; "#" and "?" are part of the name, not the start of a fragment or query
     (should (seq-find (lambda (u) (string-match-p "a%23b\\.ipynb" u)) seen))
     (should (seq-find (lambda (u) (string-match-p "what%3F\\.ipynb" u)) seen))))
@@ -516,18 +547,21 @@ a#b.ipynb was asked for as \"a\", and saved there."
         :request-halves (hash-table-count emjupy--request-halves)
         :internal-requests (hash-table-count emjupy--internal-requests)
         :post-command-hook (length (default-value 'post-command-hook))
-        :window-size-change (length (default-value 'window-size-change-functions))
+        :window-size-change
+        (length (default-value 'window-size-change-functions))
         :kernel-hook (length emjupy-kernel-connected-functions)
         :width-hook (length emjupy-box-width-changed-functions)
         :emjupy-buffers (length (seq-filter
-                                 (lambda (b) (string-match-p "emjupy" (buffer-name b)))
+                                 (lambda (b) (string-match-p "emjupy"
+                                                             (buffer-name b)))
                                  (buffer-list)))))
 
 (defun emjupy-fuzz--one-session ()
   "Open a notebook, work in it the way a session does, and close it."
   (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
                        (emjupy-test--cell-like 'markdown "# Title")
-                       (emjupy-test--cell-like 'code "for i in tqdm(x): pass"))))
+                       (emjupy-test--cell-like 'code
+                                               "for i in tqdm(x): pass"))))
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
         (let ((bar (aref cells 2)))
@@ -535,8 +569,10 @@ a#b.ipynb was asked for as \"a\", and saved there."
           (dotimes (i 3000)
             (emjupy--append-output-to-cell
              bar (let ((o (make-hash-table :test 'equal)))
-                   (puthash "output_type" "stream" o) (puthash "name" "stderr" o)
-                   (puthash "text" (format "\r%d%%|%s|" (/ i 30) (make-string (/ i 100) ?#)) o)
+                   (puthash "output_type" "stream" o) (puthash "name"
+                                                               "stderr" o)
+                   (puthash "text" (format "\r%d%%|%s|" (/ i 30)
+                                           (make-string (/ i 100) ?#)) o)
                    o)
              nb)
             (when (zerop (mod i 500)) (emjupy-flush-output buf)))
@@ -562,7 +598,8 @@ opening notebooks, is Emacs running hundreds of them."
     (dotimes (_ 20) (accept-process-output nil 0.05))
     (let ((after (emjupy-fuzz--leftovers)))
       (cl-loop for (key val) on before by #'cddr
-               do (ert-info ((format "%s: %s before, %s after" key val (plist-get after key)))
+               do (ert-info ((format "%s: %s before, %s after" key val
+                                     (plist-get after key)))
                     (should (<= (plist-get after key) val)))))))
 
 (provide 'emjupy-robustness-test)

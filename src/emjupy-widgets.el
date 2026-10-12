@@ -46,9 +46,11 @@ The output a message causes is drawn in the cell its widget is in.")
 PATH is a vector of keys and indices, as `buffer_paths\=' gives them."
   (let ((place state) (keys (append path nil)))
     (while (cdr keys)
-      (setq place (if (integerp (car keys)) (aref place (car keys)) (gethash (car keys) place)))
+      (setq place (if (integerp (car keys)) (aref place (car keys))
+                    (gethash (car keys) place)))
       (setq keys (cdr keys)))
-    (if (integerp (car keys)) (aset place (car keys) value) (puthash (car keys) value place))))
+    (if (integerp (car keys)) (aset place (car keys) value)
+      (puthash (car keys) value place))))
 
 (defun emjupy--widget-on-comm (kernel msg-type content &optional buffers)
   "Keep the widget models up to date from KERNEL\='s comm messages.
@@ -64,7 +66,8 @@ in the state -- an image widget\'s value, say."
          (puthash id (cons kernel (or (gethash "state" data)
                                       (make-hash-table :test 'equal)))
                   emjupy--widget-models)
-         (emjupy--widget-put-buffers (cdr (gethash id emjupy--widget-models)) data buffers)))
+         (emjupy--widget-put-buffers (cdr (gethash id emjupy--widget-models))
+                                     data buffers)))
       ("comm_msg"
        (let ((model (gethash id emjupy--widget-models))
              (state (and (hash-table-p data) (gethash "state" data))))
@@ -141,7 +144,8 @@ ACTION says what using it does, with ARG: see `emjupy-widget-activate'."
 
 (defun emjupy--widget-has (state &rest keys)
   "Return non-nil if STATE has every one of KEYS."
-  (cl-every (lambda (k) (not (eq (gethash k state 'emjupy--absent) 'emjupy--absent)))
+  (cl-every (lambda (k) (not (eq (gethash k state 'emjupy--absent)
+                                 'emjupy--absent)))
             keys))
 
 (defun emjupy--widget-numbers-p (value)
@@ -159,10 +163,12 @@ ACTION says what using it does, with ARG: see `emjupy-widget-activate'."
 A widget\'s month counts from 0, as in JavaScript."
   (let ((date (and (gethash "year" value)
                    (format "%04d-%02d-%02d" (gethash "year" value)
-                           (1+ (gethash "month" value)) (gethash "date" value))))
+                           (1+ (gethash "month" value))
+                           (gethash "date" value))))
         (time (and (gethash "hours" value)
                    (format "%02d:%02d:%02d" (gethash "hours" value)
-                           (gethash "minutes" value) (or (gethash "seconds" value) 0)))))
+                           (gethash "minutes" value)
+                           (or (gethash "seconds" value) 0)))))
     (string-join (delq nil (list date time)) " ")))
 
 (defun emjupy--widget-bar (value low high)
@@ -219,7 +225,8 @@ ID is the widget's comm id."
   (let ((labels (append (gethash "_options_labels" s) nil)))
     (list (emjupy--widget-button
            (format "%s ▾" (if (seq-empty-p (gethash "index" s)) "(none)"
-                            (mapconcat (lambda (i) (nth i labels)) (gethash "index" s) ", ")))
+                            (mapconcat (lambda (i) (nth i labels))
+                                       (gethash "index" s) ", ")))
            id 'choose-several))))
 
 (defun emjupy--widget-choose-p (s)
@@ -236,13 +243,15 @@ ID is the widget's comm id."
 
 (defun emjupy--widget-button-p (s)
   "Return non-nil if S, a widget's state, has the shape of a button."
-  (and (emjupy--widget-has s "button_style") (not (emjupy--widget-has s "value"))))
+  (and (emjupy--widget-has s "button_style")
+       (not (emjupy--widget-has s "value"))))
 (defun emjupy--widget-draw-button (id s)
   "Draw S as a button to click.
 ID is the widget's comm id."
   (let ((d (gethash "description" s)))
     (list (emjupy--widget-button
-           (format "[ %s ]" (if (and (stringp d) (not (string-empty-p d))) d "Button"))
+           (format "[ %s ]" (if (and (stringp d) (not (string-empty-p d))) d
+                              "Button"))
            id 'click))))
 
 (defun emjupy--widget-toggle-p (s)
@@ -265,9 +274,11 @@ ID is the widget's comm id."
   "Draw S, two numbers between bounds, each end editable.
 ID is the widget's comm id."
   (let ((v (gethash "value" s)))
-    (list (concat (emjupy--widget-button (emjupy--widget-number (aref v 0)) id 'edit 0)
+    (list (concat (emjupy--widget-button (emjupy--widget-number (aref v 0)) id
+                                         'edit 0)
                   " – "
-                  (emjupy--widget-button (emjupy--widget-number (aref v 1)) id 'edit 1)
+                  (emjupy--widget-button (emjupy--widget-number (aref v 1)) id
+                                         'edit 1)
                   (emjupy--widget-bounds s)))))
 
 (defun emjupy--widget-bar-p (s)
@@ -277,7 +288,8 @@ ID is the widget's comm id."
 (defun emjupy--widget-draw-bar (_id s)
   "Draw S, a number between bounds without a step, as a bar to look at.
 ID is the widget's comm id."
-  (list (emjupy--widget-bar (gethash "value" s) (gethash "min" s) (gethash "max" s))))
+  (list (emjupy--widget-bar (gethash "value" s) (gethash "min" s)
+                            (gethash "max" s))))
 
 (defun emjupy--widget-step-p (s)
   "Return non-nil if S, a widget's state, has the shape of a step."
@@ -287,7 +299,8 @@ ID is the widget's comm id."
 ID is the widget's comm id."
   (list (concat (emjupy--widget-button "◀" id 'step -1) " "
                 (emjupy--widget-button
-                 (propertize (emjupy--widget-number (gethash "value" s)) 'face 'bold)
+                 (propertize (emjupy--widget-number (gethash "value" s))
+                             'face 'bold)
                  id 'edit)
                 " " (emjupy--widget-button "▶" id 'step 1)
                 (emjupy--widget-bounds s))))
@@ -320,7 +333,8 @@ a list too, of files, which no text stands for."
   (and (vectorp (gethash "value" s)) (emjupy--widget-has s "allow_duplicates")))
 (defun emjupy--widget-typed-p (s)
   "Return non-nil if S, a widget's state, has the shape of a typed."
-  (and (stringp (gethash "value" s)) (emjupy--widget-has s "continuous_update")))
+  (and (stringp (gethash "value" s)) (emjupy--widget-has s
+                                                         "continuous_update")))
 (defun emjupy--widget-color-p (s)
   "Return non-nil if S, a widget's state, has the shape of a color."
   (and (stringp (gethash "value" s)) (emjupy--widget-has s "concise")))
@@ -331,9 +345,11 @@ ID is the widget's comm id."
     (list (emjupy--widget-button
            (format "[%s]"
                    (cond ((numberp v) (emjupy--widget-number v))
-                         ((emjupy--widget-date-p v) (emjupy--widget-date-text v))
+                         ((emjupy--widget-date-p v)
+                          (emjupy--widget-date-text v))
                          ((eq v :null) "--")
-                         ((vectorp v) (mapconcat (lambda (x) (format "%s" x)) v ", "))
+                         ((vectorp v) (mapconcat (lambda (x) (format "%s" x))
+                                                 v ", "))
                          ((equal (gethash "_model_name" s) "PasswordModel")
                           (make-string (length v) ?•))
                          (t v)))
@@ -350,7 +366,8 @@ ID is the widget's comm id."
 (defun emjupy--widget-limits (s)
   "Return the lowest and highest value of S, as a cons.
 A widget with a `base\=' is logarithmic: its bounds are exponents."
-  (let ((low (gethash "min" s)) (high (gethash "max" s)) (base (gethash "base" s)))
+  (let ((low (gethash "min" s)) (high (gethash "max" s))
+        (base (gethash "base" s)))
     (if (and (numberp base) (numberp low) (numberp high))
         (cons (expt (float base) low) (expt (float base) high))
       (cons low high))))
@@ -370,7 +387,8 @@ ID is the widget\'s comm id."
     (list (emjupy--widget-button
            (format "▶ %s (%s, %s) -- RET or click to play it"
                    (if (emjupy--widget-has s "width") "Video" "Audio")
-                   (gethash "format" s) (file-size-human-readable (length bytes)))
+                   (gethash "format" s)
+                   (file-size-human-readable (length bytes)))
            id 'open-media))))
 
 (defun emjupy--widget-image-p (s)
@@ -394,25 +412,32 @@ The line is drawn instead when `emjupy-inline-figures\=' is nil.  ID is
 the widget\'s comm id."
   (let ((bytes (emjupy--widget-bytes s))
         (type (emjupy--widget-image-type s)))
-    (list (cond ((string-empty-p bytes) (propertize "[empty image]" 'face 'shadow))
-                ((null type) (propertize (format "[image: %s]" (gethash "format" s)) 'face 'shadow))
+    (list (cond ((string-empty-p bytes) (propertize "[empty image]"
+                                                    'face 'shadow))
+                ((null type) (propertize (format "[image: %s]"
+                                                 (gethash "format" s))
+                                         'face 'shadow))
                 ((and emjupy-inline-figures (display-images-p))
-                 (propertize " " 'display (emjupy--render-image-output
-                                           (emjupy--widget-image-payload s) type)))
+                 (propertize
+                  " " 'display (emjupy--render-image-output
+                                (emjupy--widget-image-payload s) type)))
                 (t (emjupy--widget-button
                     (format "▶ Image (%s, %s) -- RET or click to open it"
-                            (gethash "format" s) (file-size-human-readable (length bytes)))
+                            (gethash "format" s)
+                            (file-size-human-readable (length bytes)))
                     id 'open-image))))))
 
 (defun emjupy--widget-upload-p (s)
   "Return non-nil if S, a widget\'s state, has the shape of a file upload."
-  (and (vectorp (gethash "value" s)) (emjupy--widget-has s "accept" "multiple")))
+  (and (vectorp (gethash "value" s)) (emjupy--widget-has s "accept"
+                                                         "multiple")))
 (defun emjupy--widget-draw-upload (id s)
   "Draw S, a file upload, as a button choosing files.  ID is its comm id."
   (let ((files (gethash "value" s)))
     (list (concat (emjupy--widget-button "[ Upload… ]" id 'upload)
                   (propertize (if (seq-empty-p files) "   no file"
-                                (format "   %s" (mapconcat (lambda (f) (gethash "name" f))
+                                (format "   %s" (mapconcat (lambda (f)
+                                                             (gethash "name" f))
                                                            files ", ")))
                               'face 'shadow)))))
 
@@ -425,24 +450,42 @@ the widget\'s comm id."
 
 (defvar emjupy-widget-rules
   (list
-   (list 'container      #'emjupy--widget-container-p      #'emjupy--widget-draw-container)
-   (list 'output         #'emjupy--widget-output-p         #'emjupy--widget-draw-nothing)
-   (list 'media          #'emjupy--widget-media-p          #'emjupy--widget-draw-media)
-   (list 'image          #'emjupy--widget-image-p          #'emjupy--widget-draw-image)
-   (list 'upload         #'emjupy--widget-upload-p         #'emjupy--widget-draw-upload)
-   (list 'choose-several #'emjupy--widget-choose-several-p #'emjupy--widget-draw-choose-several)
-   (list 'choose         #'emjupy--widget-choose-p         #'emjupy--widget-draw-choose)
-   (list 'button         #'emjupy--widget-button-p         #'emjupy--widget-draw-button)
-   (list 'toggle         #'emjupy--widget-toggle-p         #'emjupy--widget-draw-toggle)
-   (list 'range          #'emjupy--widget-range-p          #'emjupy--widget-draw-range)
-   (list 'bar            #'emjupy--widget-bar-p            #'emjupy--widget-draw-bar)
-   (list 'step           #'emjupy--widget-step-p           #'emjupy--widget-draw-step)
-   (list 'number         #'emjupy--widget-number-p         #'emjupy--widget-draw-edit)
-   (list 'date           #'emjupy--widget-date-value-p     #'emjupy--widget-draw-edit)
-   (list 'list           #'emjupy--widget-list-p           #'emjupy--widget-draw-edit)
-   (list 'typed          #'emjupy--widget-typed-p          #'emjupy--widget-draw-edit)
-   (list 'color          #'emjupy--widget-color-p          #'emjupy--widget-draw-edit)
-   (list 'text           #'emjupy--widget-text-p           #'emjupy--widget-draw-text))
+   (list 'container      #'emjupy--widget-container-p
+         #'emjupy--widget-draw-container)
+   (list 'output         #'emjupy--widget-output-p
+         #'emjupy--widget-draw-nothing)
+   (list 'media          #'emjupy--widget-media-p
+         #'emjupy--widget-draw-media)
+   (list 'image          #'emjupy--widget-image-p
+         #'emjupy--widget-draw-image)
+   (list 'upload         #'emjupy--widget-upload-p
+         #'emjupy--widget-draw-upload)
+   (list 'choose-several #'emjupy--widget-choose-several-p
+         #'emjupy--widget-draw-choose-several)
+   (list 'choose         #'emjupy--widget-choose-p
+         #'emjupy--widget-draw-choose)
+   (list 'button         #'emjupy--widget-button-p
+         #'emjupy--widget-draw-button)
+   (list 'toggle         #'emjupy--widget-toggle-p
+         #'emjupy--widget-draw-toggle)
+   (list 'range          #'emjupy--widget-range-p
+         #'emjupy--widget-draw-range)
+   (list 'bar            #'emjupy--widget-bar-p
+         #'emjupy--widget-draw-bar)
+   (list 'step           #'emjupy--widget-step-p
+         #'emjupy--widget-draw-step)
+   (list 'number         #'emjupy--widget-number-p
+         #'emjupy--widget-draw-edit)
+   (list 'date           #'emjupy--widget-date-value-p
+         #'emjupy--widget-draw-edit)
+   (list 'list           #'emjupy--widget-list-p
+         #'emjupy--widget-draw-edit)
+   (list 'typed          #'emjupy--widget-typed-p
+         #'emjupy--widget-draw-edit)
+   (list 'color          #'emjupy--widget-color-p
+         #'emjupy--widget-draw-edit)
+   (list 'text           #'emjupy--widget-text-p
+         #'emjupy--widget-draw-text))
   "How a widget is drawn, by the shape of its state: (NAME TEST DRAW).
 The first rule whose TEST is true of the state draws the widget: DRAW is
 called with the comm id and the state, and returns the widget\'s lines.
@@ -506,10 +549,12 @@ BUFFERS, unibyte strings, go with it in a binary frame."
     (let ((msg (emjupy--make-message "comm_msg" content)))
       (puthash (car msg) cell emjupy--widget-requests)
       (if buffers
-          (emjupy--ws-send-binary (emjupy--encode-binary-message (cdr msg) buffers) kernel)
+          (emjupy--ws-send-binary
+           (emjupy--encode-binary-message (cdr msg) buffers) kernel)
         (emjupy--ws-send (cdr msg) kernel)))))
 
-(defun emjupy--widget-send (id state-changes cell &optional buffer-paths buffers)
+(defun emjupy--widget-send (id state-changes cell &optional
+                               buffer-paths buffers)
   "Send the widget with comm ID its new STATE-CHANGES, an alist.
 CELL is the cell showing it, where what the change causes is drawn.
 BUFFERS, unibyte strings, go where BUFFER-PATHS say in the state."
@@ -524,16 +569,19 @@ BUFFERS, unibyte strings, go where BUFFER-PATHS say in the state."
     (puthash "buffer_paths" (or buffer-paths []) data)
     (emjupy--widget-message id data cell buffers)
     ;; show the new value at once
-    (when-let* ((buf (emjupy-notebook-buffer (emjupy-kernel-notebook (car model)))))
+    (when-let* ((buf (emjupy-notebook-buffer
+                      (emjupy-kernel-notebook (car model)))))
       (when (buffer-live-p buf)
-        (with-current-buffer buf (cl-pushnew cell emjupy--cells-awaiting-output))
+        (with-current-buffer buf (cl-pushnew cell
+                                             emjupy--cells-awaiting-output))
         (emjupy-flush-output buf)))))
 
 (defun emjupy--widget-at (event)
   "Return the widget control at EVENT\'s position, or at point.
 The value is a list of the comm id, the action, its argument and the
 cell."
-  (let* ((pos (if (mouse-event-p event) (posn-point (event-start event)) (point)))
+  (let* ((pos (if (mouse-event-p event) (posn-point (event-start event))
+                (point)))
          (id (get-text-property pos 'emjupy-widget)))
     (unless id (user-error "No widget control here"))
     (list id (get-text-property pos 'emjupy-widget-action)
@@ -542,7 +590,8 @@ cell."
 
 (defun emjupy--widget-clamp (state value)
   "Return VALUE held within STATE\'s bounds, if it has any."
-  (let* ((limits (emjupy--widget-limits state)) (low (car limits)) (high (cdr limits)))
+  (let* ((limits (emjupy--widget-limits state)) (low (car limits))
+         (high (cdr limits)))
     (if (and (numberp low) (numberp high)) (min high (max low value)) value)))
 
 (defun emjupy--widget-step (id direction cell)
@@ -555,7 +604,8 @@ A widget with a `base\\=' is logarithmic: a step multiplies by the base."
          (new (if (numberp base)
                   (* value (expt base (* direction step)))
                 (+ value (* direction step)))))
-    (emjupy--widget-send id `(("value" . ,(emjupy--widget-clamp state new))) cell)))
+    (emjupy--widget-send id `(("value" .
+                               ,(emjupy--widget-clamp state new))) cell)))
 
 (defun emjupy--widget-read (state arg)
   "Ask for a new value for the widget whose state is STATE.
@@ -570,11 +620,14 @@ being edited, 0 or 1.  Returns the value to send."
      ((integerp arg)                    ; one end of a range
       (let ((v (copy-sequence value)))
         (aset v arg (emjupy--widget-clamp
-                     state (read-number (format "%s%s: " (if (= arg 0) "From" "To") (or bounds ""))
+                     state (read-number (format "%s%s: " (if (= arg 0) "From"
+                                                           "To") (or bounds ""))
                                         (aref value arg))))
         v))
      ((numberp value)
-      (let ((n (emjupy--widget-clamp state (read-number (format "Value%s: " (or bounds "")) value))))
+      (let ((n (emjupy--widget-clamp state (read-number
+                                            (format "Value%s: "
+                                                    (or bounds "")) value))))
         (if (integerp value) (round n) n)))
      ((emjupy--widget-date-kind state)
       (let* ((kind (emjupy--widget-date-kind state))
@@ -582,13 +635,15 @@ being edited, 0 or 1.  Returns the value to send."
                                   ('date "Date (YYYY-MM-DD): ")
                                   ('time "Time (HH:MM:SS): ")
                                   (_ "Date and time (YYYY-MM-DD HH:MM:SS): "))
-                                (and (hash-table-p value) (emjupy--widget-date-text value))))
+                                (and (hash-table-p value)
+                                     (emjupy--widget-date-text value))))
              (parsed (parse-time-string text))
              (new (make-hash-table :test 'equal)))
         (when (memq kind '(date both))
           (unless (decoded-time-year parsed) (user-error "Not a date: %s" text))
           (puthash "year" (decoded-time-year parsed) new)
-          (puthash "month" (1- (decoded-time-month parsed)) new) ; from 0, as in JavaScript
+          ;; from 0, as in JavaScript
+          (puthash "month" (1- (decoded-time-month parsed)) new)
           (puthash "date" (decoded-time-day parsed) new))
         (when (memq kind '(time both))
           (puthash "hours" (or (decoded-time-hour parsed) 0) new)
@@ -598,15 +653,19 @@ being edited, 0 or 1.  Returns the value to send."
         new))
      ((vectorp value)
       (let ((items (split-string (read-string "Values, separated by commas: "
-                                              (mapconcat (lambda (x) (format "%s" x)) value ", "))
+                                              (mapconcat (lambda (x)
+                                                           (format "%s" x))
+                                                         value ", "))
                                  "[ \t]*,[ \t]*" t)))
         (vconcat (if (emjupy--widget-numbers-p value)
                      (mapcar #'string-to-number items)
                    items))))
-     ((equal (gethash "_model_name" state) "PasswordModel") (read-passwd "Password: "))
+     ((equal (gethash "_model_name" state)
+             "PasswordModel") (read-passwd "Password: "))
      ((emjupy--widget-has state "concise")
       (let ((c (color-values (read-color "Colour: "))))
-        (if c (apply #'format "#%02x%02x%02x" (mapcar (lambda (x) (/ x 256)) c)) value)))
+        (if c (apply #'format "#%02x%02x%02x" (mapcar (lambda (x)
+                                                        (/ x 256)) c)) value)))
      (t (read-string "Text: " value)))))
 
 (defun emjupy-widget-activate (&optional event)
@@ -619,17 +678,22 @@ several options, a click, or a new value asked for in the minibuffer."
       (pcase action
         ('step (emjupy--widget-step id arg cell))
         ('toggle (emjupy--widget-send
-                  id `(("value" . ,(if (eq (gethash "value" state) t) :false t))) cell))
+                  id `(("value" . ,(if (eq (gethash "value" state) t)
+                                       :false t))) cell))
         ('choose
          (let* ((labels (append (gethash "_options_labels" state) nil))
                 (choice (completing-read "Choose: " labels nil t)))
-           (emjupy--widget-send id `(("index" . ,(cl-position choice labels :test #'equal)))
+           (emjupy--widget-send id `(("index" . ,(cl-position choice labels
+                                                              :test #'equal)))
                                 cell)))
         ('choose-several
          (let* ((labels (append (gethash "_options_labels" state) nil))
                 (chosen (completing-read-multiple "Choose (separated by commas): " labels nil t)))
            (emjupy--widget-send
-            id `(("index" . ,(vconcat (mapcar (lambda (c) (cl-position c labels :test #'equal))
+            id `(("index" . ,(vconcat (mapcar (lambda (c) (cl-position
+                                                           c
+                                                           labels
+                                                           :test #'equal))
                                               chosen))))
             cell)))
         ('click
@@ -639,7 +703,9 @@ several options, a click, or a new value asked for in the minibuffer."
            (puthash "method" "custom" data)
            (puthash "content" event data)
            (emjupy--widget-message id data cell)))
-        ('edit (emjupy--widget-send id `(("value" . ,(emjupy--widget-read state arg))) cell))
+        ('edit (emjupy--widget-send id
+                                    `(("value" .
+                                       ,(emjupy--widget-read state arg))) cell))
         ('open-image (emjupy--show-image (emjupy--widget-image-payload state)
                                          (emjupy--widget-image-type state)))
         ('open-media (emjupy--widget-open-media state))
@@ -669,7 +735,9 @@ Its content is sent apart, as binary data, so it is null here."
     (puthash "type" (or (mailcap-file-name-to-mime-type file) "") entry)
     (puthash "size" (file-attribute-size attrs) entry)
     (puthash "last_modified"
-             (truncate (* 1000 (float-time (file-attribute-modification-time attrs))))
+             (truncate (* 1000
+                          (float-time
+                           (file-attribute-modification-time attrs))))
              entry)
     (puthash "content" :null entry)
     entry))
@@ -689,16 +757,20 @@ ending with an empty answer.  CELL is the cell showing it."
         (files nil))
     (catch 'done
       (while t
-        (let ((file (read-file-name (if files "Another file (RET when done): " "File to upload: ")
+        (let ((file (read-file-name (if files "Another file (RET when done): "
+                                      "File to upload: ")
                                     nil "" (not files))))
-          (when (or (string-empty-p file) (file-directory-p file)) (throw 'done nil))
+          (when (or (string-empty-p file) (file-directory-p file))
+            (throw 'done nil))
           (push (expand-file-name file) files)
           (unless several (throw 'done nil)))))
     (setq files (nreverse files))
     (when files
       (emjupy--widget-send
-       id `(("value" . ,(vconcat (mapcar #'emjupy--widget-upload-entry files)))) cell
-       (vconcat (cl-loop for i from 0 below (length files) collect (vector "value" i "content")))
+       id `(("value" .
+             ,(vconcat (mapcar #'emjupy--widget-upload-entry files)))) cell
+       (vconcat (cl-loop for i from 0 below (length files) collect
+                         (vector "value" i "content")))
        (mapcar #'emjupy--widget-file-bytes files)))))
 
 (defun emjupy--widget-step-at-point (direction)

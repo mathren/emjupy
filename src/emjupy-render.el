@@ -183,10 +183,12 @@ with the cell colour."
          (specs (list (list 'emjupy-output base)
                       (list 'emjupy-output-error
                             (emjupy--resolve-output-color
-                             emjupy-output-error-color base emjupy--output-error-hue))
+                             emjupy-output-error-color base
+                             emjupy--output-error-hue))
                       (list 'emjupy-output-warning
                             (emjupy--resolve-output-color
-                             emjupy-output-warning-color base emjupy--output-warning-hue))
+                             emjupy-output-warning-color base
+                             emjupy--output-warning-hue))
                       (list 'emjupy-output-image
                             (emjupy--resolve-output-color
                              emjupy-output-image-color base nil)))))
@@ -249,19 +251,23 @@ the numbers are widest and the overshoot wraps a whole line."
             ;; so for any other it is worked out from the last line's number.
             (numbers (with-current-buffer (window-buffer win)
                        (if (bound-and-true-p display-line-numbers)
-                           ;; What Emacs reports, or what the column will need --
-                           ;; the digits of the last line number and the space
-                           ;; either side -- whichever is more: the report is 0
-                           ;; until the window has been displayed once, which is
-                           ;; when a notebook is first drawn, and leaves out the
-                           ;; gap before the text.  Either way the rule fits.
-                           (max (if (eq win (selected-window)) (line-number-display-width) 0)
-				(+ 2 (max (length (number-to-string
-                                                   (line-number-at-pos (point-max) t)))
-                                          (or (bound-and-true-p display-line-numbers-width)
+                           ;; What Emacs reports, or what the column will need
+                           ;; -- the digits of the last line number and the
+                           ;; space either side -- whichever is more: the
+                           ;; report is 0 until the window has been displayed
+                           ;; once, which is when a notebook is first drawn,
+                           ;; and leaves out the gap before the text.  Either
+                           ;; way the rule fits.
+                           (max (if (eq win (selected-window))
+                                    (line-number-display-width) 0)
+                                (+ 2 (max (length (number-to-string
+                                                   (line-number-at-pos
+                                                    (point-max) t)))
+                                          (or (bound-and-true-p
+                                               display-line-numbers-width)
                                               0))))
-			 0))))
-	(max 1 (- cols numbers))))))
+                         0))))
+        (max 1 (- cols numbers))))))
 
 (defcustom emjupy-box-right-margin 2
   "Columns left free at the right edge when fitting rules to the window.
@@ -347,9 +353,11 @@ typed, and does not enter the undo history."
         (if (not emjupy--running-cells)
             (emjupy--stop-spinner)
           (setq emjupy--spinner-frame
-                (mod (1+ emjupy--spinner-frame) (length emjupy-running-indicator)))
+                (mod (1+ emjupy--spinner-frame)
+                     (length emjupy-running-indicator)))
           (when emjupy--buffer-notebook
-            (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
+            (cl-loop for cell across
+                     (emjupy-notebook-cells emjupy--buffer-notebook)
                      when (emjupy--cell-running-p cell)
                      do (emjupy--refresh-cell-header cell))))))))
 
@@ -413,7 +421,8 @@ and does not enter the undo history."
              ;; execution count will go.
              ((emjupy--cell-running-p cell)
               (aref emjupy-running-indicator
-                    (mod emjupy--spinner-frame (length emjupy-running-indicator))))
+                    (mod emjupy--spinner-frame
+                         (length emjupy-running-indicator))))
              ((numberp exec) (number-to-string exec))
              (t " "))
             (if (eq (emjupy-cell-type cell) 'code) "python" "markdown"))))
@@ -455,15 +464,21 @@ cannot leave one behind."
   (when (bound-and-true-p emjupy--buffer-notebook)
     ;; every box, in buffer order, with its rules taken into keeping
     (let ((boxes nil))
-      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
-               do (dolist (ov (list (emjupy-cell-overlay cell) (emjupy-cell-output-ov cell)))
-                    (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer)))
-                      (overlay-put ov 'emjupy-header (emjupy--overlay-header ov))
-                      (overlay-put ov 'emjupy-footer (emjupy--overlay-footer ov))
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+               do (dolist (ov (list (emjupy-cell-overlay cell)
+                                    (emjupy-cell-output-ov cell)))
+                    (when (and (overlayp ov) (eq (overlay-buffer ov)
+                                                 (current-buffer)))
+                      (overlay-put ov 'emjupy-header
+                                   (emjupy--overlay-header ov))
+                      (overlay-put ov 'emjupy-footer
+                                   (emjupy--overlay-footer ov))
                       (overlay-put ov 'before-string nil)
                       (overlay-put ov 'after-string nil)
                       (push ov boxes))))
-      (setq boxes (sort boxes (lambda (a b) (< (overlay-start a) (overlay-start b)))))
+      (setq boxes (sort boxes (lambda (a b) (< (overlay-start a)
+                                               (overlay-start b)))))
       ;; the previous companions, all of them
       (dolist (o (overlays-in (point-min) (point-max)))
         (when (overlay-get o 'emjupy-rules-of) (delete-overlay o)))
@@ -473,7 +488,9 @@ cannot leave one behind."
           (let* ((header (and ov (overlay-get ov 'emjupy-header)))
                  (footer (and prev (overlay-get prev 'emjupy-footer)))
                  (rules (mapconcat (lambda (r) (string-remove-suffix "\n" r))
-                                   (seq-filter (lambda (r) (and r (not (string-empty-p r))))
+                                   (seq-filter (lambda (r)
+                                                 (and r
+                                                      (not (string-empty-p r))))
                                                (list footer header))
                                    "\n"))
                  (anchor (and prev (1- (overlay-end prev)))))
@@ -536,7 +553,8 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
   (let* ((text (if (and label (not (eq corner 'footer)))
                    (emjupy--box-header label corner)
                  (emjupy--box-footer label)))
-         (end (if (string-suffix-p "\n" text) (1- (length text)) (length text))))
+         (end (if (string-suffix-p "\n" text) (1- (length text))
+                (length text))))
     ;; Face the glyphs but NOT the closing newline.  A newline carrying a
     ;; background paints a column of its own past the last box character, so
     ;; on any theme where the inherited face has a background the rule
@@ -574,7 +592,8 @@ markers and the undo history are all untouched."
         (when changed
           (run-hook-with-args 'emjupy-box-width-changed-functions
                               emjupy--buffer-notebook width)))
-      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
                do (let ((ov (emjupy-cell-overlay cell))
                         (out (emjupy-cell-output-ov cell)))
                     (when (overlayp ov)
@@ -588,7 +607,8 @@ markers and the undo history are all untouched."
                     (when (overlayp out)
                       (overlay-put out 'emjupy-header nil)
                       (overlay-put out 'before-string
-                                   (emjupy--rule (emjupy--cell-out-label cell) "├"))
+                                   (emjupy--rule (emjupy--cell-out-label cell)
+                                                 "├"))
                       (overlay-put out 'after-string (emjupy--rule nil))
                       ;; The output band is padded to a column, so it has to
                       ;; be re-aligned at the new width as well.
@@ -639,7 +659,8 @@ box says that it is collapsed rather than absent."
   ;; (REGEXP GROUP FACE). Applied in order with `add-face-text-property', so
   ;; emphasis nested inside a heading composes rather than overwriting.
   '(;; fenced code blocks
-    ("^[ \t]*\\(```\\|~~~\\)\\(?:.\\|\n\\)*?^[ \t]*\\1[ \t]*$" 0 font-lock-string-face)
+    ("^[ \t]*\\(```\\|~~~\\)\\(?:.\\|\n\\)*?^[ \t]*\\1[ \t]*$" 0
+     font-lock-string-face)
     ;; setext + atx headings
     ("^[ \t]*#+[ \t].*$" 0 font-lock-function-name-face)
     ("^[ \t]*#+[ \t].*$" 0 bold)
@@ -743,7 +764,8 @@ the whole fragment with its image."
                             (when (re-search-forward close end t)
                               (setq hit (list here (point)
                                               (buffer-substring-no-properties
-                                               body-start (match-beginning 0)))))))))
+                                               body-start
+                                               (match-beginning 0)))))))))
           (if hit
               (progn (push hit found) (goto-char (nth 1 hit)))
             (forward-char 1)))))
@@ -792,7 +814,8 @@ BODY may bring its delimiters or not; see `emjupy--latex-math\='."
            ;; Deliberately NOT org's full preamble.  That pulls in packages a
            ;; minimal TeX install does not have -- ulem, for one -- and then
            ;; every formula fails for want of something no formula needs.
-           (org-latex-default-packages-alist '(("" "amsmath" t) ("" "amssymb" t)))
+           (org-latex-default-packages-alist '(("" "amsmath" t) (""
+                                                                 "amssymb" t)))
            (org-latex-packages-alist nil)
            (org-format-latex-header
             (concat "\\documentclass{article}\n"
@@ -826,7 +849,8 @@ BODY may bring its delimiters or not; see `emjupy--latex-math\='."
               (create-image file 'png nil :ascent 'center)))
         ;; Everything: Org reports a failed LaTeX run as a plain error.
         (error
-         (message "[emjupy] LaTeX preview failed: %s" (error-message-string err))
+         (message "[emjupy] LaTeX preview failed: %s"
+                  (error-message-string err))
          nil)))))
 
 (defun emjupy--preview-latex-in (start end)
@@ -954,7 +978,9 @@ inside it lasted only until the next pass."
     ;; always being right.
     (emjupy--without-pads start (+ start len)
                           (lambda (from to)
-                            (remove-text-properties from to '(face nil font-lock-face nil))))
+                            (remove-text-properties
+                             from to
+                             '(face nil font-lock-face nil))))
     (while (< i len)
       (let* ((next (or (next-single-property-change i 'face string) len))
              (f (get-text-property i 'face string)))
@@ -1003,7 +1029,8 @@ beside it exposed to the same thing."
              (buffer-undo-list t)
              (emjupy--refontifying t)
              (modified (buffer-modified-p)))
-        (emjupy--apply-faces-from (emjupy--fontify-as text (emjupy-cell-type cell))
+        (emjupy--apply-faces-from (emjupy--fontify-as text
+                                                      (emjupy-cell-type cell))
                                   start)
         (set-buffer-modified-p modified)))))
 
@@ -1019,7 +1046,8 @@ face."
     (when emjupy--buffer-notebook
       (condition-case err
           (let* ((lo (max (point-min) (min beg (point-max))))
-                 (cell (or (and (< lo (point-max)) (get-text-property lo 'emjupy-cell))
+                 (cell (or (and (< lo (point-max))
+                                (get-text-property lo 'emjupy-cell))
                            (and (> lo (point-min))
                                 (get-text-property (1- lo) 'emjupy-cell))
                            (and (< end (point-max))
@@ -1111,8 +1139,9 @@ really had."
         (let ((bol (point)))
           (end-of-line)
           (let ((eol (min (point) end)))
-            (setq widest (max widest (string-width
-                                      (buffer-substring-no-properties bol eol))))
+            (setq widest
+                  (max widest
+                       (string-width (buffer-substring-no-properties bol eol))))
             (goto-char bol)
             ;; step through the line WIDTH columns at a time
             (while (progn (move-to-column width)
@@ -1133,7 +1162,8 @@ Leave point after it, and return the width of its widest line.  Shared
 by drawing a whole output box and by adding to one, so that both draw
 the same text the same way."
   (let ((widest 0))
-    (let ((folded (emjupy--fold-output-lines piece-start (point) (emjupy--box-width))))
+    (let ((folded (emjupy--fold-output-lines piece-start (point)
+                                             (emjupy--box-width))))
       (goto-char (car folded))
       (setq widest (cdr folded)))
     ;; Paint this piece, not the whole box: one cell can hold a figure, a
@@ -1143,7 +1173,8 @@ the same text the same way."
     (let ((face (emjupy--output-face out)))
       (when face
         (font-lock-prepend-text-property piece-start (point) 'face face)
-        (font-lock-prepend-text-property piece-start (point) 'font-lock-face face)
+        (font-lock-prepend-text-property piece-start (point)
+                                         'font-lock-face face)
         ;; Fill out to the border, not to the window edge.
         (goto-char (emjupy--pad-output-lines piece-start (point) face))
         ;; A newline still carrying the face paints one more column after
@@ -1158,7 +1189,8 @@ added to it rather than drawn again: how many pieces, the last if it is
 a stream, its text as drawn, and the width it was folded at."
   (let ((last-out (car (last pieces))))
     (when (and last-out (equal (gethash "output_type" last-out) "stream"))
-      (list (length pieces) last-out (emjupy--mime-text (gethash "text" last-out))
+      (list (length pieces) last-out
+            (emjupy--mime-text (gethash "text" last-out))
             (emjupy--box-width)))))
 
 (defun emjupy--render-cell-output (cell)
@@ -1200,10 +1232,15 @@ and restarted fontification from scratch each time."
                                      do (insert (emjupy--ansi-render
                                                  (emjupy--mime-text line))
                                                 "\n"))))))
-                      ;; Keep the piece inside the box, whatever kind of output it is.
-                      (setq widest (max widest (emjupy--finish-output-piece out piece-start)))))
+                      ;; Keep the piece inside the box, whatever kind of output
+                      ;; it is.
+                      (setq widest (max widest
+                                        (emjupy--finish-output-piece
+                                         out piece-start)))))
 
-        (unless (string-suffix-p "\n" (buffer-substring-no-properties (max (point-min) (- (point) 1)) (point)))
+        (unless (string-suffix-p "\n"
+                                 (buffer-substring-no-properties
+                                  (max (point-min) (- (point) 1)) (point)))
           (insert "\n"))
 
         (let* ((ov (make-overlay out-start (point)))
@@ -1257,7 +1294,8 @@ nil."
        (unwind-protect
            (prog1 (progn ,@body) (setq ,done t))
          (cond
-          ((and (not ,done) (not emjupy--recovering) emjupy-redraw-recover-function)
+          ((and (not ,done) (not emjupy--recovering)
+                emjupy-redraw-recover-function)
            (let ((emjupy--recovering t))
              (funcall emjupy-redraw-recover-function ,keep-typing)))
           ((and ,done (not emjupy--recovering) emjupy-after-redraw-function)
@@ -1315,7 +1353,8 @@ text.  The shapes are those Emacs documents for `buffer-undo-list'."
     (pcase-let ((`(nil ,prop ,val ,beg . ,end) entry))
       `(nil ,prop ,val ,(funcall fn beg) . ,(funcall fn end))))
    ;; (apply DELTA BEG END FUN . ARGS)
-   ((and (eq (car entry) 'apply) (integerp (nth 2 entry)) (integerp (nth 3 entry)))
+   ((and (eq (car entry) 'apply) (integerp (nth 2 entry))
+         (integerp (nth 3 entry)))
     (append (list (nth 0 entry) (nth 1 entry)
                   (funcall fn (nth 2 entry))
                   (funcall fn (nth 3 entry)))
@@ -1394,8 +1433,9 @@ entry shape is handled explicitly rather than by pattern-guessing."
            (emjupy--undo-drop-from start)
            (when (consp pending-undo-list)
              (setq pending-undo-list
-                   (cl-remove-if (lambda (e) (let ((p (emjupy--undo-entry-position e)))
-                                               (and p (>= p start))))
+                   (cl-remove-if (lambda (e)
+                                   (let ((p (emjupy--undo-entry-position e)))
+                                     (and p (>= p start))))
                                  pending-undo-list)))
            (message "[emjupy] Undo history after the redrawn output was dropped: %s"
                     (error-message-string err)))))
@@ -1403,7 +1443,8 @@ entry shape is handled explicitly rather than by pattern-guessing."
       (unless (or undo-in-progress (consp pending-undo-list))
         (when (consp buffer-undo-list)
           (setq buffer-undo-list
-                (delete (list 'apply #'ignore :emjupy-dropped) buffer-undo-list)))))))
+                (delete (list 'apply #'ignore :emjupy-dropped)
+                        buffer-undo-list)))))))
 
 (defun emjupy--undo-drop-from (pos)
   "Drop undo entries referring to POS or later in this buffer.
@@ -1458,7 +1499,8 @@ escape -- which rewrite or recolour what came before -- anywhere in it."
   (let* ((out (emjupy-cell-output-ov cell))
          (drawn (and (overlayp out) (eq (overlay-buffer out) (current-buffer))
                      (overlay-get out 'emjupy-drawn)))
-         (pieces (and drawn (emjupy--outputs-for-render (emjupy-cell-outputs cell))))
+         (pieces (and drawn
+                      (emjupy--outputs-for-render (emjupy-cell-outputs cell))))
          (last-out (car (last pieces)))
          (old (nth 2 drawn))
          (new (and last-out (emjupy--mime-text (gethash "text" last-out)))))
@@ -1476,7 +1518,8 @@ escape -- which rewrite or recolour what came before -- anywhere in it."
           ;; Set as drawing the box sets it, then placed as a redraw places it.
           (let ((inhibit-read-only t))
             (overlay-put out 'emjupy-header nil)
-            (overlay-put out 'before-string (emjupy--rule (emjupy--cell-out-label cell) "├"))
+            (overlay-put out 'before-string
+                         (emjupy--rule (emjupy--cell-out-label cell) "├"))
             (emjupy--refresh-cell-header cell)
             (emjupy--refresh-cell-footer cell)
             (emjupy--reconcile-rules)
@@ -1494,7 +1537,10 @@ escape -- which rewrite or recolour what came before -- anywhere in it."
                 (unless (eq (char-before) ?\n) (insert "\n"))
                 (setq end (point))
                 (move-overlay out (overlay-start out) end)
-                (overlay-put out 'emjupy-widest (max widest (or (overlay-get out 'emjupy-widest) 0)))
+                (overlay-put
+                 out 'emjupy-widest (max widest
+                                         (or (overlay-get out
+                                                          'emjupy-widest) 0)))
                 (overlay-put out 'emjupy-drawn (emjupy--drawn-state pieces))))
             (when emjupy-protect-non-cell-regions
               (emjupy--make-read-only start end))
@@ -1532,19 +1578,21 @@ means the caller should fall back to a full redraw."
                     (setq new-end (point)))
                   (emjupy--refresh-cell-header cell)
                   ;; The bottom edge belongs to whichever box is last.  With
-                  ;; output, that is the output box's own footer and the cell has
-                  ;; none; without, the cell must carry it again -- otherwise
-                  ;; clearing output left the cell with no bottom at all.
+                  ;; output, that is the output box's own footer and the cell
+                  ;; has none; without, the cell must carry it again --
+                  ;; otherwise clearing output left the cell with no bottom at
+                  ;; all.
                   (emjupy--refresh-cell-footer cell)
                   ;; Only the box just drawn: it is all output, and marking the
-                  ;; whole notebook again cost as much as all its output is long,
-                  ;; for every update of every cell.  The marks are the same on
-                  ;; every character, so a part is marked as the whole would be.
+                  ;; whole notebook again cost as much as all its output is
+                  ;; long, for every update of every cell.  The marks are the
+                  ;; same on every character, so a part is marked as the whole
+                  ;; would be.
                   (when emjupy-protect-non-cell-regions
                     (emjupy--make-read-only start new-end))
                   (emjupy--reconcile-rules))
-                ;; Done after the edit, since the shift is the size it turned out
-                ;; to be rather than the size expected.
+                ;; Done after the edit, since the shift is the size it turned
+                ;; out to be rather than the size expected.
                 (emjupy--undo-adjust start end (- new-end end))))
             t)))))
 
@@ -1559,7 +1607,8 @@ means the caller should fall back to a full redraw."
          (src-start (point)))
 
     ;; 1. Insert source code (syntax-highlighted per cell type) and tag text
-    (let ((to-insert (emjupy--fontify-as (if (string-empty-p source) "\n" source) type)))
+    (let ((to-insert (emjupy--fontify-as (if (string-empty-p source)
+                                             "\n" source) type)))
       (insert to-insert)
       ;; Faces are applied as plain (non-sticky) `face' properties so that
       ;; text typed at a cell edge does not inherit the neighbouring face.
@@ -1590,7 +1639,8 @@ means the caller should fall back to a full redraw."
            ;; and this cell's own footer says so.
            (hidden (and has-outputs (emjupy--cell-outputs-hidden-p cell)))
            (footer (cond
-                    (hidden (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
+                    (hidden (emjupy--rule
+                             (emjupy--hidden-output-label cell) 'footer))
                     (has-outputs "")
                     (t (emjupy--rule nil)))))
       (overlay-put ov 'emjupy-overlay 'cell)
@@ -1718,7 +1768,8 @@ cell's worth of work for nothing."
                 (put-text-property pos (1+ pos) 'display
                                    `(space :align-to ,width))
                 (setq pos (1+ pos)))
-            (setq pos (next-single-property-change pos 'emjupy-pad nil end))))))))
+            (setq pos (next-single-property-change pos 'emjupy-pad
+                                                   nil end))))))))
 
 (defcustom emjupy-render-ansi-colors t
   "When non-nil, turn ANSI colour escapes in output into real colours.
@@ -1745,7 +1796,8 @@ them raw; both now go through here."
         ;; this the escapes vanish and the colour goes with them.
         (let ((pos 0) (len (length coloured)))
           (while (< pos len)
-            (let ((next (or (next-single-property-change pos 'font-lock-face coloured) len))
+            (let ((next (or (next-single-property-change
+                             pos 'font-lock-face coloured) len))
                   (val (get-text-property pos 'font-lock-face coloured)))
               (when val (put-text-property pos next 'face val coloured))
               (setq pos next))))
@@ -1763,7 +1815,8 @@ them raw; both now go through here."
                           (cond
                            ((stringp tb) tb)
                            ((or (vectorp tb) (listp tb))
-                            (mapconcat #'emjupy--mime-text (append tb nil) "\n"))
+                            (mapconcat #'emjupy--mime-text (append tb nil)
+                                       "\n"))
                            (t (format "%s: %s"
                                       (gethash "ename" out)
                                       (gethash "evalue" out))))))))
@@ -1831,9 +1884,11 @@ table -- says the same in its `text/plain', which is shown instead."
   "Open the interactive output whose line is at point, or was clicked.
 EVENT is the mouse event, when there was one."
   (interactive (list last-nonmenu-event))
-  (let ((pos (if (mouse-event-p event) (posn-point (event-start event)) (point))))
+  (let ((pos (if (mouse-event-p event) (posn-point (event-start event))
+               (point))))
     (if emjupy-open-output-function
-        (funcall emjupy-open-output-function (get-text-property pos 'emjupy-output-data))
+        (funcall emjupy-open-output-function
+                 (get-text-property pos 'emjupy-output-data))
       (user-error "Opening an output needs emjupy-figures"))))
 
 (defun emjupy--insert-open-line (what size data)
@@ -1863,7 +1918,8 @@ happens inside the WebSocket callback, where websocket.el swallows the
                          when payload return (list mime type payload)))
          (text (and data (gethash "text/plain" data)))
          (plotly (and data (gethash emjupy--plotly-mime data)))
-         (widget (let ((view (and data (gethash emjupy--widget-view-mime data))))
+         (widget (let ((view (and data
+                                  (gethash emjupy--widget-view-mime data))))
                    (and view emjupy-widget-view-function
                         (funcall emjupy-widget-view-function
                                  (gethash "model_id" view)))))
@@ -1879,15 +1935,18 @@ happens inside the WebSocket callback, where websocket.el swallows the
                                 (length (json-serialize plotly)) data))
      (scripted
       (when text (insert (emjupy--mime-text text) "\n"))
-      (emjupy--insert-open-line "Interactive HTML output" (length scripted) data))
+      (emjupy--insert-open-line "Interactive HTML output"
+                                (length scripted) data))
      ;; Figures shown on their own, not in the notebook, when so asked.
      ((and image (not emjupy-inline-figures)
            (emjupy--image-displayable-p (nth 1 image)))
-      (emjupy--insert-open-line (format "Figure (%s)" (upcase (symbol-name (nth 1 image))))
+      (emjupy--insert-open-line (format "Figure (%s)"
+                                        (upcase (symbol-name (nth 1 image))))
                                 (length (nth 2 image)) data))
      ((and image (emjupy--image-displayable-p (nth 1 image)))
       (condition-case err
-          (progn (insert-image (emjupy--render-image-output (nth 2 image) (nth 1 image)))
+          (progn (insert-image (emjupy--render-image-output (nth 2 image)
+                                                            (nth 1 image)))
                  (insert "\n"))
         ;; Everything: the image is the notebook's data, which may be
         ;; anything, and what Emacs makes of bad data is a plain error.
@@ -1944,7 +2003,8 @@ puts them.  Only the drawing changes: the cell keeps its outputs in the
 order the kernel sent them, which is what is saved."
   (let ((widget-p (lambda (o)
                     (let ((d (and (hash-table-p o) (gethash "data" o))))
-                      (and (hash-table-p d) (gethash emjupy--widget-view-mime d))))))
+                      (and (hash-table-p d)
+                           (gethash emjupy--widget-view-mime d))))))
     (append (seq-filter widget-p outputs) (seq-remove widget-p outputs))))
 
 (defun emjupy--outputs-for-render (outputs)
@@ -1997,7 +2057,8 @@ Past the end of LINE, the index is its length and the column its width."
   (let ((i 0) (c 0) (n (length line)) (done nil))
     (while (and (< i n) (not done))
       (cond ((and (eq (aref line i) ?\e)
-                  (string-match "\e\\[[0-9;]*m" line i) (= (match-beginning 0) i))
+                  (string-match "\e\\[[0-9;]*m" line i)
+                  (= (match-beginning 0) i))
              (setq i (match-end 0)))
             ((= c col) (setq done t))
             (t (setq i (1+ i) c (1+ c)))))
@@ -2011,7 +2072,8 @@ Past the end of LINE, the index is its length and the column its width."
                  line))
          (i (car (emjupy--terminal-column line col)))
          (end (car (emjupy--terminal-column line (+ col (length text))))))
-    (concat (substring line 0 i) text (substring line (min end (length line))))))
+    (concat (substring line 0 i) text (substring line (min end
+                                                           (length line))))))
 
 (defun emjupy--terminal-apply (text chunk cursor)
   "Return TEXT with CHUNK written to it, as a terminal would show it.
@@ -2024,27 +2086,32 @@ the new text and the cursor, nil for the end of the text."
   (let* ((lines (vconcat (split-string text "\n")))
          (row (if cursor (car cursor) (1- (length lines))))
          (col (if cursor (cdr cursor)
-                (cdr (emjupy--terminal-column (aref lines row) most-positive-fixnum))))
+                (cdr (emjupy--terminal-column (aref lines row)
+                                              most-positive-fixnum))))
          (p 0) (n (length chunk)))
     (cl-flet ((line () (aref lines row))
               (set-line (s) (aset lines row s))
               (to-row (r)
                 (setq row (max 0 r))
                 (when (>= row (length lines))
-                  (setq lines (vconcat lines (make-vector (- (1+ row) (length lines)) ""))))))
+                  (setq lines (vconcat lines (make-vector (- (1+ row)
+                                                             (length lines))
+                                                          ""))))))
       (while (< p n)
         (let ((ch (aref chunk p)))
           (cond
            ((eq ch ?\n) (to-row (1+ row)) (setq col 0 p (1+ p)))
            ((eq ch ?\r) (setq col 0 p (1+ p)))
            ((eq ch ?\b) (setq col (max 0 (1- col)) p (1+ p)))
-           ((and (eq ch ?\e) (string-match "\e\\[\\([0-9;]*\\)\\([A-Za-z]\\)" chunk p)
+           ((and (eq ch ?\e) (string-match "\e\\[\\([0-9;]*\\)\\([A-Za-z]\\)"
+                                           chunk p)
                  (= (match-beginning 0) p))
             ;; All read from the match now: what follows matches again,
             ;; and a colour code read later came back as some other text.
             (let* ((code (match-string 0 chunk))
                    (args (match-string 1 chunk))
-                   (num (if (string-empty-p args) 1 (max 1 (string-to-number args))))
+                   (num (if (string-empty-p args) 1
+                          (max 1 (string-to-number args))))
                    (final (aref (match-string 2 chunk) 0)))
               (setq p (match-end 0))
               (pcase final
@@ -2054,9 +2121,13 @@ the new text and the cursor, nil for the end of the text."
                 (?D (setq col (max 0 (- col num))))
                 (?G (setq col (1- num)))
                 (?K (let ((at (car (emjupy--terminal-column (line) col))))
-                      (pcase (if (string-empty-p args) 0 (string-to-number args))
-                        (0 (set-line (substring (line) 0 (min at (length (line))))))
-                        (1 (set-line (emjupy--terminal-put (line) 0 (make-string col ?\s))))
+                      (pcase (if (string-empty-p args) 0
+                               (string-to-number args))
+                        (0 (set-line (substring (line) 0
+                                                (min at (length (line))))))
+                        (1 (set-line (emjupy--terminal-put
+                                      (line)
+                                      0 (make-string col ?\s))))
                         (_ (set-line "")))))
                 ;; a colour: kept where the cursor is, taking no column
                 (?m (let ((at (car (emjupy--terminal-column (line) col))))
@@ -2067,14 +2138,17 @@ the new text and the cursor, nil for the end of the text."
            (t
             ;; a run of ordinary characters, written at once
             (let ((end (or (string-match "[\n\r\b\e]" chunk p) n)))
-              (set-line (emjupy--terminal-put (line) col (substring chunk p end)))
+              (set-line (emjupy--terminal-put (line) col (substring chunk
+                                                                    p end)))
               (setq col (+ col (- end p)) p end)))))))
     ;; What a cleared bar leaves: spaces at the end of lines.
     (dotimes (i (length lines))
       (aset lines i (replace-regexp-in-string " +\\'" "" (aref lines i))))
     (let* ((last (1- (length lines)))
            (at-end (and (= row last)
-                        (>= col (cdr (emjupy--terminal-column (aref lines last) most-positive-fixnum))))))
+                        (>= col
+                            (cdr (emjupy--terminal-column
+                                  (aref lines last) most-positive-fixnum))))))
       (cons (mapconcat #'identity lines "\n")
             (unless at-end (cons row col))))))
 
@@ -2107,9 +2181,11 @@ Then put every header and footer where its cell now is."
   (when emjupy-protect-non-cell-regions
     (let ((inhibit-read-only t)
           (spans nil))
-      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
                do (let ((ov (emjupy-cell-overlay cell)))
-                    (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer)))
+                    (when (and (overlayp ov) (eq (overlay-buffer ov)
+                                                 (current-buffer)))
                       (push (cons (overlay-start ov) (overlay-end ov)) spans))))
       (setq spans (sort spans #'car-less-than-car))
       (let ((pos (point-min)))

@@ -50,7 +50,8 @@
   (unless (emjupy-int--url)
     (ert-skip "EMJUPY_TEST_URL not set -- live-server tests are opt-in"))
   (setq emjupy--current-server
-        (make-emjupy-server :base-url (emjupy-int--url) :token (emjupy-int--token)))
+        (make-emjupy-server :base-url (emjupy-int--url)
+                            :token (emjupy-int--token)))
   (setq emjupy-int--server emjupy--current-server)
   (unless (condition-case nil
               (emjupy--http-request "GET" emjupy--current-server "/api/status")
@@ -126,7 +127,8 @@ first -- setting the struct alone would be silently overwritten."
 (defun emjupy-int--mime-keys (cell)
   (cl-loop for o across (or (emjupy-cell-outputs cell) [])
            append (when (gethash "data" o)
-                    (cl-loop for k being the hash-keys of (gethash "data" o) collect k))))
+                    (cl-loop for k being the hash-keys of (gethash "data" o)
+                             collect k))))
 
 (defmacro emjupy-int--with-live-kernel (&rest body)
   "Skip unless live; set up a notebook + kernel; run BODY; tear down."
@@ -152,10 +154,12 @@ first -- setting the struct alone would be silently overwritten."
   "The REST half of the transport works through whatever is in front of
 the server (here: an ssh -L tunnel)."
   (emjupy-int--skip-unless-live)
-  (let ((status (emjupy--http-request "GET" emjupy--current-server "/api/status")))
+  (let ((status (emjupy--http-request "GET" emjupy--current-server
+                                      "/api/status")))
     (should (hash-table-p status))
     (should (gethash "started" status)))
-  (let ((contents (emjupy--http-request "GET" emjupy--current-server "/api/contents")))
+  (let ((contents (emjupy--http-request "GET" emjupy--current-server
+                                        "/api/contents")))
     (should (gethash "content" contents))))
 
 (ert-deftest emjupy-int-tunnel-websocket-and-execute ()
@@ -196,7 +200,8 @@ session state -- this is the `resilient to connection drops' claim
        ;; reconnect to the SAME kernel, as emjupy-reconnect-kernel does
        (emjupy-reconnect-kernel)
        (should (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))
-       (should (equal (emjupy-kernel-id (emjupy-notebook-kernel nb)) kernel-id))))
+       (should (equal (emjupy-kernel-id (emjupy-notebook-kernel nb))
+                      kernel-id))))
    ;; state set before the drop is still there afterwards
    (let ((cell (emjupy-int--run "print(SURVIVOR)")))
      (should (string-match-p
@@ -218,7 +223,8 @@ session state -- this is the `resilient to connection drops' claim
   (emjupy-int--with-live-kernel
    (let ((cell (emjupy-int--run "1/0")))
      (should (member "error" (emjupy-int--output-types cell)))
-     (let ((err (cl-find-if (lambda (o) (string= (gethash "output_type" o) "error"))
+     (let ((err (cl-find-if (lambda (o) (string= (gethash "output_type" o)
+                                                 "error"))
                             (append (emjupy-cell-outputs cell) nil))))
        (should (equal (gethash "ename" err) "ZeroDivisionError"))
        (should (> (length (gethash "traceback" err)) 0)))
@@ -253,11 +259,13 @@ and is captured into the cell's outputs."
      (should (member "image/png" (emjupy-int--mime-keys cell)))
      ;; a real PNG, not an empty placeholder
      (let* ((out (cl-find-if (lambda (o) (and (gethash "data" o)
-                                              (gethash "image/png" (gethash "data" o))))
+                                              (gethash "image/png"
+                                                       (gethash "data" o))))
                              (append (emjupy-cell-outputs cell) nil)))
             (b64 (gethash "image/png" (gethash "data" out))))
        (should (> (length b64) 1000))
-       (should (string-prefix-p "\211PNG" (base64-decode-string (emjupy--mime-text b64))))))))
+       (should (string-prefix-p
+                "\211PNG" (base64-decode-string (emjupy--mime-text b64))))))))
 
 (ert-deftest emjupy-int-image-output-is-never-a-blank-box ()
   "However this Emacs is built, an image output must leave something
@@ -280,7 +288,8 @@ graphical Emacs and on emacs-nox alike."
      (should (emjupy-cell-output-ov cell))
      (with-current-buffer emjupy-int--buffer
        (let* ((ov (emjupy-cell-output-ov cell))
-              (body (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
+              (body (buffer-substring-no-properties (overlay-start ov)
+                                                    (overlay-end ov)))
               (has-image
                (cl-loop for p from (overlay-start ov) below (overlay-end ov)
                         for d = (get-text-property p 'display)
@@ -305,9 +314,11 @@ compatible with standard .ipynb for non-emacs users."
    (let* ((py (or (executable-find "python3") (executable-find "python"))))
      (unless py (ert-skip "No python on PATH to validate with"))
      (let* ((path (expand-file-name emjupy-int--notebook
-                                    (or (getenv "EMJUPY_TEST_ROOT") default-directory)))
+                                    (or (getenv "EMJUPY_TEST_ROOT")
+                                        default-directory)))
             (_ (unless (file-exists-p path)
-                 (ert-skip (format "Notebook not on this filesystem: %s" path))))
+                 (ert-skip
+                  (format "Notebook not on this filesystem: %s" path))))
             (out (with-output-to-string
                    (with-current-buffer standard-output
                      (call-process py nil t nil "-c"
@@ -340,7 +351,8 @@ server via the shadow buffer -- no `C-c '' required."
     (ert-skip "No Python language server on PATH"))
   (emjupy-int--skip-unless-live)
   (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
-                               :source "import os\nos.pat" :outputs [] :metadata (make-hash-table)))
+                               :source "import os\nos.pat" :outputs []
+                               :metadata (make-hash-table)))
          (nb (make-emjupy-notebook :cells (vector c1) :path "eglot-int.ipynb"))
          (buf (generate-new-buffer "*emjupy-int-eglot*")))
     (unwind-protect
@@ -353,7 +365,8 @@ server via the shadow buffer -- no `C-c '' required."
             (ert-skip "Eglot did not connect"))
           (goto-char (overlay-start (emjupy-cell-overlay c1)))
           (goto-char (line-end-position 2))   ; end of "os.pat"
-          (let ((result (run-hook-with-args-until-success 'completion-at-point-functions)))
+          (let ((result (run-hook-with-args-until-success
+                         'completion-at-point-functions)))
             (should (consp result))
             (should (member "path" (all-completions "" (nth 2 result) nil)))))
       (let ((kill-buffer-query-functions nil))
@@ -371,7 +384,8 @@ shadow buffer deliberately never is)."
     (ert-skip "No Python language server on PATH"))
   (emjupy-int--skip-unless-live)
   (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
-                               :source "import json\njson.dumps" :outputs [] :metadata (make-hash-table)))
+                               :source "import json\njson.dumps" :outputs []
+                               :metadata (make-hash-table)))
          (nb (make-emjupy-notebook :cells (vector c1) :path "eldoc-int.ipynb"))
          (buf (generate-new-buffer "*emjupy-int-eldoc*"))
          (got nil))
@@ -418,13 +432,17 @@ just silently returned nothing for every notebook after the first."
     (unwind-protect
         (let ((results
                (cl-loop for spec in '(("first-nb.ipynb"  "import os\nos.getcwd")
-                                      ("second-nb.ipynb" "import json\njson.dumps"))
+                                      ("second-nb.ipynb"
+                                       "import json\njson.dumps"))
                         collect
-                        (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
-                                                       :source (nth 1 spec) :outputs []
-                                                       :metadata (make-hash-table)))
-                               (nb (make-emjupy-notebook :cells (vector cell) :path (nth 0 spec)))
-                               (buf (generate-new-buffer (format "*emjupy-int-%s*" (nth 0 spec))))
+                        (let* ((cell (make-emjupy-cell
+                                      :id (emjupy--new-cell-id) :type 'code
+                                      :source (nth 1 spec) :outputs []
+                                      :metadata (make-hash-table)))
+                               (nb (make-emjupy-notebook :cells (vector cell)
+                                                         :path (nth 0 spec)))
+                               (buf (generate-new-buffer
+                                     (format "*emjupy-int-%s*" (nth 0 spec))))
                                (got nil))
                           (push buf buffers) (push nb notebooks)
                           (with-current-buffer buf
@@ -434,7 +452,8 @@ just silently returned nothing for every notebook after the first."
                             (emjupy--rerender-notebook)
                             (unless (emjupy-int--wait-for-eglot nb)
                               (ert-skip "Eglot did not connect"))
-                            (goto-char (overlay-start (emjupy-cell-overlay cell)))
+                            (goto-char
+                             (overlay-start (emjupy-cell-overlay cell)))
                             (goto-char (line-end-position 2))
                             (cl-loop repeat 15 until got
                                      do (emjupy--cell-eldoc-function
@@ -451,7 +470,8 @@ just silently returned nothing for every notebook after the first."
         (dolist (n notebooks)
           (when (and (emjupy-notebook-shadow-buffer n)
                      (buffer-live-p (emjupy-notebook-shadow-buffer n)))
-            (ignore-errors (kill-buffer (emjupy-notebook-shadow-buffer n)))))))))
+            (ignore-errors (kill-buffer
+                            (emjupy-notebook-shadow-buffer n)))))))))
 
 (ert-deftest emjupy-int-duplicate-figure-renders-once ()
   "A figure the kernel sends twice is kept twice but drawn once.
@@ -477,7 +497,8 @@ what is asserted is that every distinct picture appears exactly once."
                          "fig")
                  120))
           (outputs (emjupy-cell-outputs cell))
-          (keys (delq nil (mapcar #'emjupy--output-image-key (append outputs nil))))
+          (keys (delq nil (mapcar #'emjupy--output-image-key
+                                  (append outputs nil))))
           (distinct (delete-dups (copy-sequence keys))))
      (unless (< (length distinct) (length keys))
        (ert-skip (format "No repeated picture to deduplicate: %d image output(s), %d distinct"
@@ -496,7 +517,8 @@ what is asserted is that every distinct picture appears exactly once."
                 (n 0) (prev nil))
            (cl-loop for p from (overlay-start ov) below (overlay-end ov)
                     for d = (get-text-property p 'display)
-                    do (when (and (consp d) (eq (car d) 'image) (not (eq d prev)))
+                    do (when (and (consp d) (eq (car d) 'image)
+                                  (not (eq d prev)))
                          (setq n (1+ n)))
                     (setq prev d))
            (should (= n (length distinct)))))))))
@@ -511,7 +533,8 @@ asserting against noise."
   (cl-loop for k across (emjupy--http-request "GET" server "/api/kernels")
            do (ignore-errors
                 (emjupy--http-request "DELETE" server
-                                      (concat "/api/kernels/" (gethash "id" k))))))
+                                      (concat "/api/kernels/"
+                                              (gethash "id" k))))))
 
 (defun emjupy-int--blank-notebook-json ()
   "Return the JSON body for creating an empty notebook."
@@ -599,7 +622,8 @@ and finishing a cell in one must not write output into the other."
         (progn
           ;; distinct kernels
           (let ((ka (with-current-buffer a (emjupy-kernel-id (emjupy--kernel))))
-                (kb (with-current-buffer b (emjupy-kernel-id (emjupy--kernel)))))
+                (kb (with-current-buffer b
+                      (emjupy-kernel-id (emjupy--kernel)))))
             (should (stringp ka))
             (should (stringp kb))
             (should-not (equal ka kb)))
@@ -615,12 +639,15 @@ and finishing a cell in one must not write output into the other."
           (let ((cell (emjupy-int--run-in a "print(ONLY_IN_A)")))
             (should (string-match-p "111" (emjupy-int--stdout cell))))
           ;; output landed only in its own buffer
-          (with-current-buffer a (should (string-match-p "111" (buffer-string))))
-          (with-current-buffer b (should-not (string-match-p "111" (buffer-string)))))
+          (with-current-buffer a (should (string-match-p "111"
+                                                         (buffer-string))))
+          (with-current-buffer b (should-not (string-match-p "111"
+                                                             (buffer-string)))))
       (let ((kill-buffer-query-functions nil))
         (dolist (buf (list a b))
           (when (buffer-live-p buf)
-            (with-current-buffer buf (emjupy--disconnect-kernel (emjupy--notebook)))
+            (with-current-buffer buf
+              (emjupy--disconnect-kernel (emjupy--notebook)))
             (kill-buffer buf)))))))
 
 (ert-deftest emjupy-int-two-servers-on-separate-tunnels ()
@@ -632,7 +659,8 @@ Needs EMJUPY_TEST_URL2 (and optionally EMJUPY_TEST_TOKEN2) pointing at
 a SECOND server; skipped otherwise."
   (emjupy-int--skip-unless-live)
   (let ((url2 (getenv "EMJUPY_TEST_URL2")))
-    (unless url2 (ert-skip "EMJUPY_TEST_URL2 not set -- no second server to test against"))
+    (unless url2
+      (ert-skip "EMJUPY_TEST_URL2 not set -- no second server to test against"))
     (let* ((s1 (emjupy--intern-server (emjupy-int--url) (emjupy-int--token)))
            (s2 (emjupy--intern-server url2 (or (getenv "EMJUPY_TEST_TOKEN2")
                                                (emjupy-int--token))))
@@ -643,14 +671,17 @@ a SECOND server; skipped otherwise."
       (emjupy--http-request "GET" s2 "/api")
       (unwind-protect
           (progn
-            ;; SAME notebook path on both servers -- the buffers must not collide
+            ;; SAME notebook path on both servers -- the buffers must not
+            ;; collide
             (setq a (emjupy-int--open-with-kernel s1 "same-name.ipynb"))
             (setq b (emjupy-int--open-with-kernel s2 "same-name.ipynb"))
             (should-not (eq a b))
             (should-not (equal (buffer-name a) (buffer-name b)))
             ;; each notebook points at its own server
-            (should (eq (with-current-buffer a (emjupy-notebook-server (emjupy--notebook))) s1))
-            (should (eq (with-current-buffer b (emjupy-notebook-server (emjupy--notebook))) s2))
+            (should (eq (with-current-buffer a
+                          (emjupy-notebook-server (emjupy--notebook))) s1))
+            (should (eq (with-current-buffer b
+                          (emjupy-notebook-server (emjupy--notebook))) s2))
             ;; both live at once
             (should (with-current-buffer a (emjupy--ws-live-p)))
             (should (with-current-buffer b (emjupy--ws-live-p)))
@@ -663,12 +694,14 @@ a SECOND server; skipped otherwise."
               (should (string-match-p "PID" pid-b))
               (should-not (equal pid-a pid-b)))
             ;; shadow files (and therefore Eglot documents) are distinct too
-            (should-not (equal (with-current-buffer a (emjupy--shadow-file-path (emjupy--notebook)))
+            (should-not (equal (with-current-buffer a
+                                 (emjupy--shadow-file-path (emjupy--notebook)))
                                (with-current-buffer b (emjupy--shadow-file-path (emjupy--notebook))))))
         (let ((kill-buffer-query-functions nil))
           (dolist (buf (list a b))
             (when (and buf (buffer-live-p buf))
-              (with-current-buffer buf (emjupy--disconnect-kernel (emjupy--notebook)))
+              (with-current-buffer buf
+                (emjupy--disconnect-kernel (emjupy--notebook)))
               (kill-buffer buf))))))))
 
 (ert-deftest emjupy-int-restart-affects-only-its-own-notebook ()
@@ -698,7 +731,8 @@ kernel -- and its interpreter state -- untouched."
       (let ((kill-buffer-query-functions nil))
         (dolist (buf (list a b))
           (when (buffer-live-p buf)
-            (with-current-buffer buf (emjupy--disconnect-kernel (emjupy--notebook)))
+            (with-current-buffer buf
+              (emjupy--disconnect-kernel (emjupy--notebook)))
             (kill-buffer buf)))))))
 
 (ert-deftest emjupy-int-login-adopts-the-running-kernel ()
@@ -719,19 +753,25 @@ guarding against."
         (progn
           ;; Establish live state in the kernel behind this port.
           (emjupy-int--run-in setup "SET_BEFORE_LOGIN = 31337")
-          (setq kernel-id (with-current-buffer setup (emjupy-kernel-id (emjupy--kernel))))
+          (setq kernel-id (with-current-buffer setup
+                            (emjupy-kernel-id (emjupy--kernel))))
           ;; Drop our client entirely: the kernel keeps running server-side,
           ;; exactly as it would if Emacs had never connected yet.
-          (with-current-buffer setup (emjupy--disconnect-kernel (emjupy--notebook)))
+          (with-current-buffer setup
+            (emjupy--disconnect-kernel (emjupy--notebook)))
           (let ((kill-buffer-query-functions nil)) (kill-buffer setup))
           (setq setup nil)
-          (setq before-count (length (emjupy--http-request "GET" server "/api/kernels")))
+          (setq before-count (length (emjupy--http-request "GET" server
+                                                           "/api/kernels")))
           ;; Fresh login on that port.
-          (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) path)))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (&rest _) path)))
             (setq buf (emjupy-login (emjupy-int--url) (emjupy-int--token))))
           (should (buffer-live-p buf))
           ;; no extra kernel was spawned
-          (should (= (length (emjupy--http-request "GET" server "/api/kernels")) before-count))
+          (should (= (length (emjupy--http-request "GET" server
+                                                   "/api/kernels"))
+                     before-count))
           (with-current-buffer buf
             ;; attached automatically, to the kernel that was already running
             (should (emjupy--kernel))
@@ -743,7 +783,8 @@ guarding against."
       (let ((kill-buffer-query-functions nil))
         (dolist (b (list setup buf))
           (when (and b (buffer-live-p b))
-            (with-current-buffer b (emjupy--disconnect-kernel (emjupy--notebook)))
+            (with-current-buffer b
+              (emjupy--disconnect-kernel (emjupy--notebook)))
             (kill-buffer b)))))))
 
 (ert-deftest emjupy-int-login-on-two-ports-gives-two-kernels ()
@@ -765,14 +806,16 @@ Needs EMJUPY_TEST_URL2; skipped otherwise."
             (cl-letf (((symbol-function 'completing-read)
                        (lambda (&rest _) "port-one.ipynb")))
               (emjupy--http-request
-               "PUT" (emjupy--intern-server (emjupy-int--url) (emjupy-int--token))
+               "PUT" (emjupy--intern-server (emjupy-int--url)
+                                            (emjupy-int--token))
                "/api/contents/port-one.ipynb" (emjupy-int--blank-notebook-json))
               (setq buf1 (emjupy-login (emjupy-int--url) (emjupy-int--token))))
             (cl-letf (((symbol-function 'completing-read)
                        (lambda (&rest _) "port-two.ipynb")))
               (emjupy--http-request
-               "PUT" (emjupy--intern-server url2 (or (getenv "EMJUPY_TEST_TOKEN2")
-                                                     (emjupy-int--token)))
+               "PUT" (emjupy--intern-server url2
+                                            (or (getenv "EMJUPY_TEST_TOKEN2")
+                                                (emjupy-int--token)))
                "/api/contents/port-two.ipynb" (emjupy-int--blank-notebook-json))
               (setq buf2 (emjupy-login url2 (or (getenv "EMJUPY_TEST_TOKEN2")
                                                 (emjupy-int--token)))))
@@ -782,18 +825,22 @@ Needs EMJUPY_TEST_URL2; skipped otherwise."
               (with-current-buffer b
                 (should (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))))
             ;; two distinct kernels ...
-            (let ((k1 (with-current-buffer buf1 (emjupy-kernel-id (emjupy--kernel))))
-                  (k2 (with-current-buffer buf2 (emjupy-kernel-id (emjupy--kernel)))))
+            (let ((k1 (with-current-buffer buf1
+                        (emjupy-kernel-id (emjupy--kernel))))
+                  (k2 (with-current-buffer buf2
+                        (emjupy-kernel-id (emjupy--kernel)))))
               (should (stringp k1)) (should (stringp k2))
               (should-not (equal k1 k2)))
             ;; ... in genuinely separate interpreters
             (emjupy-int--run-in buf1 "PORT_ONE_ONLY = 1")
-            (let ((cell (emjupy-int--run-in buf2 "print('PORT_ONE_ONLY' in dir())")))
+            (let ((cell (emjupy-int--run-in buf2
+                                            "print('PORT_ONE_ONLY' in dir())")))
               (should (string-match-p "False" (emjupy-int--stdout cell)))))
         (let ((kill-buffer-query-functions nil))
           (dolist (b (list buf1 buf2))
             (when (and b (buffer-live-p b))
-              (with-current-buffer b (emjupy--disconnect-kernel (emjupy--notebook)))
+              (with-current-buffer b
+                (emjupy--disconnect-kernel (emjupy--notebook)))
               (kill-buffer b))))))))
 
 (ert-deftest emjupy-int-eglot-rename-works-from-a-notebook ()
@@ -809,7 +856,8 @@ manages."
          (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                :source "print(my_variable + 1)" :outputs []
                                :metadata (make-hash-table)))
-         (nb (make-emjupy-notebook :cells (vector c1 c2) :path "int-rename.ipynb"))
+         (nb (make-emjupy-notebook :cells (vector c1 c2)
+                                   :path "int-rename.ipynb"))
          (buf (generate-new-buffer "*emjupy-int-rename*")))
     (unwind-protect
         (with-current-buffer buf
@@ -845,7 +893,8 @@ in the notebook buffer rather than in the shadow file."
          (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                :source "result = my_function(2)"
                                :outputs [] :metadata (make-hash-table)))
-         (nb (make-emjupy-notebook :cells (vector c1 c2) :path "int-xref.ipynb"))
+         (nb (make-emjupy-notebook :cells (vector c1 c2)
+                                   :path "int-xref.ipynb"))
          (buf (generate-new-buffer "*emjupy-int-xref*")))
     (unwind-protect
         (with-current-buffer buf
@@ -858,12 +907,14 @@ in the notebook buffer rather than in the shadow file."
           (goto-char (overlay-start (emjupy-cell-overlay c2)))
           (should (search-forward "my_function" nil t))
           (goto-char (match-beginning 0))
-          (should (eq (run-hook-with-args-until-success 'xref-backend-functions) 'emjupy))
+          (should (eq (run-hook-with-args-until-success 'xref-backend-functions)
+                      'emjupy))
           (let* ((id (xref-backend-identifier-at-point 'emjupy))
                  (defs (xref-backend-definitions 'emjupy id)))
             (should defs)
             (let ((loc (xref-item-location (car defs))))
-              ;; remapped into the notebook, not left pointing at the shadow file
+              ;; remapped into the notebook, not left pointing at the shadow
+              ;; file
               (should (cl-typep loc 'xref-buffer-location))
               (should (eq (xref-buffer-location-buffer loc) buf))
               (let ((pos (xref-buffer-location-position loc)))
@@ -871,7 +922,8 @@ in the notebook buffer rather than in the shadow file."
                 (should (eq (get-text-property pos 'emjupy-cell) c1))
                 (should (string-prefix-p "my_function"
                                          (buffer-substring-no-properties
-                                          pos (min (point-max) (+ pos 11)))))))))
+                                          pos (min (point-max)
+                                                   (+ pos 11)))))))))
       (let ((kill-buffer-query-functions nil))
         (when (buffer-live-p buf) (kill-buffer buf))
         (when (and (emjupy-notebook-shadow-buffer nb)
@@ -903,7 +955,8 @@ in the notebook buffer rather than in the shadow file."
           (let ((found nil))
             (while (and (not found) (not (eobp)))
               (if (and (eq (plist-get (tabulated-list-get-id) :kind) 'notebook)
-                       (equal (aref (tabulated-list-get-entry) 1) "int-dash.ipynb"))
+                       (equal (aref (tabulated-list-get-entry) 1)
+                              "int-dash.ipynb"))
                   (setq found t)
                 (forward-line 1)))
             (should found)
@@ -974,11 +1027,14 @@ the state this is here to catch."
         (sleep-for 1.1))
       ;; alpha was written last, so it comes first despite the name
       (let* ((rows (emjupy--list-entries server dir))
-             (files (seq-filter (lambda (r) (eq (plist-get (car r) :kind) 'file)) rows))
-             (names (mapcar (lambda (r) (substring-no-properties (aref (cadr r) 1)))
+             (files (seq-filter (lambda (r)
+                                  (eq (plist-get (car r) :kind) 'file)) rows))
+             (names (mapcar (lambda (r)
+                              (substring-no-properties (aref (cadr r) 1)))
                             files)))
         (should (member "alpha.py" names))
-        (should (equal (seq-take names 3) '("alpha.py" "middle.py" "zulu.py")))))))
+        (should (equal (seq-take names 3) '("alpha.py" "middle.py"
+                                            "zulu.py")))))))
 
 (ert-deftest emjupy-int-progress-bar-fits-the-cell ()
   "A progress bar written without any width drawn inside the cell.
@@ -1030,7 +1086,9 @@ for each server it saw die."
          (root (or (getenv "EMJUPY_TEST_ROOT") default-directory))
          (count (lambda ()
                   (list (length (seq-filter #'process-live-p (process-list)))
-                        (length (seq-filter (lambda (b) (string-match-p "emjupy_" (buffer-name b)))
+                        (length (seq-filter (lambda (b)
+                                              (string-match-p "emjupy_"
+                                                              (buffer-name b)))
                                             (buffer-list)))))))
     ;; Settle first: a test before this one may still be starting its
     ;; notebook's language server -- the kernel says where it runs after the
@@ -1044,9 +1102,12 @@ for each server it saw die."
                        last now))))
     (let ((before (funcall count)))
       (dotimes (i 3)
-        (let* ((c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "import os"
-                                    :outputs [] :metadata (make-hash-table :test 'equal)))
-               (nb (make-emjupy-notebook :cells (vector c) :path (format "release-%d.ipynb" i)
+        (let* ((c (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                    :source "import os"
+                                    :outputs []
+                                    :metadata (make-hash-table :test 'equal)))
+               (nb (make-emjupy-notebook :cells (vector c)
+                                         :path (format "release-%d.ipynb" i)
                                          :server server :kernel-cwd root))
                (buf (generate-new-buffer (format "*release-%d*" i))))
           (with-current-buffer buf
@@ -1093,10 +1154,12 @@ for each server it saw die."
 (defun emjupy-int--proxy-say (command)
   "Send COMMAND to the fault proxy and wait for it to be done."
   (let* ((out (generate-new-buffer " *faultproxy-ctl*"))
-         (s (open-network-stream "faultproxy-ctl" out "127.0.0.1" (nth 2 emjupy-int--proxy))))
+         (s (open-network-stream "faultproxy-ctl" out "127.0.0.1"
+                                 (nth 2 emjupy-int--proxy))))
     (process-send-string s (concat command "\n"))
     (with-timeout (5 (error "Fault proxy did not answer %s" command))
-      (while (not (with-current-buffer out (string-match-p "ok" (buffer-string))))
+      (while (not (with-current-buffer out (string-match-p "ok"
+                                                           (buffer-string))))
         (accept-process-output s 0.05)))
     (delete-process s)
     (kill-buffer out)))
@@ -1108,7 +1171,8 @@ for each server it saw die."
      (unless (and (emjupy-int--url) (executable-find "python3"))
        (ert-skip "Needs a live server and python3"))
      (let* ((port (emjupy-int--start-proxy))
-            (process-environment (cons (format "EMJUPY_TEST_URL=127.0.0.1:%d" port)
+            (process-environment (cons (format "EMJUPY_TEST_URL=127.0.0.1:%d"
+                                               port)
                                        process-environment)))
        (unwind-protect (progn ,@body)
          (when (process-live-p (car emjupy-int--proxy))
@@ -1123,7 +1187,8 @@ frozen Emacs.  It must give up, with the error callers expect."
     (emjupy-int--skip-unless-live)
     (emjupy-int--proxy-say "stall")
     (let ((t0 (float-time)))
-      (should-error (emjupy--http-request "GET" emjupy--current-server "/api/contents")
+      (should-error (emjupy--http-request "GET" emjupy--current-server
+                                          "/api/contents")
                     :type 'emjupy-http-error)
       (should (< (- (float-time) t0) 10)))
     (emjupy-int--proxy-say "reset")))
@@ -1169,7 +1234,9 @@ went, not the kernel."
          ;; the tunnel comes back; so does the same kernel
          (emjupy-int--proxy-say "reset")
          (emjupy-reconnect-kernel)
-         (emjupy-int--pump 10 (lambda () (emjupy--ws-live-p (emjupy-notebook-kernel nb))))
+         (emjupy-int--pump 10
+                           (lambda ()
+                             (emjupy--ws-live-p (emjupy-notebook-kernel nb))))
          (should (emjupy--ws-live-p (emjupy-notebook-kernel nb)))))
      (let ((cell (emjupy-int--run "print(keep)" 30)))
        (should (equal (emjupy-int--stdout cell) "42\n"))))))
@@ -1251,18 +1318,22 @@ The viewer is the one thing stubbed: it records the page it would show."
 go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2])).show()" 60))
           (data (gethash "data" (aref (emjupy-cell-outputs cell) 0)))
           (shown nil))
-     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+     (when (string-match-p "No module named"
+                           (format "%S" (emjupy-cell-outputs cell)))
        (ert-skip "plotly is not installed where the kernel runs"))
      (should (gethash emjupy--plotly-mime data))
      (with-current-buffer emjupy-int--buffer
        ;; the output is the line that opens it, not "Figure"
        (should (string-match-p "Interactive plotly figure" (buffer-string)))
-       (cl-letf (((symbol-function 'emjupy--show-file) (lambda (file) (setq shown file))))
+       (cl-letf (((symbol-function 'emjupy--show-file) (lambda (file)
+                                                         (setq shown file))))
          (emjupy-open-output data)
          (emjupy-int--pump 60 (lambda () shown))))
      (should shown)
-     (let* ((page (with-temp-buffer (insert-file-contents shown) (buffer-string)))
-            (script (and (string-match "<script src=\"file://\\([^\"]+\\)\"" page)
+     (let* ((page (with-temp-buffer (insert-file-contents shown)
+                                    (buffer-string)))
+            (script (and (string-match "<script src=\"file://\\([^\"]+\\)\""
+                                       page)
                          (match-string 1 page))))
        (should (string-match-p "Plotly.newPlot" page))
        (should (string-match-p "\"type\":\"scatter\"" page))
@@ -1291,8 +1362,10 @@ def f(n=3):
           (images (lambda ()
                     (cl-loop for o across (emjupy-cell-outputs cell)
                              for d = (and (hash-table-p o) (gethash "data" o))
-                             when (and d (gethash "image/png" d)) collect (gethash "image/png" d)))))
-     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+                             when (and d (gethash "image/png" d)) collect
+                             (gethash "image/png" d)))))
+     (when (string-match-p "No module named"
+                           (format "%S" (emjupy-cell-outputs cell)))
        (ert-skip "ipywidgets or matplotlib is not installed where the kernel runs"))
      (with-current-buffer emjupy-int--buffer
        ;; the slider, not "interactive(children=...)"
@@ -1338,7 +1411,8 @@ W = dict(step=w.IntSlider(description='Step', value=3, min=0, max=10),
 w.VBox(list(W.values()) + [b])" 60))
           (kernel (with-current-buffer emjupy-int--buffer
                     (emjupy-notebook-kernel emjupy--buffer-notebook))))
-     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+     (when (string-match-p "No module named"
+                           (format "%S" (emjupy-cell-outputs cell)))
        (ert-skip "ipywidgets is not installed where the kernel runs"))
      (with-current-buffer emjupy-int--buffer
        (emjupy-flush-output (current-buffer))
@@ -1346,8 +1420,10 @@ w.VBox(list(W.values()) + [b])" 60))
                    ;; the control after LABEL: GLYPH starts it
                    (goto-char (overlay-start (emjupy-cell-output-ov cell)))
                    (re-search-forward (if (string-empty-p label)
-                                          (concat "\\(" (regexp-quote glyph) "\\)")
-                                        (concat (regexp-quote label) " .*?\\(" (regexp-quote glyph) "\\)")))
+                                          (concat "\\(" (regexp-quote glyph)
+                                                  "\\)")
+                                        (concat (regexp-quote label) " .*?\\("
+                                                (regexp-quote glyph) "\\)")))
                    (goto-char (match-beginning 1))
                    (emjupy-widget-activate)
                    (emjupy-int--pump 0.5)))
@@ -1358,7 +1434,8 @@ w.VBox(list(W.values()) + [b])" 60))
                             ((string-match-p "commas" prompt) "p, q")
                             (t "new"))))
                    ((symbol-function 'completing-read) (lambda (&rest _) "c"))
-                   ((symbol-function 'completing-read-multiple) (lambda (&rest _) '("x" "z")))
+                   ((symbol-function 'completing-read-multiple)
+                    (lambda (&rest _) '("x" "z")))
                    ((symbol-function 'read-color) (lambda (&rest _) "red")))
            (use "Step" "▶")
            (use "Number" "[")
@@ -1395,12 +1472,14 @@ for n, c in inspect.getmembers(w, inspect.isclass):
         except Exception:
             pass
 w.VBox(ws)" 60)))
-     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+     (when (string-match-p "No module named"
+                           (format "%S" (emjupy-cell-outputs cell)))
        (ert-skip "ipywidgets is not installed where the kernel runs"))
      (with-current-buffer emjupy-int--buffer
        (emjupy-flush-output (current-buffer))
        (let* ((ov (emjupy-cell-output-ov cell))
-              (text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
+              (text (buffer-substring-no-properties (overlay-start ov)
+                                                    (overlay-end ov)))
               (named nil) (start 0))
          (while (string-match "\\[widget: \\([A-Za-z]+\\)\\]" text start)
            (push (match-string 1 text) named)
@@ -1410,10 +1489,14 @@ w.VBox(ws)" 60)))
          (should-not (cl-some (lambda (l) (string-match-p "\\`\\[widget\\]" l))
                               (split-string text "\n")))
          ;; and the rest are drawn as themselves: a few to be sure
-         (dolist (shown '("IntSlider ◀ 0 ▶" "IntRangeSlider 25 – 75" "IntProgress ░"
-                          "Checkbox [ ]" "Valid ✗" "SelectMultiple (none) ▾" "DatePicker [--]"
-                          "FloatLogSlider ◀ 1 ▶   1 … 10000" "Password []" "[ Button ]"))
-           (ert-info (shown) (should (string-match-p (regexp-quote shown) text)))))))))
+         (dolist (shown '("IntSlider ◀ 0 ▶" "IntRangeSlider 25 – 75"
+                          "IntProgress ░"
+                          "Checkbox [ ]" "Valid ✗" "SelectMultiple (none) ▾"
+                          "DatePicker [--]"
+                          "FloatLogSlider ◀ 1 ▶   1 … 10000" "Password []"
+                          "[ Button ]"))
+           (ert-info (shown)
+             (should (string-match-p (regexp-quote shown) text)))))))))
 
 (ert-deftest emjupy-int-binary-widgets-image-audio-upload ()
   "Widgets whose data is binary: an image drawn and redrawn, a sound, an upload.
@@ -1434,30 +1517,43 @@ up = w.FileUpload(description='Up')
 w.VBox([img, snd, up])" 60)))
      (unwind-protect
          (progn
-           (let ((coding-system-for-write 'no-conversion)) (write-region bytes nil file nil 'quiet))
-           (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+           (let ((coding-system-for-write 'no-conversion)) (write-region
+                                                            bytes
+                                                            nil
+                                                            file nil 'quiet))
+           (when (string-match-p "No module named"
+                                 (format "%S" (emjupy-cell-outputs cell)))
              (ert-skip "ipywidgets is not installed where the kernel runs"))
            (with-current-buffer emjupy-int--buffer
              (emjupy-flush-output (current-buffer))
              (let ((shown (lambda ()
                             (let ((ov (emjupy-cell-output-ov cell)))
-                              (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))))))
-               ;; the image's bytes arrived; this Emacs draws no images, so it is a line
+                              (buffer-substring-no-properties
+                               (overlay-start ov) (overlay-end ov))))))
+               ;; the image's bytes arrived; this Emacs draws no images, so it
+               ;; is a line
                (should (string-match-p "▶ Image (png, 70)" (funcall shown)))
                (should (string-match-p "▶ Audio (wav" (funcall shown)))
                ;; replaced from the kernel: drawn anew
-               (let ((kernel (emjupy-notebook-kernel emjupy--buffer-notebook)) (done nil))
-                 (emjupy--kernel-eval kernel "img.value = png2; print('ok')" (lambda (_) (setq done t)))
-                 (emjupy-int--pump 15 (lambda () (and done (string-match-p "▶ Image (png, 77)"
-                                                                           (funcall shown))))))
+               (let ((kernel (emjupy-notebook-kernel emjupy--buffer-notebook))
+                     (done nil))
+                 (emjupy--kernel-eval kernel "img.value = png2; print('ok')"
+                                      (lambda (_) (setq done t)))
+                 (emjupy-int--pump
+                  15 (lambda ()
+                       (and done
+                            (string-match-p "▶ Image (png, 77)"
+                                            (funcall shown))))))
                (should (string-match-p "▶ Image (png, 77)" (funcall shown)))
                ;; an upload: the file is chosen, then nothing more
                (goto-char (overlay-start (emjupy-cell-output-ov cell)))
                (search-forward "[ Upload… ]") (backward-char 3)
                (let ((answers (list file "")))
-                 (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) (pop answers))))
+                 (cl-letf (((symbol-function 'read-file-name)
+                            (lambda (&rest _) (pop answers))))
                    (emjupy-widget-activate)))
-               (should (string-match-p (regexp-quote (file-name-nondirectory file)) (funcall shown)))))
+               (should (string-match-p (regexp-quote (file-name-nondirectory file))
+                                       (funcall shown)))))
            (let ((answer nil)
                  (kernel (with-current-buffer emjupy-int--buffer
                            (emjupy-notebook-kernel emjupy--buffer-notebook))))
@@ -1482,25 +1578,33 @@ class Counter(anywidget.AnyWidget):
     value = traitlets.Int(0).tag(sync=True)
 c = Counter(); c" 60))
           (received nil))
-     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+     (when (string-match-p "No module named"
+                           (format "%S" (emjupy-cell-outputs cell)))
        (ert-skip "anywidget is not installed where the kernel runs"))
      (with-current-buffer emjupy-int--buffer
        (emjupy-flush-output (current-buffer))
-       (should (string-match-p "▶ Interactive widget: Counter (anywidget)" (buffer-string)))
+       (should (string-match-p "▶ Interactive widget: Counter (anywidget)"
+                               (buffer-string)))
        (let* ((id (catch 'found
-                    (maphash (lambda (k v) (when (equal (gethash "_anywidget_id" (cdr v) "") "__main__.Counter")
-                                             (throw 'found k)))
+                    (maphash (lambda (k v)
+                               (when (equal (gethash "_anywidget_id" (cdr v)
+                                                     "") "__main__.Counter")
+                                 (throw 'found k)))
                              emjupy--widget-models)))
               (token "test-page")
               (kernel (emjupy-notebook-kernel emjupy--buffer-notebook)))
          (should id)
-         (puthash token (list :kernel kernel :cell cell :view id :models (emjupy--widget-tree id))
+         (puthash token (list :kernel kernel :cell cell :view id
+                              :models (emjupy--widget-tree id))
                   emjupy--bridge-pages)
-         (let ((ws (websocket-open (format "ws://127.0.0.1:%d/" (emjupy--bridge-port))
-                                   :on-message (lambda (_ws frame)
-                                                 (push (json-parse-string (websocket-frame-text frame)
-                                                                          :object-type 'hash-table)
-                                                       received)))))
+         (let ((ws (websocket-open
+                    (format "ws://127.0.0.1:%d/"
+                            (emjupy--bridge-port))
+                    :on-message (lambda (_ws frame)
+                                  (push (json-parse-string
+                                         (websocket-frame-text frame)
+                                         :object-type 'hash-table)
+                                        received)))))
            (unwind-protect
                (progn
                  (emjupy-int--pump 5 (lambda () (websocket-openp ws)))
@@ -1510,13 +1614,16 @@ c = Counter(); c" 60))
                  (let ((init (car received)))
                    (should (equal (gethash "type" init) "init"))
                    (should (equal (gethash "view" init) id))
-                   (should (cl-some (lambda (m) (equal (gethash "id" m) id)) (gethash "models" init))))
+                   (should (cl-some (lambda (m) (equal (gethash "id" m) id))
+                                    (gethash "models" init))))
                  ;; a value the page sends reaches the kernel
                  (websocket-send-text
                   ws (format "{\"type\": \"comm_msg\", \"comm_id\": \"%s\", \"data\": {\"method\": \"update\", \"state\": {\"value\": 5}, \"buffer_paths\": []}, \"buffers\": []}" id))
                  (emjupy-int--pump 2)
                  (let ((answer nil))
-                   (emjupy--kernel-eval kernel "print(c.value)" (lambda (out) (setq answer (string-trim out))))
+                   (emjupy--kernel-eval
+                    kernel "print(c.value)" (lambda (out)
+                                              (setq answer (string-trim out))))
                    (emjupy-int--pump 10 (lambda () answer))
                    (should (equal answer "5"))))
              (websocket-close ws)
@@ -1541,9 +1648,11 @@ as it last stood, not every frame tqdm drew over."
                  (when (overlayp ov)
                    (cl-remove-if-not
                     (lambda (l) (string-match-p "[0-9]+%|" l))
-                    (split-string (buffer-substring-no-properties (overlay-start ov) (overlay-end ov))
+                    (split-string (buffer-substring-no-properties
+                                   (overlay-start ov) (overlay-end ov))
                                   "\n"))))))
-            (percent (lambda (line) (and line (string-match "\\([0-9]+\\)%|" line)
+            (percent (lambda (line) (and line
+                                         (string-match "\\([0-9]+\\)%|" line)
                                          (string-to-number (match-string 1 line)))))
             (seen nil))
        (let ((ov (emjupy-cell-overlay cell)))
@@ -1572,7 +1681,8 @@ print('done')"))
            (accept-process-output nil 0.1)))
        (emjupy-int--pump 2)
        (emjupy-flush-output (current-buffer))
-       (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+       (when (string-match-p "No module named"
+                             (format "%S" (emjupy-cell-outputs cell)))
          (ert-skip "tqdm is not installed where the kernel runs"))
        ;; it was seen moving, and only forward
        (setq seen (nreverse (delq nil seen)))
@@ -1588,10 +1698,13 @@ print('done')"))
                     (overlay-start (emjupy-cell-output-ov cell))
                     (overlay-end (emjupy-cell-output-ov cell)))))
          (should (equal (cl-loop with start = 0
-                                 while (string-match "^\\(step [0-9]+\\|done\\)" text start)
+                                 while
+                                 (string-match "^\\(step [0-9]+\\|done\\)"
+                                               text start)
                                  collect (match-string 1 text)
                                  do (setq start (match-end 0)))
-                        '("step 0" "step 10" "step 20" "step 30" "step 40" "done"))))
+                        '("step 0" "step 10" "step 20" "step 30" "step 40"
+                          "done"))))
        ;; nothing wider than the cell
        (let ((width (emjupy--box-width)))
          (dolist (l (funcall bar-lines))
@@ -1617,14 +1730,20 @@ meanwhile is left alone, and auto-saving stops for it."
             (server (emjupy-notebook-server nb))
             (path (emjupy-notebook-path nb))
             (fetch (lambda ()
-                     (json-serialize (gethash "content" (emjupy--http-request
-                                                         "GET" server (emjupy--contents-path path)))))))
+                     (json-serialize
+                      (gethash
+                       "content" (emjupy--http-request
+                                  "GET"
+                                  server (emjupy--contents-path path)))))))
        (unwind-protect
            (progn
              (setq emjupy--autosave-paused nil emjupy--autosave-last nil)
-             (setf (emjupy-notebook-last-modified nb) (emjupy--server-last-modified nb))
+             (setf (emjupy-notebook-last-modified nb)
+                   (emjupy--server-last-modified nb))
              ;; typed, then saved on its own
-             (goto-char (1- (overlay-end (emjupy-cell-overlay (aref (emjupy-notebook-cells nb) 0)))))
+             (goto-char
+              (1- (overlay-end (emjupy-cell-overlay
+                                (aref (emjupy-notebook-cells nb) 0)))))
              (let ((inhibit-read-only t)) (insert "  # autosaved"))
              (emjupy--idle-save)
              ;; not waited for by Emacs; the test waits for it
@@ -1634,12 +1753,15 @@ meanwhile is left alone, and auto-saving stops for it."
              ;; written meanwhile by another client
              (let ((body (make-hash-table :test 'equal))
                    (content (gethash "content" (emjupy--http-request
-                                                "GET" server (emjupy--contents-path path)))))
-               (puthash "source" "# from elsewhere" (aref (gethash "cells" content) 0))
+                                                "GET" server
+                                                (emjupy--contents-path path)))))
+               (puthash "source" "# from elsewhere"
+                        (aref (gethash "cells" content) 0))
                (puthash "type" "notebook" body) (puthash "format" "json" body)
                (puthash "content" content body)
                (sleep-for 1.1)                ; a later last_modified
-               (emjupy--http-request "PUT" server (emjupy--contents-path path) (json-serialize body)))
+               (emjupy--http-request "PUT" server (emjupy--contents-path path)
+                                     (json-serialize body)))
              (let ((inhibit-read-only t)) (insert "  # mine"))
              (setq emjupy--autosave-last nil)
              (emjupy--idle-save)
@@ -1652,7 +1774,8 @@ meanwhile is left alone, and auto-saving stops for it."
          (set-buffer-modified-p nil)
          (delete-directory emjupy-recovery-directory t))))))
 
-(ert-deftest emjupy-int-a-notebook-file-opened-as-text-opens-on-a-local-kernel ()
+(ert-deftest emjupy-int-a-notebook-file-opened-as-text-opens-on-a-local-kernel
+    ()
   "An .ipynb file shown as text opens as a notebook, on a server started for it.
 The environment.yml beside it names the environment offered; a server is
 started there, the text replaced by the notebook, its kernel runs in the
@@ -1666,12 +1789,14 @@ notebook's directory, and the server stops when the notebook is closed."
         (progn
           (with-temp-file file
             (insert "{\"cells\": [{\"cell_type\": \"code\", \"execution_count\": null, \"id\": \"a1\", \"metadata\": {}, \"outputs\": [], \"source\": [\"x = 6 * 7\"]}], \"metadata\": {}, \"nbformat\": 4, \"nbformat_minor\": 5}"))
-          (with-temp-file (expand-file-name "environment.yml" dir) (insert "name: analysis\n"))
+          (with-temp-file (expand-file-name "environment.yml" dir)
+            (insert "name: analysis\n"))
           (cl-letf (((symbol-function 'completing-read)
                      (lambda (_p _c &rest args)
                        (setq offered (nth 4 args))
                        ;; the environment jupyter is in: its bin's parent
-                       (file-name-directory (directory-file-name (file-name-directory jupyter)))))
+                       (file-name-directory
+                        (directory-file-name (file-name-directory jupyter)))))
                     ((symbol-function 'emjupy--offer-recovery) #'ignore))
             (let* ((emjupy-language-support nil)
                    (text (find-file-noselect file))
@@ -1682,14 +1807,18 @@ notebook's directory, and the server stops when the notebook is closed."
                    (answer nil))
               (should (equal offered "analysis"))
               (should-not (buffer-live-p text))
-              (should (eq (buffer-local-value 'major-mode notebook) 'emjupy-mode))
+              (should (eq (buffer-local-value 'major-mode notebook)
+                          'emjupy-mode))
               (with-current-buffer notebook
                 (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p)))
-                (emjupy--kernel-eval (emjupy-notebook-kernel emjupy--buffer-notebook)
-                                     "import os; print(os.path.basename(os.getcwd()), 6 * 7)"
-                                     (lambda (out) (setq answer (string-trim out))))
+                (emjupy--kernel-eval
+                 (emjupy-notebook-kernel emjupy--buffer-notebook)
+                 "import os; print(os.path.basename(os.getcwd()), 6 * 7)"
+                 (lambda (out) (setq answer
+                                     (string-trim out))))
                 (emjupy-int--pump 20 (lambda () answer))
-                (should (equal answer (format "%s 42" (file-name-nondirectory dir))))
+                (should (equal answer (format "%s 42"
+                                              (file-name-nondirectory dir))))
                 (set-buffer-modified-p nil))
               (let ((kill-buffer-query-functions nil)) (kill-buffer notebook))
               (emjupy-int--pump 1)
@@ -1711,12 +1840,14 @@ the prompts asked, once the cell has finished."
                (lambda (prompt &rest _) (push prompt prompts) password-answer)))
       (let ((cell (emjupy-int--run code 30)))
         (with-current-buffer emjupy-int--buffer
-          (emjupy-int--pump 20 (lambda () (not (member (emjupy-cell-id cell) emjupy--running-cells))))
+          (emjupy-int--pump 20 (lambda () (not (member (emjupy-cell-id cell)
+                                                       emjupy--running-cells))))
           (emjupy-flush-output (current-buffer))
-          (list (mapconcat (lambda (o) (if (gethash "text" o)
-                                           (emjupy--mime-text (gethash "text" o))
-                                         (or (gethash "ename" o) "")))
-                           (append (emjupy-cell-outputs cell) nil) "")
+          (list (mapconcat
+                 (lambda (o) (if (gethash "text" o)
+                                 (emjupy--mime-text (gethash "text" o))
+                               (or (gethash "ename" o) "")))
+                 (append (emjupy-cell-outputs cell) nil) "")
                 (reverse prompts)
                 (member (emjupy-cell-id cell) emjupy--running-cells)))))))
 
@@ -1744,16 +1875,19 @@ kernel it took no input and answered no request for it."
                                              '("p z * 7" "c"))))
        (should (string-match-p "42" out))
        (should (string-match-p "after 6" out))
-       (should (cl-every (lambda (p) (string-match-p "(Pdb)\\|ipdb>" p)) prompts))
+       (should (cl-every (lambda (p)
+                           (string-match-p "(Pdb)\\|ipdb>" p)) prompts))
        (should-not running))
      ;; breakpoint()
      (pcase-let ((`(,out ,_ ,running) (emjupy-int--run-answering
-                                       "w = 2\nbreakpoint()\nprint('done', w)" '("c"))))
+                                       "w = 2\nbreakpoint()\nprint('done', w)"
+                                       '("c"))))
        (should (string-match-p "done 2" out))
        (should-not running))
      ;; C-g at the prompt: the kernel interrupted, not left waiting
      (pcase-let ((`(,out ,_ ,running) (emjupy-int--run-answering
-                                       "y = input('never answered: ')" '(quit))))
+                                       "y = input('never answered: ')"
+                                       '(quit))))
        (should (string-match-p "KeyboardInterrupt" out))
        (should-not running)))))
 
@@ -1782,11 +1916,13 @@ reconnects on its own under the same session, and the output arrives."
        ;; kept running meanwhile, not ended
        (should (member (emjupy-cell-id cell) emjupy--running-cells))
        ;; reconnected on its own; the run finishes, every tick there
-       (emjupy-int--pump 25 (lambda () (not (member (emjupy-cell-id cell) emjupy--running-cells))))
+       (emjupy-int--pump 25 (lambda () (not (member (emjupy-cell-id cell)
+                                                    emjupy--running-cells))))
        (emjupy-flush-output (current-buffer))
        (should (emjupy--ws-live-p))
        (should-not (member (emjupy-cell-id cell) emjupy--running-cells))
-       (let ((text (emjupy--mime-text (gethash "text" (aref (emjupy-cell-outputs cell) 0)))))
+       (let ((text (emjupy--mime-text
+                    (gethash "text" (aref (emjupy-cell-outputs cell) 0)))))
          (dotimes (i 25)
            (ert-info ((format "tick %d" i))
              (should (string-match-p (format "^tick %d$" i) text)))))))))
@@ -1799,17 +1935,22 @@ stale copy behind for every pass of the outer loop."
    (let ((cell (emjupy-int--run "from tqdm import tqdm\nimport time
 for i in tqdm(range(3), desc='outer', ncols=60):
     for j in tqdm(range(10), desc='inner', leave=False, ncols=60): time.sleep(0.005)" 60)))
-     (when (string-match-p "No module named" (format "%S" (emjupy-cell-outputs cell)))
+     (when (string-match-p "No module named"
+                           (format "%S" (emjupy-cell-outputs cell)))
        (ert-skip "tqdm is not installed where the kernel runs"))
      (with-current-buffer emjupy-int--buffer
        (emjupy-flush-output (current-buffer))
        (let* ((ov (emjupy-cell-output-ov cell))
               (shown (split-string (string-trim (buffer-substring-no-properties
-                                                 (overlay-start ov) (overlay-end ov)))
+                                                 (overlay-start ov)
+                                                 (overlay-end ov)))
                                    "\n")))
-         (should (= (cl-count-if (lambda (l) (string-match-p "outer" l)) shown) 1))
-         (should (string-match-p "outer: 100%" (car (seq-filter (lambda (l) (string-match-p "outer" l)) shown))))
-         (should-not (seq-some (lambda (l) (string-match-p "inner" l)) shown)))))))
+         (should (= (cl-count-if (lambda (l)
+                                   (string-match-p "outer" l)) shown) 1))
+         (should (string-match-p "outer: 100%"
+                                 (car (seq-filter (lambda (l) (string-match-p "outer" l)) shown))))
+         (should-not (seq-some (lambda (l)
+                                 (string-match-p "inner" l)) shown)))))))
 
 (provide 'emjupy-integration-test)
 ;;; emjupy-integration-test.el ends here

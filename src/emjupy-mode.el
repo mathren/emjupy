@@ -63,7 +63,8 @@ NAME is what gets reported."
 (defun emjupy--eldoc (callback &rest args)
   "Report documentation for the cell at point to CALLBACK, passing ARGS on."
   (when emjupy-language-support
-    (apply #'emjupy--timed "eldoc" #'emjupy--cell-eldoc-function callback args)))
+    (apply #'emjupy--timed "eldoc" #'emjupy--cell-eldoc-function
+           callback args)))
 
 (defun emjupy--refresh-rules-timed (&rest args)
   "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
@@ -315,7 +316,8 @@ mix fails in ways that look like bugs: a command named where its key
 should be, widgets drawn as text."
   (cl-loop for feature in emjupy--modules
            for file = (and (featurep feature) (feature-file feature))
-           when (and file (not (file-equal-p (file-name-directory file) emjupy--home)))
+           when (and file (not (file-equal-p (file-name-directory file)
+                                             emjupy--home)))
            collect (cons feature file)))
 
 (defvar emjupy--strays-checked nil
@@ -334,7 +336,8 @@ then however emjupy was -- by a `require\=', or an autoloaded command."
        (format "emjupy is loaded from two places: %s, but %s.  Two installations
 are on the `load-path' -- remove one, or put the one you want first."
                emjupy--home
-               (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s))) strays ", "))
+               (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s)))
+                          strays ", "))
        :warning))))
 
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
@@ -359,7 +362,8 @@ are on the `load-path' -- remove one, or put the one you want first."
   (emjupy-widgets-enable)
   (emjupy-widget-page-enable)
   ;; The number column narrows the page; the rules are redrawn to fit.
-  (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled nil t)
+  (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled
+            nil t)
   ;; Cells hold code, so the editing conveniences a programming mode would
   ;; give apply here too.  emjupy-mode derives from `fundamental-mode', which
   ;; brings none of them, and nothing about the buffer suggests to the user
@@ -377,7 +381,8 @@ are on the `load-path' -- remove one, or put the one you want first."
   ;; whole-frame resizes (full-screen toggles), which do not always change the
   ;; window configuration.
   (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t)
-  (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed nil t)
+  (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed
+            nil t)
   (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
   ;; Completion/eldoc for code cells are delegated to the shared code
   ;; shadow buffer (see section 8) automatically -- no action needed
@@ -393,7 +398,8 @@ are on the `load-path' -- remove one, or put the one you want first."
   (add-hook 'pre-command-hook #'emjupy--clear-indent-cycling nil t)
   ;; Everything leaving this buffer -- kill, copy, `M-w' -- goes through
   ;; here, so the cell struct never reaches the kill ring.
-  (setq-local filter-buffer-substring-function #'emjupy--filter-buffer-substring)
+  (setq-local filter-buffer-substring-function
+              #'emjupy--filter-buffer-substring)
   ;; And nothing arriving carries one either, for text killed before this
   ;; was in place or copied from a notebook in an older session.
   (setq-local yank-excluded-properties

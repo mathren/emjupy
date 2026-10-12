@@ -95,7 +95,8 @@ Opened by
   "Open markdown CELL from notebook buffer NB-BUF in its own edit buffer."
   (let* ((mode-fn (or (emjupy--markdown-mode-fn) 'text-mode))
          (buf (generate-new-buffer
-               (format "*emjupy-cell-edit: %s[%s]*" (buffer-name nb-buf) (emjupy-cell-id cell)))))
+               (format "*emjupy-cell-edit: %s[%s]*" (buffer-name nb-buf)
+                       (emjupy-cell-id cell)))))
     (with-current-buffer buf
       (insert (emjupy-cell-source cell))
       (funcall mode-fn)
@@ -107,9 +108,10 @@ Opened by
     (message "Editing cell externally in %s -- C-c C-c to commit, C-c C-k to discard." mode-fn)))
 
 (defun emjupy-commit-cell-edit ()
-  "Commit this markdown-cell-edit buffer's text back into its cell, then close it."
+  "Commit this cell-edit buffer's text back into its cell, then close it."
   (interactive)
-  (unless (and emjupy--edit-source-cell (buffer-live-p emjupy--edit-source-notebook-buffer))
+  (unless (and emjupy--edit-source-cell
+               (buffer-live-p emjupy--edit-source-notebook-buffer))
     (user-error "This buffer isn't an emjupy cell-edit buffer"))
   (let ((new-source (string-trim-right (buffer-string) "\n"))
         (cell emjupy--edit-source-cell)
@@ -273,7 +275,8 @@ somewhere this machine cannot reach as a plain path."
                    (not (and emjupy--force-local-shadow (file-remote-p dir)))
                    dir)))
     (let* ((explicit (usable (and emjupy-shadow-directory
-                                  (file-name-as-directory emjupy-shadow-directory))))
+                                  (file-name-as-directory
+                                   emjupy-shadow-directory))))
            ;; Not beside the notebook when the shadow must stay here and the
            ;; notebook lives elsewhere: "beside" would mean a LOCAL directory
            ;; named after a remote path, so emjupy would create
@@ -431,7 +434,8 @@ Called when a notebook learns where its kernel is, and available by
 hand.  Reports what it found rather than failing quietly."
   (interactive)
   (when (and (called-interactively-p 'any) (not emjupy-language-support))
-    (user-error "Language support is off: set `emjupy-language-support\=' to t"))
+    (user-error "Language support is off: set %s to t"
+                'emjupy-language-support))
   (let ((nb (or nb (emjupy--notebook))))
     (when (and nb emjupy-language-support
                ;; It is called when the kernel says where it runs, which may
@@ -498,7 +502,8 @@ The server is folded into the name: two servers can both host
                             (replace-regexp-in-string
                              "[^A-Za-z0-9._-]" "_"
                              (format "%s__%s" tag
-                                     (or (emjupy-notebook-path nb) "untitled"))))))
+                                     (or (emjupy-notebook-path nb)
+                                         "untitled"))))))
     ;; Deliberately no `make-directory' here: with a TRAMP
     ;; `emjupy-shadow-directory' that would open an ssh connection merely to
     ;; ask what the path is. The directory is created in
@@ -571,7 +576,8 @@ automatically, with nothing for the user to run."
     ;; stayed unresolvable no matter what `emjupy-shadow-host' said.
     (when (and (buffer-live-p buf)
                (buffer-local-value 'buffer-file-name buf)
-               (not (equal (expand-file-name (buffer-local-value 'buffer-file-name buf))
+               (not (equal (expand-file-name
+                            (buffer-local-value 'buffer-file-name buf))
                            (expand-file-name path))))
       ;; Never ask.  The shadow buffer visits a file but is a regenerated
       ;; copy of the cells, so "modified" only means it has drifted from a
@@ -646,11 +652,11 @@ automatically, with nothing for the user to run."
         ;; file each lock is remote I/O on the completion path -- measured at
         ;; 121 ms per edit over ssh to localhost, against 20 ms without.
         ;;
-        ;; Settled BEFORE anything below can modify the buffer: Emacs takes a lock on the first
-        ;; modification, and setting the coding system counts as one unless
-        ;; told otherwise.  Done after it, as it was, the lock was already
-        ;; taken -- a `.#' file, and an auto-save `#...#' one, left beside the
-        ;; notebook, in the user's own project directory.
+        ;; Settled BEFORE anything below can modify the buffer: Emacs takes a
+        ;; lock on the first modification, and setting the coding system counts
+        ;; as one unless told otherwise.  Done after it, as it was, the lock
+        ;; was already taken -- a `.#' file, and an auto-save `#...#' one, left
+        ;; beside the notebook, in the user's own project directory.
         (setq-local create-lockfiles nil)
         (setq buffer-auto-save-file-name nil)
         (auto-save-mode -1)
@@ -751,14 +757,16 @@ the right character of the right cell."
       (cl-loop for cell across (emjupy-notebook-cells nb)
                until found
                when (eq (emjupy-cell-type cell) 'code)
-               do (let* ((start (emjupy--shadow-section-start buf (emjupy-cell-id cell)))
-                         (len (length (emjupy-cell-source cell)))
-                         (ov (emjupy-cell-overlay cell)))
-                    (when (and start (overlayp ov)
-                               (>= shadow-pos start)
-                               (<= shadow-pos (+ start len)))
-                      (setq found (cons cell (+ (overlay-start ov)
-                                                (- shadow-pos start))))))))
+               do
+               (let* ((start (emjupy--shadow-section-start
+                              buf (emjupy-cell-id cell)))
+                      (len (length (emjupy-cell-source cell)))
+                      (ov (emjupy-cell-overlay cell)))
+                 (when (and start (overlayp ov)
+                            (>= shadow-pos start)
+                            (<= shadow-pos (+ start len)))
+                   (setq found (cons cell (+ (overlay-start ov)
+                                             (- shadow-pos start))))))))
     found))
 
 ;; --- xref ------------------------------------------------------------------
@@ -779,7 +787,8 @@ language server."
   (emjupy--cell-shadow-delegate
    (lambda (_cell-start _shadow-start buf)
      (when (emjupy--eglot-live-server buf)
-       (let ((backend (run-hook-with-args-until-success 'xref-backend-functions)))
+       (let ((backend (run-hook-with-args-until-success
+                       'xref-backend-functions)))
          (when backend (funcall fn backend)))))))
 
 (defun emjupy--names-a-file-elsewhere-p (nb file)
@@ -897,8 +906,10 @@ right destination there."
       (mapcar
        (lambda (item)
          (let* ((loc (xref-item-location item))
-                (file (and (xref-file-location-p loc) (xref-location-group loc)))
-                (same (and file (equal (emjupy--local-truename file) shadow-name))))
+                (file (and (xref-file-location-p loc)
+                           (xref-location-group loc)))
+                (same (and file (equal (emjupy--local-truename file)
+                                       shadow-name))))
            (if (not same)
                (emjupy--xref-on-the-right-machine nb item)
              (let* ((line (xref-location-line loc))
@@ -909,11 +920,13 @@ right destination there."
                                 (goto-char (point-min))
                                 (forward-line (1- line))
                                 (min (point-max) (+ (point) col))))))
-                    (mapped (and spos (emjupy--shadow-position-to-cell nb spos))))
+                    (mapped (and spos
+                                 (emjupy--shadow-position-to-cell nb spos))))
                (if (not mapped)
                    item
                  (xref-make (xref-item-summary item)
-                            (xref-make-buffer-location nb-buf (cdr mapped))))))))
+                            (xref-make-buffer-location nb-buf
+                                                       (cdr mapped))))))))
        items))))
 
 (cl-defmethod xref-backend-identifier-at-point ((_backend (eql emjupy)))
@@ -932,15 +945,17 @@ right destination there."
     (cl-loop for cell across (emjupy-notebook-cells nb)
              until found
              when (eq (emjupy-cell-type cell) 'code)
-             do (let* ((marker (emjupy--shadow-cell-marker (emjupy-cell-id cell)))
-                       (idx (string-search marker text)))
-                  (when idx
-                    (let* ((body (+ idx (length marker) 1))
-                           (len (length (or (emjupy-cell-source cell) "")))
-                           (ov (emjupy-cell-overlay cell)))
-                      (when (and (overlayp ov) (>= offset body) (<= offset (+ body len)))
-                        (setq found (list cell (+ (overlay-start ov)
-                                                  (- offset body)))))))))
+             do
+             (let* ((marker (emjupy--shadow-cell-marker (emjupy-cell-id cell)))
+                    (idx (string-search marker text)))
+               (when idx
+                 (let* ((body (+ idx (length marker) 1))
+                        (len (length (or (emjupy-cell-source cell) "")))
+                        (ov (emjupy-cell-overlay cell)))
+                   (when (and (overlayp ov) (>= offset body)
+                              (<= offset (+ body len)))
+                     (setq found (list cell (+ (overlay-start ov)
+                                               (- offset body)))))))))
     found))
 
 (cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
@@ -975,7 +990,8 @@ The notebook is re-rendered if any  Returns the number of cells updated."
         (cl-loop for cell across (emjupy-notebook-cells nb)
                  do (let ((match (assq (emjupy-cell-id cell) sections)))
                       (when (and match
-                                 (not (string= (cdr match) (emjupy-cell-source cell))))
+                                 (not (string= (cdr match)
+                                               (emjupy-cell-source cell))))
                         (setf (emjupy-cell-source cell) (cdr match))
                         (setq updated (1+ updated)))))
         (when (> updated 0)
@@ -1005,7 +1021,8 @@ eldoc already went through the shadow buffer; everything else did not."
       (user-error "Point is not in a code cell"))
     (let ((updated (emjupy--pull-shadow-into-cells nb)))
       (when (> updated 0)
-        (message "[emjupy] %d cell%s updated." updated (if (= updated 1) "" "s")))
+        (message "[emjupy] %d cell%s updated." updated (if (= updated 1) ""
+                                                         "s")))
       updated)))
 
 (defcustom emjupy-eglot-delegated-commands
@@ -1067,7 +1084,8 @@ next time."
          (updated 0))
     (cl-loop for cell across (emjupy-notebook-cells nb)
              do (let ((match (assq (emjupy-cell-id cell) sections)))
-                  (when (and match (not (string= (cdr match) (emjupy-cell-source cell))))
+                  (when (and match (not (string= (cdr match)
+                                                 (emjupy-cell-source cell))))
                     (setf (emjupy-cell-source cell) (cdr match))
                     (setq updated (1+ updated)))))
     (set-buffer-modified-p nil)
@@ -1096,15 +1114,14 @@ The buffer and its Eglot connection are kept alive, not killed."
 (defun emjupy-edit-cell-externally ()
   "Edit the cell at point with real language tooling.
 
-Code cells open a persistent, shared Python buffer containing ALL of
-the notebook's code cells (marked `# %% [emjupy:ID]'), with Eglot
-started automatically -- so completions, diagnostics, and go-to-def
-are aware of definitions from every cell, not just this one, and
-there's nothing extra for you to run.  \\[emjupy-commit-shadow-edit] commits every section
-you touched back into its cell; \\[emjupy-abort-shadow-edit] discards
-uncommitted edits.
-The buffer and its Eglot connection persist, so only the first use
-per session pays the language-server startup cost.
+Code cells open a persistent, shared Python buffer containing ALL of the
+notebook's code cells (marked `# %% [emjupy:ID]'), with Eglot started
+automatically -- so completions, diagnostics, and go-to-def are aware of
+definitions from every cell, not just this one, and there's nothing extra for
+you to run.  \\[emjupy-commit-shadow-edit] commits every section you touched
+back into its cell; \\[emjupy-abort-shadow-edit] discards uncommitted edits.
+The buffer and its Eglot connection persist, so only the first use per session
+pays the language-server startup cost.
 
 Markdown cells open their own simple edit buffer instead -- cross-cell
 LSP awareness doesn't apply to prose."
@@ -1214,12 +1231,14 @@ value, or nil if point isn't in a code cell."
                (emjupy--shadow-would-mislead-p emjupy--buffer-notebook))
     (let ((cell (get-text-property (point) 'emjupy-cell))
           (nb emjupy--buffer-notebook))
-      (when (and cell nb (eq (emjupy-cell-type cell) 'code) (emjupy-cell-overlay cell))
+      (when (and cell nb (eq (emjupy-cell-type cell) 'code)
+                 (emjupy-cell-overlay cell))
         (emjupy--sync-all-cells)
         (let* ((main-point (point))
                (cell-start (overlay-start (emjupy-cell-overlay cell)))
                (buf (emjupy--ensure-shadow-buffer nb))
-               (shadow-start (emjupy--shadow-section-start buf (emjupy-cell-id cell))))
+               (shadow-start (emjupy--shadow-section-start
+                              buf (emjupy-cell-id cell))))
           (with-current-buffer buf
             ;; Clamp: if the cell's shadow section is shorter than the offset
             ;; (mid-edit, before a resync), an unclamped goto-char signals
@@ -1396,19 +1415,25 @@ socket was working."
          (lines
           (list
            (format "notebook        %s" (or (emjupy-notebook-path nb) "?"))
-           (format "server          %s" (if server (emjupy--server-label server) "none"))
-           (format "server root     %s" (or (and server (emjupy--remote-root-for server))
-                                            "unknown -- no kernel has reported in"))
-           (format "kernel cwd      %s" (or (emjupy-notebook-kernel-cwd nb)
-                                            "unknown -- kernel has not answered"))
+           (format "server          %s" (if server
+                                            (emjupy--server-label server)
+                                          "none"))
+           (format "server root     %s"
+                   (or (and server (emjupy--remote-root-for server))
+                       "unknown -- no kernel has reported in"))
+           (format "kernel cwd      %s"
+                   (or (emjupy-notebook-kernel-cwd nb)
+                       "unknown -- kernel has not answered"))
            (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
            (format "lsp url         %s"
                    ;; Redacted: this report is written to be pasted into a
                    ;; bug report, and the URL carries the token.
-                   (if server (emjupy--redact-url (emjupy--lsp-url server)) "n/a"))
+                   (if server (emjupy--redact-url (emjupy--lsp-url server))
+                     "n/a"))
            (format "shadow file     %s"
                    (if (buffer-live-p shadow)
-                       (or (buffer-local-value 'buffer-file-name shadow) "unnamed")
+                       (or (buffer-local-value 'buffer-file-name shadow)
+                           "unnamed")
                      "not created"))
            (format "language server %s" kind)
            (format "connection      %s"

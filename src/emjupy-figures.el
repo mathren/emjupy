@@ -101,7 +101,8 @@ See `emjupy-figure-window-command'.  The browsers are looked for each
 time, so a change to `emjupy-figure-window-browsers' counts at once."
   (or emjupy-figure-window-command
       (if (eq emjupy--figure-window-bundled-command 'unknown)
-          (setq emjupy--figure-window-bundled-command (emjupy--figure-window-bundled))
+          (setq emjupy--figure-window-bundled-command
+                (emjupy--figure-window-bundled))
         emjupy--figure-window-bundled-command)
       (cl-loop for (program . args) in emjupy-figure-window-browsers
                for path = (executable-find program)
@@ -161,7 +162,8 @@ feature is what is tested.  And an xwidget needs a graphical frame."
 Named by its content: opening the same figure again opens the same
 page.  A file rather than a `data:' URL, since a page can run to
 megabytes."
-  (let ((file (expand-file-name (concat (md5 html) ".html") (emjupy--figures-dir))))
+  (let ((file (expand-file-name (concat (md5 html) ".html")
+                                (emjupy--figures-dir))))
     (unless (file-exists-p file)
       (let ((coding-system-for-write 'utf-8-unix))
         (write-region html nil file nil 'quiet)))
@@ -174,7 +176,9 @@ megabytes."
          (text (cond ((stringp title) title)
                      ((hash-table-p title) (gethash "text" title)))))
     (if (and (stringp text) (not (string-empty-p text)))
-        (replace-regexp-in-string "[<>&\"]" (lambda (c) (format "&#%d;" (string-to-char c))) text)
+        (replace-regexp-in-string "[<>&\"]" (lambda (c)
+                                              (format "&#%d;"
+                                                      (string-to-char c))) text)
       "plotly figure")))
 
 (defun emjupy--plotly-page (figure script)
@@ -210,7 +214,8 @@ used."
   (if (stringp emjupy-plotly-js)
       (funcall callback (if (string-match-p "\\`[a-z]+://" emjupy-plotly-js)
                             emjupy-plotly-js
-                          (concat "file://" (expand-file-name emjupy-plotly-js))))
+                          (concat "file://"
+                                  (expand-file-name emjupy-plotly-js))))
     (let ((kernel (and emjupy--buffer-notebook
                        (emjupy-notebook-kernel emjupy--buffer-notebook))))
       (unless (and kernel (emjupy--ws-live-p kernel))
@@ -240,14 +245,16 @@ is written and CALLBACK called with its address."
         (write-region (apply #'concat (reverse pieces)) nil file nil 'quiet)
         (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
         (funcall callback (concat "file://" file)))
-    (message "[emjupy] Fetching plotly.js from the kernel... %d%%" (/ (* 100 from) size))
+    (message "[emjupy] Fetching plotly.js from the kernel... %d%%"
+             (/ (* 100 from) size))
     (emjupy--kernel-eval
      kernel (format "print(_emjupy_js[%d:%d], end='')"
                     from (+ from emjupy--plotly-js-chunk))
      (lambda (piece)
        ;; a second apart, to stay under the server's output limit
        (run-at-time 1.0 nil #'emjupy--plotly-js-fetch kernel file size
-                    (+ from emjupy--plotly-js-chunk) (cons piece pieces) callback)))))
+                    (+ from emjupy--plotly-js-chunk)
+                    (cons piece pieces) callback)))))
 
 (defun emjupy--show-image (payload type)
   "Show the image PAYLOAD of TYPE in a buffer of its own."
@@ -259,10 +266,12 @@ is written and CALLBACK called with its address."
         (goto-char (point-min)))
       (special-mode))
     ;; In a frame of its own, the same one each time: a figure window.
-    (display-buffer buf '((display-buffer-reuse-window display-buffer-pop-up-frame)
+    (display-buffer buf
+                    '((display-buffer-reuse-window display-buffer-pop-up-frame)
                           (reusable-frames . t)
                           (pop-up-frame-parameters (name . "emjupy figure")
-                                                   (width . 90) (height . 40))))))
+                                                   (width . 90)
+                                                   (height . 40))))))
 
 (defun emjupy--openable-data (cell)
   "Return the first output bundle of CELL that can be opened, or nil."
@@ -270,7 +279,8 @@ is written and CALLBACK called with its address."
            for data = (and (hash-table-p o) (gethash "data" o))
            when (and data (or (gethash emjupy--plotly-mime data)
                               (emjupy--scripted-html data)
-                              (cl-loop for (mime . _) in emjupy--image-mime-types
+                              (cl-loop for (mime . _) in
+                                       emjupy--image-mime-types
                                        thereis (gethash mime data))))
            return data))
 
@@ -300,7 +310,8 @@ and a notebook is a file people share."
        (plotly
         (emjupy--plotly-js
          (lambda (script)
-           (emjupy--show-file (emjupy--write-page (emjupy--plotly-page plotly script)))
+           (emjupy--show-file (emjupy--write-page
+                               (emjupy--plotly-page plotly script)))
            (message "[emjupy] Opened the plotly figure."))))
        (html (emjupy--show-file (emjupy--write-page html))
              (message "[emjupy] Opened the HTML output."))

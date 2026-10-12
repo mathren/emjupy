@@ -160,7 +160,7 @@ tedious to work out but not ambiguous."
        (t (setq destination word))))))
 
 (defvar emjupy--tunnel-hosts (make-hash-table)
-  "The tunnel found forwarding each local port: (TIME . HOST), HOST nil if none.")
+  "Tunnels found per local port: (TIME . HOST), HOST nil if there is none.")
 
 (defconst emjupy--tunnel-hosts-seconds 60
   "How long the tunnel found for a port is taken as still the one.")
@@ -177,7 +177,8 @@ answer -- none, too -- is kept for `emjupy--tunnel-hosts-seconds\='
 rather than running ps for every one.  Tunnels outlive that easily."
   (when (and port emjupy-probe-environment)
     (let ((known (gethash port emjupy--tunnel-hosts)))
-      (if (and known (< (- (float-time) (car known)) emjupy--tunnel-hosts-seconds))
+      (if (and known (< (- (float-time) (car known))
+                        emjupy--tunnel-hosts-seconds))
           (cdr known)
         (let ((host (emjupy--ssh-host-forwarding-1 port)))
           (puthash port (cons (float-time) host) emjupy--tunnel-hosts)
@@ -191,7 +192,8 @@ machine, through TRAMP, where the tunnel is not."
   (let ((default-directory temporary-file-directory))
     (when (executable-find "ps")
       (let ((lines (split-string
-                    (shell-command-to-string "ps -eo args= 2>/dev/null") "\n" t))
+                    (shell-command-to-string "ps -eo args= 2>/dev/null")
+                    "\n" t))
             (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))
             (found nil))
         (dolist (line lines found)
@@ -209,7 +211,8 @@ machine, through TRAMP, where the tunnel is not."
   (let ((configured (cond
                      ((stringp emjupy-ssh-host) emjupy-ssh-host)
                      ((consp emjupy-ssh-host)
-                      (cdr (assoc (emjupy--server-label server) emjupy-ssh-host))))))
+                      (cdr (assoc (emjupy--server-label server)
+                                  emjupy-ssh-host))))))
     (or configured
         (emjupy--ssh-host-forwarding
          (plist-get (emjupy--server-parts server) :port)))))
@@ -284,11 +287,13 @@ server so two servers holding the same path do not collide."
       (unless existing
         (let* ((res (emjupy--http-request
                      "GET" server
-                     (concat (emjupy--contents-path rel) "?type=file&format=text")))
+                     (concat (emjupy--contents-path rel)
+                             "?type=file&format=text")))
                (content (and (hash-table-p res) (gethash "content" res))))
           (unless (stringp content)
             (kill-buffer buf)
-            (user-error "Could not read %s from %s" rel (emjupy--server-label server)))
+            (user-error "Could not read %s from %s" rel
+                        (emjupy--server-label server)))
           (with-current-buffer buf
             (let ((inhibit-read-only t))
               (erase-buffer)

@@ -44,7 +44,8 @@ Each a URL or a file name; a file needs no network."
   :group 'emjupy)
 
 (defconst emjupy--standard-widget-modules
-  '("@jupyter-widgets/controls" "@jupyter-widgets/base" "@jupyter-widgets/output" "")
+  '("@jupyter-widgets/controls" "@jupyter-widgets/base"
+    "@jupyter-widgets/output" "")
   "The modules of ipywidgets\\=' own widgets, drawn in the notebook.")
 
 (defvar emjupy--bridge nil
@@ -59,7 +60,8 @@ Each a URL or a file name; a file needs no network."
   "Return non-nil if S, a widget\\='s state, is drawn by JavaScript of its own.
 Its view comes from a module other than ipywidgets\\=' own."
   (let ((module (gethash "_view_module" s)))
-    (and (stringp module) (not (member module emjupy--standard-widget-modules)))))
+    (and (stringp module) (not (member module
+                                       emjupy--standard-widget-modules)))))
 
 (defun emjupy--widget-scripted-name (s)
   "Return the name of S, a widget drawing itself, for the line opening it.
@@ -83,10 +85,14 @@ its Python class -- which anywidget records -- says more."
   "Return the comm ids VALUE refers to, as \"IPY_MODEL_<id>\" strings in it."
   (cond ((and (stringp value) (string-prefix-p "IPY_MODEL_" value))
          (list (emjupy--widget-ref value)))
-        ((vectorp value) (cl-mapcan #'emjupy--widget-references (append value nil)))
+        ((vectorp value) (cl-mapcan #'emjupy--widget-references
+                                    (append value nil)))
         ((hash-table-p value)
-         (let (refs) (maphash (lambda (_k v) (setq refs (append (emjupy--widget-references v) refs)))
-                              value)
+         (let (refs) (maphash
+                      (lambda (_k v)
+                        (setq refs (append
+                                    (emjupy--widget-references v) refs)))
+                      value)
               refs))))
 
 (defun emjupy--widget-tree (id)
@@ -97,7 +103,9 @@ its Python class -- which anywidget records -- says more."
         (unless (member next seen)
           (push next seen)
           (let ((state (emjupy--widget-state next)))
-            (when state (setq todo (append (emjupy--widget-references state) todo)))))))
+            (when state (setq todo
+                              (append
+                               (emjupy--widget-references state) todo)))))))
     (nreverse seen)))
 
 (defun emjupy--widget-serialize (value path paths buffers)
@@ -111,10 +119,13 @@ holding the lists."
          :null)
         ((vectorp value)
          (vconcat (cl-loop for v across value for i from 0
-                           collect (emjupy--widget-serialize v (cons i path) paths buffers))))
+                           collect (emjupy--widget-serialize v (cons i path)
+                                                             paths buffers))))
         ((hash-table-p value)
          (let ((copy (make-hash-table :test 'equal)))
-           (maphash (lambda (k v) (puthash k (emjupy--widget-serialize v (cons k path) paths buffers)
+           (maphash (lambda (k v) (puthash k
+                                           (emjupy--widget-serialize
+                                            v (cons k path) paths buffers)
                                            copy))
                     value)
            copy))
@@ -144,8 +155,11 @@ holding the lists."
 
 (defun emjupy--widget-module-file (module version)
   "Return the file MODULE at VERSION is kept in, from the kernel."
-  (expand-file-name (format "%s@%s.js" (replace-regexp-in-string "[^A-Za-z0-9_.-]" "_" module)
-                            (replace-regexp-in-string "[^A-Za-z0-9_.-]" "_" (or version "")))
+  (expand-file-name (format "%s@%s.js"
+                            (replace-regexp-in-string "[^A-Za-z0-9_.-]"
+                                                      "_" module)
+                            (replace-regexp-in-string "[^A-Za-z0-9_.-]" "_"
+                                                      (or version "")))
                     (emjupy--widget-modules-dir)))
 
 (defun emjupy--widget-fetch-modules (kernel modules callback)
@@ -161,7 +175,8 @@ widget manager fetches it from a CDN instead."
       (if (file-exists-p file)
           (emjupy--widget-fetch-modules
            kernel (cdr modules)
-           (lambda (found) (funcall callback (cons (cons (car module) file) found))))
+           (lambda (found) (funcall callback
+                                    (cons (cons (car module) file) found))))
         (emjupy--kernel-eval
          kernel
          (format "import os as _o, sys as _s
@@ -264,7 +279,8 @@ require(['@jupyter-widgets/html-manager', '@jupyter-widgets/base'], function (hm
 </script></body></html>
 "
           title
-          (mapconcat (lambda (s) (format "<script src=\"%s\"></script>" (emjupy--widget-script-url s)))
+          (mapconcat (lambda (s) (format "<script src=\"%s\"></script>"
+                                         (emjupy--widget-script-url s)))
                      emjupy-widget-scripts "\n")
           (json-serialize (let ((h (make-hash-table :test 'equal)))
                             (pcase-dolist (`(,name . ,file) modules)
@@ -286,18 +302,21 @@ require(['@jupyter-widgets/html-manager', '@jupyter-widgets/base'], function (hm
 (defun emjupy--bridge-send (ws object)
   "Send OBJECT, a hash table, to a page on its WebSocket WS."
   (when (websocket-openp ws)
-    (websocket-send-text ws (decode-coding-string (json-serialize object) 'utf-8))))
+    (websocket-send-text ws (decode-coding-string
+                             (json-serialize object) 'utf-8))))
 
 (defun emjupy--bridge-page-of (ws)
   "Return the token and the page whose WebSocket is WS, as a cons, or nil."
   (catch 'found
-    (maphash (lambda (token page) (when (eq (plist-get page :ws) ws) (throw 'found (cons token page))))
+    (maphash (lambda (token page) (when (eq (plist-get page :ws) ws)
+                                    (throw 'found (cons token page))))
              emjupy--bridge-pages)
     nil))
 
 (defun emjupy--bridge-on-message (ws frame)
   "Handle FRAME from a page on WS: its greeting, or a widget\\='s message."
-  (let* ((m (json-parse-string (websocket-frame-text frame) :object-type 'hash-table))
+  (let* ((m (json-parse-string (websocket-frame-text frame)
+                               :object-type 'hash-table))
          (type (gethash "type" m)))
     (pcase type
       ("hello"
@@ -314,9 +333,11 @@ require(['@jupyter-widgets/html-manager', '@jupyter-widgets/base'], function (hm
              (emjupy--bridge-send ws init)))))
       ("comm_msg"
        (when-let* ((page (cdr (emjupy--bridge-page-of ws))))
-         (emjupy--widget-message (gethash "comm_id" m) (gethash "data" m) (plist-get page :cell)
-                                 (mapcar #'base64-decode-string
-                                         (append (gethash "buffers" m) nil))))))))
+         (emjupy--widget-message (gethash "comm_id" m) (gethash "data" m)
+                                 (plist-get page :cell)
+                                 (mapcar
+                                  #'base64-decode-string
+                                  (append (gethash "buffers" m) nil))))))))
 
 (defun emjupy--bridge-on-close (ws)
   "Forget the page whose WebSocket WS has closed."
@@ -332,20 +353,37 @@ of its kernel, which may come to be shown in it."
     (maphash
      (lambda (_token page)
        (when (and (eq (plist-get page :kernel) kernel) (plist-get page :ws)
-                  (or (equal msg-type "comm_open") (member id (plist-get page :models))))
+                  (or (equal msg-type "comm_open")
+                      (member id (plist-get page :models))))
          (when (equal msg-type "comm_open")
            (plist-put page :models (cons id (plist-get page :models))))
          (let ((out (make-hash-table :test 'equal)))
            (puthash "type" msg-type out)
            (puthash "comm_id" id out)
-           (puthash "data" (or (gethash "data" content) (make-hash-table :test 'equal)) out)
-           (puthash "buffers" (vconcat (mapcar (lambda (b) (base64-encode-string (emjupy-bytes-data b) t))
-                                               buffers))
+           (puthash "data" (or (gethash "data" content)
+                               (make-hash-table :test 'equal)) out)
+           (puthash "buffers"
+                    (vconcat (mapcar (lambda (b) (base64-encode-string
+                                                  (emjupy-bytes-data b) t))
+                                     buffers))
                     out)
            (emjupy--bridge-send (plist-get page :ws) out))))
      emjupy--bridge-pages)))
 
 ;;;; Opening a page
+
+(defun emjupy--widget-own-modules (state)
+  "Return the modules a widget with STATE needs beyond the standard ones.
+Each is a cons of the module\'s name and version: its model\'s, its
+view\'s, or both."
+  (cl-loop for (name . version)
+           in (list (cons (gethash "_model_module" state)
+                          (gethash "_model_module_version" state))
+                    (cons (gethash "_view_module" state)
+                          (gethash "_view_module_version" state)))
+           when (and (stringp name)
+                     (not (member name emjupy--standard-widget-modules)))
+           collect (cons name version)))
 
 (defun emjupy-widget-open-page (id cell)
   "Open the widget with comm ID, in CELL, in a page of its own.
@@ -356,14 +394,7 @@ the kernel, and one made in the kernel reaches the page."
          (modules (delete-dups
                    (cl-loop for m in models
                             for s = (emjupy--widget-state m)
-                            append (cl-loop for (name . version)
-                                            in (list (cons (gethash "_model_module" s)
-                                                           (gethash "_model_module_version" s))
-                                                     (cons (gethash "_view_module" s)
-                                                           (gethash "_view_module_version" s)))
-                                            when (and (stringp name)
-                                                      (not (member name emjupy--standard-widget-modules)))
-                                            collect (cons name version)))))
+                            append (emjupy--widget-own-modules s))))
          (token (format "%s-%s" id (random 100000000)))
          (title (emjupy--widget-scripted-name (emjupy--widget-state id))))
     (unless (and kernel (emjupy--ws-live-p kernel))
@@ -372,9 +403,11 @@ the kernel, and one made in the kernel reaches the page."
     (emjupy--widget-fetch-modules
      kernel modules
      (lambda (found)
-       (puthash token (list :kernel kernel :cell cell :view id :models models) emjupy--bridge-pages)
+       (puthash token (list :kernel kernel :cell cell :view id :models models)
+                emjupy--bridge-pages)
        (emjupy--show-file
-        (emjupy--write-page (emjupy--widget-page token (emjupy--bridge-port) title found)))))))
+        (emjupy--write-page (emjupy--widget-page token (emjupy--bridge-port)
+                                                 title found)))))))
 
 (defun emjupy-widget-page-enable ()
   "Open widgets that draw themselves in a page, and keep the pages in step.

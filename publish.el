@@ -59,7 +59,8 @@
   "Return a list of Org files modified since the last commit."
   (let* ((default-directory (expand-file-name "./docs"))
          (modified-files (split-string (shell-command-to-string "git diff --name-only HEAD -- *.org") "\n" t)))
-    (mapcar (lambda (file) (expand-file-name file default-directory)) modified-files)))
+    (mapcar (lambda (file) (expand-file-name file default-directory))
+            modified-files)))
 
 (defun mr/check-for-all-flag-and-publish ()
   "Check if all is in the command-line arguments."
@@ -67,8 +68,8 @@
       (org-publish-all t) ;; publish all
     (let ((modified-files (mr/get-modified-org-files)))
       (if modified-files
-	  (org-publish-project "org-site:main")
-	(message "No modified Org files found.")))))
+          (org-publish-project "org-site:main")
+        (message "No modified Org files found.")))))
 
 
 (defun mr/read-file (file)
@@ -86,8 +87,9 @@
   "Read the keywords #+PREVIOUS_PAGE and #+NEXT_PAGE from the current Org file.
 Return them as two values: previous-page and next-page."
   (let* ((keywords (org-element-map (org-element-parse-buffer) 'keyword
-                                    (lambda (el) (cons (org-element-property :key el)
-                                                       (org-element-property :value el)))))
+                                    (lambda (el)
+                                      (cons (org-element-property :key el)
+                                            (org-element-property :value el)))))
          (previous (cdr (assoc "PREVIOUS_PAGE" keywords)))
          (next (cdr (assoc "NEXT_PAGE" keywords))))
     (list previous next)))
@@ -148,7 +150,8 @@ INFO is the export plist."
   "Export DRAWER as a collapsible HTML element."
   (let* ((drawer-name (org-element-property :drawer-name drawer))
          (drawer-id (format "drawer-%s-%d"
-                            (replace-regexp-in-string "[^a-zA-Z0-9]" "-" drawer-name)
+                            (replace-regexp-in-string "[^a-zA-Z0-9]" "-"
+                                                      drawer-name)
                             (cl-incf mr/drawer-counter))))
     (format "<div class=\"org-drawer-container\">
   <button class=\"org-drawer-toggle\" onclick=\"toggleDrawer('%s')\">%s ▼</button>
@@ -233,27 +236,28 @@ All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
       (list
        (list "org-site:main"
              :base-directory "./docs/"
-	     :publishing-directory "./html-content"
-	     :recursive nil
-	     :exclude "README.org\\|LICENSE\\|\\.gitignore\\|\\*.tar\\|\\Makefile\\|\\.dir-locals.el\\|fuzz-findings.org"
+             :publishing-directory "./html-content"
+             :recursive nil
+             :exclude "README.org\\|LICENSE\\|\\.gitignore\\|\\*.tar\\|\\Makefile\\|\\.dir-locals.el\\|fuzz-findings.org"
              :publishing-function 'org-html-publish-to-html
-	     :html-doctype "html5"
-	     :language "en"
-	     :html-html5-fancy t
-	     :email "mrenzo@arizona.edu"
-	     :meta-type "website"
-	     :description: "Emjupy"
-	     :with-title nil
-	     :with-latex t
-	     :with-sub-superscript t
-	     :html-head-include-default-style nil
-	     :with-tags t
-	     :with-tasks t
-	     :html-self-link-headlines t
-             :with-timestamps t					;; Include time stamp in file
-             :with-toc nil					;; Don't include a table of contents
-             :section-numbers nil				;; Don't include section numbers
-             :file-list (mr/get-modified-org-files)))) ; Use the list of modified files only
+             :html-doctype "html5"
+             :language "en"
+             :html-html5-fancy t
+             :email "mrenzo@arizona.edu"
+             :meta-type "website"
+             :description: "Emjupy"
+             :with-title nil
+             :with-latex t
+             :with-sub-superscript t
+             :html-head-include-default-style nil
+             :with-tags t
+             :with-tasks t
+             :html-self-link-headlines t
+             :with-timestamps t           ; Include time stamp in file
+             :with-toc nil                ; Don't include a table of contents
+             :section-numbers nil         ; Don't include section numbers
+             ;; Use the list of modified files only
+             :file-list (mr/get-modified-org-files))))
 
 (mr/check-for-all-flag-and-publish)
 (message "Build complete!")

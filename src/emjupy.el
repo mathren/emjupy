@@ -128,7 +128,8 @@ the echo area, for pasting into a bug report."
                   (let ((strays (emjupy--stray-modules)))
                     (if strays
                         (format " -- but %s"
-                                (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s)))
+                                (mapconcat (lambda (s) (format "%s from %s"
+                                                               (car s) (cdr s)))
                                            strays ", "))
                       ""))
                   (if nb

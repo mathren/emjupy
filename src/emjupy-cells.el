@@ -24,10 +24,11 @@
 (require 'emjupy-render)
 
 (defun emjupy--sync-cell-source-from-buffer (cell)
-  "Read the live buffer text bounded by CELL's overlay into `emjupy-cell-source'."
+  "Copy the buffer text inside CELL's overlay into its `emjupy-cell-source'."
   (when-let* ((ov (emjupy-cell-overlay cell)))
     (when (overlay-buffer ov)
-      (let* ((text (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))
+      (let* ((text (buffer-substring-no-properties (overlay-start ov)
+                                                   (overlay-end ov)))
              (trimmed (string-trim-right text "\n")))
         ;; An empty cell is drawn with a newline so that it occupies a line
         ;; and can be typed into.  Trimming one newline leaves that line in
@@ -35,7 +36,8 @@
         ;; one holding a newline -- a change to the notebook that nobody
         ;; made, on the first sync after opening it.
         (setf (emjupy-cell-source cell)
-              (if (string-empty-p (string-trim-right trimmed "[\n]+")) "" trimmed))))))
+              (if (string-empty-p (string-trim-right trimmed "[\n]+"))
+                  "" trimmed))))))
 
 (defun emjupy--check-invariants (&optional structure-only)
   "Return a list of ways this buffer and its cells disagree, or nil.
@@ -70,14 +72,17 @@ and what would be saved have come apart."
          ((not (overlayp ov))
           (push (format "cell %d has no overlay" index) problems))
          ((not (eq (overlay-buffer ov) (current-buffer)))
-          (push (format "cell %d's overlay is in another buffer" index) problems))
+          (push (format "cell %d's overlay is in another buffer" index)
+                problems))
          (t
           (when (> (overlay-start ov) (overlay-end ov))
             (push (format "cell %d's overlay is inside out" index) problems))
           (when (> (overlay-end ov) (point-max))
-            (push (format "cell %d's overlay runs past the buffer" index) problems))
+            (push (format "cell %d's overlay runs past the buffer" index)
+                  problems))
           (when (and prev-end (< (overlay-start ov) prev-end))
-            (push (format "cell %d overlaps the cell before it" index) problems))
+            (push (format "cell %d overlaps the cell before it" index)
+                  problems))
           ;; The text really there, against the text we would save.  Trailing
           ;; blank lines are not compared: an empty cell is drawn with a
           ;; newline so that it occupies a line and can be typed into, and
@@ -90,14 +95,16 @@ and what would be saved have come apart."
                   (stored (string-trim-right (or (emjupy-cell-source cell) "")
                                              "[\n]+")))
               (unless (equal shown stored)
-                (push (format "cell %d shows %S but holds %S" index shown stored)
+                (push (format "cell %d shows %S but holds %S" index
+                              shown stored)
                       problems))))
           (when (overlayp out)
             (if (not (eq (overlay-buffer out) (current-buffer)))
                 (push (format "cell %d's output box is in another buffer" index)
                       problems)
               (unless (= (overlay-start out) (overlay-end ov))
-                (push (format "cell %d's output box does not follow its source" index)
+                (push (format "cell %d's output box does not follow its source"
+                              index)
                       problems))))
           (setq prev-end (if (overlayp out)
                              (max (overlay-end ov) (overlay-end out))
@@ -128,7 +135,8 @@ Every cell must have a live overlay inside the buffer, and the overlays
 must run in cell order without overlapping.  Anything else means the
 buffer and the structs have come apart -- a render interrupted partway,
 or something outside emjupy having rewritten the text."
-  (let ((cells (append (or (emjupy-notebook-cells emjupy--buffer-notebook) []) nil))
+  (let ((cells (append (or (emjupy-notebook-cells emjupy--buffer-notebook)
+                           []) nil))
         (prev-end 0)
         (ok t))
     (dolist (cell cells)
@@ -193,7 +201,8 @@ stray borders unrepresentable rather than merely unlikely, which
 matters for a fault I have not been able to reproduce."
   (let ((claimed (make-hash-table :test 'eq)))
     (cl-loop for cell across (or (and emjupy--buffer-notebook
-                                      (emjupy-notebook-cells emjupy--buffer-notebook))
+                                      (emjupy-notebook-cells
+                                       emjupy--buffer-notebook))
                                  [])
              do (let ((ov (emjupy-cell-overlay cell))
                       (out (emjupy-cell-output-ov cell)))
@@ -202,7 +211,8 @@ matters for a fault I have not been able to reproduce."
                       (puthash o t claimed)
                       ;; and the overlays that show their rules
                       (dolist (companion (overlay-get o 'emjupy-companions))
-                        (when (overlayp companion) (puthash companion t claimed)))))))
+                        (when (overlayp companion) (puthash companion
+                                                            t claimed)))))))
     (dolist (ov (overlays-in (point-min) (point-max)))
       (when (and (overlay-get ov 'emjupy-overlay)
                  (or (not (gethash ov claimed))
@@ -286,12 +296,14 @@ should fall back to a full redraw."
             ;; restored afterwards.
             (setq following-after
                   (let ((cells (and emjupy--buffer-notebook
-                                    (append (emjupy-notebook-cells emjupy--buffer-notebook)
+                                    (append (emjupy-notebook-cells
+                                             emjupy--buffer-notebook)
                                             nil))))
                     (cl-find-if (lambda (cell)
                                   (let ((ov (emjupy-cell-overlay cell)))
                                     (and (overlayp ov)
-                                         (eq (overlay-buffer ov) (current-buffer))
+                                         (eq (overlay-buffer ov)
+                                             (current-buffer))
                                          (>= (overlay-start ov) end))))
                                 cells)))
             (delete-region start end)
@@ -301,7 +313,8 @@ should fall back to a full redraw."
                 (emjupy--render-cell cell))
               (setq new-end (point)))
             ;; Put it back where it belongs if it swallowed the new text.
-            (let ((ov (and following-after (emjupy-cell-overlay following-after))))
+            (let ((ov (and following-after
+                           (emjupy-cell-overlay following-after))))
               (when (and (overlayp ov)
                          (eq (overlay-buffer ov) (current-buffer))
                          (< (overlay-start ov) new-end))
@@ -419,7 +432,8 @@ The re-entrant call is dropped rather than queued.  It has nothing to
 add: the render already running rebuilds from the same structs, which
 the caller has by then already updated."
   (unless (memq (current-buffer) emjupy--rendering-buffers)
-    (let ((emjupy--rendering-buffers (cons (current-buffer) emjupy--rendering-buffers)))
+    (let ((emjupy--rendering-buffers (cons (current-buffer)
+                                           emjupy--rendering-buffers)))
       (if target-cell
           ;; A target says where POINT should end up, not that the window
           ;; should jump.  Cycling a cell's type or re-indenting it both
@@ -445,7 +459,9 @@ Point is left wherever THUNK put it: this is for redraws that do mean to
 move point, and only the scroll position has to survive."
   (let* ((windows (get-buffer-window-list (current-buffer) nil t))
          (starts (mapcar (lambda (w)
-                           (cons w (line-number-at-pos (emjupy--visible-from (window-start w)))))
+                           (cons w
+                                 (line-number-at-pos
+                                  (emjupy--visible-from (window-start w)))))
                          windows)))
     (unwind-protect
         (funcall thunk)
@@ -473,7 +489,9 @@ line they were looking at."
          (point-line (line-number-at-pos (point)))
          (point-col (current-column))
          (starts (mapcar (lambda (w)
-                           (cons w (line-number-at-pos (emjupy--visible-from (window-start w)))))
+                           (cons w
+                                 (line-number-at-pos
+                                  (emjupy--visible-from (window-start w)))))
                          windows)))
     (unwind-protect
         (funcall thunk)
@@ -561,7 +579,8 @@ changed nothing -- the history is left intact."
           ;; is written nowhere and vanishes at the next redraw.  Worse, it
           ;; sits in the buffer looking like content until then.
           (emjupy--protect-non-cell-regions)))
-      (unless (equal before (buffer-substring-no-properties (point-min) (point-max)))
+      (unless (equal before (buffer-substring-no-properties (point-min)
+                                                            (point-max)))
         ;; The rebuild moved every position the existing entries hold, so
         ;; replaying them against the new text would corrupt the buffer.
         ;; Rather than discard them -- which is what made undo stop at the
@@ -582,7 +601,8 @@ The metadata table is changed in place -- hiding output writes to it --
 so a shallow copy would change along with the cell."
   (let ((copy (copy-emjupy-cell cell)))
     (when (hash-table-p (emjupy-cell-metadata cell))
-      (setf (emjupy-cell-metadata copy) (copy-hash-table (emjupy-cell-metadata cell))))
+      (setf (emjupy-cell-metadata copy)
+            (copy-hash-table (emjupy-cell-metadata cell))))
     copy))
 
 (defun emjupy--snapshot-cells ()
@@ -596,7 +616,8 @@ the notebook held copies: undoing a split after a move gave the copies
 back, and the move\'s undo then did nothing."
   (when emjupy--buffer-notebook
     (vconcat (mapcar (lambda (cell) (cons cell (emjupy--copy-cell-fields cell)))
-                     (append (emjupy-notebook-cells emjupy--buffer-notebook) nil)))))
+                     (append
+                      (emjupy-notebook-cells emjupy--buffer-notebook) nil)))))
 
 (defun emjupy--snapshot-restore-into (snapshot)
   "Write SNAPSHOT\'s fields back into its cells; return the cells as a vector."
@@ -622,7 +643,8 @@ back, and the move\'s undo then did nothing."
           (emjupy--restoring-snapshot t))
       ;; the old drawing goes: its overlays belong to the cells as they are
       (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
-               do (dolist (ov (list (emjupy-cell-overlay cell) (emjupy-cell-output-ov cell)))
+               do (dolist (ov (list (emjupy-cell-overlay cell)
+                                    (emjupy-cell-output-ov cell)))
                     (when (overlayp ov) (delete-overlay ov))))
       (setf (emjupy-notebook-cells emjupy--buffer-notebook)
             (emjupy--snapshot-restore-into snapshot))
@@ -632,7 +654,8 @@ back, and the move\'s undo then did nothing."
       (emjupy--keeping-the-view (lambda () (emjupy--rerender-notebook-1)))
       ;; and the redo
       (unless (eq buffer-undo-list t)
-        (push (list 'apply #'emjupy--restore-cells-snapshot now) buffer-undo-list)))))
+        (push (list 'apply #'emjupy--restore-cells-snapshot now)
+              buffer-undo-list)))))
 
 (defvar emjupy--in-cell-step nil
   "Non-nil while a command recorded by `emjupy--as-one-undo-step' runs.
@@ -658,7 +681,8 @@ records nothing."
           ;; the next one.
           (result (let ((emjupy--in-cell-step t)) ,@body)))
      (unless (or (eq buffer-undo-list t) undo-in-progress (null snapshot))
-       (push (list 'apply #'emjupy--restore-cells-snapshot snapshot) buffer-undo-list)
+       (push (list 'apply #'emjupy--restore-cells-snapshot snapshot)
+             buffer-undo-list)
        (undo-boundary))
      result))
 
@@ -669,7 +693,8 @@ records nothing."
               emjupy--in-cell-step
               undo-in-progress
               (null snapshot))
-    (push (list 'apply #'emjupy--restore-cells-snapshot snapshot) buffer-undo-list)
+    (push (list 'apply #'emjupy--restore-cells-snapshot snapshot)
+          buffer-undo-list)
     (undo-boundary)))
 
 (defun emjupy-insert-cell-below ()
@@ -680,7 +705,9 @@ records nothing."
     (let* ((nb emjupy--buffer-notebook)
            (curr-cell (emjupy--cell-at-point))
            (cells (append (emjupy-notebook-cells nb) nil))
-           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
+           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                       :source "" :outputs []
+                                       :metadata (make-hash-table)))
            (idx (cl-position curr-cell cells)))
       (let ((index (if idx (1+ idx) (length cells))))
         (unless (emjupy-insert-cell-at nb index new-cell)
@@ -699,7 +726,9 @@ records nothing."
     (let* ((nb emjupy--buffer-notebook)
            (curr-cell (emjupy--cell-at-point))
            (cells (append (emjupy-notebook-cells nb) nil))
-           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "" :outputs [] :metadata (make-hash-table)))
+           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                       :source "" :outputs []
+                                       :metadata (make-hash-table)))
            (idx (cl-position curr-cell cells)))
       (let ((index (or idx 0)))
         (unless (emjupy-insert-cell-at nb index new-cell)
@@ -809,10 +838,13 @@ all would read misplaced text into the cells, and is refused; but a cell
 whose overlay is live, in order and clear of its neighbours still spans
 exactly what was typed in it, and keeping that is the point."
   (let ((prev-end (point-min)))
-    (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+    (cl-loop for cell across
+             (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
              do (let ((ov (emjupy-cell-overlay cell)))
-                  (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer))
-                             (<= prev-end (overlay-start ov) (overlay-end ov) (point-max)))
+                  (when (and (overlayp ov) (eq (overlay-buffer ov)
+                                               (current-buffer))
+                             (<= prev-end (overlay-start ov) (overlay-end ov)
+                                 (point-max)))
                     (emjupy--sync-cell-source-from-buffer cell)
                     (setq prev-end (overlay-end ov)))))))
 
@@ -824,7 +856,8 @@ exactly what was typed in it, and keeping that is the point."
 Many redraws in a row -- output streaming in -- cost one check."
   (unless (timerp emjupy--integrity-timer)
     (setq emjupy--integrity-timer
-          (run-with-idle-timer 1 nil #'emjupy--check-integrity (current-buffer)))))
+          (run-with-idle-timer 1 nil #'emjupy--check-integrity
+                               (current-buffer)))))
 
 (defun emjupy--check-integrity (buffer)
   "Put BUFFER right if its structure and its cells have come apart.
@@ -883,7 +916,8 @@ by property.  Overlays move with insertions, so they always know."
   (let ((pos (or pos (point)))
         (found nil))
     (when emjupy--buffer-notebook
-      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
                until found
                do (let ((ov (emjupy-cell-overlay cell)))
                     (when (and (overlayp ov)
@@ -904,11 +938,15 @@ by property.  Overlays move with insertions, so they always know."
   "Return the cell whose overlay is closest to POS, or nil."
   (when emjupy--buffer-notebook
     (let ((best nil) (best-d most-positive-fixnum))
-      (cl-loop for cell across (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+      (cl-loop for cell across
+               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
                do (let ((ov (emjupy-cell-overlay cell)))
                     (when (overlayp ov)
-                      (let ((d (cond ((< pos (overlay-start ov)) (- (overlay-start ov) pos))
-                                     ((> pos (overlay-end ov)) (- pos (overlay-end ov)))
+                      (let ((d (cond ((< pos (overlay-start ov))
+                                      (- (overlay-start ov) pos))
+                                     ((> pos
+                                         (overlay-end ov)) (- pos
+                                         (overlay-end ov)))
                                      (t 0))))
                         (when (< d best-d) (setq best-d d best cell))))))
       best)))
@@ -937,7 +975,8 @@ attribute them to source that never produced them."
           (user-error "Point is not in a cell"))
         (let* ((ov (emjupy-cell-overlay cell))
                (source (or (emjupy-cell-source cell) ""))
-               (offset (max 0 (min (- (point) (overlay-start ov)) (length source))))
+               (offset (max 0 (min (- (point) (overlay-start ov))
+                                   (length source))))
                (new-cell (make-emjupy-cell
                           :id (emjupy--new-cell-id)
                           :type (emjupy-cell-type cell)
@@ -955,7 +994,8 @@ attribute them to source that never produced them."
                 (vconcat (append (cl-subseq cells 0 (1+ idx))
                                  (list new-cell)
                                  (cl-subseq cells (1+ idx)))))
-          (unless (emjupy--redraw-cells-in-place (list cell) (list cell new-cell)
+          (unless (emjupy--redraw-cells-in-place (list cell)
+                                                 (list cell new-cell)
                                                  emjupy--split-was-sane)
             (emjupy--rerender-notebook new-cell))
           (let ((ov (emjupy-cell-overlay new-cell)))
@@ -997,7 +1037,8 @@ reverse, would silently reinterpret one of them."
                                      upper
                                    (concat upper "\n")))))
               (setf (emjupy-cell-source above)
-                    (concat (if (string-suffix-p "\n" upper) upper (concat upper "\n"))
+                    (concat (if (string-suffix-p "\n" upper) upper
+                              (concat upper "\n"))
                             lower))
               ;; Neither cell's results describe the merged source any more.
               (setf (emjupy-cell-outputs above) [])
@@ -1009,12 +1050,14 @@ reverse, would silently reinterpret one of them."
               ;; merged-away cell is no longer in it, so asking afterwards says
               ;; the overlays disagree and sends this to a full rebuild, which
               ;; loses the undo history.  The same trap splitting fell into.
-              (unless (emjupy--redraw-cells-in-place (list above cell) (list above) sane)
+              (unless (emjupy--redraw-cells-in-place (list above cell)
+                                                     (list above) sane)
                 (emjupy--rerender-notebook above))
               ;; Leave point at the seam, where the merged-in cell begins.
               (let ((ov (emjupy-cell-overlay above)))
                 (when (overlayp ov)
-                  (goto-char (min (overlay-end ov) (+ (overlay-start ov) seam)))))
+                  (goto-char (min (overlay-end ov)
+                                  (+ (overlay-start ov) seam)))))
               above)))))))
 
 (defun emjupy--cell-at-point-including-output (&optional pos)
@@ -1131,10 +1174,10 @@ clearing it is not something the kernel can be asked to repeat cheaply.
               (message "[emjupy] Left it alone.")
             (setf (emjupy-cell-outputs cell) [])
             (setf (emjupy-cell-exec-count cell) nil)
-            ;; Only this cell's box goes, so only this cell need be redrawn -- and
-            ;; redrawing just it keeps the undo history, where rebuilding the
-            ;; notebook threw it away.  Nothing was lost even then, but an edit
-            ;; made before clearing could not be undone afterwards.
+            ;; Only this cell's box goes, so only this cell need be redrawn --
+            ;; and redrawing just it keeps the undo history, where rebuilding
+            ;; the notebook threw it away.  Nothing was lost even then, but an
+            ;; edit made before clearing could not be undone afterwards.
             (unless (emjupy--refresh-cell-output cell)
               (emjupy--rerender-notebook cell))
             (message "[emjupy] Cleared this cell's output.")))))))
@@ -1152,9 +1195,10 @@ outputs until you save."
     (emjupy--as-one-undo-step
       (emjupy--sync-all-cells)
       (let* ((cells (emjupy-notebook-cells (emjupy--notebook)))
-             (with-output (cl-count-if (lambda (c)
-                                         (> (length (or (emjupy-cell-outputs c) [])) 0))
-                                       cells)))
+             (with-output (cl-count-if
+                           (lambda (c)
+                             (> (length (or (emjupy-cell-outputs c) [])) 0))
+                           cells)))
         (cond
          ((zerop with-output)
           (message "[emjupy] No cell has any output."))
@@ -1163,10 +1207,9 @@ outputs until you save."
           (message "[emjupy] Left them alone."))
          (t
           (let ((cleared (cl-loop for cell across cells
-                                  collect (progn
-                                            (setf (emjupy-cell-outputs cell) [])
-                                            (setf (emjupy-cell-exec-count cell) nil)
-                                            cell))))
+                                  do (setf (emjupy-cell-outputs cell) []
+                                           (emjupy-cell-exec-count cell) nil)
+                                  collect cell)))
             ;; Each cell loses its own box, so each is redrawn on its own.
             ;; Rebuilding the notebook for it moved every buffer position an
             ;; undo entry holds, and took the history with it.  If any cell
@@ -1183,7 +1226,9 @@ outputs until you save."
 (defun emjupy--cell-index (cell)
   "Return the position of CELL in the notebook, or nil."
   (and emjupy--buffer-notebook
-       (cl-position cell (append (emjupy-notebook-cells emjupy--buffer-notebook) nil))))
+       (cl-position cell
+                    (append
+                     (emjupy-notebook-cells emjupy--buffer-notebook) nil))))
 
 (defun emjupy-delete-cell ()
   "Delete current cell at point."
@@ -1329,7 +1374,8 @@ In a markdown cell, and outside any cell, TAB simply inserts."
             (emjupy--rerender-notebook cell)))
         (let ((ov (emjupy-cell-overlay cell)))
           (when (overlayp ov)
-            (goto-char (min (overlay-end ov) (+ (overlay-start ov) (cdr result))))))
+            (goto-char (min (overlay-end ov) (+ (overlay-start ov)
+                                                (cdr result))))))
         (setq emjupy--indent-cycling t)))))
 
 (defun emjupy--clear-indent-cycling ()
@@ -1497,7 +1543,8 @@ background is wider than the box."
     (message "box width %s | rule %s | output aligned to %s%s"
              width (or rule-width "none") (or pad "none")
              (if (and rule-width pad (> pad rule-width))
-                 (format "  -- background is %d column(s) wider" (- pad rule-width))
+                 (format "  -- background is %d column(s) wider" (- pad
+                                                                    rule-width))
                ""))))
 
 ;;;###autoload
@@ -1529,7 +1576,8 @@ frames and the offending lines are legible."
             (font-lock-ensure)
             (let ((pos 0) (len (length coloured)))
               (while (< pos len)
-                (let ((next (or (next-single-property-change pos 'face coloured) len))
+                (let ((next (or (next-single-property-change
+                                 pos 'face coloured) len))
                       (val (get-text-property pos 'face coloured)))
                   (when val
                     (font-lock-prepend-text-property
@@ -1547,7 +1595,8 @@ frames and the offending lines are legible."
 Separated from the mouse event so it can be tested: the accessors that
 take a click apart are inlined by the compiler and cannot be stubbed."
   (let ((id (and (consp pair)
-                 (get-text-property (cdr pair) 'emjupy-toggle-cell (car pair)))))
+                 (get-text-property (cdr pair) 'emjupy-toggle-cell
+                                    (car pair)))))
     (when (and id (buffer-live-p buffer))
       (with-current-buffer buffer
         (emjupy-toggle-output-of-cell (emjupy--cell-by-id id))))))

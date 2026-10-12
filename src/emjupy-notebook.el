@@ -122,7 +122,8 @@ server with nothing running gets a fresh kernel."
                                 "POST" server "/api/kernels"
                                 (json-serialize payload)))))
               (t (cdr (assoc (completing-read
-                              (format "Kernel on %s: " (emjupy--server-label server))
+                              (format "Kernel on %s: "
+                                      (emjupy--server-label server))
                               (mapcar #'car kernels) nil t nil
                               'emjupy--kernel-history)
                              kernels))))))
@@ -144,7 +145,8 @@ The prompt shows the default, and answering nothing accepts it -- there
 is little point making someone type the number Jupyter would have used
 anyway."
   (let ((answer (read-string
-                 (format "Jupyter port or URL (default %s): " emjupy-default-port)
+                 (format "Jupyter port or URL (default %s): "
+                         emjupy-default-port)
                  nil 'emjupy--port-history)))
     (if (string-empty-p (string-trim answer))
         emjupy-default-port
@@ -245,17 +247,19 @@ Returns the notebook buffer."
                (message "[emjupy] %s is open with unsaved changes; shown as it is." path)
                open)
       (message "Fetching notebook: %s..." path)
-      (let* ((response-data (emjupy--http-request "GET" server (emjupy--contents-path path)))
-             (content-hash (and response-data (gethash "content" response-data))))
-	(if (not content-hash)
+      (let* ((response-data (emjupy--http-request "GET" server
+                                                  (emjupy--contents-path path)))
+             (content-hash (and response-data (gethash "content"
+                                                       response-data))))
+        (if (not content-hash)
             (error "Failed to fetch notebook content from server")
           (let* ((ipynb-json (json-serialize content-hash))
-		 (nb-struct (emjupy--parse-ipynb ipynb-json))
-		 (buf-name (emjupy--notebook-buffer-name path server))
-		 ;; Whether this notebook is already on screen decides where
-		 ;; point ends up below.
-		 (already-open (get-buffer buf-name))
-		 (buf (get-buffer-create buf-name)))
+                 (nb-struct (emjupy--parse-ipynb ipynb-json))
+                 (buf-name (emjupy--notebook-buffer-name path server))
+                 ;; Whether this notebook is already on screen decides where
+                 ;; point ends up below.
+                 (already-open (get-buffer buf-name))
+                 (buf (get-buffer-create buf-name)))
 
             (setf (emjupy-notebook-server nb-struct) server)
             (setf (emjupy-notebook-path nb-struct) path)
@@ -279,11 +283,12 @@ Returns the notebook buffer."
               ;; One already open keeps where you were: re-opening it to get
               ;; back to what you were reading should not lose your place.
               (unless already-open
-		(goto-char (point-min)))
+                (goto-char (point-min)))
               ;; As drawn, it is the server copy: nothing unsaved yet.
               (set-buffer-modified-p nil)
               (emjupy--save-machinery-start)
-              (add-hook 'kill-buffer-query-functions #'emjupy--kill-buffer-query nil t)
+              (add-hook 'kill-buffer-query-functions
+                        #'emjupy--kill-buffer-query nil t)
               (emjupy--offer-recovery nb-struct))
 
             (switch-to-buffer buf)
@@ -294,7 +299,7 @@ Returns the notebook buffer."
             ;; rather than into a dead buffer needing a separate connect step.
             (when-let* ((kernel-id (emjupy-server-kernel-id server)))
               (with-current-buffer buf
-		(condition-case err
+                (condition-case err
                     (emjupy-connect-kernel nb-struct kernel-id)
                   ;; Everything: connecting opens a WebSocket, and
                   ;; `websocket-open' reports a failure as a plain error.  The
@@ -306,10 +311,11 @@ Returns the notebook buffer."
             ;; paying the LSP server startup cost on the first keystroke.
             (when emjupy-language-support
               (with-demoted-errors "[emjupy] Language support did not start: %S"
-                (with-current-buffer buf (emjupy--ensure-shadow-buffer nb-struct))))
+                (with-current-buffer buf
+                  (emjupy--ensure-shadow-buffer nb-struct))))
             (message "Opened notebook: %s%s" path
                      (if (emjupy-server-kernel-id server)
-			 ""
+                         ""
                        (format ". Press %s to select or spawn a kernel."
                                (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
             buf))))))
@@ -321,7 +327,8 @@ Returns the notebook buffer."
          (raw-name (read-string "New notebook name (default Untitled.ipynb): "
                                 nil 'emjupy--notebook-history))
          (name (if (string-empty-p raw-name) "Untitled.ipynb" raw-name))
-         (filename (if (string-match-p "\\.ipynb$" name) name (concat name ".ipynb")))
+         (filename (if (string-match-p "\\.ipynb$" name) name
+                     (concat name ".ipynb")))
          (nb-payload (make-hash-table :test 'equal))
          (req-body (make-hash-table :test 'equal)))
 
@@ -428,7 +435,8 @@ modification time and stay sorted by name."
              for modified = (or (gethash "last_modified" item) "")
              for row = (list (list :kind (intern type) :path ipath
                                    :modified modified)
-                             (emjupy--list-row (intern type) type name modified))
+                             (emjupy--list-row (intern type) type
+                                               name modified))
              do (pcase type
                   ("directory" (push row dirs))
                   ("notebook" (push row notebooks))
@@ -440,11 +448,13 @@ modification time and stay sorted by name."
                              (format "%s  (%s connection%s)"
                                      (substring (or (gethash "id" k) "") 0 8)
                                      (or (gethash "connections" k) 0)
-                                     (if (eql (gethash "connections" k) 1) "" "s"))))
+                                     (if (eql (gethash "connections" k) 1) ""
+                                       "s"))))
                       kernel-rows))
     (cl-flet ((by-name (rows)
                 (sort rows (lambda (a b)
-                             (string-lessp (aref (cadr a) 1) (aref (cadr b) 1)))))
+                             (string-lessp (aref (cadr a) 1)
+                                           (aref (cadr b) 1)))))
               (by-recent (rows)
                 ;; Most recently touched first.  The server reports the time
                 ;; as ISO-8601 in UTC, which sorts correctly as text, so
@@ -518,7 +528,8 @@ point, or descended into the directory there."
            (emjupy-list-refresh))
       ('directory (setq emjupy-list--path (plist-get row :path))
                   (emjupy-list-refresh))
-      ('notebook (emjupy-open-notebook (plist-get row :path) emjupy-list--server))
+      ('notebook (emjupy-open-notebook (plist-get row :path)
+                                       emjupy-list--server))
       ('file (emjupy-list-open-file (plist-get row :path)))
       ('kernel (message "[emjupy] Kernel %s -- press k to shut it down."
                         (plist-get row :id)))
@@ -567,8 +578,9 @@ can be edited:
       (find-file (expand-file-name path (file-name-as-directory tramp-root))))
      ;; The server is on this machine, so its own path is ours too.
      ((and server-side
-           (file-exists-p (expand-file-name path
-                                            (file-name-as-directory server-side))))
+           (file-exists-p (expand-file-name
+                           path
+                           (file-name-as-directory server-side))))
       (find-file (expand-file-name path (file-name-as-directory server-side))))
      ;; Neither -- fetch it.  Read-only, and said so in the header line.
      (server-side
@@ -627,7 +639,8 @@ first act would always be to add one."
   (let* ((server emjupy-list--server)
          (dir emjupy-list--path)
          (raw (read-string "New notebook name: " nil 'emjupy--notebook-history))
-         (name (if (string-match-p "\\.ipynb\\'" raw) raw (concat raw ".ipynb")))
+         (name (if (string-match-p "\\.ipynb\\'" raw) raw (concat raw
+                                                                  ".ipynb")))
          (path (if (string-empty-p dir)
                    name
                  (concat (directory-file-name dir) "/" name)))
@@ -641,7 +654,8 @@ first act would always be to add one."
     (puthash "format" "json" req)
     (puthash "content" nb req)
     (when (and (emjupy--http-exists-p server path)
-               (not (yes-or-no-p (format "%s already exists.  Overwrite it? " path))))
+               (not (yes-or-no-p
+                     (format "%s already exists.  Overwrite it? " path))))
       (user-error "Not overwriting %s" path))
     (emjupy--http-request "PUT" server (emjupy--contents-path path)
                           (json-serialize req))
@@ -652,7 +666,9 @@ first act would always be to add one."
     (let ((buf (emjupy--notebook-buffer-for path server)))
       (when (buffer-live-p buf)
         (with-current-buffer buf
-          (let ((first (car (append (emjupy-notebook-cells emjupy--buffer-notebook) nil))))
+          (let ((first (car (append
+                             (emjupy-notebook-cells emjupy--buffer-notebook)
+                             nil))))
             (when (and first (overlayp (emjupy-cell-overlay first)))
               (goto-char (overlay-start (emjupy-cell-overlay first)))
               (when (get-buffer-window buf)
@@ -805,7 +821,8 @@ file name works there, if you would rather push it somewhere else."
         ;; is raised -- taking it for "not there" overwrote without asking.
         (when (and (emjupy--http-exists-p server path)
                    (not (yes-or-no-p (format "%s exists on %s.  Overwrite it? "
-                                             path (emjupy--server-label server)))))
+                                             path
+                                             (emjupy--server-label server)))))
           (user-error "Not overwriting %s" path))
         (puthash "type" "file" body)
         (puthash "format" "text" body)
@@ -819,10 +836,12 @@ file name works there, if you would rather push it somewhere else."
 
 (defun emjupy--parse-ipynb (json-string)
   "Parse strict nbformat v4 JSON-STRING into an `emjupy-notebook' struct."
-  (let* ((data (json-parse-string json-string :object-type 'hash-table :array-type 'array))
+  (let* ((data (json-parse-string json-string :object-type 'hash-table
+                                  :array-type 'array))
          (cells-data (gethash "cells" data))
          (metadata (gethash "metadata" data))
-         (nb (make-emjupy-notebook :metadata metadata :cells (make-vector (length cells-data) nil))))
+         (nb (make-emjupy-notebook
+              :metadata metadata :cells (make-vector (length cells-data) nil))))
     (cl-loop for i from 0 below (length cells-data)
              for c-data = (aref cells-data i)
              do (aset (emjupy-notebook-cells nb) i
@@ -836,7 +855,8 @@ file name works there, if you would rather push it somewhere else."
                        :type (intern (gethash "cell_type" c-data))
                        :exec-count (gethash "execution_count" c-data)
                        :source (let ((src (gethash "source" c-data)))
-                                 (if (vectorp src) (mapconcat #'identity src "") src))
+                                 (if (vectorp src) (mapconcat #'identity src
+                                                              "") src))
                        :outputs (gethash "outputs" c-data)
                        :metadata (gethash "metadata" c-data)
                        :attachments (gethash "attachments" c-data))))
@@ -861,7 +881,8 @@ requires one on every cell, so a notebook missing them fails
 `nbformat.validate' and is rejected by nbconvert and friends."
   (or (emjupy-cell-nb-id cell)
       (setf (emjupy-cell-nb-id cell)
-            (substring (md5 (format "%s-%s" (emjupy-cell-id cell) (random 1000000))) 0 8))))
+            (substring (md5 (format "%s-%s" (emjupy-cell-id cell)
+                                    (random 1000000))) 0 8))))
 
 (defun emjupy--normalize-output (out)
   "Return OUT with the fields the nbformat v4 schema requires.
@@ -873,10 +894,13 @@ validation even though it looks fine in emjupy."
     (let ((o (copy-hash-table out))
           (type (gethash "output_type" out)))
       (when (member type '("execute_result" "display_data"))
-        (unless (gethash "data" o) (puthash "data" (make-hash-table :test 'equal) o))
-        (unless (gethash "metadata" o) (puthash "metadata" (make-hash-table :test 'equal) o)))
+        (unless (gethash "data" o) (puthash "data"
+                                            (make-hash-table :test 'equal) o))
+        (unless (gethash "metadata" o)
+          (puthash "metadata" (make-hash-table :test 'equal) o)))
       (when (string= type "execute_result")
-        (unless (gethash "execution_count" o) (puthash "execution_count" :null o)))
+        (unless (gethash "execution_count" o) (puthash "execution_count"
+                                                       :null o)))
       (when (string= type "stream")
         (unless (gethash "name" o) (puthash "name" "stdout" o))
         (unless (gethash "text" o) (puthash "text" "" o)))
@@ -887,30 +911,38 @@ validation even though it looks fine in emjupy."
   (let ((data (make-hash-table :test 'equal)))
     (puthash "nbformat" 4 data)
     (puthash "nbformat_minor" 5 data)
-    (puthash "metadata" (or (emjupy-notebook-metadata nb) (make-hash-table)) data)
+    (puthash "metadata" (or (emjupy-notebook-metadata nb)
+                            (make-hash-table)) data)
 
     (let ((cells-vec (make-vector (length (emjupy-notebook-cells nb)) nil)))
       (cl-loop for i from 0 below (length (emjupy-notebook-cells nb))
                for cell = (aref (emjupy-notebook-cells nb) i)
                for c-hash = (make-hash-table :test 'equal)
                do
-               (puthash "cell_type" (symbol-name (emjupy-cell-type cell)) c-hash)
+               (puthash "cell_type"
+                        (symbol-name (emjupy-cell-type cell)) c-hash)
                (puthash "id" (emjupy--nb-cell-id cell) c-hash)
-               (puthash "metadata" (or (emjupy-cell-metadata cell) (make-hash-table)) c-hash)
+               (puthash "metadata" (or (emjupy-cell-metadata cell)
+                                       (make-hash-table)) c-hash)
                ;; nbformat allows attachments on markdown and raw cells only
                (when (and (emjupy-cell-attachments cell)
                           (memq (emjupy-cell-type cell) '(markdown raw)))
                  (puthash "attachments" (emjupy-cell-attachments cell) c-hash))
-               (puthash "source" (emjupy--source-lines (emjupy-cell-source cell)) c-hash)
+               (puthash "source"
+                        (emjupy--source-lines (emjupy-cell-source cell)) c-hash)
                (when (eq (emjupy-cell-type cell) 'code)
                  (puthash "outputs"
                           (vconcat (mapcar #'emjupy--normalize-output
-                                           (append (or (emjupy-cell-outputs cell) []) nil)))
+                                           (append
+                                            (or (emjupy-cell-outputs cell)
+                                                []) nil)))
                           c-hash)
-                 ;; Safely write :null back to the JSON payload for unexecuted cells
-                 (puthash "execution_count" (if (numberp (emjupy-cell-exec-count cell))
-                                                (emjupy-cell-exec-count cell)
-                                              :null)
+                 ;; Safely write :null back to the JSON payload for unexecuted
+                 ;; cells
+                 (puthash "execution_count"
+                          (if (numberp (emjupy-cell-exec-count cell))
+                              (emjupy-cell-exec-count cell)
+                            :null)
                           c-hash))
                (aset cells-vec i c-hash))
       (puthash "cells" cells-vec data))
@@ -919,7 +951,7 @@ validation even though it looks fine in emjupy."
 ;;;; Saving, and never losing what is not saved
 
 (defvar-local emjupy--autosave-paused nil
-  "Non-nil when the server copy changed elsewhere, and is not to be saved over.")
+  "Non-nil when the server copy changed elsewhere and must not be saved over.")
 
 (defvar-local emjupy--autosave-last nil
   "When this notebook was last saved, or a save last tried, as a float time.")
@@ -935,11 +967,13 @@ validation even though it looks fine in emjupy."
   (condition-case err
       (let ((model (emjupy--http-request
                     "GET" (emjupy-notebook-server nb)
-                    (concat (emjupy--contents-path (emjupy-notebook-path nb)) "?content=0"))))
+                    (concat (emjupy--contents-path (emjupy-notebook-path nb))
+                            "?content=0"))))
         (and (hash-table-p model) (gethash "last_modified" model)))
     ;; Gone from the server: there is nothing a save would overwrite.
     (emjupy-http-status
-     (if (eql (emjupy--http-status-of err) 404) nil (signal (car err) (cdr err))))))
+     (if (eql (emjupy--http-status-of err) 404) nil (signal (car err)
+                                                            (cdr err))))))
 
 (defun emjupy--autosave-async (nb)
   "Save NB to its server without waiting, as auto-save does.
@@ -962,7 +996,8 @@ its way leave it unsaved, for the next save to take."
         (puthash "type" "notebook" request)
         (puthash "format" "json" request)
         (puthash "content" (json-parse-string (emjupy--serialize-notebook nb)
-                                              :object-type 'hash-table :array-type 'array)
+                                              :object-type 'hash-table
+                                              :array-type 'array)
                  request)
         (setq body (json-serialize request)))
       (setq emjupy--autosave-in-flight t
@@ -994,7 +1029,8 @@ its way leave it unsaved, for the next save to take."
         (emjupy--http-request-async
          "GET" server (concat contents-path "?content=0") nil
          (lambda (model)
-           (let ((current (and (hash-table-p model) (gethash "last_modified" model))))
+           (let ((current (and (hash-table-p model)
+                               (gethash "last_modified" model))))
              (if (or (not current) (equal current known))
                  (upload)
                (finish)
@@ -1022,16 +1058,19 @@ saved from JupyterLab, say -- rather than overwrite that."
       (unless overwrite
         (let ((current (and known (emjupy--server-last-modified nb))))
           (when (and current (not (equal current known)))
-            (signal 'emjupy-save-conflict (list (emjupy-notebook-path nb) current)))))
+            (signal 'emjupy-save-conflict
+                    (list (emjupy-notebook-path nb) current)))))
       (let ((body (make-hash-table :test 'equal)))
         (puthash "type" "notebook" body)
         (puthash "format" "json" body)
         (puthash "content" (json-parse-string (emjupy--serialize-notebook nb)
-                                              :object-type 'hash-table :array-type 'array)
+                                              :object-type 'hash-table
+                                              :array-type 'array)
                  body)
-        (let ((model (emjupy--http-request "PUT" (emjupy-notebook-server nb)
-                                           (emjupy--contents-path (emjupy-notebook-path nb))
-                                           (json-serialize body))))
+        (let ((model (emjupy--http-request
+                      "PUT" (emjupy-notebook-server nb)
+                      (emjupy--contents-path (emjupy-notebook-path nb))
+                      (json-serialize body))))
           (setf (emjupy-notebook-last-modified nb)
                 (and (hash-table-p model) (gethash "last_modified" model)))))
       (set-buffer-modified-p nil)
@@ -1100,7 +1139,8 @@ stops until it is saved by hand.  nil never saves on its own."
 (defun emjupy--recovery-file (nb)
   "Return the file NB's recovery copy is written to."
   (expand-file-name
-   (concat (md5 (format "%s|%s" (emjupy-server-base-url (emjupy-notebook-server nb))
+   (concat (md5 (format "%s|%s"
+                        (emjupy-server-base-url (emjupy-notebook-server nb))
                         (emjupy-notebook-path nb)))
            ".json")
    emjupy-recovery-directory))
@@ -1112,15 +1152,21 @@ written; readable by its owner only, as the notebook may hold anything."
   (with-current-buffer (emjupy-notebook-buffer nb)
     (emjupy--sync-all-cells)
     (let ((file (emjupy--recovery-file nb))
-          (record (concat "{\"server\":" (json-serialize (emjupy-server-base-url
-                                                          (emjupy-notebook-server nb)))
-                          ",\"path\":" (json-serialize (emjupy-notebook-path nb))
-                          ",\"written\":" (json-serialize (format-time-string "%F %T"))
-                          ",\"notebook\":" (emjupy--serialize-notebook nb) "}")))
+          (record (concat "{\"server\":" (json-serialize
+                                          (emjupy-server-base-url
+                                           (emjupy-notebook-server nb)))
+                          ",\"path\":"
+                          (json-serialize (emjupy-notebook-path nb))
+                          ",\"written\":"
+                          (json-serialize (format-time-string "%F %T"))
+                          ",\"notebook\":" (emjupy--serialize-notebook nb)
+                          "}")))
       (with-file-modes #o700 (make-directory (file-name-directory file) t))
       (emjupy--recovery-directory-check (file-name-directory file))
       (let ((partial (with-file-modes #o600
-                       (make-temp-file (expand-file-name "partial-" (file-name-directory file))))))
+                       (make-temp-file (expand-file-name
+                                        "partial-"
+                                        (file-name-directory file))))))
         (let ((coding-system-for-write 'no-conversion))
           (write-region record nil partial nil 'quiet))
         (rename-file partial file t))
@@ -1137,7 +1183,8 @@ anything the notebook does -- would be written where they choose."
               (not (eq (file-attribute-type attributes) t))
               (not (eql (file-attribute-user-id attributes) (user-uid))))
       (signal 'file-error
-              (list "Not writing recovery copies" "not a directory of your own" dir)))))
+              (list "Not writing recovery copies"
+                    "not a directory of your own" dir)))))
 
 (defun emjupy--recovery-delete (nb)
   "Delete NB's recovery copy, if there is one."
@@ -1161,10 +1208,12 @@ said and left: the recovery copy, written first, keeps the changes."
           (condition-case err
               (emjupy--recovery-write nb)
             (file-error (message "[emjupy] Could not write a recovery copy of %s: %s"
-                                 (emjupy-notebook-path nb) (error-message-string err)))))
+                                 (emjupy-notebook-path nb)
+                                 (error-message-string err)))))
         (when (and emjupy-autosave-interval (not emjupy--autosave-paused)
                    (not emjupy--autosave-in-flight)
-                   (>= (- (float-time) (or emjupy--autosave-last 0)) emjupy-autosave-interval))
+                   (>= (- (float-time) (or emjupy--autosave-last 0))
+                       emjupy-autosave-interval))
           ;; Not waited for: it says itself how it went.  Starting it can
           ;; still fail -- serializing, or a cookie to fetch first.
           (condition-case err
@@ -1172,7 +1221,8 @@ said and left: the recovery copy, written first, keeps the changes."
             (file-error
              (setq emjupy--autosave-in-flight nil)
              (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
-                      (emjupy-notebook-path nb) (error-message-string err)))))))))
+                      (emjupy-notebook-path nb)
+                      (error-message-string err)))))))))
 
 (defun emjupy--recovery-write-all ()
   "Copy every notebook with unsaved edits for recovery, as Emacs quits."
@@ -1191,7 +1241,8 @@ Return non-nil when it may be closed."
         (pcase (car (read-multiple-choice
                      (format "%s has unsaved changes" (emjupy-notebook-path nb))
                      '((?s "save" "Save it to the server, then close it")
-                       (?k "keep" "Close it; the changes stay in a recovery copy")
+                       (?k "keep"
+                           "Close it; the changes stay in a recovery copy")
                        (?d "discard" "Close it and discard the changes")
                        (?c "cancel" "Do not close it"))))
           (?s (emjupy-save-notebook) t)
@@ -1206,7 +1257,8 @@ copies, written as Emacs quits."
   (let ((modified (emjupy--modified-notebook-buffers)))
     (or (null modified) noninteractive
         (pcase (car (read-multiple-choice
-                     (format "%d notebook%s with unsaved changes" (length modified)
+                     (format "%d notebook%s with unsaved changes"
+                             (length modified)
                              (if (cdr modified) "s" ""))
                      '((?s "save" "Save them to their servers, then quit")
                        (?q "quit" "Quit; the changes stay in recovery copies")
@@ -1242,7 +1294,8 @@ kept aside, never deleted, in the recovery directory."
           (delete-file file))
          ((or noninteractive
               (not (y-or-n-p (format "Unsaved changes to %s from %s were kept.  Restore them? "
-                                     (emjupy-notebook-path nb) (gethash "written" record)))))
+                                     (emjupy-notebook-path nb)
+                                     (gethash "written" record)))))
           (let ((aside (concat (file-name-sans-extension file)
                                (format-time-string "-declined-%Y%m%d-%H%M%S.json"))))
             (rename-file file aside t)
@@ -1251,7 +1304,8 @@ kept aside, never deleted, in the recovery directory."
           (let ((restored (emjupy--parse-ipynb saved)))
             (with-current-buffer (emjupy-notebook-buffer nb)
               (setf (emjupy-notebook-cells nb) (emjupy-notebook-cells restored)
-                    (emjupy-notebook-metadata nb) (emjupy-notebook-metadata restored))
+                    (emjupy-notebook-metadata nb)
+                    (emjupy-notebook-metadata restored))
               (emjupy--rerender-notebook)
               (set-buffer-modified-p t)
               (message "[emjupy] Unsaved changes restored; %s"
@@ -1301,8 +1355,10 @@ nothing."
                     (emjupy--server-label (emjupy-notebook-server nb))
                     (cond ((null k) "no kernel")
                           ((emjupy--ws-live-p k)
-                           (format "kernel %s (connected)" (emjupy-kernel-id k)))
-                          (t (format "kernel %s (disconnected)" (emjupy-kernel-id k)))))))
+                           (format "kernel %s (connected)"
+                                   (emjupy-kernel-id k)))
+                          (t (format "kernel %s (disconnected)"
+                                     (emjupy-kernel-id k)))))))
         buffers "\n")))))
 
 ;;;; An .ipynb file opened as text, opened as a notebook
@@ -1316,7 +1372,7 @@ nothing."
   "Environments given to `emjupy-open-this-notebook'.")
 
 (defvar emjupy--local-servers nil
-  "Jupyter servers emjupy started: plists of :dir, :jupyter, :process, :server.")
+  "Servers emjupy started: plists of :dir, :jupyter, :process and :server.")
 
 (defun emjupy--environment-yml-name (dir)
   "Return the `name:' of the conda environment file in DIR, or nil.
@@ -1346,13 +1402,15 @@ nil when there is no conda, mamba or micromamba to ask."
           ;; no list of environments: none are offered, and a name or a
           ;; path can still be typed.
           (let ((envs (condition-case nil
-                          (gethash "envs" (json-parse-buffer :object-type 'hash-table))
+                          (gethash "envs"
+                                   (json-parse-buffer :object-type 'hash-table))
                         (json-error nil))))
             (cl-loop for dir across (or envs [])
                      ;; a named environment lives in .../envs/NAME; the one
                      ;; elsewhere is the installation's own, base
                      collect (cons (if (string-match-p "/envs/[^/]+/?\\'" dir)
-                                       (file-name-nondirectory (directory-file-name dir))
+                                       (file-name-nondirectory
+                                        (directory-file-name dir))
                                      "base")
                                    dir))))))))
 
@@ -1400,34 +1458,42 @@ One already started for DIR with the same JUPYTER is used again.  It
 listens on this machine only, on a free port, with a token of its own,
 and is stopped when the last notebook it serves is closed."
   (or (cl-loop for s in emjupy--local-servers
-               when (and (equal (plist-get s :dir) dir) (equal (plist-get s :jupyter) jupyter)
+               when (and (equal (plist-get s :dir) dir)
+                         (equal (plist-get s :jupyter) jupyter)
                          (process-live-p (plist-get s :process)))
                return (plist-get s :server))
       (let* ((port (emjupy--free-port))
-             (token (secure-hash 'sha256 (format "%s%s%s" (random) (float-time) (emacs-pid))))
+             (token (secure-hash 'sha256 (format "%s%s%s" (random)
+                                                 (float-time) (emacs-pid))))
              (output (generate-new-buffer (format " *emjupy server %s*" dir)))
              (default-directory dir)
              (process (make-process
                        :name "emjupy-server" :buffer output :noquery t
                        :command (append
-                                 (list jupyter "server" "--no-browser"
-                                       "--ServerApp.ip=127.0.0.1"
-                                       (format "--ServerApp.port=%d" port)
-                                       "--ServerApp.port_retries=0"
-                                       (format "--IdentityProvider.token=%s" token)
-                                       (format "--ServerApp.root_dir=%s" (expand-file-name dir)))
+                                 (list
+                                  jupyter "server" "--no-browser"
+                                  "--ServerApp.ip=127.0.0.1"
+                                  (format "--ServerApp.port=%d" port)
+                                  "--ServerApp.port_retries=0"
+                                  (concat "--IdentityProvider.token=" token)
+                                  (format "--ServerApp.root_dir=%s"
+                                          (expand-file-name dir)))
                                  ;; Jupyter refuses to run as root without it
-                                 (and (eql (user-uid) 0) (list "--allow-root")))))
+                                 (and (eql (user-uid) 0)
+                                      (list "--allow-root")))))
              (server (emjupy--intern-server (format "127.0.0.1:%d" port) token))
              (deadline (+ (float-time) emjupy-local-server-timeout)))
-        (message "[emjupy] Starting a Jupyter server for %s..." (abbreviate-file-name dir))
+        (message "[emjupy] Starting a Jupyter server for %s..."
+                 (abbreviate-file-name dir))
         (while (and (process-live-p process) (< (float-time) deadline)
                     (not (emjupy--server-reachable-p server)))
           (accept-process-output process 0.25))
-        (unless (and (process-live-p process) (emjupy--server-reachable-p server))
+        (unless (and (process-live-p process)
+                     (emjupy--server-reachable-p server))
           (let ((said (with-current-buffer output
-                        (buffer-substring-no-properties (max (point-min) (- (point-max) 600))
-                                                        (point-max)))))
+                        (buffer-substring-no-properties
+                         (max (point-min) (- (point-max) 600))
+                         (point-max)))))
             (when (process-live-p process) (delete-process process))
             (user-error "The Jupyter server did not start:\n%s" said)))
         (push (list :dir dir :jupyter jupyter :process process :server server)
@@ -1442,7 +1508,8 @@ and is stopped when the last notebook it serves is closed."
                (not (cl-some (lambda (b)
                                (and (not (eq b (current-buffer)))
                                     (eq (emjupy-notebook-server
-                                         (buffer-local-value 'emjupy--buffer-notebook b))
+                                         (buffer-local-value
+                                          'emjupy--buffer-notebook b))
                                         server)))
                              (emjupy--notebook-buffers))))
       (when (process-live-p (plist-get entry :process))
@@ -1471,19 +1538,22 @@ closed, and with Emacs."
           (save-buffer)
         (user-error "Not opened: save the file, or revert it, first")))
     (let* ((dir (file-name-directory file))
-           (jupyter (emjupy--environment-jupyter (emjupy--read-environment dir)))
+           (jupyter (emjupy--environment-jupyter
+                     (emjupy--read-environment dir)))
            (server (emjupy--start-local-server dir jupyter))
            ;; A kernel for the notebook to open on, as logging in binds one:
            ;; a server just started has none of its own.
            (_kernel (emjupy--bind-server-kernel server))
            (text (current-buffer))
            (window (selected-window))
-           (notebook (emjupy-open-notebook (file-name-nondirectory file) server)))
+           (notebook (emjupy-open-notebook
+                      (file-name-nondirectory file) server)))
       (setq emjupy--current-server server)
       (when (buffer-live-p notebook)
         (with-current-buffer notebook
           (add-hook 'kill-buffer-hook
-                    (lambda () (emjupy--stop-local-server-if-unused server)) nil t))
+                    (lambda () (emjupy--stop-local-server-if-unused server))
+                    nil t))
         (when (window-live-p window) (set-window-buffer window notebook))
         ;; In place: the text is the same file, and would go stale as the
         ;; notebook is saved.
