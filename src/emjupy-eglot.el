@@ -289,9 +289,16 @@ somewhere this machine cannot reach as a plain path."
                         emjupy-shadow-beside-notebook
                         (not (emjupy--shadow-must-stay-here-p nb))
                         (usable (emjupy--notebook-directory nb)))))
-      (or explicit beside
-          (file-name-as-directory
-           (expand-file-name "emjupy-shadow" temporary-file-directory))))))
+      (or explicit beside (emjupy--shadow-temporary-directory)))))
+
+(defun emjupy--shadow-temporary-directory ()
+  "Return the temporary directory for this user\='s shadow files.
+One per user, named after them: a single one in a shared /tmp was made
+by whoever came first, and nobody else could write in it.  It is made
+readable by its owner alone -- a shadow file holds a notebook\='s code."
+  (file-name-as-directory
+   (expand-file-name (format "emjupy-shadow-%s" (user-login-name))
+                     temporary-file-directory)))
 
 (defun emjupy--notebook-directory (nb)
   "Return the directory NB lives in as a file name Emacs can use, or nil.
@@ -609,7 +616,10 @@ automatically, with nothing for the user to run."
           (with-timeout (emjupy-shadow-timeout
                          (emjupy--shadow-block "timed out")
                          (cl-return-from emjupy--ensure-shadow-buffer nil))
-            (make-directory (file-name-directory path) t))
+            (let ((dir (file-name-directory path)))
+              (if (equal dir (emjupy--shadow-temporary-directory))
+                  (emjupy--private-directory dir "shadow files")
+                (make-directory dir t))))
         ;; What making a directory there can raise: a file error -- a host
         ;; unreachable, a permission refused -- or, from TRAMP, a user error
         ;; for a remote root misconfigured, a method it does not know.

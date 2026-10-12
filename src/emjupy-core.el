@@ -76,7 +76,11 @@ gets a definite answer rather than a local one.")
   ;; from this server attach to it, so selecting a notebook drops you into
   ;; the REPL already running behind that tunnel. C-c M-z overrides it for
   ;; an individual notebook.
-  kernel-id)
+  kernel-id
+  ;; Where the files it serves are, as a file name Emacs can open -- a
+  ;; TRAMP name, hops and all -- when emjupy knows rather than infers it:
+  ;; for a server it started, or found, through a notebook opened by TRAMP.
+  files-root)
 
 (cl-defstruct emjupy-kernel
   id name server ws pending
@@ -158,6 +162,26 @@ same object, so notebooks already pointing at it stay valid."
   "Non-nil while a command recorded by `emjupy--as-one-undo-step' runs.
 Its redraws record nothing of their own: the command records one step,
 from a snapshot taken before it changed anything.")
+
+;;;; A folder of one's own
+
+(defun emjupy--private-directory (dir purpose)
+  "Make DIR, readable by the user alone, unless it exists; then check it.
+Signal a `file-error\' unless DIR is a directory of the user\'s own, not
+a symbolic link.  In a shared /tmp another user could have made it
+first, or left a link there pointing elsewhere, and what is written in
+it -- PURPOSE says what, for the message -- would go where they choose,
+or be read by them."
+  (let ((dir (directory-file-name dir)))
+    (unless (file-exists-p dir)
+      (with-file-modes #o700 (make-directory dir t)))
+    (let ((attributes (file-attributes dir)))
+      (when (or (file-symlink-p dir)
+                (not (eq (file-attribute-type attributes) t))
+                (not (eql (file-attribute-user-id attributes) (user-uid))))
+        (signal 'file-error
+                (list (format "Not writing %s" purpose)
+                      "not a directory of your own" dir))))))
 
 ;;;; The cell at a position
 

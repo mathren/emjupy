@@ -104,7 +104,11 @@ nil to keep it in a temporary directory instead, or
 language server beside the kernel, of =M-.= into your own modules.
 
 For a notebook whose kernel runs elsewhere the file goes to a temporary
-directory on this machine, and nothing is written on the remote.
+directory on this machine, and nothing is written on the remote: one of
+your own, =/tmp/emjupy-shadow-USER/= on most systems, readable by you
+alone.  A shadow file holds the notebook's code, and a folder shared by
+every user of the machine would let them read it, or would belong to
+whoever made it first.
 
 A notebook with unsaved edits is also copied to =emjupy-recovery-directory=
 until it is saved -- see [[#saving][Saving, and not losing work]].  Those copies are
@@ -178,6 +182,35 @@ same window, on a kernel of its own on this machine:
 The environment needs =jupyter-server= and =ipykernel=.  Unsaved edits to
 the text are saved first, or the command stops: the notebook is read
 from the file.
+
+** A notebook on another machine, opened through TRAMP
+
+The same command works on an =.ipynb= opened through TRAMP over SSH --
+=/ssh:cluster:/home/you/project/analysis.ipynb= -- however many hops it
+takes to get there, as behind a bastion:
+=/ssh:bastion|ssh:node7:/home/you/project/analysis.ipynb=.  The notebook
+opens on its own machine:
+
+- the environment is asked for there: an =environment.yml= beside the
+  notebook names the one offered, and conda's environments there are
+  completed.  On a cluster, conda and modules often set =PATH= up only in
+  a login shell, which TRAMP's is not: name the environment's directory
+  rather than leaving it empty;
+- a Jupyter server already serving the notebook's folder, or a folder
+  above it, is used; or one is started there, from that environment;
+- a tunnel to it is opened, through every hop, and the notebook opens
+  on it, its kernel in its folder -- =M-.= and the listing reach its
+  files through the same TRAMP route;
+- closing the last notebook on it closes the tunnel and leaves the
+  server, and its kernels, running.  Opening the notebook again, from
+  this Emacs or a later one, gets back to them as they were.  Stop it
+  there with =jupyter server stop PORT=, or from JupyterLab.
+
+The tunnel is ssh's own, run by emjupy, so it needs to log in without a
+password prompt: an SSH key, in an agent (=ssh-add=) if it has a
+passphrase.  If it asks for a password, emjupy says so -- see
+[[file:limitations.org][Known limitations]].  Hops are SSH ones -- ssh, scp, rsync -- since a tunnel
+can only go through those.
 
 Emacs gives =.ipynb= files no mode of their own.  To bind it as EIN's
 =C-c C-o= is bound:

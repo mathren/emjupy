@@ -80,6 +80,15 @@ settings (=emjupy-language-mode= changes that), the shadow document the
 language server reads is a =.py= file, and the language-server settings
 are written for =python-lsp-server=.  None of it has been tried.
 
+* SSH logins with a password, for a notebook opened through TRAMP
+
+=emjupy-open-this-notebook= on a notebook through TRAMP opens a tunnel
+with ssh itself, with no terminal to type a password into.  It needs a
+login without a prompt -- a key, in an agent if it has a passphrase.
+One that asks for a password fails, and emjupy says why and what to do.
+Handling a password, or reusing TRAMP's own connection for the tunnel,
+is not done yet.
+
 * Emacs 30.1 or later
 
 Emacs 29 was supported until Eglot's differences there caused bugs that

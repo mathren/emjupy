@@ -1264,6 +1264,56 @@ it on."
             (with-current-buffer emjupy-int--buffer (set-buffer-modified-p nil))
             (kill-buffer emjupy-int--buffer)))))))
 
+(defun emjupy-int--open-through-tramp (file env)
+  "Open FILE, a notebook through TRAMP, with C-c C-o, the environment ENV."
+  (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) env)))
+    (with-current-buffer (find-file-noselect file)
+      (emjupy-open-this-notebook))))
+
+(ert-deftest emjupy-int-a-notebook-through-tramp-opens-on-its-machine ()
+  "An .ipynb opened through TRAMP opens on its own machine, and stays there.
+Set EMJUPY_TEST_SSH_NOTEBOOK to a TRAMP name of a notebook -- hops are
+welcome -- and EMJUPY_TEST_SSH_ENV to an environment there with
+jupyter-server.  The notebook opens on a server there, through a tunnel;
+its kernel runs in its folder; closing it closes the tunnel and leaves
+the server and its kernel running; opening it again gets them back."
+  (let ((file (getenv "EMJUPY_TEST_SSH_NOTEBOOK"))
+        (env (getenv "EMJUPY_TEST_SSH_ENV")))
+    (unless (and file env)
+      (ert-skip "EMJUPY_TEST_SSH_NOTEBOOK and EMJUPY_TEST_SSH_ENV not set"))
+    (let* ((emjupy-language-support nil)
+           (dir (file-remote-p (file-name-directory file) 'localname))
+           (nb (emjupy-int--open-through-tramp file env))
+           (server (emjupy-notebook-server
+                    (buffer-local-value 'emjupy--buffer-notebook nb)))
+           (answer nil))
+      (should (eq (buffer-local-value 'major-mode nb) 'emjupy-mode))
+      (should (equal (emjupy--remote-root-for server)
+                     (directory-file-name
+                      (concat (emjupy--remote-prefix file) dir))))
+      (with-current-buffer nb
+        (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p)))
+        (emjupy--kernel-eval (emjupy-notebook-kernel emjupy--buffer-notebook)
+                             "import os; emjupy_int_left = 42; print(os.getcwd())"
+                             (lambda (out) (setq answer (string-trim out))))
+        (emjupy-int--pump 20 (lambda () answer))
+        (should (equal (file-name-as-directory answer)
+                       (file-name-as-directory dir)))
+        (set-buffer-modified-p nil))
+      (let ((kill-buffer-query-functions nil)) (kill-buffer nb))
+      (should-not emjupy--remote-tunnels)
+      ;; again: the server, and its kernel, are where they were left
+      (let* ((again (emjupy-int--open-through-tramp file env)) (left nil))
+        (with-current-buffer again
+          (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p)))
+          (emjupy--kernel-eval (emjupy-notebook-kernel emjupy--buffer-notebook)
+                               "print(emjupy_int_left)"
+                               (lambda (out) (setq left (string-trim out))))
+          (emjupy-int--pump 20 (lambda () left))
+          (should (equal left "42"))
+          (set-buffer-modified-p nil))
+        (let ((kill-buffer-query-functions nil)) (kill-buffer again))))))
+
 (ert-deftest emjupy-int-fault-kernel-dying-mid-cell-ends-the-run ()
   "A kernel that dies while a cell runs does not leave it running for ever.
 

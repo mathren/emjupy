@@ -71,6 +71,7 @@ same for all of them."
 (defun emjupy--configured-root-for (server)
   "Return the root configured for SERVER by hand, or nil."
   (cond
+   ((and server (emjupy-server-files-root server)))
    ((null emjupy-remote-root) nil)
    ((stringp emjupy-remote-root) emjupy-remote-root)
    ((consp emjupy-remote-root)

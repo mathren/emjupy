@@ -1331,8 +1331,7 @@ directory that would open an ssh connection just to ask for a name."
              :path "a.ipynb"
              :server (make-emjupy-server :base-url "localhost:18888"))))
     (let ((emjupy-shadow-directory nil))
-      (should (string-prefix-p (expand-file-name "emjupy-shadow"
-                                                 temporary-file-directory)
+      (should (string-prefix-p (emjupy--shadow-temporary-directory)
                                (emjupy--shadow-file-path nb))))
     (let ((emjupy-shadow-directory "/tmp/custom-shadow"))
       (should (string-prefix-p "/tmp/custom-shadow/"
@@ -7093,6 +7092,32 @@ quoting from."
          (emjupy-remote-root nil))
     (should-not (emjupy--remote-name-for nb "/home/me/project/library.py"))))
 
+(ert-deftest emjupy-test-shadow-files-go-in-a-folder-of-the-users-own ()
+  "Shadow files left for /tmp go in a folder named after the user, private.
+One /tmp/emjupy-shadow was made by whoever came first, and nobody else
+could write in it -- and what it held, a notebook's code, others could
+read."
+  (let ((dir (emjupy--shadow-temporary-directory)))
+    (should (string-prefix-p (expand-file-name temporary-file-directory) dir))
+    (should (string-match-p (regexp-quote (user-login-name)) dir)))
+  (let* ((temporary-file-directory (file-name-as-directory
+                                    (make-temp-file "emjupy-tmp" t)))
+         (dir (emjupy--shadow-temporary-directory)))
+    (unwind-protect
+        (progn
+          (emjupy--private-directory dir "shadow files")
+          (should (file-directory-p dir))
+          (should (= (logand (file-modes dir) #o777) #o700))
+          ;; made first by someone else, or a link to elsewhere: refused
+          (delete-directory dir)
+          (let ((elsewhere (make-temp-file "emjupy-elsewhere" t)))
+            (make-symbolic-link elsewhere (directory-file-name dir))
+            (should-error (emjupy--private-directory dir "shadow files")
+                          :type 'file-error)
+            (delete-file (directory-file-name dir))
+            (delete-directory elsewhere)))
+      (delete-directory temporary-file-directory t))))
+
 (ert-deftest emjupy-test-shadow-does-not-invent-a-local-directory ()
   "The shadow goes to a temp directory rather than a made-up local path.
 
@@ -7119,10 +7144,7 @@ temp directory does the same job without inventing directories."
              (dir (emjupy--shadow-directory-for nb)))
         (should-not (file-remote-p dir))
         (should-not (string-match-p "somewhere-else" dir))
-        (should (string-prefix-p (file-name-as-directory
-                                  (expand-file-name "emjupy-shadow"
-                                                    temporary-file-directory))
-                                 dir)))
+        (should (string-prefix-p (emjupy--shadow-temporary-directory) dir)))
       ;; and a directory that really is here is still used
       (let* ((emjupy--force-local-shadow t)
              (here (file-name-as-directory temporary-file-directory))
@@ -8824,8 +8846,8 @@ what the save by hand replaces."
           (set-file-modes jupyter #o755)
           (should (equal (emjupy--environment-jupyter venv) jupyter))
           (cl-letf (((symbol-function 'emjupy--conda-environments)
-                     (lambda () (list (cons "analysis" venv)
-                                      (cons "bare" "/nonexistent")))))
+                     (lambda (&rest _) (list (cons "analysis" venv)
+                                             (cons "bare" "/nonexistent")))))
             (should (equal (emjupy--environment-jupyter "analysis") jupyter))
             (should-error (emjupy--environment-jupyter "bare")
                           :type 'user-error)
@@ -8853,6 +8875,61 @@ what the save by hand replaces."
                                               "/opt/conda/envs/analysis")
                      ("ml" . "/home/me/.conda/envs/ml"))))))
 
+(ert-deftest emjupy-test-a-notebook-through-tramp-has-an-ssh-route ()
+  "A TRAMP name gives the ssh route to its machine, every hop as ssh -J."
+  (let ((tramp-default-proxies-alist nil))
+    (should (equal (emjupy--ssh-route "/ssh:me@box#2200:/home/me/nb.ipynb")
+                   '(:host "box" :user "me" :port "2200" :jumps nil)))
+    (should (equal (emjupy--ssh-route "/ssh:bastion|ssh:me@inner#2200|ssh:node7:/data/nb.ipynb")
+                   '(:host "node7" :user nil :port nil
+                         :jumps "bastion,me@inner:2200")))
+    (should (equal (emjupy--remote-prefix "/ssh:bastion|ssh:node7:/data/nb.ipynb")
+                   "/ssh:bastion|ssh:node7:"))
+    (should-error (emjupy--ssh-route "/ssh:box|sudo:root@box:/root/nb.ipynb")
+                  :type 'user-error)
+    (should (equal (emjupy--tunnel-command '(:host "node7" :user "me" :port "22"
+                                                 :jumps "bastion") 9000 8888)
+                   '("ssh" "-N" "-o" "BatchMode=yes" "-o"
+                   "ExitOnForwardFailure=yes"
+                   "-L" "9000:127.0.0.1:8888" "-J" "bastion" "-p" "22"
+                   "me@node7"))))
+  ;; once TRAMP has been through a hop, it names the file without it:
+  ;; the route still has it
+  (let ((tramp-default-proxies-alist '(("^node7$" nil "/ssh:bastion:"))))
+    (should (equal (plist-get (emjupy--ssh-route "/ssh:node7:/data/nb.ipynb")
+                              :jumps) "bastion"))
+    (should (equal (emjupy--remote-prefix "/ssh:node7:/data/nb.ipynb")
+                   "/ssh:bastion|ssh:node7:"))))
+
+(ert-deftest emjupy-test-a-running-remote-server-is-found-again ()
+  "A server already serving a notebook's folder, or one above it, is used again.
+That is how a notebook opened on its machine gets back to the server, and
+the kernels, it left running."
+  (let ((listed (concat "{\"port\": 8888, \"token\": \"a\", \"root_dir\": \"/data\"}\n"
+                        "not json at all\n"
+                        "{\"port\": 8889, \"token\": \"b\", \"root_dir\": \"/data/project\"}\n"
+                        "{\"port\": 8890, \"token\": \"c\", \"root_dir\": \"/elsewhere\"}")))
+    (should (equal (plist-get (emjupy--remote-server-for listed "/data/project/analysis")
+                              :port)
+                   8889))
+    (should (equal (plist-get (emjupy--remote-server-for listed "/data/other")
+                              :port) 8888))
+    (should-not (emjupy--remote-server-for listed "/home/me"))
+    (should-not (emjupy--remote-server-for "" "/data"))))
+
+(ert-deftest emjupy-test-a-tunnel-wanting-a-password-says-so ()
+  "A tunnel whose login wants a password says how to log in without one."
+  (let ((emjupy--remote-tunnels nil))
+    (cl-letf (((symbol-function 'emjupy--tunnel-command)
+               (lambda (&rest _)
+                 (list "sh"
+                       "-c" "echo 'me@box: Permission denied (publickey,password).' >&2; exit 255"))))
+      (let ((err (should-error (emjupy--open-tunnel '(:host "box") 8888)
+                               :type 'user-error)))
+        (should (string-match-p "without a password" (cadr err)))
+        (should (string-match-p "agent" (cadr err)))))
+    (should-not emjupy--remote-tunnels)))
+
 (ert-deftest emjupy-test-open-this-notebook-refuses-without-starting-anything ()
   "Not a notebook, not on this machine, or with unsaved text kept: nothing started."
   (let ((started nil) (file (make-temp-file "emjupy-nb" nil ".ipynb")))
@@ -8863,7 +8940,8 @@ what the save by hand replaces."
           (with-temp-buffer
             (should-error (emjupy-open-this-notebook) :type 'user-error))
           (with-temp-buffer
-            (setq buffer-file-name "/ssh:box:/home/me/nb.ipynb")
+            ;; reached otherwise than over SSH: no tunnel to it
+            (setq buffer-file-name "/sudo:root@localhost:/home/me/nb.ipynb")
             (should-error (emjupy-open-this-notebook) :type 'user-error)
             (setq buffer-file-name nil))
           (with-current-buffer (find-file-noselect file)

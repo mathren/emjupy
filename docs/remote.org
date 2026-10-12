@@ -6,6 +6,11 @@ Running notebooks on another machine, over a tunnel or otherwise.
 
 * Notebooks on another machine
 
+An =.ipynb= opened through TRAMP opens on its own machine with
+=emjupy-open-this-notebook=, a server and a tunnel to it made for you,
+through any hops -- see [[file:usage.org][Using a notebook]].  What follows is for a server you
+started and tunnelled to yourself.
+
 Nothing needs configuring for a notebook whose kernel runs elsewhere.
 The kernel is reached over the Jupyter server's WebSocket, and so is the
 language server, when =jupyter-lsp= is installed beside it -- see
