@@ -317,11 +317,18 @@ and a notebook is a file people share."
        (image (emjupy--show-image (nth 1 image) (nth 0 image)))
        (t (user-error "This output has nothing to open"))))))
 
-(defun emjupy-figures-enable ()
-  "Let the lines standing for outputs open them, in this layer.
-Run when a notebook buffer starts, like the other links between layers,
-so that loading this file changes nothing."
-  (setq emjupy-open-output-function #'emjupy-open-output))
+(defun emjupy-open-output-at-point (&optional event)
+  "Open the interactive output whose line is at point, or was clicked.
+EVENT is the mouse event, when there was one."
+  (interactive (list last-nonmenu-event))
+  (let ((pos (if (mouse-event-p event) (posn-point (event-start event))
+               (point))))
+    (emjupy-open-output (get-text-property pos 'emjupy-output-data))))
+
+;; Bound here, where opening an output is, on the map the drawing layer
+;; puts on the line that stands for one.
+(define-key emjupy-output-button-map (kbd "RET") #'emjupy-open-output-at-point)
+(define-key emjupy-output-button-map [mouse-1] #'emjupy-open-output-at-point)
 
 (provide 'emjupy-figures)
 

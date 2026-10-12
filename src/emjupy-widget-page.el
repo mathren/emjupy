@@ -77,7 +77,7 @@ its Python class -- which anywidget records -- says more."
   (list (emjupy--widget-button
          (format "▶ Interactive widget: %s (%s) -- RET or click to open it"
                  (emjupy--widget-scripted-name s) (gethash "_view_module" s))
-         id 'open-page)))
+         id #'emjupy-widget-open-page)))
 
 ;;;; The models a page needs
 
@@ -413,7 +413,6 @@ the kernel, and one made in the kernel reaches the page."
   "Open widgets that draw themselves in a page, and keep the pages in step.
 Run when a notebook buffer starts, like the other hooks between layers."
   (add-hook 'emjupy-comm-functions #'emjupy--bridge-on-comm)
-  (setq emjupy-widget-page-function #'emjupy-widget-open-page)
   (emjupy--widget-add-rule (list 'scripted #'emjupy--widget-scripted-p
                                  #'emjupy--widget-draw-scripted)))
 

@@ -498,11 +498,6 @@ such before any other rule takes it for what its state looks like."
   (unless (assq (car rule) emjupy-widget-rules)
     (push rule emjupy-widget-rules)))
 
-(defvar emjupy-widget-page-function nil
-  "Function opening a widget that draws itself in a page, or nil.
-Called with the widget\'s comm id and the cell showing it.  Set by the
-layer that runs pages.")
-
 (defun emjupy--widget-rule (state)
   "Return the rule of `emjupy-widget-rules' that draws STATE, or nil."
   (cl-find-if (lambda (rule) (funcall (nth 1 rule) state)) emjupy-widget-rules))
@@ -709,9 +704,9 @@ several options, a click, or a new value asked for in the minibuffer."
                                          (emjupy--widget-image-type state)))
         ('open-media (emjupy--widget-open-media state))
         ('upload (emjupy--widget-upload id state cell))
-        ('open-page (if emjupy-widget-page-function
-                        (funcall emjupy-widget-page-function id cell)
-                      (user-error "Opening a widget in a page needs emjupy-widget-page")))))))
+        ;; What a layer above drew, it says what opens: the control carries
+        ;; the function, called with the widget's id and its cell.
+        ((pred functionp) (funcall action id cell))))))
 
 (defun emjupy--widget-open-media (state)
   "Play the sound or video of STATE, in a window of its own."
@@ -795,7 +790,7 @@ Run when a notebook buffer starts, like the other hooks between layers,
 so that loading this file changes nothing."
   (add-hook 'emjupy-comm-functions #'emjupy--widget-on-comm)
   (add-hook 'emjupy-output-owner-functions #'emjupy--widget-owner)
-  (setq emjupy-widget-view-function #'emjupy--widget-view))
+  (add-hook 'emjupy-widget-view-functions #'emjupy--widget-view))
 
 (provide 'emjupy-widgets)
 

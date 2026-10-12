@@ -25,7 +25,6 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 (require 'emjupy-kernel)
-(require 'emjupy-figures)
 (require 'emjupy-widgets)
 (require 'emjupy-widget-page)
 (require 'emjupy-lsp)
@@ -217,7 +216,6 @@ are on the `load-path' -- remove one, or put the one you want first."
   ;; Closing the notebook closes the connections it opened.
   (add-hook 'kill-buffer-hook #'emjupy--release-notebook nil t)
   (emjupy-cells-enable)
-  (emjupy-figures-enable)
   (emjupy-widgets-enable)
   (emjupy-widget-page-enable)
   ;; The number column narrows the page; the rules are redrawn to fit.

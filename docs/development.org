@@ -35,10 +35,10 @@ file requires only files earlier in this table, never later ones.
 
 | File                    | Contains                                                    |
 |-------------------------+-------------------------------------------------------------|
-| =emjupy-core.el=        | structs, state, server registry, lookups                    |
+| =emjupy-core.el=        | structs, state, server registry, the cell at a position     |
 | =emjupy-http.el=        | REST transport, URL parsing, the HTTP error types           |
 | =emjupy-render.el=      | faces, colours, outlines, drawing output, text helpers      |
-| =emjupy-cells.el=       | buffer<->struct syncing, cell editing and cell commands     |
+| =emjupy-cells.el=       | syncing, cell editing and commands, redrawing in place      |
 | =emjupy-kernel.el=      | kernel WebSocket, execution, message routing                |
 | =emjupy-figures.el=     | opening an output on its own: plotly figures, HTML, images  |
 | =emjupy-widgets.el=     | widget controls in the buffer, and what they cause          |
@@ -46,15 +46,16 @@ file requires only files earlier in this table, never later ones.
 | =emjupy-remote.el=      | where a server's files live: roots, SSH tunnels, TRAMP      |
 | =emjupy-lsp.el=         | language-server WebSocket transport, shadow document text   |
 | =emjupy-eglot.el=       | shadow buffer, Eglot integration, completion, eldoc         |
-| =emjupy-mode.el=        | =emjupy-mode=, its keymap and menu, the mixed-install check |
-| =emjupy-notebook.el=    | login, the notebook browser, .ipynb parse and serialize     |
+| =emjupy-mode.el=        | =emjupy-mode=, what it turns on, the mixed-install check    |
+| =emjupy-notebook.el=    | login, the notebook browser, saving, the keys and the menu  |
 | =emjupy.el=             | package header, version, and requiring every file in order  |
 | =emjupy-pkg.el=         | package metadata for =make package= (MELPA makes its own)   |
 
 ** Dependencies run one way
 
-No file calls a function defined in a file later in the table, and
-there are no =declare-function= forms for emjupy's own functions.  Every
+No file calls, or names, anything defined in a file later in the table,
+and there are no =declare-function= forms for emjupy's own functions.
+Each file requires the files whose functions it uses, and only those.  Every
 module can be loaded on its own, which is what makes that checkable:
 =(require 'emjupy-lsp)= in a fresh Emacs must work without anything else
 having been loaded first.
@@ -73,15 +74,29 @@ it runs a hook rather than naming the function.  There are these:
   and =emjupy-output-owner-functions=, asked by it which cell output
   answering a request no cell waits on belongs to.  The widgets layer
   keeps its models from the first, and claims with the second the output
-  a moved slider causes.  It also sets =emjupy-widget-view-function=,
-  which the drawing layer calls to draw a widget.
+  a moved slider causes.
+- =emjupy-widget-view-functions=, asked by the drawing layer to draw a
+  widget's controls; the widgets layer answers.
 
-Both are wired when a notebook buffer starts, not when a file is loaded
--- a package should not add hooks just by being loaded.
+They are wired when a notebook buffer starts -- =emjupy-mode= turns each
+layer on -- not when a file is loaded: a package should not add hooks
+just by being loaded.  Only hooks run upward; nothing is set to one
+function for a layer below to call.
 
-A keymap may name a command defined further down the table, with a plain
-quote rather than =#'=: a binding needs the name, and resolves it when
-the key is pressed.
+The rest follows from where things are put:
+
+- A redraw happens whole or is put right by drawing the notebook again
+  from its cells.  The redraws that need that -- of a cell's output in
+  place, and of every output when the width changes -- are in the cells
+  layer with it, so putting one right is a plain call.
+- A key on a map made by a lower layer is bound by the layer whose
+  command it runs, beside the command: the click on hidden output in the
+  cells layer, opening an output in the figures layer.
+- The mode's keys and its menu name commands of every layer, so they are
+  bound in emjupy-notebook.el, above them all; =emjupy-mode= makes its
+  map, empty, and that file fills it.
+- A widget control drawn by the layer of widget pages carries the
+  function that opens it, which the widgets layer calls.
 
 ** Errors
 
