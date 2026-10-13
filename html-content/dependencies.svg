@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="938" viewBox="0 0 460 938" font-family="sans-serif" font-size="12">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#888"/></marker></defs>
+<rect width="100%" height="100%" fill="white"/>
+<path d="M 230.0 50.0 C 230.0 81.0 230.0 81.0 230.0 112.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 84.0 694.0 C 84.0 725.0 303.0 725.0 303.0 756.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 157.0 510.0 C 157.0 541.0 230.0 541.0 230.0 572.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 157.0 510.0 C 157.0 541.0 230.0 633.0 230.0 664.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 157.0 510.0 C 157.0 541.0 376.0 633.0 376.0 664.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 303.0 510.0 C 303.0 541.0 230.0 541.0 230.0 572.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 157.0 786.0 C 157.0 817.0 230.0 817.0 230.0 848.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 602.0 C 230.0 633.0 84.0 633.0 84.0 664.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 602.0 C 230.0 633.0 157.0 725.0 157.0 756.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 694.0 C 230.0 725.0 157.0 725.0 157.0 756.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 234.0 C 230.0 265.0 157.0 449.0 157.0 480.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 234.0 C 230.0 265.0 230.0 265.0 230.0 296.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 142.0 C 230.0 173.0 230.0 173.0 230.0 204.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 376.0 694.0 C 376.0 725.0 157.0 725.0 157.0 756.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 303.0 786.0 C 303.0 817.0 230.0 817.0 230.0 848.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 326.0 C 230.0 357.0 230.0 357.0 230.0 388.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M 230.0 418.0 C 230.0 449.0 303.0 449.0 303.0 480.0" fill="none" stroke="#888" stroke-opacity="0.55" marker-end="url(#arrow)"/>
+<rect x="20.0" y="664.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="84.0" y="683.0" text-anchor="middle">cells</text>
+<rect x="166.0" y="664.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="683.0" text-anchor="middle">lsp</text>
+<rect x="312.0" y="664.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="376.0" y="683.0" text-anchor="middle">remote</text>
+<rect x="166.0" y="848.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="867.0" text-anchor="middle">core</text>
+<rect x="93.0" y="480.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="157.0" y="499.0" text-anchor="middle">eglot</text>
+<rect x="239.0" y="480.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="303.0" y="499.0" text-anchor="middle">figures</text>
+<rect x="93.0" y="756.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="157.0" y="775.0" text-anchor="middle">http</text>
+<rect x="239.0" y="756.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="303.0" y="775.0" text-anchor="middle">render</text>
+<rect x="166.0" y="572.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="591.0" text-anchor="middle">kernel</text>
+<rect x="166.0" y="204.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="223.0" text-anchor="middle">mode</text>
+<rect x="166.0" y="112.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="131.0" text-anchor="middle">notebook</text>
+<rect x="166.0" y="296.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="315.0" text-anchor="middle">widget-page</text>
+<rect x="166.0" y="388.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="407.0" text-anchor="middle">widgets</text>
+<rect x="166.0" y="20.0" width="128" height="30" rx="6" fill="#f4f6fa" stroke="#456"/>
+<text x="230.0" y="39.0" text-anchor="middle">emjupy</text>
+<text x="20" y="914" fill="#555">14 files, each above the files it requires.</text>
+<text x="20" y="930" fill="#555">Lines a longer path implies are left out.</text>
+</svg>

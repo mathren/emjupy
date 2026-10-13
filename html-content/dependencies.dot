@@ -1,0 +1,74 @@
+digraph emjupy {
+  rankdir=BT;
+  node [shape=box, style="rounded", fontname="sans-serif"];
+  { rank=same; "core"; }
+  { rank=same; "http"; "render"; }
+  { rank=same; "cells"; "lsp"; "remote"; }
+  { rank=same; "kernel"; }
+  { rank=same; "eglot"; "figures"; }
+  { rank=same; "widgets"; }
+  { rank=same; "widget-page"; }
+  { rank=same; "mode"; }
+  { rank=same; "notebook"; }
+  { rank=same; "emjupy"; }
+  "emjupy" -> "cells";
+  "emjupy" -> "core";
+  "emjupy" -> "eglot";
+  "emjupy" -> "figures";
+  "emjupy" -> "http";
+  "emjupy" -> "kernel";
+  "emjupy" -> "lsp";
+  "emjupy" -> "mode";
+  "emjupy" -> "notebook";
+  "emjupy" -> "remote";
+  "emjupy" -> "render";
+  "emjupy" -> "widget-page";
+  "emjupy" -> "widgets";
+  "cells" -> "core";
+  "cells" -> "render";
+  "eglot" -> "cells";
+  "eglot" -> "core";
+  "eglot" -> "http";
+  "eglot" -> "kernel";
+  "eglot" -> "lsp";
+  "eglot" -> "remote";
+  "eglot" -> "render";
+  "figures" -> "core";
+  "figures" -> "kernel";
+  "figures" -> "render";
+  "http" -> "core";
+  "kernel" -> "cells";
+  "kernel" -> "core";
+  "kernel" -> "http";
+  "kernel" -> "render";
+  "lsp" -> "core";
+  "lsp" -> "http";
+  "mode" -> "cells";
+  "mode" -> "core";
+  "mode" -> "eglot";
+  "mode" -> "kernel";
+  "mode" -> "lsp";
+  "mode" -> "render";
+  "mode" -> "widget-page";
+  "mode" -> "widgets";
+  "notebook" -> "cells";
+  "notebook" -> "core";
+  "notebook" -> "eglot";
+  "notebook" -> "figures";
+  "notebook" -> "http";
+  "notebook" -> "kernel";
+  "notebook" -> "mode";
+  "notebook" -> "remote";
+  "notebook" -> "render";
+  "remote" -> "core";
+  "remote" -> "http";
+  "render" -> "core";
+  "widget-page" -> "core";
+  "widget-page" -> "figures";
+  "widget-page" -> "kernel";
+  "widget-page" -> "widgets";
+  "widgets" -> "core";
+  "widgets" -> "figures";
+  "widgets" -> "kernel";
+  "widgets" -> "render";
+}

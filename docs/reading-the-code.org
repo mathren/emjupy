@@ -2,11 +2,8 @@
 #+PREVIOUS_PAGE: design.org
 #+NEXT_PAGE: development.org
 
-A path through emjupy's source for someone reviewing it: where to start,
-how the main things it does run from function to function, where the
-hard parts are, and what to check in a change.  [[file:design.org][How it works]] explains the
-ideas; [[file:development.org][Building and development]] the layout, the rules and the tests.
-This page links to both rather than repeating them.
+[[file:design.org][How it works]] explains the ideas; [[file:development.org][Building and development]] the layout,
+the rules and the tests.
 
 * Before reading: three ideas
 
@@ -31,17 +28,17 @@ before its code.  Every file has the same shape: a commentary at the
 top, its options under =;;;; Options= if it has any, then one section
 per part.
 
-| Order | File                    | Read for                                           |
-|-------+-------------------------+----------------------------------------------------|
-|     1 | =emjupy-core.el=        | the structs, and which cell is at a position       |
-|     2 | =emjupy-http.el=        | requests, errors (=emjupy-http-error=), XSRF       |
-|     3 | =emjupy-render.el=      | drawing a cell and its output; undo bookkeeping    |
-|     4 | =emjupy-cells.el=       | syncing, editing commands, redrawing in place      |
-|     5 | =emjupy-kernel.el=      | running cells, output arriving, reconnecting       |
-|     6 | =emjupy-remote.el=      | where a server's files are: roots, tunnels, TRAMP  |
-|     7 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                        |
-|     8 | =emjupy-mode.el=        | what a notebook buffer turns on                    |
-|     9 | =emjupy-notebook.el=    | logging in, opening, saving, the keys and the menu |
+| Order | File                           | Read for                                           |
+|-------+--------------------------------+----------------------------------------------------|
+|     1 | =emjupy-core.el=                 | the structs, and which cell is at a position       |
+|     2 | =emjupy-http.el=                 | requests, errors (=emjupy-http-error=), XSRF         |
+|     3 | =emjupy-render.el=               | drawing a cell and its output; undo bookkeeping    |
+|     4 | =emjupy-cells.el=                | syncing, editing commands, redrawing in place      |
+|     5 | =emjupy-kernel.el=               | running cells, output arriving, reconnecting       |
+|     6 | =emjupy-remote.el=               | where a server's files are: roots, tunnels, TRAMP  |
+|     7 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                   |
+|     8 | =emjupy-mode.el=                 | what a notebook buffer turns on                    |
+|     9 | =emjupy-notebook.el=             | logging in, opening, saving, the keys and the menu |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read
