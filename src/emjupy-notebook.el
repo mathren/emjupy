@@ -1000,15 +1000,45 @@ validation even though it looks fine in emjupy."
      (if (eql (emjupy--http-status-of err) 404) nil (signal (car err)
                                                             (cdr err))))))
 
+(defun emjupy--autosave-done (nb)
+  "Mark NB's auto-save as no longer in flight."
+  (let ((buf (emjupy-notebook-buffer nb)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf (setq emjupy--autosave-in-flight nil)))))
+
+(defun emjupy--autosave-failed (nb err)
+  "End NB's auto-save, which failed with ERR, saying so."
+  (emjupy--autosave-done nb)
+  (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
+           (emjupy-notebook-path nb) (error-message-string err)))
+
+(defun emjupy--autosave-upload (nb body tick)
+  "Send BODY, NB as it was at its buffer's modification TICK, not waiting.
+Once saved, the buffer is unmodified and the recovery copy goes -- unless
+it was edited since."
+  (let ((buf (emjupy-notebook-buffer nb)))
+    (emjupy--http-request-async
+     "PUT" (emjupy-notebook-server nb)
+     (emjupy--contents-path (emjupy-notebook-path nb)) body
+     (lambda (model)
+       (emjupy--autosave-done nb)
+       (setf (emjupy-notebook-last-modified nb)
+             (and (hash-table-p model) (gethash "last_modified" model)))
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           ;; saved as it was when sent; edited since, it is not
+           (when (eql tick (buffer-modified-tick))
+             (set-buffer-modified-p nil)
+             (emjupy--recovery-delete nb)))))
+     (lambda (err) (emjupy--autosave-failed nb err)))))
+
 (defun emjupy--autosave-async (nb)
   "Save NB to its server without waiting, as auto-save does.
 As saving by hand -- not over a notebook changed elsewhere -- but
 asynchronous: over a remote link the requests take round trips.  Edits
 made meanwhile leave the notebook unsaved, for the next save."
   (let* ((buf (emjupy-notebook-buffer nb))
-         (server (emjupy-notebook-server nb))
          (path (emjupy-notebook-path nb))
-         (contents-path (emjupy--contents-path path))
          (known (emjupy-notebook-last-modified nb))
          tick body)
     (with-current-buffer buf
@@ -1018,45 +1048,26 @@ made meanwhile leave the notebook unsaved, for the next save."
                   (emjupy--notebook-request (emjupy--notebook-json nb))))
       (setq emjupy--autosave-in-flight t
             emjupy--autosave-last (float-time)))
-    (cl-labels
-        ((finish ()
-           (when (buffer-live-p buf)
-             (with-current-buffer buf (setq emjupy--autosave-in-flight nil))))
-         (fail (err)
-           (finish)
-           (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
-                    path (error-message-string err)))
-         (upload ()
-           (emjupy--http-request-async
-            "PUT" server contents-path body
-            (lambda (model)
-              (finish)
-              (setf (emjupy-notebook-last-modified nb)
-                    (and (hash-table-p model) (gethash "last_modified" model)))
-              (when (buffer-live-p buf)
-                (with-current-buffer buf
-                  ;; saved as it was when sent; edited since, it is not
-                  (when (eql tick (buffer-modified-tick))
-                    (set-buffer-modified-p nil)
-                    (emjupy--recovery-delete nb)))))
-            #'fail)))
-      (if (not known)
-          (upload)
-        (emjupy--http-request-async
-         "GET" server (concat contents-path "?content=0") nil
-         (lambda (model)
-           (let ((current (and (hash-table-p model)
-                               (gethash "last_modified" model))))
-             (if (or (not current) (equal current known))
-                 (upload)
-               (finish)
-               (when (buffer-live-p buf)
-                 (with-current-buffer buf (setq emjupy--autosave-paused t)))
-               (message "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
-                        path (substitute-command-keys "\\[emjupy-save-notebook] asks what to do.")))))
-         (lambda (err)
-           ;; gone from the server: nothing there to overwrite
-           (if (eql (emjupy--http-status-of err) 404) (upload) (fail err))))))))
+    (if (not known)
+        (emjupy--autosave-upload nb body tick)
+      (emjupy--http-request-async
+       "GET" (emjupy-notebook-server nb)
+       (concat (emjupy--contents-path path) "?content=0") nil
+       (lambda (model)
+         (let ((current (and (hash-table-p model)
+                             (gethash "last_modified" model))))
+           (if (or (not current) (equal current known))
+               (emjupy--autosave-upload nb body tick)
+             (emjupy--autosave-done nb)
+             (when (buffer-live-p buf)
+               (with-current-buffer buf (setq emjupy--autosave-paused t)))
+             (message "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
+                      path (substitute-command-keys "\\[emjupy-save-notebook] asks what to do.")))))
+       (lambda (err)
+         ;; gone from the server: nothing there to overwrite
+         (if (eql (emjupy--http-status-of err) 404)
+             (emjupy--autosave-upload nb body tick)
+           (emjupy--autosave-failed nb err)))))))
 
 (defun emjupy--save-to-server (nb &optional overwrite)
   "Save NB to its server, and return non-nil.
