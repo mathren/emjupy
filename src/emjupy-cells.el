@@ -738,24 +738,11 @@ Positions are remembered as line and column rather than as offsets:
 the rebuild changes how many characters precede a line, since output
 boxes grow and shrink, but the line a reader is looking at is still the
 line they were looking at."
-  (let* ((windows (get-buffer-window-list (current-buffer) nil t))
-         (point-line (line-number-at-pos (point)))
-         (point-col (current-column))
-         (starts (mapcar (lambda (w)
-                           (cons w
-                                 (line-number-at-pos
-                                  (emjupy--visible-from (window-start w)))))
-                         windows)))
-    (unwind-protect
-        (funcall thunk)
-      (emjupy--goto-line-column point-line point-col)
-      (dolist (pair starts)
-        (let ((w (car pair)))
-          (when (window-live-p w)
-            (set-window-start
-             w (save-excursion (emjupy--goto-line-column (cdr pair) 0) (point))
-             t)
-            (set-window-point w (point))))))))
+  (let ((line (line-number-at-pos (point))) (column (current-column)))
+    (emjupy--keeping-the-window
+     (lambda ()
+       (unwind-protect (funcall thunk)
+         (emjupy--goto-line-column line column))))))
 
 (defun emjupy--goto-line-column (line column)
   "Put point at COLUMN of LINE, or as near to it as the buffer permits."
@@ -947,47 +934,36 @@ records nothing."
 
 ;;;; Cell commands
 
-(defun emjupy-insert-cell-below ()
-  "Insert a new empty code cell below the cell at point."
-  (interactive)
+(defun emjupy--insert-empty-cell (below)
+  "Insert an empty code cell next to the cell at point: BELOW it, or above."
   (emjupy--as-one-undo-step
     (emjupy--sync-all-cells)
     (let* ((nb emjupy--buffer-notebook)
-           (curr-cell (emjupy--cell-at-point))
            (cells (append (emjupy-notebook-cells nb) nil))
+           (idx (cl-position (emjupy--cell-at-point) cells))
+           (index (cond ((null idx) (if below (length cells) 0))
+                        (below (1+ idx))
+                        (t idx)))
            (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                        :source "" :outputs []
-                                       :metadata (make-hash-table)))
-           (idx (cl-position curr-cell cells)))
-      (let ((index (if idx (1+ idx) (length cells))))
-        (unless (emjupy-insert-cell-at nb index new-cell)
-          (setf (emjupy-notebook-cells nb)
-                (vconcat (append (cl-subseq cells 0 index)
-                                 (list new-cell)
-                                 (cl-subseq cells index))))
-          (emjupy--rerender-notebook new-cell)))
+                                       :metadata (make-hash-table))))
+      (unless (emjupy-insert-cell-at nb index new-cell)
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (append (cl-subseq cells 0 index)
+                               (list new-cell)
+                               (cl-subseq cells index))))
+        (emjupy--rerender-notebook new-cell))
       (emjupy--goto-cell new-cell 'start))))
+
+(defun emjupy-insert-cell-below ()
+  "Insert a new empty code cell below the cell at point."
+  (interactive)
+  (emjupy--insert-empty-cell t))
 
 (defun emjupy-insert-cell-above ()
   "Insert a new empty code cell above the cell at point."
   (interactive)
-  (emjupy--as-one-undo-step
-    (emjupy--sync-all-cells)
-    (let* ((nb emjupy--buffer-notebook)
-           (curr-cell (emjupy--cell-at-point))
-           (cells (append (emjupy-notebook-cells nb) nil))
-           (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
-                                       :source "" :outputs []
-                                       :metadata (make-hash-table)))
-           (idx (cl-position curr-cell cells)))
-      (let ((index (or idx 0)))
-        (unless (emjupy-insert-cell-at nb index new-cell)
-          (setf (emjupy-notebook-cells nb)
-                (vconcat (append (cl-subseq cells 0 index)
-                                 (list new-cell)
-                                 (cl-subseq cells index))))
-          (emjupy--rerender-notebook new-cell)))
-      (emjupy--goto-cell new-cell 'start))))
+  (emjupy--insert-empty-cell nil))
 
 (defun emjupy-move-cell-up ()
   "Move the cell at point up, swapping it with the cell above.
@@ -1175,42 +1151,41 @@ Neither half has been run as it now stands, so keeping the results would
 attribute them to source that never produced them."
   (interactive)
   (emjupy--as-one-undo-step
-    (emjupy--as-one-undo-step
-      (emjupy--sync-all-cells)
-      (let* ((nb (emjupy--notebook))
-             (cell (emjupy--cell-at-point)))
-        ;; Output text carries no cell property and lies outside the source
-        ;; overlay, so this also catches point sitting in an output box.
-        (unless cell
-          (user-error "Point is not in a cell"))
-        (let* ((ov (emjupy-cell-overlay cell))
-               (source (or (emjupy-cell-source cell) ""))
-               (offset (max 0 (min (- (point) (overlay-start ov))
-                                   (length source))))
-               (new-cell (make-emjupy-cell
-                          :id (emjupy--new-cell-id)
-                          :type (emjupy-cell-type cell)
-                          :source (substring source offset)
-                          :outputs []
-                          :metadata (make-hash-table :test 'equal)))
-               (cells (append (emjupy-notebook-cells nb) nil))
-               (idx (cl-position cell cells)))
-          (setq emjupy--split-was-sane (emjupy--overlays-sane-p))
-          (setf (emjupy-cell-source cell) (substring source 0 offset))
-          ;; Neither half produced what is on screen any more.
-          (setf (emjupy-cell-outputs cell) [])
-          (setf (emjupy-cell-exec-count cell) nil)
-          (setf (emjupy-notebook-cells nb)
-                (vconcat (append (cl-subseq cells 0 (1+ idx))
-                                 (list new-cell)
-                                 (cl-subseq cells (1+ idx)))))
-          (unless (emjupy--redraw-cells-in-place (list cell)
-                                                 (list cell new-cell)
-                                                 emjupy--split-was-sane)
-            (emjupy--rerender-notebook new-cell))
-          (let ((ov (emjupy-cell-overlay new-cell)))
-            (when (overlayp ov) (goto-char (overlay-start ov))))
-          new-cell)))))
+    (emjupy--sync-all-cells)
+    (let* ((nb (emjupy--notebook))
+           (cell (emjupy--cell-at-point)))
+      ;; Output text carries no cell property and lies outside the source
+      ;; overlay, so this also catches point sitting in an output box.
+      (unless cell
+        (user-error "Point is not in a cell"))
+      (let* ((ov (emjupy-cell-overlay cell))
+             (source (or (emjupy-cell-source cell) ""))
+             (offset (max 0 (min (- (point) (overlay-start ov))
+                                 (length source))))
+             (new-cell (make-emjupy-cell
+                        :id (emjupy--new-cell-id)
+                        :type (emjupy-cell-type cell)
+                        :source (substring source offset)
+                        :outputs []
+                        :metadata (make-hash-table :test 'equal)))
+             (cells (append (emjupy-notebook-cells nb) nil))
+             (idx (cl-position cell cells)))
+        (setq emjupy--split-was-sane (emjupy--overlays-sane-p))
+        (setf (emjupy-cell-source cell) (substring source 0 offset))
+        ;; Neither half produced what is on screen any more.
+        (setf (emjupy-cell-outputs cell) [])
+        (setf (emjupy-cell-exec-count cell) nil)
+        (setf (emjupy-notebook-cells nb)
+              (vconcat (append (cl-subseq cells 0 (1+ idx))
+                               (list new-cell)
+                               (cl-subseq cells (1+ idx)))))
+        (unless (emjupy--redraw-cells-in-place (list cell)
+                                               (list cell new-cell)
+                                               emjupy--split-was-sane)
+          (emjupy--rerender-notebook new-cell))
+        (let ((ov (emjupy-cell-overlay new-cell)))
+          (when (overlayp ov) (goto-char (overlay-start ov))))
+        new-cell))))
 
 (defun emjupy-join-cell-above ()
   "Merge the cell at point into the one above it.

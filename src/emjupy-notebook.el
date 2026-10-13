@@ -1517,18 +1517,21 @@ and is stopped when the last notebook it serves is closed."
               emjupy--local-servers)
         server)))
 
+(defun emjupy--server-in-use-p (server)
+  "Return non-nil if a notebook buffer other than this one is on SERVER."
+  (cl-some (lambda (b)
+             (and (not (eq b (current-buffer)))
+                  (eq (emjupy-notebook-server
+                       (buffer-local-value 'emjupy--buffer-notebook b))
+                      server)))
+           (emjupy--notebook-buffers)))
+
 (defun emjupy--stop-local-server-if-unused (server)
   "Stop SERVER, if emjupy started it and no notebook it serves is open."
   (let ((entry (cl-find server emjupy--local-servers
                         :key (lambda (s) (plist-get s :server)))))
     (when (and entry
-               (not (cl-some (lambda (b)
-                               (and (not (eq b (current-buffer)))
-                                    (eq (emjupy-notebook-server
-                                         (buffer-local-value
-                                          'emjupy--buffer-notebook b))
-                                        server)))
-                             (emjupy--notebook-buffers))))
+               (not (emjupy--server-in-use-p server)))
       (when (process-live-p (plist-get entry :process))
         (delete-process (plist-get entry :process)))
       (setq emjupy--local-servers (delq entry emjupy--local-servers)))))
@@ -1702,13 +1705,7 @@ The server itself, on the other machine, keeps running."
   (let ((tunnel (cl-find server emjupy--remote-tunnels
                          :key (lambda (s) (plist-get s :server)))))
     (when (and tunnel
-               (not (cl-some (lambda (b)
-                               (and (not (eq b (current-buffer)))
-                                    (eq (emjupy-notebook-server
-                                         (buffer-local-value
-                                          'emjupy--buffer-notebook b))
-                                        server)))
-                             (emjupy--notebook-buffers))))
+               (not (emjupy--server-in-use-p server)))
       (when (process-live-p (plist-get tunnel :process))
         (delete-process (plist-get tunnel :process)))
       (setq emjupy--remote-tunnels (delq tunnel emjupy--remote-tunnels))
