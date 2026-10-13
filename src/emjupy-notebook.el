@@ -1605,7 +1605,10 @@ of them again finds it, and its kernels, as they were."
      dir (format "nohup %s server --no-browser --ServerApp.ip=127.0.0.1 --ServerApp.port=%d --ServerApp.port_retries=0 --IdentityProvider.token=%s --ServerApp.root_dir=%s > %s 2>&1 < /dev/null &"
                  (shell-quote-argument jupyter) port token
                  (shell-quote-argument here) log))
-    (list :port port :token token :root_dir here :log log)))
+    ;; As `jupyter server list' reports a root: without a final slash, so a
+    ;; server started here and one found running give the same root.
+    (list :port port :token token :root_dir (directory-file-name here)
+          :log log)))
 
 (defun emjupy--open-tunnel (route remote-port)
   "Return a live tunnel's local port to REMOTE-PORT along ROUTE.
