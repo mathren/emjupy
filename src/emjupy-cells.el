@@ -62,6 +62,44 @@ nil."
           ((and ,done (not emjupy--recovering))
            (emjupy--check-after-redraw)))))))
 
+(defun emjupy--relabel-output (cell out)
+  "Redraw only the label of CELL's output box OUT, its output unchanged.
+As when the cell finished and nothing new came.  Set as drawing the box
+sets it, then placed as a redraw places it."
+  (let ((inhibit-read-only t))
+    (overlay-put out 'emjupy-header nil)
+    (overlay-put out 'before-string
+                 (emjupy--rule (emjupy--cell-out-label cell) "├"))
+    (emjupy--refresh-cell-header cell)
+    (emjupy--refresh-cell-footer cell)
+    (emjupy--reconcile-rules)
+    t))
+
+(defun emjupy--draw-stream-gain (out pieces last-out added)
+  "Draw ADDED, the text the last stream output gained, at the end of OUT.
+PIECES are the outputs drawn, LAST-OUT the stream output; OUT is
+extended to cover the text, which is kept out of the undo history."
+  (let* ((start (overlay-end out))
+         (inhibit-read-only t)
+         (buffer-undo-list t)
+         (emjupy--refontifying t)
+         end)
+    (emjupy--atomic-redraw t
+      (save-excursion
+        (goto-char start)
+        (insert added)
+        (let ((widest (emjupy--finish-output-piece last-out start)))
+          (unless (eq (char-before) ?\n) (insert "\n"))
+          (setq end (point))
+          (move-overlay out (overlay-start out) end)
+          (overlay-put out 'emjupy-widest
+                       (max widest (or (overlay-get out 'emjupy-widest) 0)))
+          (overlay-put out 'emjupy-drawn (emjupy--drawn-state pieces))))
+      (when emjupy-protect-non-cell-regions
+        (emjupy--make-read-only start end))
+      (emjupy--undo-adjust start start (- end start)))
+    t))
+
 (defun emjupy--append-stream-output (cell)
   "Draw only what CELL's last stream output gained, if that is all.
 Return non-nil if that was done; nothing new to draw counts, when only
@@ -85,39 +123,9 @@ line last drawn, and no carriage return or colour escape in it."
                (string-prefix-p old new)
                (not (string-match-p "[\r\e]" new)))
       (if (= (length new) (length old))
-          ;; Nothing new: the cell finished, say, and only its label
-          ;; changes.  That is redrawn; the output, the same, is not.
-          ;; Set as drawing the box sets it, then placed as a redraw places it.
-          (let ((inhibit-read-only t))
-            (overlay-put out 'emjupy-header nil)
-            (overlay-put out 'before-string
-                         (emjupy--rule (emjupy--cell-out-label cell) "├"))
-            (emjupy--refresh-cell-header cell)
-            (emjupy--refresh-cell-footer cell)
-            (emjupy--reconcile-rules)
-            t)
-        (let* ((start (overlay-end out))
-               (inhibit-read-only t)
-               (buffer-undo-list t)
-               (emjupy--refontifying t)
-               end)
-          (emjupy--atomic-redraw t
-            (save-excursion
-              (goto-char start)
-              (insert (substring new (length old)))
-              (let ((widest (emjupy--finish-output-piece last-out start)))
-                (unless (eq (char-before) ?\n) (insert "\n"))
-                (setq end (point))
-                (move-overlay out (overlay-start out) end)
-                (overlay-put
-                 out 'emjupy-widest (max widest
-                                         (or (overlay-get out
-                                                          'emjupy-widest) 0)))
-                (overlay-put out 'emjupy-drawn (emjupy--drawn-state pieces))))
-            (when emjupy-protect-non-cell-regions
-              (emjupy--make-read-only start end))
-            (emjupy--undo-adjust start start (- end start)))
-          t)))))
+          (emjupy--relabel-output cell out)
+        (emjupy--draw-stream-gain out pieces last-out
+                                  (substring new (length old)))))))
 
 (defun emjupy--refresh-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
