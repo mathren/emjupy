@@ -29,7 +29,7 @@ on:
       - 'README.org'
       - 'publish.el'
       - 'tools/**'
-      - 'test_notebooks/test-corpus/**'
+      - 'test_notebooks/**'
 
   pull_request:
     # the same list as for push
@@ -42,7 +42,7 @@ on:
       - 'README.org'
       - 'publish.el'
       - 'tools/**'
-      - 'test_notebooks/test-corpus/**'
+      - 'test_notebooks/**'
 
 # A newer push to the same branch or pull request makes an older run moot.
 concurrency:
@@ -82,6 +82,16 @@ jobs:
         env:
           EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
         run: make lint
+
+      # The notebooks to try emjupy on are committed without outputs, and
+      # the corpus is what its generator writes: neither changes in git by
+      # being run.
+      - name: Check the test notebooks are as committed
+        run: |
+          pip install --quiet nbstripout nbformat
+          nbstripout --keep-id --verify test_notebooks/*.ipynb
+          python3 tools/make-notebook-corpus.py
+          git diff --exit-code -- test_notebooks/test-corpus
 
       - name: Compile, as MELPA builds the package from its recipe
         env:

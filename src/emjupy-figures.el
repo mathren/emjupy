@@ -64,6 +64,9 @@ as (\"google-chrome\" \"--app=%s\"), say."
   :type '(repeat (repeat :tag "Program and arguments" string))
   :group 'emjupy)
 
+;; Found beside this file: it ships with the package, which MELPA builds
+;; into one directory, so it lives in src/ with the Lisp, in a checkout
+;; as in the package.
 (defconst emjupy--figure-window-script
   (expand-file-name "emjupy-figure-window.py"
                     (file-name-directory (or load-file-name buffer-file-name

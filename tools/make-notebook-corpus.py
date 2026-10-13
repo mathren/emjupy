@@ -18,9 +18,13 @@ PNG = base64.b64encode(bytes.fromhex(
 
 def save(name, nb, minor=5):
     nb.nbformat_minor = minor
-    if minor < 5:                       # ids only exist from 4.5
-        for c in nb.cells:
+    for i, c in enumerate(nb.cells):
+        if minor < 5:                   # ids only exist from 4.5
             c.pop("id", None)
+        else:
+            # The same each run: nbformat gives every new cell a random id,
+            # and the corpus came out different -- in git -- every time.
+            c.id = f"{name}-{i}"
     nbformat.validate(nb)
     with open(os.path.join(OUT, name + ".ipynb"), "w", encoding="utf-8") as f:
         nbformat.write(nb, f)

@@ -10,6 +10,11 @@ plotly figures draw.  One window per figure; closing it ends the
 program.  Needs PyGObject and WebKitGTK: python3-gi and
 gir1.2-webkit2-4.1 on Debian and Ubuntu, python3-gobject and
 webkit2gtk4.1 on Fedora.
+
+Python, in src/ among the Lisp: it ships with the package.  MELPA copies
+the files its recipe lists into one directory, and emjupy-figures.el
+runs this script from the directory it was itself loaded from -- so the
+script lives beside the .el files, in a checkout as in the package.
 """
 import sys
 

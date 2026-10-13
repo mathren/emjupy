@@ -33,23 +33,24 @@ was being tested.
 The sources are in =src/=, listed here from the bottom layer up.  Each
 file requires only files earlier in this table, never later ones.
 
-| File                    | Contains                                                    |
-|-------------------------+-------------------------------------------------------------|
-| =emjupy-core.el=        | structs, state, server registry, the cell at a position     |
-| =emjupy-http.el=        | REST transport, URL parsing, the HTTP error types           |
-| =emjupy-render.el=      | faces, colours, outlines, drawing output, text helpers      |
-| =emjupy-cells.el=       | syncing, cell editing and commands, redrawing in place      |
-| =emjupy-kernel.el=      | kernel WebSocket, execution, message routing                |
-| =emjupy-figures.el=     | opening an output on its own: plotly figures, HTML, images  |
-| =emjupy-widgets.el=     | widget controls in the buffer, and what they cause          |
-| =emjupy-widget-page.el= | widgets that draw themselves, live in a page, through Emacs |
-| =emjupy-remote.el=      | where a server's files live: roots, SSH tunnels, TRAMP      |
-| =emjupy-lsp.el=         | language-server WebSocket transport, shadow document text   |
-| =emjupy-eglot.el=       | shadow buffer, Eglot integration, completion, eldoc         |
-| =emjupy-mode.el=        | =emjupy-mode=, what it turns on, the mixed-install check    |
-| =emjupy-notebook.el=    | login, the notebook browser, saving, the keys and the menu  |
-| =emjupy.el=             | package header, version, and requiring every file in order  |
-| =emjupy-pkg.el=         | package metadata for =make package= (MELPA makes its own)   |
+| File                      | Contains                                                    |
+|---------------------------+-------------------------------------------------------------|
+| =emjupy-core.el=          | structs, state, server registry, the cell at a position     |
+| =emjupy-http.el=          | REST transport, URL parsing, the HTTP error types           |
+| =emjupy-render.el=        | faces, colours, outlines, drawing output, text helpers      |
+| =emjupy-cells.el=         | syncing, cell editing and commands, redrawing in place      |
+| =emjupy-kernel.el=        | kernel WebSocket, execution, message routing                |
+| =emjupy-figures.el=       | opening an output on its own: plotly figures, HTML, images  |
+| =emjupy-widgets.el=       | widget controls in the buffer, and what they cause          |
+| =emjupy-widget-page.el=   | widgets that draw themselves, live in a page, through Emacs |
+| =emjupy-remote.el=        | where a server's files live: roots, SSH tunnels, TRAMP      |
+| =emjupy-lsp.el=           | language-server WebSocket transport, shadow document text   |
+| =emjupy-eglot.el=         | shadow buffer, Eglot integration, completion, eldoc         |
+| =emjupy-figure-window.py= | the window interactive figures open in, shipped with them   |
+| =emjupy-mode.el=          | =emjupy-mode=, what it turns on, the mixed-install check    |
+| =emjupy-notebook.el=      | login, the notebook browser, saving, the keys and the menu  |
+| =emjupy.el=               | package header, version, and requiring every file in order  |
+| =emjupy-pkg.el=           | package metadata for =make package= (MELPA makes its own)   |
 
 ** Dependencies run one way
 
@@ -451,6 +452,15 @@ save of it -- every cell, source, output, metadata and attachment -- and
 validates the save; the round-trip test calls it when Python has
 =nbformat=, and otherwise checks only that saving twice changes nothing.
 Add a notebook to the generator, not by hand, when a new shape turns up.
+It gives every cell the same id each run, so running it changes nothing
+unless the generator did; CI runs it, and fails if the corpus committed
+differs from what it writes.
+
+The notebooks beside it, to try emjupy on, are kept without outputs:
+running them is not a change to commit.  CI checks with =nbstripout
+--verify=.  With =nbstripout= installed, =nbstripout --install= in the
+repository has git strip them as they are committed -- =.gitattributes=
+names them, and not the corpus, whose outputs are what it tests.
 
 ** Network faults
 

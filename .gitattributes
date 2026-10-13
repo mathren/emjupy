@@ -1,0 +1,4 @@
+# The notebooks to try emjupy on are kept without outputs: with nbstripout
+# installed (nbstripout --install), git strips them as they are committed.
+# The corpus under test-corpus/ is not: its outputs are what it tests.
+test_notebooks/*.ipynb filter=nbstripout diff=ipynb
