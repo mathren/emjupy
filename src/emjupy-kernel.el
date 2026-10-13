@@ -30,6 +30,31 @@
 (require 'emjupy-render)
 (require 'emjupy-cells)
 
+;;;; Options
+
+(defcustom emjupy-output-render-interval 0.15
+  "Seconds to let cell output accumulate before redrawing.
+
+A redraw rebuilds the whole notebook, so doing one per arriving message
+is the difference between a progress bar and a frozen Emacs: a
+`tqdm\' loop sends a message per iteration, and each redraw of a
+notebook with figures costs tens of milliseconds.  Coalescing them
+bounds the cost to one redraw per interval however fast the output
+comes."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-reconnect-window 30
+  "Seconds to keep trying to reconnect after a kernel\'s connection drops.
+Cells running meanwhile are kept running: the server keeps their output
+while the connection is down and hands it over when it is back, so a
+tunnel that drops for a moment loses nothing.  nil does not try: the
+cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
+  :type '(choice (const :tag "Do not try" nil) number)
+  :group 'emjupy)
+
+;;;; Messages
+
 (defun emjupy--uuid ()
   "Generate a pseudo-random UUID v4 string."
   (format "%04x%04x-%04x-4%03x-%04x-%04x%04x%04x"
@@ -74,17 +99,7 @@ none of them stops to wait on the user."
 
     (cons msg-id (json-serialize msg))))
 
-(defcustom emjupy-output-render-interval 0.15
-  "Seconds to let cell output accumulate before redrawing.
-
-A redraw rebuilds the whole notebook, so doing one per arriving message
-is the difference between a progress bar and a frozen Emacs: a
-`tqdm\' loop sends a message per iteration, and each redraw of a
-notebook with figures costs tens of milliseconds.  Coalescing them
-bounds the cost to one redraw per interval however fast the output
-comes."
-  :type 'number
-  :group 'emjupy)
+;;;; Drawing output as it arrives
 
 (defvar-local emjupy--render-timer nil
   "Timer coalescing pending output redraws in this buffer.")
@@ -110,6 +125,8 @@ comes."
                        (error
                         (message "[emjupy] Failed to render cell output: %s"
                                  (error-message-string err)))))))))))))
+
+;;;; Streams
 
 (defun emjupy--stream-p (output &optional name)
   "Non-nil if OUTPUT is stream output, on stream NAME when that is given."
@@ -217,6 +234,8 @@ since patching one region only makes sense while the rest still matches."
         t
       (emjupy--rerender-preserving-point))))
 
+;;;; Who an output belongs to
+
 (defvar emjupy-comm-functions nil
   "Functions called with each comm message from a kernel.
 Each is called with the KERNEL, the message type -- \"comm_open\",
@@ -230,6 +249,8 @@ Each is called with the request\'s message id and returns a cell or nil.
 Asked only for a request no cell is waiting on: one emjupy sent itself,
 such as moving a widget\'s slider, whose redrawn figure belongs to the
 cell showing the widget.")
+
+;;;; Clearing output
 
 (defvar emjupy--clear-before-next-output (make-hash-table :test 'eq
                                                           :weakness 'key)
@@ -253,6 +274,8 @@ it.  Here the outputs are one list, so the widgets are what is kept."
       (with-current-buffer buf
         (cl-pushnew cell emjupy--cells-awaiting-output))
       (emjupy--schedule-render buf))))
+
+;;;; Replies and input
 
 (defun emjupy--make-message (msg-type content &optional channel parent-header)
   "Return a message of MSG-TYPE carrying CONTENT, a hash table.
@@ -315,6 +338,8 @@ would count as one -- pdb would repeat its last command."
         (with-current-buffer (emjupy-notebook-buffer nb)
           (emjupy-interrupt-kernel))))))
 
+;;;; Adding output to a cell
+
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
   ;; `clear_output\=' with wait: the clear happens now, as the new output
@@ -341,6 +366,8 @@ would count as one -- pdb would repeat its last command."
         (with-current-buffer buf
           (cl-pushnew cell emjupy--cells-awaiting-output)))
       (emjupy--schedule-render buf))))
+
+;;;; Binary frames
 
 (cl-defstruct (emjupy-bytes (:constructor emjupy-bytes-make (data)))
   "Bytes a kernel message carried in binary: an image widget\'s, say.
@@ -406,6 +433,8 @@ callback) or a plain JSON string, so recorded kernel traffic can be
 replayed straight through the handler."
   (if (websocket-frame-p frame) (websocket-frame-payload frame) frame))
 
+;;;; emjupy's own requests
+
 (defvar emjupy--internal-requests (make-hash-table :test 'equal)
   "Message ids of emjupy's own requests, mapped to their callbacks.
 
@@ -450,6 +479,8 @@ PENDING is the kernel\'s table of requests awaiting output."
         (progn (remhash id emjupy--request-halves)
                (remhash id pending))
       (puthash id part emjupy--request-halves))))
+
+;;;; Incoming messages
 
 (defun emjupy--handle-ws-message (kernel frame)
   "Handle an incoming WebSocket FRAME belonging to KERNEL.
@@ -581,6 +612,8 @@ kernels never cross-talk."
               (with-current-buffer buf
                 (emjupy--rerender-preserving-point))))))))))
 
+;;;; Running cells
+
 (cl-defun emjupy-execute-cell-at-point ()
   "Sync cell code and send to this notebook's kernel for execution."
   (interactive)
@@ -664,13 +697,14 @@ stepping over overlays mid-flight lands in the output box."
           (goto-char (overlay-start (emjupy-cell-overlay next)))
         (emjupy-insert-cell-below)))))
 
-
 ;; --- Kernel transport seam -------------------------------------------------
 ;; Everything that touches a live WebSocket goes through these two functions,
 ;; each scoped to ONE kernel. That keeps a stale value from blowing up with an
 ;; opaque `wrong-type-argument' deep inside websocket.el -- the user just gets
 ;; told this notebook has no kernel -- and gives the test-suite a single,
 ;; honest place to substitute a fake transport.
+
+;;;; The connection
 
 (defun emjupy--ws-live-p (&optional kernel)
   "Return non-nil when KERNEL (default this buffer's) has a usable socket."
@@ -682,6 +716,8 @@ stepping over overlays mid-flight lands in the output box."
   "Send PAYLOAD, a string, over KERNEL's WebSocket."
   (let ((kernel (or kernel (emjupy--kernel))))
     (websocket-send-text (emjupy-kernel-ws kernel) payload)))
+
+;;;; Once connected
 
 (defvar emjupy-kernel-connected-functions nil
   "Functions called with a notebook once a kernel is attached to it.
@@ -724,14 +760,7 @@ this is what lets well-behaved output not need that."
                      (cons (emjupy-kernel-id kernel) (emjupy--box-width)))
         (emjupy--tell-kernel-width nb)))))
 
-(defcustom emjupy-reconnect-window 30
-  "Seconds to keep trying to reconnect after a kernel\'s connection drops.
-Cells running meanwhile are kept running: the server keeps their output
-while the connection is down and hands it over when it is back, so a
-tunnel that drops for a moment loses nothing.  nil does not try: the
-cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
-  :type '(choice (const :tag "Do not try" nil) number)
-  :group 'emjupy)
+;;;; Reconnecting after a drop
 
 (defvar-local emjupy--kept-runs nil
   "Requests running when this notebook\'s connection dropped, kept.
@@ -883,6 +912,8 @@ of that session -- one with a new id, every connection did, got none."
             (substring h 12 16)
             (substring h 16 20) (substring h 20 32))))
 
+;;;; Connecting
+
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
 KERNEL-NAME, when given, is the kernelspec name to record.
@@ -987,7 +1018,7 @@ notebook\='s kernel by other front-ends."
                       (emjupy--http-request "POST" server "/api/kernels"
                                             (json-serialize payload)))))
            (new-id (gethash "id" res)))
-      (message "Started Python 3 kernel (%s) for %s. Connecting..."
+      (message "[emjupy] Started Python 3 kernel (%s) for %s. Connecting..."
                new-id (emjupy-notebook-path notebook))
       (emjupy-connect-kernel notebook new-id "python3"))))
 
@@ -1021,7 +1052,7 @@ attaching two notebooks to one kernel makes them share state."
       (if (string= choice "[Start New Python 3 Kernel]")
           (emjupy--spawn-and-connect-kernel nb)
         (let ((selected-id (gethash choice kernel-map)))
-          (message "Connecting %s to existing kernel %s..."
+          (message "[emjupy] Connecting %s to existing kernel %s..."
                    (emjupy-notebook-path nb) selected-id)
           (emjupy-connect-kernel nb selected-id))))))
 
@@ -1044,6 +1075,8 @@ attaching two notebooks to one kernel makes them share state."
     (when (emjupy-kernel-pending kernel)
       (clrhash (emjupy-kernel-pending kernel)))
     (setf (emjupy-kernel-ws kernel) nil)))
+
+;;;; Interrupting and restarting
 
 (defun emjupy-interrupt-kernel ()
   "Interrupt whatever this notebook\='s kernel is running.
@@ -1088,7 +1121,7 @@ Other open notebooks, and their kernels, are untouched."
       (emjupy--disconnect-kernel nb)
       (emjupy--http-request "POST" server (format "/api/kernels/%s/restart"
                                                   kernel-id))
-      (message "Kernel %s restarting..." kernel-id)
+      (message "[emjupy] Kernel %s restarting..." kernel-id)
       (emjupy-connect-kernel nb kernel-id name))))
 
 (defun emjupy--repair-if-scrambled (nb)

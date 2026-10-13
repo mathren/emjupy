@@ -53,6 +53,7 @@
 (require 'eglot)
 (require 'websocket)
 
+;;;; Options
 
 (defcustom emjupy-lsp-enabled t
   "When non-nil, use the language server run by `jupyter-lsp\='.
@@ -70,6 +71,38 @@ to nil to fall back to the Eglot shadow-file arrangement."
 Whatever `/lsp/status' lists.  \"pylsp\" is the usual Python one."
   :type 'string
   :group 'emjupy)
+
+(defcustom emjupy-lsp-retry-interval 30
+  "Seconds to wait before trying the language server again after a failure."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-eglot-idle-command "cat"
+  "Program stood up to satisfy Eglot's requirement for a process.
+
+Eglot builds its connection on the class named by the symbol
+`jsonrpc-process-connection', which insists on a process object.
+Nothing is written to this one and nothing is read from it -- the
+traffic goes over the WebSocket -- so the most inert program available
+meets the requirement."
+  :type 'string
+  :group 'emjupy)
+
+(defcustom emjupy-tell-server-where-modules-are t
+  "When non-nil, name the notebook\='s own directory to the language server.
+
+A language server finds `import mylib\=' by looking beside the file that
+imports it.  Beside a notebook there is no file: there is a shadow whose
+name the server is told and whose contents it is sent, and whether it
+can be read from that directory is a question of how the notebook is
+reached.  Saying where the modules are does not depend on that.
+
+Written for `python-lsp-server\='.  Set to nil if your server takes its
+settings from elsewhere and would rather not be told."
+  :type 'boolean
+  :group 'emjupy)
+
+;;;; The connection to jupyter-lsp
 
 (cl-defstruct emjupy-lsp
   "A live LSP session against a server run by `jupyter-lsp'."
@@ -200,6 +233,8 @@ and the answer collected on the first request that needs it."
        (emjupy--lsp-explain-failure server)
        nil))))
 
+;;;; Failures
+
 (defvar emjupy--lsp-last-failure nil
   "Why the WebSocket to the language server could not be opened.
 
@@ -253,10 +288,7 @@ The WebSocket refusing tells us nothing useful on its own, so ask
 (defvar-local emjupy--lsp-blocked-until nil
   "Time before which no further attempt is made to set up a session.")
 
-(defcustom emjupy-lsp-retry-interval 30
-  "Seconds to wait before trying the language server again after a failure."
-  :type 'number
-  :group 'emjupy)
+;;;; Sessions
 
 (defun emjupy--lsp-initialize (nb session)
   "Run the LSP handshake for NB on SESSION.  Return non-nil on success."
@@ -351,6 +383,8 @@ the nil here means \"not yet\", not \"never\"."
 
 ;; --- positions --------------------------------------------------------------
 
+;;;; Positions and edits
+
 (defun emjupy--lsp-position (nb)
   "Return the LSP position in NB's document matching point, or nil."
   (let* ((cell (emjupy--cell-at-point))
@@ -380,9 +414,7 @@ the nil here means \"not yet\", not \"never\"."
     (puthash "position" position params)
     params))
 
-
 ;; --- what the notebook asks for ---------------------------------------------
-
 
 (defun emjupy--lsp-offset-of-position (text line character)
   "Return the character offset of LINE and CHARACTER within TEXT.
@@ -447,6 +479,7 @@ nonsense that still looks plausible."
                           (setq found (gethash "edits" change)))))
           found))))))
 
+;;;; The shadow document
 
 (defun emjupy--sanitize-for-lsp (string)
   "Return STRING with undecodable raw bytes replaced by U+FFFD.
@@ -559,16 +592,7 @@ same cells holding the same source objects build the same content."
 ;; created and then ignored: it exists to satisfy a type check and carries
 ;; nothing.
 
-(defcustom emjupy-eglot-idle-command "cat"
-  "Program stood up to satisfy Eglot's requirement for a process.
-
-Eglot builds its connection on the class named by the symbol
-`jsonrpc-process-connection', which insists on a process object.
-Nothing is written to this one and nothing is read from it -- the
-traffic goes over the WebSocket -- so the most inert program available
-meets the requirement."
-  :type 'string
-  :group 'emjupy)
+;;;; Eglot over the WebSocket
 
 (defvar emjupy--eglot-pending nil
   "Plist for the next server to be built.
@@ -741,20 +765,7 @@ notebook ever opened.  CLEANUP is passed on."
     (when (and cleanup (buffer-live-p (process-buffer proc)))
       (kill-buffer (process-buffer proc)))))
 
-
-(defcustom emjupy-tell-server-where-modules-are t
-  "When non-nil, name the notebook\='s own directory to the language server.
-
-A language server finds `import mylib\=' by looking beside the file that
-imports it.  Beside a notebook there is no file: there is a shadow whose
-name the server is told and whose contents it is sent, and whether it
-can be read from that directory is a question of how the notebook is
-reached.  Saying where the modules are does not depend on that.
-
-Written for `python-lsp-server\='.  Set to nil if your server takes its
-settings from elsewhere and would rather not be told."
-  :type 'boolean
-  :group 'emjupy)
+;;;; Workspace configuration
 
 (defun emjupy--set-workspace-configuration (nb server)
   "Tell SERVER where NB\='s own modules are.

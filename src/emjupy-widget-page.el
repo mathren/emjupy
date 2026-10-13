@@ -35,6 +35,8 @@
 (require 'emjupy-widgets)
 (require 'websocket)
 
+;;;; Options
+
 (defcustom emjupy-widget-scripts
   '("https://cdn.jsdelivr.net/npm/requirejs@2.3.7/require.js"
     "https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@1.0.15/dist/embed-amd.js")
@@ -42,6 +44,8 @@
 Each a URL or a file name; a file needs no network."
   :type '(repeat string)
   :group 'emjupy)
+
+;;;; State
 
 (defconst emjupy--standard-widget-modules
   '("@jupyter-widgets/controls" "@jupyter-widgets/base"

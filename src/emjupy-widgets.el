@@ -33,6 +33,8 @@
 (require 'emjupy-kernel)
 (require 'emjupy-figures)
 
+;;;; Widget models
+
 (defvar emjupy--widget-models (make-hash-table :test 'equal)
   "Widget models, by comm id: a cons of the kernel and the state.")
 

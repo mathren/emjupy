@@ -175,6 +175,11 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
   condition with one branch; a docstring for every variable defined with
   a value; =;;;;= for a section heading.
 - No code left commented out: it is in the history if it is wanted.
+- =;;;###autoload= on the commands that make sense before emjupy is
+  loaded -- logging in, listing, opening, creating, the menu -- and on
+  nothing else.
+- Every file in sections: its user options first, under =;;;; Options=,
+  then a =;;;;= heading for each part.  Messages start =[emjupy]=.
 - Lines of 80 columns at most.  A call too long for one line breaks
   between its arguments, or puts them below its name if they are long;
   a deep expression is better bound to a name than broken further.

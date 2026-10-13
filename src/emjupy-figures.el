@@ -26,6 +26,8 @@
 (require 'emjupy-render)
 (require 'emjupy-kernel)
 
+;;;; Options
+
 (defcustom emjupy-figure-viewer 'window
   "Where `emjupy-open-output' shows an interactive figure.
 `window' is a window of its own, one per figure -- see
@@ -63,6 +65,18 @@ window, without tabs or toolbar.  Another browser can be added: Chrome
 as (\"google-chrome\" \"--app=%s\"), say."
   :type '(repeat (repeat :tag "Program and arguments" string))
   :group 'emjupy)
+
+(defcustom emjupy-plotly-js 'kernel
+  "Where the plotly.js a figure page loads comes from.
+`kernel' asks the kernel that made the figure for its own copy, once per
+plotly version, and keeps it: it matches the figure, and needs no
+network, which also makes it work through a tunnel.  A string is used as
+the script's address instead -- a URL, such as a CDN's, or a file name."
+  :type '(choice (const :tag "The kernel's own copy" kernel)
+                 (string :tag "A URL or file name"))
+  :group 'emjupy)
+
+;;;; The figure window
 
 ;; Found beside this file: it ships with the package, which MELPA builds
 ;; into one directory, so it lives in src/ with the Lisp, in a checkout
@@ -110,15 +124,7 @@ time, so a change to `emjupy-figure-window-browsers' counts at once."
                for path = (executable-find program)
                when path return (cons path args))))
 
-(defcustom emjupy-plotly-js 'kernel
-  "Where the plotly.js a figure page loads comes from.
-`kernel' asks the kernel that made the figure for its own copy, once per
-plotly version, and keeps it: it matches the figure, and needs no
-network, which also makes it work through a tunnel.  A string is used as
-the script's address instead -- a URL, such as a CDN's, or a file name."
-  :type '(choice (const :tag "The kernel's own copy" kernel)
-                 (string :tag "A URL or file name"))
-  :group 'emjupy)
+;;;; Showing a page
 
 (defun emjupy--figures-dir ()
   "Return the directory figure pages are written to, creating it."
@@ -170,6 +176,8 @@ megabytes."
       (let ((coding-system-for-write 'utf-8-unix))
         (write-region html nil file nil 'quiet)))
     file))
+
+;;;; Plotly
 
 (defun emjupy--plotly-title (figure)
   "Return the title of the plotly FIGURE, for its window, made safe for HTML."
@@ -258,6 +266,8 @@ is written and CALLBACK called with its address."
                     (+ from emjupy--plotly-js-chunk)
                     (cons piece pieces) callback)))))
 
+;;;; Images and other outputs
+
 (defun emjupy--show-image (payload type)
   "Show the image PAYLOAD of TYPE in a buffer of its own."
   (let ((buf (get-buffer-create "*emjupy image*")))
@@ -287,6 +297,9 @@ is written and CALLBACK called with its address."
            return data))
 
 ;;;###autoload
+
+;;;; Opening an output
+
 (defun emjupy-open-output (&optional data)
   "Open an output in a window of its own.
 DATA is its MIME bundle; interactively, the output whose line is at

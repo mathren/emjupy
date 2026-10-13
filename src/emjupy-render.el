@@ -25,12 +25,7 @@
 (require 'ansi-color)
 (require 'emjupy-core)
 
-;; --- Page colours ----------------------------------------------------------
-;; Cells are marked out by their horizontal rules alone -- the buffer keeps
-;; its normal background throughout.  The one exception is a cell's OUTPUT,
-;; which gets a faint background so results are distinguishable from the code
-;; that produced them.  That band lives on the output overlay, so when the
-;; outputs are cleared and the box shrinks the background goes with them.
+;;;; Options
 
 (defcustom emjupy-output-color 'auto
   "Background behind ordinary cell output.
@@ -93,11 +88,140 @@ This applies to the error and warning  Larger is louder."
   :type 'float
   :group 'emjupy)
 
+(defcustom emjupy-box-width 'window
+  "Width of the box-drawing rules that outline each cell.
+
+An integer is used verbatim.  The symbol `window' -- the default --
+sizes the rule to the window the notebook is displayed in, so the
+outline spans the buffer instead of stopping short at a fixed 80
+columns on a wide frame."
+  :type '(choice (const :tag "Fit the window" window)
+                 (integer :tag "Fixed number of columns"))
+  :group 'emjupy)
+
+(defcustom emjupy-box-min-width 60
+  "Lower bound for a window-fitted `emjupy-box-width'."
+  :type 'integer
+  :group 'emjupy)
+
+(defcustom emjupy-box-right-margin 2
+  "Columns left free at the right edge when fitting rules to the window.
+
+Emacs cannot always be asked exactly how many columns are usable: a
+right margin, a `fill-column' indicator, a scroll bar the toolkit reports
+oddly, or a line-number width that is off by the separator can each eat
+one or two.  Rather than guess, leave a couple spare.  Raise it if the
+rules still run past the edge in your setup, lower it to 0 if they stop
+short."
+  :type 'integer
+  :group 'emjupy)
+
+(defcustom emjupy-running-indicator ["|" "/" "-" "\\"]
+  "Frames cycled in a cell's header while it is executing.
+
+A single-element vector such as [\"*\"] gives Jupyter's static marker
+instead of an animation."
+  :type '(vector string)
+  :group 'emjupy)
+
+(defcustom emjupy-running-indicator-interval 0.2
+  "Seconds between frames of the running indicator."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-render-latex nil
+  "When non-nil, show math in markdown cells as rendered images.
+
+Needs a working LaTeX installation (`latex' plus `dvipng'), or
+`math-preview' on PATH.  Nothing else: the rendering itself is done by
+org, which comes with Emacs."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-latex-backend 'auto
+  "How a LaTeX fragment is turned into an image.
+
+`auto' prefers org's built-in preview, since it needs no Emacs package
+beyond what ships with Emacs, and falls back to `math-preview'."
+  :type '(choice (const :tag "Whatever is available" auto)
+                 (const :tag "org's built-in preview" org)
+                 (const :tag "math-preview" math-preview))
+  :group 'emjupy)
+
+(defcustom emjupy-latex-foreground 'auto
+  "Colour to draw rendered math in.
+
+`auto\' (the default) follows the theme, taking the foreground of the
+`default\' face -- so formulae are dark on a light theme and light on a
+dark one, instead of always black on a transparent background.
+
+A colour string is used verbatim."
+  :type '(choice (const :tag "Follow the theme" auto)
+                 (color :tag "Explicit colour"))
+  :group 'emjupy)
+
+(defcustom emjupy-latex-scale 1.0
+  "Scale factor for rendered math images."
+  :type 'float
+  :group 'emjupy)
+
+(defcustom emjupy-hidden-output-glyph "▼"
+  "Glyph marking an output box that is collapsed."
+  :type 'string
+  :group 'emjupy)
+
+(defcustom emjupy-protect-non-cell-regions t
+  "When non-nil, make everything outside a cell\='s source read-only.
+
+The rules, the gutters between cells and the output boxes belong to no
+cell.  Text typed there is stored nowhere and disappears at the next
+redraw, so it is better refused than silently lost."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-render-ansi-colors t
+  "When non-nil, turn ANSI colour escapes in output into real colours.
+
+Libraries like termcolor, rich and colorama emit them, and a kernel
+happily passes them through -- so without this the output reads
+\"\\033[33mwarning\\033[0m\" instead of a yellow word."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-inline-figures t
+  "Whether figures -- image outputs -- are drawn in the notebook.
+nil shows each as a line instead, and opens it in a window of its own on
+\\<emjupy-mode-map>\\[emjupy-open-output] or a click, the way a plotting
+window would show it."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-deduplicate-image-outputs t
+  "When non-nil, render a repeated identical image only once per cell.
+
+A cell whose last expression is a figure gets the SAME picture twice
+from the kernel: once as the `execute_result' repr and again as the
+inline backend's `display_data'.  That is kernel-side behaviour, so the
+duplicate is dropped only at render time -- the cell's `outputs' vector
+still holds exactly what the kernel sent, and is saved back to the
+.ipynb unchanged, so the file stays byte-faithful for other clients."
+  :type 'boolean
+  :group 'emjupy)
+
+;; --- Page colours ----------------------------------------------------------
+;; Cells are marked out by their horizontal rules alone -- the buffer keeps
+;; its normal background throughout.  The one exception is a cell's OUTPUT,
+;; which gets a faint background so results are distinguishable from the code
+;; that produced them.  That band lives on the output overlay, so when the
+;; outputs are cleared and the box shrinks the background goes with them.
+
 ;; Each of these specifies NOTHING by default beyond `:extend', and only
 ;; ever gains a `:background'.  They are applied as text properties over
 ;; output text, so any colour attribute they carried would fight the faces
 ;; on tracebacks and rich output.  `:extend' makes the band fill the whole
 ;; line rather than stopping at the last character.
+
+;;;; Faces and colours
 
 (defface emjupy-output '((t))
   "Background behind ordinary cell output."
@@ -209,21 +333,7 @@ with the cell colour."
 (when (boundp 'disable-theme-functions)
   (add-hook 'disable-theme-functions #'emjupy--on-theme-change))
 
-(defcustom emjupy-box-width 'window
-  "Width of the box-drawing rules that outline each cell.
-
-An integer is used verbatim.  The symbol `window' -- the default --
-sizes the rule to the window the notebook is displayed in, so the
-outline spans the buffer instead of stopping short at a fixed 80
-columns on a wide frame."
-  :type '(choice (const :tag "Fit the window" window)
-                 (integer :tag "Fixed number of columns"))
-  :group 'emjupy)
-
-(defcustom emjupy-box-min-width 60
-  "Lower bound for a window-fitted `emjupy-box-width'."
-  :type 'integer
-  :group 'emjupy)
+;;;; Width
 
 (defun emjupy--window-text-width (win)
   "Return how many columns of text WIN can show without wrapping.
@@ -269,18 +379,6 @@ the numbers are widest and the overshoot wraps a whole line."
                          0))))
         (max 1 (- cols numbers))))))
 
-(defcustom emjupy-box-right-margin 2
-  "Columns left free at the right edge when fitting rules to the window.
-
-Emacs cannot always be asked exactly how many columns are usable: a
-right margin, a `fill-column' indicator, a scroll bar the toolkit reports
-oddly, or a line-number width that is off by the separator can each eat
-one or two.  Rather than guess, leave a couple spare.  Raise it if the
-rules still run past the edge in your setup, lower it to 0 if they stop
-short."
-  :type 'integer
-  :group 'emjupy)
-
 (defvar emjupy--box-width-memo nil
   "A cons holding the width worked out for the redraw in progress, or nil.
 Bound by a redraw: the width cannot change during one, and working it out
@@ -315,18 +413,7 @@ and a wrapped rule is far uglier than a short one."
            ;; Leave a margin so the rule cannot run past the right edge.
            (- (apply #'min widths) (max 0 emjupy-box-right-margin))))))
 
-(defcustom emjupy-running-indicator ["|" "/" "-" "\\"]
-  "Frames cycled in a cell's header while it is executing.
-
-A single-element vector such as [\"*\"] gives Jupyter's static marker
-instead of an animation."
-  :type '(vector string)
-  :group 'emjupy)
-
-(defcustom emjupy-running-indicator-interval 0.2
-  "Seconds between frames of the running indicator."
-  :type 'number
-  :group 'emjupy)
+;;;; The running indicator
 
 (defvar-local emjupy--running-cells nil
   "Ids of cells currently executing in this buffer.")
@@ -411,6 +498,8 @@ and does not enter the undo history."
     (unless emjupy--running-cells (emjupy--stop-spinner))))
 
 (defvar python-indent-guess-indent-offset-verbose)
+
+;;;; Labels and rules
 
 (defun emjupy--cell-label (cell)
   "Return the header label for CELL's input box."
@@ -621,7 +710,6 @@ box says that it is collapsed rather than absent."
     ("`[^`\n]+`" 0 font-lock-constant-face))
   "Regexp rules for `emjupy--markdown-fontify-fallback'.")
 
-
 ;; --- LaTeX preview in markdown cells ---------------------------------------
 ;; Off by default.  When on, math between the usual delimiters is replaced ON
 ;; SCREEN by a rendered image: the overlay carries a `display' property, so the
@@ -641,41 +729,7 @@ box says that it is collapsed rather than absent."
 (defvar org-latex-default-packages-alist)
 (defvar org-latex-packages-alist)
 
-(defcustom emjupy-render-latex nil
-  "When non-nil, show math in markdown cells as rendered images.
-
-Needs a working LaTeX installation (`latex' plus `dvipng'), or
-`math-preview' on PATH.  Nothing else: the rendering itself is done by
-org, which comes with Emacs."
-  :type 'boolean
-  :group 'emjupy)
-
-(defcustom emjupy-latex-backend 'auto
-  "How a LaTeX fragment is turned into an image.
-
-`auto' prefers org's built-in preview, since it needs no Emacs package
-beyond what ships with Emacs, and falls back to `math-preview'."
-  :type '(choice (const :tag "Whatever is available" auto)
-                 (const :tag "org's built-in preview" org)
-                 (const :tag "math-preview" math-preview))
-  :group 'emjupy)
-
-(defcustom emjupy-latex-foreground 'auto
-  "Colour to draw rendered math in.
-
-`auto\' (the default) follows the theme, taking the foreground of the
-`default\' face -- so formulae are dark on a light theme and light on a
-dark one, instead of always black on a transparent background.
-
-A colour string is used verbatim."
-  :type '(choice (const :tag "Follow the theme" auto)
-                 (color :tag "Explicit colour"))
-  :group 'emjupy)
-
-(defcustom emjupy-latex-scale 1.0
-  "Scale factor for rendered math images."
-  :type 'float
-  :group 'emjupy)
+;;;; LaTeX
 
 (defconst emjupy--latex-delimiters
   '(("\\\\\\[" . "\\\\\\]")
@@ -841,7 +895,9 @@ N is passed on when this is an ordinary deletion."
         (delete-overlay ov)
         (goto-char end)
         (message "%s" (substitute-command-keys
-                       "LaTeX source revealed; \\[emjupy-toggle-latex-preview] re-renders"))))))
+                       "[emjupy] LaTeX source revealed; \\[emjupy-toggle-latex-preview] re-renders"))))))
+
+;;;; Fontifying source
 
 (defun emjupy--markdown-fontify-fallback ()
   "Apply markdown faces to the current buffer without any external package.
@@ -1000,10 +1056,7 @@ face."
         (error (message "[emjupy] Could not highlight the edit: %s"
                         (error-message-string err)))))))
 
-(defcustom emjupy-hidden-output-glyph "▼"
-  "Glyph marking an output box that is collapsed."
-  :type 'string
-  :group 'emjupy)
+;;;; Hidden output
 
 (defun emjupy--cell-outputs-hidden-p (cell)
   "Return non-nil when CELL's output is collapsed.
@@ -1057,6 +1110,8 @@ does something."
            'help-echo "mouse-1: show this output")
      glyph)
     (concat glyph rest)))
+
+;;;; Drawing output
 
 (defun emjupy--fold-output-lines (start end width)
   "Break every line between START and END wider than WIDTH columns.
@@ -1203,6 +1258,8 @@ and restarted fontification from scratch each time."
           ;; figure, a warning and a traceback in one cell each read as what
           ;; they are.  An overlay face here would override all of them.
           (setf (emjupy-cell-output-ov cell) ov))))))
+
+;;;; Undo
 
 (defun emjupy--undo-entry-position (entry)
   "Return the largest buffer position ENTRY refers to, or nil.
@@ -1366,6 +1423,8 @@ every edit made anywhere else in the notebook.  See notes_undo.org."
                             (and p (>= p pos))))
                         buffer-undo-list))))
 
+;;;; Drawing a cell
+
 (defun emjupy--refresh-cell-footer (cell)
   "Give CELL the bottom rule it should have, or none if its output has one."
   (let ((src (emjupy-cell-overlay cell))
@@ -1379,15 +1438,6 @@ every edit made anywhere else in the notebook.  See notes_undo.org."
         ((and (> (length outputs) 0) (emjupy--cell-outputs-hidden-p cell))
          (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
         (t (emjupy--rule nil)))))))
-
-(defcustom emjupy-protect-non-cell-regions t
-  "When non-nil, make everything outside a cell\='s source read-only.
-
-The rules, the gutters between cells and the output boxes belong to no
-cell.  Text typed there is stored nowhere and disappears at the next
-redraw, so it is better refused than silently lost."
-  :type 'boolean
-  :group 'emjupy)
 
 (defun emjupy--render-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
@@ -1449,6 +1499,8 @@ redraw, so it is better refused than silently lost."
       (emjupy--render-cell-output cell))
 
     (insert "\n")))
+
+;;;; MIME types
 
 (defconst emjupy--image-mime-types
   '(("image/png"     . png)
@@ -1531,14 +1583,7 @@ one character beyond the right-hand rule."
                                 '(face nil font-lock-face nil)))
       (forward-line 1))))
 
-(defcustom emjupy-render-ansi-colors t
-  "When non-nil, turn ANSI colour escapes in output into real colours.
-
-Libraries like termcolor, rich and colorama emit them, and a kernel
-happily passes them through -- so without this the output reads
-\"\\033[33mwarning\\033[0m\" instead of a yellow word."
-  :type 'boolean
-  :group 'emjupy)
+;;;; Colour and tracebacks
 
 (defun emjupy--ansi-render (text)
   "Return TEXT with ANSI escapes applied as faces, or stripped.
@@ -1600,13 +1645,7 @@ puts `warnings.warn\', logging, and progress bars."
       'emjupy-output-image)
      (t 'emjupy-output))))
 
-(defcustom emjupy-inline-figures t
-  "Whether figures -- image outputs -- are drawn in the notebook.
-nil shows each as a line instead, and opens it in a window of its own on
-\\<emjupy-mode-map>\\[emjupy-open-output] or a click, the way a plotting
-window would show it."
-  :type 'boolean
-  :group 'emjupy)
+;;;; Rich output
 
 (defconst emjupy--widget-view-mime "application/vnd.jupyter.widget-view+json"
   "MIME type of an output that shows a widget.")
@@ -1711,17 +1750,7 @@ happens inside the WebSocket callback, where websocket.el swallows the
                                       (string-join mimes ", "))
                               'face 'shadow))))))))
 
-(defcustom emjupy-deduplicate-image-outputs t
-  "When non-nil, render a repeated identical image only once per cell.
-
-A cell whose last expression is a figure gets the SAME picture twice
-from the kernel: once as the `execute_result' repr and again as the
-inline backend's `display_data'.  That is kernel-side behaviour, so the
-duplicate is dropped only at render time -- the cell's `outputs' vector
-still holds exactly what the kernel sent, and is saved back to the
-.ipynb unchanged, so the file stays byte-faithful for other clients."
-  :type 'boolean
-  :group 'emjupy)
+;;;; Images, once each
 
 (defun emjupy--output-image-key (out)
   "Return a key identifying OUT's image payload, or nil if it carries none.
@@ -1904,6 +1933,8 @@ the start of the line and the next write covers what was there."
                  (car (last parts))))
              (split-string text "\n" )
              "\n"))
+
+;;;; Read-only regions
 
 (defun emjupy--make-read-only (start end)
   "Refuse edits between START and END, without walling off the cells.

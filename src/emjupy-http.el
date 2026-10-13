@@ -23,6 +23,8 @@
 (require 'url)
 (require 'emjupy-core)
 
+;;;; Addresses
+
 (defun emjupy--server-parts (&optional server)
   "Return a plist describing SERVER's base-url.
 
@@ -53,6 +55,8 @@ to survive into the WebSocket URL as well as the REST calls."
   "Return (HOST . PORT) parsed from the current server's base-url."
   (let ((p (emjupy--server-parts)))
     (cons (plist-get p :host) (plist-get p :port))))
+
+;;;; The XSRF cookie
 
 (defconst emjupy--xsrf-endpoints '("/login" "/tree" "/lab" "/")
   "Paths that hand out an `_xsrf' cookie, tried in order.
@@ -114,6 +118,8 @@ Only the headers matter."
     (when found (setf (emjupy-server-xsrf server) found))
     found))
 
+;;;; Errors
+
 (define-error 'emjupy-http-error "Jupyter server request failed" 'file-error)
 (define-error 'emjupy-http-status "Jupyter server refused the request"
               'emjupy-http-error)
@@ -133,6 +139,8 @@ Only the headers matter."
     (and (stringp msg)
          (string-match "\\`\\[Jupyter HTTP \\([0-9]+\\)\\]" msg)
          (string-to-number (match-string 1 msg)))))
+
+;;;; Requests and responses
 
 (defun emjupy--contents-path (path)
   "Return the Contents API address of PATH, each segment percent-encoded.
@@ -358,6 +366,8 @@ cookie."
                               json-str))))
              (t (emjupy--http-interpret server method path
                                         status json-str)))))))))
+
+;;;; WebSocket authentication
 
 (defun emjupy--websocket-auth-headers (server)
   "Return the headers a WebSocket to SERVER should carry.

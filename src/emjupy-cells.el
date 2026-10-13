@@ -23,6 +23,17 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 
+;;;; Options
+
+(defcustom emjupy-confirm-clear-output t
+  "When non-nil, ask before discarding a cell\='s output.
+
+Output can represent a long run, and the kernel cannot be asked to
+produce it again for nothing.  The question costs a keystroke; the
+mistake costs the run."
+  :type 'boolean
+  :group 'emjupy)
+
 ;;;; Redrawing, whole or put right
 
 ;; A redraw that stops partway is put right by drawing the notebook again
@@ -258,6 +269,8 @@ too wide for it, and wrapped."
     (with-current-buffer buf
       (emjupy--refresh-box-rules))))
 
+;;;; Syncing and checking
+
 (defun emjupy--sync-cell-source-from-buffer (cell)
   "Copy the buffer text inside CELL's overlay into its `emjupy-cell-source'."
   (when-let* ((ov (emjupy-cell-overlay cell)))
@@ -346,7 +359,6 @@ and what would be saved have come apart."
                            (overlay-end ov)))))))
     (nreverse problems)))
 
-;;;###autoload
 (defun emjupy-debug-check-invariants ()
   "Report whether this buffer and its cells still agree.
 
@@ -410,6 +422,8 @@ alone and say so: \[emjupy-re-render] rebuilds the display from them."
       (cl-loop for cell across (emjupy-notebook-cells emjupy--buffer-notebook)
                do (emjupy--sync-cell-source-from-buffer cell))
       t)))
+
+;;;; Redrawing cells in place
 
 (defvar emjupy--rendering-buffers nil
   "Buffers currently being re-rendered.
@@ -558,6 +572,8 @@ should fall back to a full redraw."
           (emjupy--undo-adjust start end (- new-end end))
           t)))))
 
+;;;; Inserting and deleting
+
 (defun emjupy-insert-cell-at (nb index new-cell)
   "Put NEW-CELL into NB at INDEX and draw it without rebuilding the buffer.
 
@@ -650,6 +666,8 @@ Returns non-nil when it was done incrementally."
           ;; followed it moves up by its length.
           (emjupy--undo-adjust start end (- (- end start)))
           t)))))
+
+;;;; Redrawing the notebook
 
 (defun emjupy--rerender-notebook (&optional target-cell)
   "Re-render this notebook, leaving point at TARGET-CELL if given.
@@ -745,8 +763,6 @@ line they were looking at."
   (forward-line (1- line))
   (move-to-column column))
 
-
-
 (defun emjupy--rerender-notebook-1 (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
 If TARGET-CELL is given, leave point at that cell afterwards.
@@ -824,6 +840,8 @@ changed nothing -- the history is left intact."
         ;; text those older entries were recorded against, so they become
         ;; meaningful again and undo carries on through them.
         (emjupy--record-rebuild-step snapshot)))))
+
+;;;; Undo
 
 (defvar emjupy--restoring-snapshot nil
   "Non-nil while a recorded rebuild is being undone.
@@ -927,6 +945,8 @@ records nothing."
           buffer-undo-list)
     (undo-boundary)))
 
+;;;; Cell commands
+
 (defun emjupy-insert-cell-below ()
   "Insert a new empty code cell below the cell at point."
   (interactive)
@@ -1017,6 +1037,8 @@ separate entity, the output always travels with its cell automatically."
             (emjupy--rerender-notebook cell))
           (emjupy--goto-cell cell 'start))))))
 
+;;;; Putting a redraw right
+
 (defun emjupy--rerender-preserving-point ()
   "Re-render the notebook without disturbing where the user is typing.
 
@@ -1078,6 +1100,8 @@ exactly what was typed in it, and keeping that is the point."
                     (emjupy--sync-cell-source-from-buffer cell)
                     (setq prev-end (overlay-end ov)))))))
 
+;;;; Checking the structure
+
 (defvar-local emjupy--integrity-timer nil
   "Timer that checks this buffer when Emacs is next idle, or nil.")
 
@@ -1121,6 +1145,8 @@ Run when a notebook buffer starts."
     (cancel-timer emjupy--integrity-timer)
     (setq emjupy--integrity-timer nil)))
 
+;;;; Redrawing by hand
+
 (defun emjupy-re-render ()
   "Rebuild the notebook display from the cells.
 
@@ -1132,6 +1158,8 @@ buffer are folded in first, so nothing you have typed is lost."
   (emjupy--sync-all-cells)
   (emjupy--rerender-preserving-point)
   (message "[emjupy] Redrew the notebook."))
+
+;;;; Splitting and joining
 
 (defvar-local emjupy--split-was-sane nil
   "Whether the overlays lined up before a split rearranged the cells.")
@@ -1243,6 +1271,9 @@ reverse, would silently reinterpret one of them."
               above)))))))
 
 ;;;###autoload
+
+;;;; Output
+
 (defun emjupy-toggle-cell-output ()
   "Collapse or restore the output of the cell at point.
 
@@ -1284,15 +1315,6 @@ moving point or guessing from a buffer position."
       (emjupy--rerender-notebook cell))
     (message "[emjupy] Output %s." (if hidden "hidden" "shown"))
     hidden))
-
-(defcustom emjupy-confirm-clear-output t
-  "When non-nil, ask before discarding a cell\='s output.
-
-Output can represent a long run, and the kernel cannot be asked to
-produce it again for nothing.  The question costs a keystroke; the
-mistake costs the run."
-  :type 'boolean
-  :group 'emjupy)
 
 (defun emjupy--confirm-clearing (cell)
   "Return non-nil if CELL\='s output may be discarded.
@@ -1380,6 +1402,8 @@ outputs until you save."
               (emjupy--rerender-notebook)))
           (message "[emjupy] Cleared the output of %d cell%s."
                    with-output (if (= with-output 1) "" "s"))))))))
+
+;;;; Deleting, copying and yanking
 
 (defun emjupy--cell-index (cell)
   "Return the position of CELL in the notebook, or nil."
@@ -1481,6 +1505,8 @@ The new cell has no output and no execution count."
           (emjupy--rerender-notebook new-cell)))
       new-cell)))
 
+;;;; Indentation
+
 (defvar-local emjupy--indent-cycling nil
   "Non-nil when the last command was also an indent, so TAB cycles.")
 
@@ -1540,6 +1566,8 @@ In a markdown cell, and outside any cell, TAB simply inserts."
   "Forget that the previous command indented, unless it did."
   (unless (eq this-command 'emjupy-indent-or-cycle)
     (setq emjupy--indent-cycling nil)))
+
+;;;; Moving
 
 (defun emjupy-beginning-of-cell ()
   "Move point to the start of the cell at point."
@@ -1634,6 +1662,8 @@ next line, outside the code."
                 (goto-char (overlay-start (emjupy-cell-overlay prev-cell)))))))
       (goto-char (point-min)))))
 
+;;;; Appearance
+
 (defun emjupy--render-markdown-cell (cell)
   "Re-render CELL, which is markdown, and its math.
 
@@ -1672,7 +1702,6 @@ Emacs too old for `enable-theme-functions'."
   (when emjupy--buffer-notebook (emjupy--rerender-notebook))
   (message "[emjupy] LaTeX preview %s." (if emjupy-render-latex "on" "off")))
 
-;;;###autoload
 (defun emjupy-report-box-geometry ()
   "Report the widths the cell outlines are drawn at.
 
@@ -1698,7 +1727,7 @@ background is wider than the box."
                              (setq found (plist-get (cdr d) :align-to))))
                          (forward-char 1))
                        found)))))
-    (message "box width %s | rule %s | output aligned to %s%s"
+    (message "[emjupy] box width %s | rule %s | output aligned to %s%s"
              width (or rule-width "none") (or pad "none")
              (if (and rule-width pad (> pad rule-width))
                  (format "  -- background is %d column(s) wider" (- pad
@@ -1706,6 +1735,9 @@ background is wider than the box."
                ""))))
 
 ;;;###autoload
+
+;;;; Tracebacks and hidden output
+
 (defun emjupy-show-traceback ()
   "Show the full traceback of the cell at point in a buffer of its own.
 
@@ -1759,7 +1791,6 @@ take a click apart are inlined by the compiler and cannot be stubbed."
       (with-current-buffer buffer
         (emjupy-toggle-output-of-cell (emjupy--cell-by-id id))))))
 
-;;;###autoload
 (defun emjupy-toggle-output-at-click (event)
   "Show the output whose collapsed marker was clicked.
 EVENT is the mouse event."

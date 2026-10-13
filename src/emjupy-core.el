@@ -38,6 +38,8 @@
 ;; known servers and a "most recently used" default for commands invoked from
 ;; outside a notebook buffer.
 
+;;;; Shared state
+
 (defvar emjupy--servers (make-hash-table :test 'equal)
   "Registry of known servers, keyed by base-url string.
 Lets several Jupyter servers -- typically several ssh tunnels on
@@ -63,6 +65,8 @@ whichever machine ran it, and passed or failed accordingly.
 
 The unit tests bind this to nil, so a test that depends on the machine
 gets a definite answer rather than a local one.")
+
+;;;; Structures
 
 (cl-defstruct emjupy-server
   host port token base-url
@@ -118,6 +122,8 @@ gets a definite answer rather than a local one.")
   last-modified)
 
 ;; --- Lookups ---------------------------------------------------------------
+
+;;;; Lookups
 
 (defun emjupy--intern-server (base-url token)
   "Return the registered `emjupy-server' for BASE-URL, creating it if new.

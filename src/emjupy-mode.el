@@ -30,6 +30,8 @@
 (require 'emjupy-lsp)
 (require 'emjupy-eglot)
 
+;;;; Options
+
 (defcustom emjupy-report-slow-hooks nil
   "Report anything emjupy runs after a command that takes too long.
 
@@ -41,6 +43,27 @@ just as usefully -- that none of them is, and the time is going
 somewhere else entirely."
   :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
   :group 'emjupy)
+
+(defcustom emjupy-electric-pairs t
+  "When non-nil, pair brackets and quotes as you type in cells.
+
+`electric-pair-mode\=' is global and off by default, and `emjupy-mode\='
+derives from `fundamental-mode\=', so a notebook would otherwise behave
+less like a Python buffer than the code in it deserves.  Set to nil to
+leave the matter to your own configuration."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-language-mode 'python-mode
+  "The major mode whose settings a notebook borrows for its cells.
+
+Cells hold code in that language, so the buffer should behave as a
+buffer of it does.  Set to nil to leave the buffer with
+`fundamental-mode\\='s settings."
+  :type '(choice (const :tag "None" nil) function)
+  :group 'emjupy)
+
+;;;; Timing hooks
 
 (defun emjupy--timed (name fn &rest args)
   "Call FN with ARGS, reporting if it takes longer than allowed.
@@ -68,6 +91,8 @@ NAME is what gets reported."
 (defun emjupy--refresh-rules-timed (&rest args)
   "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
   (apply #'emjupy--timed "rule refresh" #'emjupy--refresh-box-rules args))
+
+;;;; Copying text out
 
 (defconst emjupy--internal-text-properties
   '(emjupy-cell emjupy-pad emjupy-overlay)
@@ -98,29 +123,14 @@ DELETE is passed through to `buffer-substring--filter'."
   (emjupy--strip-internal-properties
    (buffer-substring--filter beg end delete)))
 
+;;;; Keys
+
 (defvar emjupy-mode-map (make-sparse-keymap)
   "Keymap for `emjupy-mode'.
 Its keys are bound, with the menu, in emjupy-notebook.el: they name
 commands of every file, so they are bound above them all.")
 
-(defcustom emjupy-electric-pairs t
-  "When non-nil, pair brackets and quotes as you type in cells.
-
-`electric-pair-mode\=' is global and off by default, and `emjupy-mode\='
-derives from `fundamental-mode\=', so a notebook would otherwise behave
-less like a Python buffer than the code in it deserves.  Set to nil to
-leave the matter to your own configuration."
-  :type 'boolean
-  :group 'emjupy)
-
-(defcustom emjupy-language-mode 'python-mode
-  "The major mode whose settings a notebook borrows for its cells.
-
-Cells hold code in that language, so the buffer should behave as a
-buffer of it does.  Set to nil to leave the buffer with
-`fundamental-mode\\='s settings."
-  :type '(choice (const :tag "None" nil) function)
-  :group 'emjupy)
+;;;; Language settings
 
 (defun emjupy--adopt-language-settings ()
   "Take the syntax and comment settings of `emjupy-language-mode\\='.
@@ -197,6 +207,8 @@ are on the `load-path' -- remove one, or put the one you want first."
                (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s)))
                           strays ", "))
        :warning))))
+
+;;;; The mode
 
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."

@@ -38,6 +38,63 @@
 (declare-function dired-goto-file "dired" (file))
 (defvar python-indent-guess-indent-offset-verbose)
 
+;;;; Options
+
+(defcustom emjupy-default-port "8888"
+  "Port assumed when none is given.
+
+Jupyter's own default, and the one a tunnel is usually pointed at."
+  :type 'string
+  :group 'emjupy)
+
+(defcustom emjupy-export-markdown-cells t
+  "When non-nil, carry markdown cells into an exported .py as comments.
+
+They are written as a `# %% [markdown]' block with each line commented,
+which is the same percent format Jupytext, VS Code and Spyder read -- so
+the prose survives the round trip instead of being dropped."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-recovery-directory
+  (expand-file-name (format "emjupy-recovery-%s/" (user-login-name))
+                    temporary-file-directory)
+  "Where notebooks with unsaved changes are copied, until they are saved.
+A copy is written a few seconds after a change, when Emacs is idle, and
+when Emacs quits; it is local, so it is written with the server gone.
+Opening the notebook again offers to restore it.
+
+By default a directory of your own under the variable
+`temporary-file-directory' -- /tmp/emjupy-recovery-USER/ on most systems.
+That is emptied when the machine restarts on many systems, so a copy
+outlives Emacs crashing but not the machine: for one that outlives both,
+choose a directory under `user-emacs-directory', which
+\(locate-user-emacs-file \"emjupy-recovery/\") gives.  Copies
+are only written into a directory you own that is not a symbolic link,
+so another user of a shared /tmp cannot have them written elsewhere."
+  :type 'directory
+  :group 'emjupy)
+
+(defcustom emjupy-recovery-delay 3
+  "Seconds of idle time before unsaved changes are copied for recovery."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-autosave-interval 120
+  "Seconds between saves to the server of a notebook with unsaved changes.
+As Jupyter does.  A save that would overwrite changes made on the server
+since the notebook was opened is not made, and auto-saving that notebook
+stops until it is saved by hand.  nil never saves on its own."
+  :type '(choice (const :tag "Never" nil) number)
+  :group 'emjupy)
+
+(defcustom emjupy-local-server-timeout 60
+  "Seconds to wait for a Jupyter server emjupy starts to answer."
+  :type 'number
+  :group 'emjupy)
+
+;;;; Logging in
+
 (defvar emjupy--port-history nil
   "Minibuffer history for server ports and URLs.")
 (defvar emjupy--notebook-history nil
@@ -134,14 +191,6 @@ server with nothing running gets a fresh kernel."
     (setf (emjupy-server-kernel-id server) id)
     id))
 
-;;;###autoload
-(defcustom emjupy-default-port "8888"
-  "Port assumed when none is given.
-
-Jupyter's own default, and the one a tunnel is usually pointed at."
-  :type 'string
-  :group 'emjupy)
-
 (defun emjupy--read-server-url ()
   "Ask for a port or URL, returning `emjupy-default-port' if none is given.
 
@@ -205,9 +254,10 @@ different kernel. With a prefix argument, always prompt for the token."
                                base-url)))
                 (emjupy--harvest-xsrf server)
                 (emjupy--bind-server-kernel server))))))
-      (message "Connected to %s, kernel %s." base-url kernel-id))
+      (message "[emjupy] Connected to %s, kernel %s." base-url kernel-id))
     (emjupy-list-notebooks server)))
 
+;;;###autoload
 (defun emjupy-list-notebooks (&optional server)
   "Fetch SERVER's root contents and prompt to open or create a notebook.
 Returns the notebook buffer.  SERVER defaults to this buffer's server,
@@ -231,6 +281,8 @@ or the last one logged into."
           (emjupy-create-notebook server)
         (emjupy-open-notebook choice server)))))
 
+;;;; Opening and creating notebooks
+
 (defun emjupy--notebook-buffer-name (path server)
   "Return the buffer name for PATH on SERVER.
 The server is part of the name: the same notebook path can exist on two
@@ -250,7 +302,7 @@ Returns the notebook buffer."
         (progn (switch-to-buffer open)
                (message "[emjupy] %s is open with unsaved changes; shown as it is." path)
                open)
-      (message "Fetching notebook: %s..." path)
+      (message "[emjupy] Fetching notebook: %s..." path)
       (let* ((response-data (emjupy--http-request "GET" server
                                                   (emjupy--contents-path path)))
              (content-hash (and response-data (gethash "content"
@@ -317,13 +369,14 @@ Returns the notebook buffer."
               (with-demoted-errors "[emjupy] Language support did not start: %S"
                 (with-current-buffer buf
                   (emjupy--ensure-shadow-buffer nb-struct))))
-            (message "Opened notebook: %s%s" path
+            (message "[emjupy] Opened notebook: %s%s" path
                      (if (emjupy-server-kernel-id server)
                          ""
                        (format ". Press %s to select or spawn a kernel."
                                (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
             buf))))))
 
+;;;###autoload
 (defun emjupy-create-notebook (&optional server)
   "Create a brand new blank notebook on SERVER and open it."
   (interactive)
@@ -345,14 +398,13 @@ Returns the notebook buffer."
     (puthash "format" "json" req-body)
     (puthash "content" nb-payload req-body)
 
-    (message "Creating %s on Jupyter server..." filename)
+    (message "[emjupy] Creating %s on Jupyter server..." filename)
     (let ((response (emjupy--http-request "PUT" server
                                           (emjupy--contents-path filename)
                                           (json-serialize req-body))))
       (if response
           (emjupy-open-notebook filename server)
         (error "Failed to write %s to server" filename)))))
-
 
 ;; ---------------------------------------------------------------------
 ;;; Server dashboard:
@@ -364,6 +416,8 @@ Returns the notebook buffer."
 ;; column handling come from Emacs. It is emphatically NOT a file manager --
 ;; press `d\' to hand the directory to Dired, over TRAMP if the server is
 ;; remote.
+
+;;;; The notebook listing
 
 (defvar-local emjupy-list--server nil
   "The `emjupy-server\' this dashboard describes.")
@@ -743,17 +797,10 @@ buffer per server, so several tunnels can be inspected side by side."
 (defalias 'emjupy-notebook-list #'emjupy-server-dashboard
   "Alias for `emjupy-server-dashboard\'.")
 
+;;;; Exporting to Python
+
 (defvar emjupy--export-history nil
   "Minibuffer history for export destinations.")
-
-(defcustom emjupy-export-markdown-cells t
-  "When non-nil, carry markdown cells into an exported .py as comments.
-
-They are written as a `# %% [markdown]' block with each line commented,
-which is the same percent format Jupytext, VS Code and Spyder read -- so
-the prose survives the round trip instead of being dropped."
-  :type 'boolean
-  :group 'emjupy)
 
 (defun emjupy--percent-export (nb)
   "Return NB's cells as a plain Python file in percent format.
@@ -788,7 +835,6 @@ read."
   (let ((path (or (emjupy-notebook-path nb) "notebook.ipynb")))
     (concat (file-name-sans-extension path) ".py")))
 
-;;;###autoload
 (defun emjupy-export-py (&optional local)
   "Export this notebook as a plain Python file in percent format.
 
@@ -837,6 +883,8 @@ file name works there, if you would rather push it somewhere else."
         (message "[emjupy] Exported to %s on %s"
                  path (emjupy--server-label server))
         path))))
+
+;;;; Reading and writing .ipynb
 
 (defun emjupy--parse-ipynb (json-string)
   "Parse strict nbformat v4 JSON-STRING into an `emjupy-notebook' struct."
@@ -1092,7 +1140,7 @@ JupyterLab, or by someone else -- ask before overwriting it."
     (user-error "No emjupy notebook associated with this buffer"))
   (let* ((nb emjupy--buffer-notebook)
          (path (emjupy-notebook-path nb)))
-    (message "Saving notebook %s..." path)
+    (message "[emjupy] Saving notebook %s..." path)
     (condition-case err
         (emjupy--save-to-server nb)
       (emjupy-save-conflict
@@ -1100,39 +1148,7 @@ JupyterLab, or by someone else -- ask before overwriting it."
                                 path (nth 2 err)))
            (emjupy--save-to-server nb t)
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
-    (message "Successfully saved %s!" path)))
-
-(defcustom emjupy-recovery-directory
-  (expand-file-name (format "emjupy-recovery-%s/" (user-login-name))
-                    temporary-file-directory)
-  "Where notebooks with unsaved changes are copied, until they are saved.
-A copy is written a few seconds after a change, when Emacs is idle, and
-when Emacs quits; it is local, so it is written with the server gone.
-Opening the notebook again offers to restore it.
-
-By default a directory of your own under the variable
-`temporary-file-directory' -- /tmp/emjupy-recovery-USER/ on most systems.
-That is emptied when the machine restarts on many systems, so a copy
-outlives Emacs crashing but not the machine: for one that outlives both,
-choose a directory under `user-emacs-directory', which
-\(locate-user-emacs-file \"emjupy-recovery/\") gives.  Copies
-are only written into a directory you own that is not a symbolic link,
-so another user of a shared /tmp cannot have them written elsewhere."
-  :type 'directory
-  :group 'emjupy)
-
-(defcustom emjupy-recovery-delay 3
-  "Seconds of idle time before unsaved changes are copied for recovery."
-  :type 'number
-  :group 'emjupy)
-
-(defcustom emjupy-autosave-interval 120
-  "Seconds between saves to the server of a notebook with unsaved changes.
-As Jupyter does.  A save that would overwrite changes made on the server
-since the notebook was opened is not made, and auto-saving that notebook
-stops until it is saved by hand.  nil never saves on its own."
-  :type '(choice (const :tag "Never" nil) number)
-  :group 'emjupy)
+    (message "[emjupy] Saved %s" path)))
 
 (defvar-local emjupy--recovery-tick nil
   "`buffer-modified-tick' when the recovery copy was last written.")
@@ -1319,6 +1335,8 @@ nothing."
   (add-hook 'kill-emacs-query-functions #'emjupy--kill-emacs-query)
   (add-hook 'kill-emacs-hook #'emjupy--recovery-write-all))
 
+;;;; Switching, and status
+
 (defun emjupy-switch-notebook ()
   "Switch to another open emjupy notebook, labelled by server."
   (interactive)
@@ -1352,11 +1370,6 @@ nothing."
         buffers "\n")))))
 
 ;;;; An .ipynb file opened as text, opened as a notebook
-
-(defcustom emjupy-local-server-timeout 60
-  "Seconds to wait for a Jupyter server emjupy starts to answer."
-  :type 'number
-  :group 'emjupy)
 
 (defvar emjupy--environment-history nil
   "Environments given to `emjupy-open-this-notebook'.")

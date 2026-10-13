@@ -68,6 +68,8 @@
 (require 'emjupy-mode)
 (require 'emjupy-notebook)
 
+;;;; Version
+
 (defconst emjupy-version "0.1.18"
   "Version of emjupy, kept in step with the Version: header above.")
 

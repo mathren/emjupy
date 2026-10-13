@@ -28,6 +28,8 @@
 
 (defvar python-indent-guess-indent-offset-verbose)
 
+;;;; Options
+
 (defcustom emjupy-remote-root nil
   "Where the notebook directory lives as a *file name*, for Dired.
 
@@ -64,6 +66,8 @@ same for all of them."
                  (string :tag "Host, e.g. box")
                  (alist :key-type string :value-type string))
   :group 'emjupy)
+
+;;;; The server's root
 
 (defconst emjupy--local-hostnames '("localhost" "127.0.0.1" "::1" "0.0.0.0" "")
   "Host names that name this machine rather than another one.")
@@ -138,6 +142,8 @@ TRAMP hop that emjupy cannot infer.  Otherwise the root derived from a
 running kernel is used, which needs no configuration at all."
   (or (emjupy--configured-root-for server)
       (and server (emjupy-server-root server))))
+
+;;;; SSH tunnels
 
 (defconst emjupy--ssh-value-options
   '("-L" "-R" "-D" "-p" "-o" "-i" "-b" "-c" "-e" "-F" "-l" "-m"
@@ -218,6 +224,8 @@ machine, through TRAMP, where the tunnel is not."
         (emjupy--ssh-host-forwarding
          (plist-get (emjupy--server-parts server) :port)))))
 
+;;;; File names through TRAMP
+
 (defun emjupy--remote-root-for-files (server)
   "Return the configured file-name root for SERVER, if it names another machine.
 
@@ -263,6 +271,8 @@ Contents API or to a language server.  This answers \"what does the
 server call them\", and only a root derived from a running kernel can
 say, since a kernel reports an absolute path on the machine it runs on."
   (and server (emjupy-server-root server)))
+
+;;;; Commands
 
 (defun emjupy-open-server-file (path &optional server line)
   "Open PATH from SERVER in a read-only buffer, and go to LINE.

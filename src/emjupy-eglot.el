@@ -31,124 +31,7 @@
 
 (defvar python-indent-guess-indent-offset-verbose)
 
-;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it, because the
-;; WebSocket transport inherits from Eglot's own server class.  It is
-;; loaded, not started: nothing connects to a language server until a
-;; shadow buffer asks, and emjupy works without one.
-
-;; Eglot's private API. Every call site below is already guarded by `fboundp'
-;; or a runtime `require', but the compiler cannot see that and reports each
-;; one as "not known to be defined" -- noisy under native compilation, where
-;; the warnings surface in the user's *Warnings* buffer at install time.
-;;
-;; These are declared rather than assumed: they are internal names with no
-;; stability promise, and one of them has already been renamed once
-;; (`eglot--server-capable' -> `eglot-server-capable' in Emacs 30), which is
-;; why `emjupy--eglot-capable-p' probes for both.
-
-;; emjupy-mode is a single fundamental-mode-derived buffer mixing code cells,
-;; markdown cells, box-drawing decoration, and output text all interleaved --
-;; nothing like the single-language file Eglot (or any tool that expects
-;; `buffer-file-name'/major-mode to mean one coherent source file) needs to
-;; attach to, and Eglot has no client-side support for LSP's notebookDocument
-;; sync extension (checked directly: no `eglot-*notebook*' symbols exist even
-;; though some servers advertise it), so there's no protocol-level shortcut.
-;;
-;; For CODE cells, all of the notebook's code cells are shown together in one
-;; persistent, real python-mode buffer -- a "shadow" buffer, marked with
-;; `# %% [emjupy:ID]' section headers (in the spirit of the jupytext percent
-;; format) -- so Eglot sees one coherent multi-cell Python document and can
-;; resolve names defined in any cell. Eglot is started on it automatically;
-;; the buffer and its LSP connection persist across edits, so only the FIRST
-;; access in a session pays the server-startup cost.
-;;
-;; That shadow buffer is reachable directly via `C-c '' for heavier editing,
-;; but for everyday use you never need to: completion-at-point-functions and
-;; eldoc-documentation-functions are wired into emjupy-mode itself, silently
-;; delegating to the shadow buffer's Eglot session and mapping positions back
-;; and forth -- so completion/eldoc for code cells just work while typing
-;; directly in the notebook, cross-cell-aware, no action required.
-;;
-;; MARKDOWN cells don't benefit from cross-cell LSP awareness, so they keep
-;; the simpler single-cell external-edit buffer.
-
-(defvar-local emjupy--edit-source-cell nil
-  "The `emjupy-cell' struct backing this transient markdown-cell-edit buffer.")
-(defvar-local emjupy--edit-source-notebook-buffer nil
-  "The notebook buffer this markdown-cell-edit buffer commits changes into.")
-
-(defvar emjupy-cell-edit-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'emjupy-commit-cell-edit)
-    (define-key map (kbd "C-c '")   #'emjupy-commit-cell-edit)
-    (define-key map (kbd "C-c C-k") #'emjupy-abort-cell-edit)
-    map)
-  "Keymap active in the transient markdown-cell edit buffer.")
-
-(define-minor-mode emjupy-cell-edit-mode
-  "Minor mode for the transient markdown-cell edit buffer.
-Opened by
-`emjupy-edit-cell-externally'."
-  :lighter " emjupy-edit"
-  :keymap emjupy-cell-edit-mode-map)
-
-(defun emjupy--edit-markdown-cell-externally (cell nb-buf)
-  "Open markdown CELL from notebook buffer NB-BUF in its own edit buffer."
-  (let* ((mode-fn (or (emjupy--markdown-mode-fn) 'text-mode))
-         (buf (generate-new-buffer
-               (format "*emjupy-cell-edit: %s[%s]*" (buffer-name nb-buf)
-                       (emjupy-cell-id cell)))))
-    (with-current-buffer buf
-      (insert (emjupy-cell-source cell))
-      (funcall mode-fn)
-      (emjupy-cell-edit-mode 1)
-      (setq emjupy--edit-source-cell cell)
-      (setq emjupy--edit-source-notebook-buffer nb-buf)
-      (goto-char (point-min)))
-    (pop-to-buffer buf)
-    (message "Editing cell externally in %s -- C-c C-c to commit, C-c C-k to discard." mode-fn)))
-
-(defun emjupy-commit-cell-edit ()
-  "Commit this cell-edit buffer's text back into its cell, then close it."
-  (interactive)
-  (unless (and emjupy--edit-source-cell
-               (buffer-live-p emjupy--edit-source-notebook-buffer))
-    (user-error "This buffer isn't an emjupy cell-edit buffer"))
-  (let ((new-source (string-trim-right (buffer-string) "\n"))
-        (cell emjupy--edit-source-cell)
-        (nb-buf emjupy--edit-source-notebook-buffer)
-        (edit-buf (current-buffer)))
-    (setf (emjupy-cell-source cell) new-source)
-    (with-current-buffer nb-buf
-      (emjupy--rerender-notebook cell))
-    (kill-buffer edit-buf)
-    (message "[emjupy] Cell updated.")))
-
-(defun emjupy-abort-cell-edit ()
-  "Abandon this markdown-cell-edit buffer without committing."
-  (interactive)
-  (when (y-or-n-p "Discard changes to this cell? ")
-    (kill-buffer)))
-
-;; --- Code cells: persistent multi-cell shadow buffer with Eglot ------------
-
-(defvar-local emjupy--edit-shadow-notebook nil
-  "The `emjupy-notebook' struct this shared code shadow-buffer belongs to.")
-
-(defvar emjupy-shadow-edit-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'emjupy-commit-shadow-edit)
-    (define-key map (kbd "C-c '")   #'emjupy-commit-shadow-edit)
-    (define-key map (kbd "C-c C-k") #'emjupy-abort-shadow-edit)
-    map)
-  "Keymap active in the shared multi-cell code shadow-buffer.")
-
-(define-minor-mode emjupy-shadow-edit-mode
-  "Minor mode for the persistent shared-code shadow buffer.
-Opened by
-`emjupy-edit-cell-externally' for code cells.  Eglot manages this
-buffer like any ordinary Python file."
-  :lighter " emjupy-shadow")
+;;;; Options
 
 (defcustom emjupy-shadow-directory nil
   "Directory holding the Eglot shadow files, or nil for a local temp dir.
@@ -167,28 +50,6 @@ server reached through `ssh -L\' looks like localhost from here."
   :type '(choice (const :tag "Local temporary directory" nil)
                  (directory :tag "Directory (may be a TRAMP path)"))
   :group 'emjupy)
-
-(defconst emjupy--shadow-coding 'utf-8-unix
-  "Coding system used for the Eglot shadow file, in both directions.
-
-Pinned rather than negotiated.  Left to itself `write-region' calls
-`select-safe-coding-system', which for anything it cannot encode
-cleanly -- a stray undecodable byte in a cell, say -- stops and ASKS,
-defaulting to `raw-text'.  Answering that turns the shadow file into raw
-bytes, so the next visit reads mojibake back (a lone #x97 shows up as
-`\\227') and Emacs then chokes trying to save it.  LSP mandates UTF-8
-anyway, so there is nothing to negotiate.")
-
-(defun emjupy--eglot-live-server (&optional buffer)
-  "Return the live Eglot server for BUFFER, or nil.
-
-Both halves matter: `eglot-current-server' can return a server whose
-process has since died, and calling into Eglot with one of those raises
-\"No current JSON-RPC connection\" out of the completion machinery, where
-it surfaces to the user as a raw jsonrpc-error."
-  (with-current-buffer (or buffer (current-buffer))
-    (let ((server (eglot-current-server)))
-      (and server (jsonrpc-running-p server) server))))
 
 (defcustom emjupy-shadow-sync-to-disk 'lazy
   "When to write the shadow file to disk.
@@ -248,6 +109,219 @@ transport does not read the file anyway."
   :type 'boolean
   :group 'emjupy)
 
+(defcustom emjupy-language-support t
+  "When non-nil, offer completion, eldoc and \\[xref-find-definitions].
+
+A single switch over every path that talks to a language server, on
+either transport: completion, eldoc, M-., starting one when a notebook
+opens, and the commands that ask one for something.  Set it to nil to
+find out whether a slowdown comes from language support or from
+somewhere else: the notebook keeps working -- cells run, output arrives,
+everything renders -- and nothing runs after each command except
+emjupy\='s own bookkeeping.  Editing all the code in one buffer, with
+\\[emjupy-edit-cell-externally], still works, without a server; set
+back to t, a server is started when next one is asked for."
+  :type 'boolean
+  :group 'emjupy)
+
+(defcustom emjupy-shadow-retry-interval 30
+  "Seconds to wait before retrying a shadow buffer that failed to set up.
+
+Completion and eldoc ask for the shadow buffer after every command.  If
+building it fails -- an unreachable host, a directory that cannot be
+created -- retrying each time turns one slow failure into a hang, since
+each attempt blocks Emacs while TRAMP waits."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-shadow-timeout 2
+  "Seconds to let shadow-buffer setup block Emacs before giving up.
+
+Reached from eldoc and completion, so this is time the user spends
+waiting after an ordinary command.  Language-server support is worth a
+short pause and no more; editing and running cells do not depend on it."
+  :type 'number
+  :group 'emjupy)
+
+(defcustom emjupy-eglot-delegated-commands
+  '(eglot-rename
+    eglot-code-actions
+    eglot-format
+    eglot-format-buffer
+    eglot-find-declaration
+    eglot-find-implementation
+    eglot-find-typeDefinition)
+  "Eglot commands redirected to the shadow buffer when run in a notebook.
+
+Each is advised so that inside `emjupy-mode\' it runs against the buffer
+Eglot actually manages, with point at the matching position, and any
+edits it makes are pulled back into the cells.  Outside `emjupy-mode\'
+the advice does nothing at all."
+  :type '(repeat symbol)
+  :group 'emjupy)
+
+(defcustom emjupy-shadow-when-kernel-unreachable t
+  "Whether to run a local language server when the kernel is elsewhere.
+
+The shadow file then sits on THIS machine, so what the server describes
+is this machine: its interpreter, its packages, and none of the modules
+that live beside the notebook.  For ordinary Python that is mostly
+right and worth having; for anything that depends on the environment the
+code will actually run in, it is confidently wrong.
+
+Set it to nil to have no language support at all in that case rather
+than approximate support.  Either way, `emjupy-shadow-host\' or
+`jupyter-lsp\' on the server gives answers from the right machine."
+  :type 'boolean
+  :group 'emjupy)
+
+;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it, because the
+;; WebSocket transport inherits from Eglot's own server class.  It is
+;; loaded, not started: nothing connects to a language server until a
+;; shadow buffer asks, and emjupy works without one.
+
+;; Eglot's private API. Every call site below is already guarded by `fboundp'
+;; or a runtime `require', but the compiler cannot see that and reports each
+;; one as "not known to be defined" -- noisy under native compilation, where
+;; the warnings surface in the user's *Warnings* buffer at install time.
+;;
+;; These are declared rather than assumed: they are internal names with no
+;; stability promise, and one of them has already been renamed once
+;; (`eglot--server-capable' -> `eglot-server-capable' in Emacs 30), which is
+;; why `emjupy--eglot-capable-p' probes for both.
+
+;; emjupy-mode is a single fundamental-mode-derived buffer mixing code cells,
+;; markdown cells, box-drawing decoration, and output text all interleaved --
+;; nothing like the single-language file Eglot (or any tool that expects
+;; `buffer-file-name'/major-mode to mean one coherent source file) needs to
+;; attach to, and Eglot has no client-side support for LSP's notebookDocument
+;; sync extension (checked directly: no `eglot-*notebook*' symbols exist even
+;; though some servers advertise it), so there's no protocol-level shortcut.
+;;
+;; For CODE cells, all of the notebook's code cells are shown together in one
+;; persistent, real python-mode buffer -- a "shadow" buffer, marked with
+;; `# %% [emjupy:ID]' section headers (in the spirit of the jupytext percent
+;; format) -- so Eglot sees one coherent multi-cell Python document and can
+;; resolve names defined in any cell. Eglot is started on it automatically;
+;; the buffer and its LSP connection persist across edits, so only the FIRST
+;; access in a session pays the server-startup cost.
+;;
+;; That shadow buffer is reachable directly via `C-c '' for heavier editing,
+;; but for everyday use you never need to: completion-at-point-functions and
+;; eldoc-documentation-functions are wired into emjupy-mode itself, silently
+;; delegating to the shadow buffer's Eglot session and mapping positions back
+;; and forth -- so completion/eldoc for code cells just work while typing
+;; directly in the notebook, cross-cell-aware, no action required.
+;;
+;; MARKDOWN cells don't benefit from cross-cell LSP awareness, so they keep
+;; the simpler single-cell external-edit buffer.
+
+;;;; Editing a cell in a buffer of its own
+
+(defvar-local emjupy--edit-source-cell nil
+  "The `emjupy-cell' struct backing this transient markdown-cell-edit buffer.")
+(defvar-local emjupy--edit-source-notebook-buffer nil
+  "The notebook buffer this markdown-cell-edit buffer commits changes into.")
+
+(defvar emjupy-cell-edit-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'emjupy-commit-cell-edit)
+    (define-key map (kbd "C-c '")   #'emjupy-commit-cell-edit)
+    (define-key map (kbd "C-c C-k") #'emjupy-abort-cell-edit)
+    map)
+  "Keymap active in the transient markdown-cell edit buffer.")
+
+(define-minor-mode emjupy-cell-edit-mode
+  "Minor mode for the transient markdown-cell edit buffer.
+Opened by
+`emjupy-edit-cell-externally'."
+  :lighter " emjupy-edit"
+  :keymap emjupy-cell-edit-mode-map)
+
+(defun emjupy--edit-markdown-cell-externally (cell nb-buf)
+  "Open markdown CELL from notebook buffer NB-BUF in its own edit buffer."
+  (let* ((mode-fn (or (emjupy--markdown-mode-fn) 'text-mode))
+         (buf (generate-new-buffer
+               (format "*emjupy-cell-edit: %s[%s]*" (buffer-name nb-buf)
+                       (emjupy-cell-id cell)))))
+    (with-current-buffer buf
+      (insert (emjupy-cell-source cell))
+      (funcall mode-fn)
+      (emjupy-cell-edit-mode 1)
+      (setq emjupy--edit-source-cell cell)
+      (setq emjupy--edit-source-notebook-buffer nb-buf)
+      (goto-char (point-min)))
+    (pop-to-buffer buf)
+    (message "[emjupy] Editing cell externally in %s -- C-c C-c to commit, C-c C-k to discard." mode-fn)))
+
+(defun emjupy-commit-cell-edit ()
+  "Commit this cell-edit buffer's text back into its cell, then close it."
+  (interactive)
+  (unless (and emjupy--edit-source-cell
+               (buffer-live-p emjupy--edit-source-notebook-buffer))
+    (user-error "This buffer isn't an emjupy cell-edit buffer"))
+  (let ((new-source (string-trim-right (buffer-string) "\n"))
+        (cell emjupy--edit-source-cell)
+        (nb-buf emjupy--edit-source-notebook-buffer)
+        (edit-buf (current-buffer)))
+    (setf (emjupy-cell-source cell) new-source)
+    (with-current-buffer nb-buf
+      (emjupy--rerender-notebook cell))
+    (kill-buffer edit-buf)
+    (message "[emjupy] Cell updated.")))
+
+(defun emjupy-abort-cell-edit ()
+  "Abandon this markdown-cell-edit buffer without committing."
+  (interactive)
+  (when (y-or-n-p "Discard changes to this cell? ")
+    (kill-buffer)))
+
+;; --- Code cells: persistent multi-cell shadow buffer with Eglot ------------
+
+;;;; Editing all the code
+
+(defvar-local emjupy--edit-shadow-notebook nil
+  "The `emjupy-notebook' struct this shared code shadow-buffer belongs to.")
+
+(defvar emjupy-shadow-edit-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'emjupy-commit-shadow-edit)
+    (define-key map (kbd "C-c '")   #'emjupy-commit-shadow-edit)
+    (define-key map (kbd "C-c C-k") #'emjupy-abort-shadow-edit)
+    map)
+  "Keymap active in the shared multi-cell code shadow-buffer.")
+
+(define-minor-mode emjupy-shadow-edit-mode
+  "Minor mode for the persistent shared-code shadow buffer.
+Opened by
+`emjupy-edit-cell-externally' for code cells.  Eglot manages this
+buffer like any ordinary Python file."
+  :lighter " emjupy-shadow")
+
+;;;; The shadow file
+
+(defconst emjupy--shadow-coding 'utf-8-unix
+  "Coding system used for the Eglot shadow file, in both directions.
+
+Pinned rather than negotiated.  Left to itself `write-region' calls
+`select-safe-coding-system', which for anything it cannot encode
+cleanly -- a stray undecodable byte in a cell, say -- stops and ASKS,
+defaulting to `raw-text'.  Answering that turns the shadow file into raw
+bytes, so the next visit reads mojibake back (a lone #x97 shows up as
+`\\227') and Emacs then chokes trying to save it.  LSP mandates UTF-8
+anyway, so there is nothing to negotiate.")
+
+(defun emjupy--eglot-live-server (&optional buffer)
+  "Return the live Eglot server for BUFFER, or nil.
+
+Both halves matter: `eglot-current-server' can return a server whose
+process has since died, and calling into Eglot with one of those raises
+\"No current JSON-RPC connection\" out of the completion machinery, where
+it surfaces to the user as a raw jsonrpc-error."
+  (with-current-buffer (or buffer (current-buffer))
+    (let ((server (eglot-current-server)))
+      (and server (jsonrpc-running-p server) server))))
+
 (defvar emjupy--force-local-shadow nil
   "Non-nil while the shadow file must be on this machine.
 
@@ -299,6 +373,8 @@ readable by its owner alone -- a shadow file holds a notebook\='s code."
   (file-name-as-directory
    (expand-file-name (format "emjupy-shadow-%s" (user-login-name))
                      temporary-file-directory)))
+
+;;;; Where the notebook lives
 
 (defun emjupy--notebook-directory (nb)
   "Return the directory NB lives in as a file name Emacs can use, or nil.
@@ -365,6 +441,8 @@ plainly not here.  A remote name is not here by definition."
            ;; still something to be done about it.
            (emjupy-start-language-support nb)))))))
 
+;;;; Warnings
+
 (defvar-local emjupy--warned-local-server nil
   "Non-nil once this notebook has been told its language server is local.")
 
@@ -403,6 +481,8 @@ one."
                  (format " (%s)" emjupy--lsp-last-failure)
                ""))))))))
 
+;;;; Starting language support
+
 (defvar emjupy--suppress-plain-eglot nil
   "Non-nil while a WebSocket-backed Eglot is about to be attached.
 
@@ -413,21 +493,6 @@ server already there and left it: a local one, reading the shadow file
 in a temp directory, which resolves symbols in the notebook and nothing
 beside it.  Every cross-file lookup came back empty for that reason, and
 looked like a fault in the transport that was not being used.")
-
-(defcustom emjupy-language-support t
-  "When non-nil, offer completion, eldoc and \\[xref-find-definitions].
-
-A single switch over every path that talks to a language server, on
-either transport: completion, eldoc, M-., starting one when a notebook
-opens, and the commands that ask one for something.  Set it to nil to
-find out whether a slowdown comes from language support or from
-somewhere else: the notebook keeps working -- cells run, output arrives,
-everything renders -- and nothing runs after each command except
-emjupy\='s own bookkeeping.  Editing all the code in one buffer, with
-\\[emjupy-edit-cell-externally], still works, without a server; set
-back to t, a server is started when next one is asked for."
-  :type 'boolean
-  :group 'emjupy)
 
 (defun emjupy-start-language-support (&optional nb)
   "Begin language support for NB, without waiting for it.
@@ -518,24 +583,7 @@ The server is folded into the name: two servers can both host
     ;; `emjupy--ensure-shadow-buffer', which is already about to do remote I/O.
     (expand-file-name (concat safe-name ".py") dir)))
 
-(defcustom emjupy-shadow-retry-interval 30
-  "Seconds to wait before retrying a shadow buffer that failed to set up.
-
-Completion and eldoc ask for the shadow buffer after every command.  If
-building it fails -- an unreachable host, a directory that cannot be
-created -- retrying each time turns one slow failure into a hang, since
-each attempt blocks Emacs while TRAMP waits."
-  :type 'number
-  :group 'emjupy)
-
-(defcustom emjupy-shadow-timeout 2
-  "Seconds to let shadow-buffer setup block Emacs before giving up.
-
-Reached from eldoc and completion, so this is time the user spends
-waiting after an ordinary command.  Language-server support is worth a
-short pause and no more; editing and running cells do not depend on it."
-  :type 'number
-  :group 'emjupy)
+;;;; The shadow buffer
 
 (defvar-local emjupy--shadow-blocked-until nil
   "Time before which this buffer will not try to build a shadow buffer.")
@@ -754,6 +802,8 @@ automatically, with nothing for the user to run."
          (emjupy--shadow-block (error-message-string err) nb-buffer))))
     buf))
 
+;;;; Positions
+
 (defun emjupy--shadow-position-to-cell (nb shadow-pos)
   "Map SHADOW-POS in NB\='s shadow buffer to (CELL . NOTEBOOK-POS).
 
@@ -785,6 +835,8 @@ the right character of the right cell."
 ;; Eglot installs its xref backend in the buffer it manages -- the shadow
 ;; buffer, not the notebook -- so in a notebook M-. found nothing, or fell
 ;; through to a backend that knew nothing about the code.
+
+;;;; Definitions and references
 
 (defun emjupy--xref-backend ()
   "`xref-backend-functions\=' entry for notebook buffers.
@@ -990,6 +1042,8 @@ right destination there."
      nb (emjupy--xref-in-shadow
          (lambda (b) (xref-backend-apropos b pattern))))))
 
+;;;; Eglot commands, from the notebook
+
 (defun emjupy--pull-shadow-into-cells (nb)
   "Write NB\='s shadow sections back into its cells.
 The notebook is re-rendered if any  Returns the number of cells updated."
@@ -1036,23 +1090,6 @@ eldoc already went through the shadow buffer; everything else did not."
                                                          "s")))
       updated)))
 
-(defcustom emjupy-eglot-delegated-commands
-  '(eglot-rename
-    eglot-code-actions
-    eglot-format
-    eglot-format-buffer
-    eglot-find-declaration
-    eglot-find-implementation
-    eglot-find-typeDefinition)
-  "Eglot commands redirected to the shadow buffer when run in a notebook.
-
-Each is advised so that inside `emjupy-mode\' it runs against the buffer
-Eglot actually manages, with point at the matching position, and any
-edits it makes are pulled back into the cells.  Outside `emjupy-mode\'
-the advice does nothing at all."
-  :type '(repeat symbol)
-  :group 'emjupy)
-
 (defun emjupy--eglot-command-advice (orig &rest args)
   "Around-advice running ORIG with ARGS in the shadow buffer, in notebooks.
 
@@ -1079,6 +1116,8 @@ real cursor rather than whatever is under point in the shadow buffer."
     (advice-remove cmd #'emjupy--eglot-command-advice)))
 
 (emjupy-eglot-install-advice)
+
+;;;; Committing and aborting an edit
 
 (defun emjupy-commit-shadow-edit ()
   "Commit this shadow buffer back into the notebook.
@@ -1146,7 +1185,7 @@ LSP awareness doesn't apply to prose."
         (let ((buf (emjupy--ensure-shadow-buffer nb)))
           (emjupy--goto-shadow-section buf (emjupy-cell-id cell))
           (pop-to-buffer buf)
-          (message "Editing notebook code (all cells%s) -- C-c C-c to commit, C-c C-k to discard."
+          (message "[emjupy] Editing notebook code (all cells%s) -- C-c C-c to commit, C-c C-k to discard."
                    (if emjupy-language-support ", Eglot active" "")))
       (emjupy--edit-markdown-cell-externally cell nb-buf))))
 
@@ -1160,20 +1199,7 @@ LSP awareness doesn't apply to prose."
 ;; Emacs 30's completion-preview-mode, ...) picks this up automatically, the
 ;; same way it would for a normal, single-file Eglot-managed buffer.
 
-(defcustom emjupy-shadow-when-kernel-unreachable t
-  "Whether to run a local language server when the kernel is elsewhere.
-
-The shadow file then sits on THIS machine, so what the server describes
-is this machine: its interpreter, its packages, and none of the modules
-that live beside the notebook.  For ordinary Python that is mostly
-right and worth having; for anything that depends on the environment the
-code will actually run in, it is confidently wrong.
-
-Set it to nil to have no language support at all in that case rather
-than approximate support.  Either way, `emjupy-shadow-host\' or
-`jupyter-lsp\' on the server gives answers from the right machine."
-  :type 'boolean
-  :group 'emjupy)
+;;;; When the shadow cannot see the kernel
 
 (defun emjupy--shadow-would-mislead-p (nb)
   "Return non-nil when a shadow file for NB would describe the wrong machine.
@@ -1205,6 +1231,8 @@ costs a language server to produce them."
         (message "%s %s"
                  "[emjupy] The kernel runs elsewhere, so completions describe"
                  "THIS machine.  Set emjupy-shadow-host, or install jupyter-lsp on the server.")))))
+
+;;;; Completion and eldoc
 
 (defun emjupy--lsp-in-charge-p ()
   "Return non-nil when Eglot is attached over the Jupyter WebSocket.
@@ -1339,6 +1367,8 @@ and does not hold the editor while the server thinks."
           :timeout-fn #'ignore))
        t))))
 
+;;;; Releasing a notebook
+
 (defun emjupy--release-notebook ()
   "Close the connections opened by this buffer's notebook, on killing it.
 
@@ -1402,6 +1432,9 @@ running."
       (setf (emjupy-notebook-shadow-buffer nb) nil))))
 
 ;;;###autoload
+
+;;;; Diagnosis
+
 (defun emjupy-lsp-diagnose ()
   "Report which language server this notebook is using, and how it got there.
 
@@ -1470,7 +1503,6 @@ socket was working."
         (goto-char (point-min)))
       (setq buffer-read-only t)
       (display-buffer (current-buffer)))))
-
 
 (provide 'emjupy-eglot)
 ;;; emjupy-eglot.el ends here
