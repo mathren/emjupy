@@ -443,6 +443,27 @@ Returns the number of characters inserted."
     (emjupy--protect-non-cell-regions)
     inserted))
 
+(defun emjupy--forget-cell-overlays (cells)
+  "Delete the overlays of CELLS, source and output, and forget them."
+  (dolist (cell cells)
+    (when (overlayp (emjupy-cell-overlay cell))
+      (delete-overlay (emjupy-cell-overlay cell)))
+    (when (overlayp (emjupy-cell-output-ov cell))
+      (delete-overlay (emjupy-cell-output-ov cell)))
+    (setf (emjupy-cell-overlay cell) nil)
+    (setf (emjupy-cell-output-ov cell) nil)))
+
+(defun emjupy--cell-from (pos)
+  "Return the first cell drawn in this buffer at POS or after, or nil."
+  (cl-find-if (lambda (cell)
+                (let ((ov (emjupy-cell-overlay cell)))
+                  (and (overlayp ov)
+                       (eq (overlay-buffer ov) (current-buffer))
+                       (>= (overlay-start ov) pos))))
+              (and emjupy--buffer-notebook
+                   (append (emjupy-notebook-cells emjupy--buffer-notebook)
+                           nil))))
+
 (defun emjupy--redraw-cells-in-place (old-cells new-cells &optional known-sane)
   "Replace what OLD-CELLS occupy with NEW-CELLS, drawn in their place.
 What inserting and deleting do, for a split or a merge: everything
@@ -467,28 +488,11 @@ notebook."
                 (buffer-undo-list t)
                 ;; emjupy's own drawing: not an edit to re-highlight
                 (emjupy--refontifying t))
-            (dolist (cell old-cells)
-              (when (overlayp (emjupy-cell-overlay cell))
-                (delete-overlay (emjupy-cell-overlay cell)))
-              (when (overlayp (emjupy-cell-output-ov cell))
-                (delete-overlay (emjupy-cell-output-ov cell)))
-              (setf (emjupy-cell-overlay cell) nil)
-              (setf (emjupy-cell-output-ov cell) nil))
+            (emjupy--forget-cell-overlays old-cells)
             ;; The next cell may start where this region ends, and take the
             ;; inserted text into its overlay; its bounds are noted and
             ;; restored.
-            (setq following-after
-                  (let ((cells (and emjupy--buffer-notebook
-                                    (append (emjupy-notebook-cells
-                                             emjupy--buffer-notebook)
-                                            nil))))
-                    (cl-find-if (lambda (cell)
-                                  (let ((ov (emjupy-cell-overlay cell)))
-                                    (and (overlayp ov)
-                                         (eq (overlay-buffer ov)
-                                             (current-buffer))
-                                         (>= (overlay-start ov) end))))
-                                cells)))
+            (setq following-after (emjupy--cell-from end))
             (delete-region start end)
             (save-excursion
               (goto-char start)
