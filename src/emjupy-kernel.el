@@ -449,6 +449,23 @@ requests awaiting output."
 
 ;;;; Incoming messages
 
+(defun emjupy--rich-output (type content)
+  "Return an output of TYPE, from CONTENT, a kernel message's content.
+TYPE is \"execute_result\" or \"display_data\".  The fields nbformat v4
+requires are always there -- metadata, and an execute_result's count --
+or the saved notebook fails validation."
+  (let ((output (make-hash-table :test 'equal)))
+    (puthash "output_type" type output)
+    (puthash "data" (or (gethash "data" content) (make-hash-table :test 'equal))
+             output)
+    (puthash "metadata" (or (gethash "metadata" content)
+                            (make-hash-table :test 'equal))
+             output)
+    (when (equal type "execute_result")
+      (puthash "execution_count" (or (gethash "execution_count" content) :null)
+               output))
+    output))
+
 (defun emjupy--handle-ws-message (kernel frame)
   "Handle an incoming WebSocket FRAME belonging to KERNEL.
 KERNEL carries both the pending-request table and the backlink to the
@@ -514,36 +531,10 @@ kernels never cross-talk."
           (puthash "text" (or text "") out-hash)
           (emjupy--append-output-to-cell cell out-hash notebook)))
 
-       ;; Returned execution evaluation results
-       ((string= msg-type "execute_result")
-        (let* ((content (gethash "content" data))
-               (data-obj (gethash "data" content))
-               (out-hash (make-hash-table :test 'equal)))
-          (puthash "output_type" "execute_result" out-hash)
-          (puthash "data" (or data-obj (make-hash-table :test 'equal)) out-hash)
-          ;; `metadata' and `execution_count' are required on an execute_result
-          ;; by nbformat v4; without them the saved notebook fails validation.
-          (puthash "metadata" (or (gethash "metadata" content)
-                                  (make-hash-table :test 'equal))
-                   out-hash)
-          (puthash "execution_count"
-                   (or (gethash "execution_count" content) :null)
-                   out-hash)
-          (emjupy--append-output-to-cell cell out-hash notebook)))
-
-       ;; Rich display data -- this is how matplotlib's inline figure
-       ;; actually arrives (separately from the execute_result text repr)
-       ((string= msg-type "display_data")
-        (let* ((content (gethash "content" data))
-               (data-obj (gethash "data" content))
-               (out-hash (make-hash-table :test 'equal)))
-          (puthash "output_type" "display_data" out-hash)
-          (puthash "data" (or data-obj (make-hash-table :test 'equal)) out-hash)
-          ;; Also schema-required (see execute_result above).
-          (puthash "metadata" (or (gethash "metadata" content)
-                                  (make-hash-table :test 'equal))
-                   out-hash)
-          (emjupy--append-output-to-cell cell out-hash notebook)))
+       ;; A value returned, or rich output: a figure comes as display_data.
+       ((member msg-type '("execute_result" "display_data"))
+        (emjupy--append-output-to-cell
+         cell (emjupy--rich-output msg-type (gethash "content" data)) notebook))
 
        ;; Python Error Tracebacks
        ((string= msg-type "error")
