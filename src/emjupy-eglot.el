@@ -1214,17 +1214,10 @@ adopted again.  A language server serving another buffer stays."
 
 ;;;; Diagnosis
 
-(defun emjupy-lsp-diagnose ()
-  "Report which language server this notebook is using, and how it got there.
-
-Reads the server Eglot has attached to the shadow buffer, which is where
-the answer lives.  It used to read a slot filled in by an earlier,
-hand-written client; once that client was replaced the slot stayed
-empty, and this reported a socket that had never opened however well the
-socket was working."
-  (interactive)
-  (let* ((nb (emjupy--notebook))
-         (server (emjupy-notebook-server nb))
+(defun emjupy--lsp-diagnosis (nb)
+  "Return the lines of the language-server report for NB.
+Run in NB's buffer: the back-off it reports is that buffer's."
+  (let* ((server (emjupy-notebook-server nb))
          (shadow (emjupy-notebook-shadow-buffer nb))
          (attached (and (buffer-live-p shadow)
                         (with-current-buffer shadow
@@ -1234,43 +1227,51 @@ socket was working."
                 ((object-of-class-p attached 'emjupy-eglot-server)
                  "over the Jupyter WebSocket")
                 (t "a local process")))
-         (alive (and attached (jsonrpc-running-p attached)))
-         (lines
-          (list
-           (format "notebook        %s" (or (emjupy-notebook-path nb) "?"))
-           (format "server          %s" (if server
-                                            (emjupy--server-label server)
-                                          "none"))
-           (format "server root     %s"
-                   (or (and server (emjupy--remote-root-for server))
-                       "unknown -- no kernel has reported in"))
-           (format "kernel cwd      %s"
-                   (or (emjupy-notebook-kernel-cwd nb)
-                       "unknown -- kernel has not answered"))
-           (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
-           (format "lsp url         %s"
-                   ;; Redacted: this report is written to be pasted into a
-                   ;; bug report, and the URL carries the token.
-                   (if server (emjupy--redact-url (emjupy--lsp-url server))
-                     "n/a"))
-           (format "shadow file     %s"
-                   (if (buffer-live-p shadow)
-                       (or (buffer-local-value 'buffer-file-name shadow)
-                           "unnamed")
-                     "not created"))
-           (format "language server %s" kind)
-           (format "connection      %s"
-                   (cond ((null attached) "not attached")
-                         (alive "running")
-                         (t "attached but not running")))
-           (format "back-off        %s"
-                   (if (emjupy--shadow-blocked-p) "in effect" "none"))
-           ;; The reason the WebSocket route was not taken, if it was tried
-           ;; and failed.  Without this the report said everything was well
-           ;; and a local server was running anyway.
-           (format "socket failure  %s"
-                   (or (bound-and-true-p emjupy--lsp-last-failure)
-                       "none recorded")))))
+         (alive (and attached (jsonrpc-running-p attached))))
+    (list
+     (format "notebook        %s" (or (emjupy-notebook-path nb) "?"))
+     (format "server          %s" (if server
+                                      (emjupy--server-label server)
+                                    "none"))
+     (format "server root     %s"
+             (or (and server (emjupy--remote-root-for server))
+                 "unknown -- no kernel has reported in"))
+     (format "kernel cwd      %s"
+             (or (emjupy-notebook-kernel-cwd nb)
+                 "unknown -- kernel has not answered"))
+     (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
+     (format "lsp url         %s"
+             ;; Redacted: this report is written to be pasted into a
+             ;; bug report, and the URL carries the token.
+             (if server (emjupy--redact-url (emjupy--lsp-url server))
+               "n/a"))
+     (format "shadow file     %s"
+             (if (buffer-live-p shadow)
+                 (or (buffer-local-value 'buffer-file-name shadow)
+                     "unnamed")
+               "not created"))
+     (format "language server %s" kind)
+     (format "connection      %s"
+             (cond ((null attached) "not attached")
+                   (alive "running")
+                   (t "attached but not running")))
+     (format "back-off        %s"
+             (if (emjupy--shadow-blocked-p) "in effect" "none"))
+     ;; The reason the WebSocket route was not taken, if it was tried
+     ;; and failed.  Without this the report said everything was well
+     ;; and a local server was running anyway.
+     (format "socket failure  %s"
+             (or (bound-and-true-p emjupy--lsp-last-failure)
+                 "none recorded")))))
+
+(defun emjupy-lsp-diagnose ()
+  "Report which language server this notebook is using, and how it got there.
+Reads the server Eglot has attached to the shadow buffer, which is where
+the answer lives."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (lines (emjupy--lsp-diagnosis nb)))
     (with-current-buffer (get-buffer-create "*emjupy language server*")
       (let ((inhibit-read-only t))
         (erase-buffer)
