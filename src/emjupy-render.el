@@ -1086,69 +1086,71 @@ a stream, its text as drawn, and the width it was folded at."
             (emjupy--mime-text (gethash "text" last-out))
             (emjupy--box-width)))))
 
+(defun emjupy--insert-output-piece (out)
+  "Insert OUT, one output, at point, drawn as fits its type."
+  (let ((out-type (gethash "output_type" out)))
+    (cond
+     ((string= out-type "stream")
+      ;; Carriage returns applied here too: a notebook saved by Jupyter
+      ;; stores a progress bar as all its updates.
+      (insert (emjupy--ansi-render
+               (emjupy--collapse-carriage-returns
+                (emjupy--mime-text (gethash "text" out))))))
+     ((or (string= out-type "execute_result")
+          (string= out-type "display_data"))
+      (emjupy--insert-rich-output (gethash "data" out)))
+     ((string= out-type "error")
+      (let ((traceback (gethash "traceback" out)))
+        (insert (format "Error (%s): %s\n"
+                        (gethash "ename" out) (gethash "evalue" out)))
+        (when (or (vectorp traceback) (listp traceback))
+          (cl-loop for line in (append traceback nil)
+                   do (insert (emjupy--ansi-render (emjupy--mime-text line))
+                              "\n"))))))))
+
+(defun emjupy--make-output-overlay (cell start widest pieces)
+  "Give CELL's output box, from START to point, its overlay.
+WIDEST is its widest line before folding, PIECES the outputs drawn."
+  (let* ((ov (make-overlay start (point)))
+         ;; "├" instead of "┌": this line IS the input box's bottom
+         ;; edge, continuing straight into the output box's top edge.
+         (header (emjupy--rule (emjupy--cell-out-label cell) "├"))
+         (footer (emjupy--rule nil)))
+    (overlay-put ov 'emjupy-overlay 'output)
+    ;; What a resize needs: the width the lines were folded at, and the
+    ;; widest line.  Output that fits both widths is not redrawn.
+    (overlay-put ov 'emjupy-fold-width (emjupy--box-width))
+    (overlay-put ov 'emjupy-widest widest)
+    (overlay-put ov 'emjupy-drawn (emjupy--drawn-state pieces))
+    (overlay-put ov 'emjupy-header nil)
+    (overlay-put ov 'before-string header)
+    (overlay-put ov 'after-string footer)
+    ;; No face on the overlay: each output piece paints itself, so a
+    ;; figure, a warning and a traceback in one cell each read as what
+    ;; they are.  An overlay face here would override all of them.
+    (setf (emjupy-cell-output-ov cell) ov)))
+
 (defun emjupy--render-cell-output (cell)
   "Insert CELL's output box at point and give it its overlay.
 Apart from `emjupy--render-cell' so output arriving redraws one box,
 not the notebook."
-  (let* ((outputs (emjupy-cell-outputs cell))
-         (has-outputs (and outputs (> (length outputs) 0))))
-    (when has-outputs
-      (let* ((out-start (point))
-             ;; widest line as the kernel sent it, before folding
-             (widest 0)
-             (pieces (emjupy--outputs-for-render outputs)))
-        (cl-loop for out in pieces
-                 do (let ((out-type (gethash "output_type" out))
-                          (piece-start (point)))
-                      (cond
-                       ((string= out-type "stream")
-                        ;; Carriage returns applied here too: a notebook saved
-                        ;; by Jupyter stores a progress bar as all its updates.
-                        (insert (emjupy--ansi-render
-                                 (emjupy--collapse-carriage-returns
-                                  (emjupy--mime-text (gethash "text" out))))))
-                       ((or (string= out-type "execute_result")
-                            (string= out-type "display_data"))
-                        (emjupy--insert-rich-output (gethash "data" out)))
-                       ((string= out-type "error")
-                        (let ((ename (gethash "ename" out))
-                              (evalue (gethash "evalue" out))
-                              (traceback (gethash "traceback" out)))
-                          (insert (format "Error (%s): %s\n" ename evalue))
-                          (when (or (vectorp traceback) (listp traceback))
-                            (cl-loop for line in (append traceback nil)
-                                     do (insert (emjupy--ansi-render
-                                                 (emjupy--mime-text line))
-                                                "\n"))))))
-                      ;; Keep the piece inside the box, whatever kind of output
-                      ;; it is.
-                      (setq widest (max widest
-                                        (emjupy--finish-output-piece
-                                         out piece-start)))))
-
-        (unless (string-suffix-p "\n"
-                                 (buffer-substring-no-properties
-                                  (max (point-min) (- (point) 1)) (point)))
+  (let ((outputs (emjupy-cell-outputs cell)))
+    (when (and outputs (> (length outputs) 0))
+      (let ((out-start (point))
+            ;; widest line as the kernel sent it, before folding
+            (widest 0)
+            (pieces (emjupy--outputs-for-render outputs)))
+        (dolist (out pieces)
+          (let ((piece-start (point)))
+            (emjupy--insert-output-piece out)
+            ;; Kept inside the box, whatever kind of output it is.
+            (setq widest (max widest (emjupy--finish-output-piece
+                                      out piece-start)))))
+        (unless (string-suffix-p "\n" (buffer-substring-no-properties
+                                       (max (point-min) (- (point) 1))
+                                       (point)))
           (insert "\n"))
-
-        (let* ((ov (make-overlay out-start (point)))
-               ;; "├" instead of "┌": this line IS the input box's bottom
-               ;; edge, continuing straight into the output box's top edge.
-               (header (emjupy--rule (emjupy--cell-out-label cell) "├"))
-               (footer (emjupy--rule nil)))
-          (overlay-put ov 'emjupy-overlay 'output)
-          ;; What a resize needs: the width the lines were folded at, and the
-          ;; widest line.  Output that fits both widths is not redrawn.
-          (overlay-put ov 'emjupy-fold-width (emjupy--box-width))
-          (overlay-put ov 'emjupy-widest widest)
-          (overlay-put ov 'emjupy-drawn (emjupy--drawn-state pieces))
-          (overlay-put ov 'emjupy-header nil)
-          (overlay-put ov 'before-string header)
-          (overlay-put ov 'after-string footer)
-          ;; No face on the overlay: each output piece paints itself, so a
-          ;; figure, a warning and a traceback in one cell each read as what
-          ;; they are.  An overlay face here would override all of them.
-          (setf (emjupy-cell-output-ov cell) ov))))))
+        (emjupy--make-output-overlay cell out-start widest pieces)))))
 
 ;;;; Undo
 
