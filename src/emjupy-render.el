@@ -498,6 +498,37 @@ and does not enter the undo history."
   "Return the footer rule of cell or output overlay OV, wherever it is shown."
   (or (overlay-get ov 'after-string) (overlay-get ov 'emjupy-footer)))
 
+(defun emjupy--rule-boxes ()
+  "Return every box in this buffer, in buffer order, its rules taken in.
+Each keeps its rules in `emjupy-header' and `emjupy-footer', and loses
+its overlay strings, for the rules to be hung again."
+  (let ((boxes nil))
+    (cl-loop for cell across
+             (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
+             do (dolist (ov (list (emjupy-cell-overlay cell)
+                                  (emjupy-cell-output-ov cell)))
+                  (when (and (overlayp ov) (eq (overlay-buffer ov)
+                                               (current-buffer)))
+                    (overlay-put ov 'emjupy-header (emjupy--overlay-header ov))
+                    (overlay-put ov 'emjupy-footer (emjupy--overlay-footer ov))
+                    (overlay-put ov 'before-string nil)
+                    (overlay-put ov 'after-string nil)
+                    (push ov boxes))))
+    (sort boxes (lambda (a b) (< (overlay-start a) (overlay-start b))))))
+
+(defun emjupy--hang-rules (box anchor rules property)
+  "Hang RULES on the newline at ANCHOR, BOX's last, as continuation lines.
+PROPERTY is `display', drawn in place of the newline, or `before-string',
+before it.  The overlay is BOX's companion, deleted with its rules."
+  (let ((o (make-overlay anchor (1+ anchor) nil t nil))
+        (text (concat "\n" rules)))
+    ;; point there shows at the end of the text, before the rule
+    (put-text-property 0 1 'cursor t text)
+    (overlay-put o property text)
+    (overlay-put o 'emjupy-overlay 'rules)
+    (overlay-put o 'emjupy-rules-of box)
+    (push o (overlay-get box 'emjupy-companions))))
+
 (defun emjupy--reconcile-rules ()
   "Draw every rule as the continuation of the content line above it.
 `display-line-numbers-mode' numbers the first screen line of each line,
@@ -511,76 +542,45 @@ The rule strings are kept on each box in `emjupy-header' and
 `emjupy-footer'.  Run after anything that redraws a box or changes the
 buffer's structure; it rebuilds every rule."
   (when (bound-and-true-p emjupy--buffer-notebook)
-    ;; every box, in buffer order, with its rules taken into keeping
-    (let ((boxes nil))
-      (cl-loop for cell across
-               (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
-               do (dolist (ov (list (emjupy-cell-overlay cell)
-                                    (emjupy-cell-output-ov cell)))
-                    (when (and (overlayp ov) (eq (overlay-buffer ov)
-                                                 (current-buffer)))
-                      (overlay-put ov 'emjupy-header
-                                   (emjupy--overlay-header ov))
-                      (overlay-put ov 'emjupy-footer
-                                   (emjupy--overlay-footer ov))
-                      (overlay-put ov 'before-string nil)
-                      (overlay-put ov 'after-string nil)
-                      (push ov boxes))))
-      (setq boxes (sort boxes (lambda (a b) (< (overlay-start a)
-                                               (overlay-start b)))))
+
+    (let ((boxes (emjupy--rule-boxes))
+          (prev nil))
       ;; the previous companions, all of them
       (dolist (o (overlays-in (point-min) (point-max)))
         (when (overlay-get o 'emjupy-rules-of) (delete-overlay o)))
       (dolist (ov boxes) (overlay-put ov 'emjupy-companions nil))
-      (let ((prev nil))
-        (dolist (ov (append boxes (list nil)))
-          (let* ((header (and ov (overlay-get ov 'emjupy-header)))
-                 (footer (and prev (overlay-get prev 'emjupy-footer)))
-                 (rules (mapconcat (lambda (r) (string-remove-suffix "\n" r))
-                                   (seq-filter (lambda (r)
-                                                 (and r
-                                                      (not (string-empty-p r))))
-                                               (list footer header))
-                                   "\n"))
-                 (anchor (and prev (1- (overlay-end prev)))))
-            (cond
-             ;; after a box: on its last newline, as continuation lines
-             ((and anchor (eq (char-after anchor) ?\n))
-              (let* ((gap-end (and ov (overlay-start ov)))
-                     (gap (and gap-end (< (overlay-end prev) gap-end))))
-                (cond
-                 ;; Between two boxes.  A screen line is numbered by the line it
-                 ;; starts on, so a hidden separator gave the next line its
-                 ;; number.  Instead the box's last newline is hidden, the rules
-                 ;; hang on the separator as continuation lines, never numbered,
-                 ;; and the separator's newline ends them.
-                 (gap
-                  ;; Drawn as the newline followed by the rules, by a `display',
-                  ;; not by hiding it: Emacs draws no overlay string at a hidden
-                  ;; position.
-                  (let ((o (make-overlay anchor (1+ anchor) nil t nil))
-                        (text (concat "\n" rules)))
-                    ;; point there shows at the end of the text, before the rule
-                    (put-text-property 0 1 'cursor t text)
-                    (overlay-put o 'display text)
-                    (overlay-put o 'emjupy-overlay 'rules)
-                    (overlay-put o 'emjupy-rules-of prev)
-                    (push o (overlay-get prev 'emjupy-companions))))
-                 ;; Followed at once by another box -- a cell by its output
-                 ;; -- or the last box: the rules hang on its own last line.
-                 ((not (string-empty-p rules))
-                  (let ((o (make-overlay anchor (1+ anchor) nil t nil))
-                        (text (concat "\n" rules)))
-                    (put-text-property 0 1 'cursor t text)
-                    (overlay-put o 'before-string text)
-                    (overlay-put o 'emjupy-overlay 'rules)
-                    (overlay-put o 'emjupy-rules-of prev)
-                    (push o (overlay-get prev 'emjupy-companions)))))))
-             ;; the first box, or one whose line above cannot carry it
-             (ov (overlay-put ov 'before-string header)
-                 (when prev (overlay-put prev 'after-string footer)))
-             (prev (overlay-put prev 'after-string footer))))
-          (setq prev ov))))))
+      (dolist (ov (append boxes (list nil)))
+        (let* ((header (and ov (overlay-get ov 'emjupy-header)))
+               (footer (and prev (overlay-get prev 'emjupy-footer)))
+               (rules (mapconcat (lambda (r) (string-remove-suffix "\n" r))
+                                 (seq-filter (lambda (r)
+                                               (and r (not (string-empty-p r))))
+                                             (list footer header))
+                                 "\n"))
+               (anchor (and prev (1- (overlay-end prev)))))
+          (cond
+           ;; after a box: on its last newline, as continuation lines
+           ((and anchor (eq (char-after anchor) ?\n))
+            (let ((gap-end (and ov (overlay-start ov))))
+              (cond
+               ;; Between two boxes.  A screen line is numbered by the line it
+               ;; starts on, so a hidden separator gave the next line its
+               ;; number.  Instead the box's last newline is hidden, the rules
+               ;; hang on the separator as continuation lines, never numbered,
+               ;; and the separator's newline ends them.  Drawn as a `display',
+               ;; not by hiding the newline: Emacs draws no overlay string at a
+               ;; hidden position.
+               ((and gap-end (< (overlay-end prev) gap-end))
+                (emjupy--hang-rules prev anchor rules 'display))
+               ;; Followed at once by another box -- a cell by its output --
+               ;; or the last box: the rules hang on its own last line.
+               ((not (string-empty-p rules))
+                (emjupy--hang-rules prev anchor rules 'before-string)))))
+           ;; the first box, or one whose line above cannot carry it
+           (ov (overlay-put ov 'before-string header)
+               (when prev (overlay-put prev 'after-string footer)))
+           (prev (overlay-put prev 'after-string footer))))
+        (setq prev ov)))))
 
 (defun emjupy--rule (label &optional corner)
   "Return a propertized box rule line showing LABEL.
