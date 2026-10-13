@@ -359,18 +359,7 @@ Returns the notebook buffer."
          (name (if (string-empty-p raw-name) "Untitled.ipynb" raw-name))
          (filename (if (string-match-p "\\.ipynb$" name) name
                      (concat name ".ipynb")))
-         (nb-payload (make-hash-table :test 'equal))
-         (req-body (make-hash-table :test 'equal)))
-
-    (puthash "cells" [] nb-payload)
-    (puthash "metadata" (make-hash-table :test 'equal) nb-payload)
-    (puthash "nbformat" 4 nb-payload)
-    (puthash "nbformat_minor" 5 nb-payload)
-
-    (puthash "type" "notebook" req-body)
-    (puthash "format" "json" req-body)
-    (puthash "content" nb-payload req-body)
-
+         (req-body (emjupy--notebook-request (emjupy--new-notebook-json []))))
     (message "[emjupy] Creating %s on Jupyter server..." filename)
     (let ((response (emjupy--http-request "PUT" server
                                           (emjupy--contents-path filename)
@@ -659,15 +648,9 @@ first act would always be to add one."
          (path (if (string-empty-p dir)
                    name
                  (concat (directory-file-name dir) "/" name)))
-         (nb (make-hash-table :test 'equal))
-         (req (make-hash-table :test 'equal)))
-    (puthash "cells" (vector (emjupy--blank-code-cell-json)) nb)
-    (puthash "metadata" (make-hash-table :test 'equal) nb)
-    (puthash "nbformat" 4 nb)
-    (puthash "nbformat_minor" 5 nb)
-    (puthash "type" "notebook" req)
-    (puthash "format" "json" req)
-    (puthash "content" nb req)
+         (req (emjupy--notebook-request
+               (emjupy--new-notebook-json
+                (vector (emjupy--blank-code-cell-json))))))
     (when (and (emjupy--http-exists-p server path)
                (not (yes-or-no-p
                      (format "%s already exists.  Overwrite it? " path))))
@@ -911,6 +894,28 @@ validation even though it looks fine in emjupy."
         (unless (gethash "text" o) (puthash "text" "" o)))
       o)))
 
+(defun emjupy--new-notebook-json (cells)
+  "Return a new notebook holding CELLS, a vector, as a JSON table."
+  (let ((notebook (make-hash-table :test 'equal)))
+    (puthash "cells" cells notebook)
+    (puthash "metadata" (make-hash-table :test 'equal) notebook)
+    (puthash "nbformat" 4 notebook)
+    (puthash "nbformat_minor" 5 notebook)
+    notebook))
+
+(defun emjupy--notebook-json (nb)
+  "Return NB as the JSON table a save request carries."
+  (json-parse-string (emjupy--serialize-notebook nb)
+                     :object-type 'hash-table :array-type 'array))
+
+(defun emjupy--notebook-request (content)
+  "Return a Contents API request saving CONTENT, a notebook as a JSON table."
+  (let ((request (make-hash-table :test 'equal)))
+    (puthash "type" "notebook" request)
+    (puthash "format" "json" request)
+    (puthash "content" content request)
+    request))
+
 (defun emjupy--serialize-notebook (nb)
   "Serialize NB `emjupy-notebook' struct back to strict nbformat v4 JSON."
   (let ((data (make-hash-table :test 'equal)))
@@ -994,14 +999,8 @@ made meanwhile leave the notebook unsaved, for the next save."
     (with-current-buffer buf
       (emjupy--sync-all-cells)
       (setq tick (buffer-modified-tick))
-      (let ((request (make-hash-table :test 'equal)))
-        (puthash "type" "notebook" request)
-        (puthash "format" "json" request)
-        (puthash "content" (json-parse-string (emjupy--serialize-notebook nb)
-                                              :object-type 'hash-table
-                                              :array-type 'array)
-                 request)
-        (setq body (json-serialize request)))
+      (setq body (json-serialize
+                  (emjupy--notebook-request (emjupy--notebook-json nb))))
       (setq emjupy--autosave-in-flight t
             emjupy--autosave-last (float-time)))
     (cl-labels
@@ -1062,13 +1061,7 @@ saved from JupyterLab, say -- rather than overwrite that."
           (when (and current (not (equal current known)))
             (signal 'emjupy-save-conflict
                     (list (emjupy-notebook-path nb) current)))))
-      (let ((body (make-hash-table :test 'equal)))
-        (puthash "type" "notebook" body)
-        (puthash "format" "json" body)
-        (puthash "content" (json-parse-string (emjupy--serialize-notebook nb)
-                                              :object-type 'hash-table
-                                              :array-type 'array)
-                 body)
+      (let ((body (emjupy--notebook-request (emjupy--notebook-json nb))))
         (let ((model (emjupy--http-request
                       "PUT" (emjupy-notebook-server nb)
                       (emjupy--contents-path (emjupy-notebook-path nb))
