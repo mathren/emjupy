@@ -62,6 +62,7 @@ the site is built (=make dependency-graph= draws it alone): each file
 above the files it requires.  A line a longer path implies is left out;
 =dependencies.dot= beside it has every require, for Graphviz.
 
+#+CAPTION: Dependency graph of the =emjupy= package.
 [[file:dependencies.svg]]
 
 Every
