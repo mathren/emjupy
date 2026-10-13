@@ -13,12 +13,9 @@
 ;;; Commentary:
 
 ;; The WebSocket half of the Jupyter transport: connecting a notebook to a
-;; kernel, sending execute_requests, and routing incoming frames back to
-;; the notebook that asked for them.
-;;
-;; Each kernel owns its own socket and its own pending-request table, so
-;; several notebooks -- and several servers -- stay live at once without
-;; cross-talk.
+;; kernel, sending execute_requests, and routing incoming frames back to the
+;; notebook that asked.  Each kernel has its own socket and pending table, so
+;; notebooks and servers stay live together.
 
 ;;; Code:
 
@@ -37,7 +34,7 @@
 
 A redraw rebuilds the whole notebook, so doing one per arriving message
 is the difference between a progress bar and a frozen Emacs: a
-`tqdm\' loop sends a message per iteration, and each redraw of a
+`tqdm' loop sends a message per iteration, and each redraw of a
 notebook with figures costs tens of milliseconds.  Coalescing them
 bounds the cost to one redraw per interval however fast the output
 comes."
@@ -45,7 +42,7 @@ comes."
   :group 'emjupy)
 
 (defcustom emjupy-reconnect-window 30
-  "Seconds to keep trying to reconnect after a kernel\'s connection drops.
+  "Seconds to keep trying to reconnect after a kernel's connection drops.
 Cells running meanwhile are kept running: the server keeps their output
 while the connection is down and hands it over when it is back, so a
 tunnel that drops for a moment loses nothing.  nil does not try: the
@@ -69,9 +66,8 @@ cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
 (defun emjupy--make-execute-request (code &optional allow-stdin)
   "Return a Jupyter `execute_request' payload for CODE.
 The value is a cons of the message id and the serialized message.  With
-ALLOW-STDIN, the kernel may ask for input -- `input\=', `getpass\=', pdb
--- as a cell run by the user does; emjupy\='s own questions never do, so
-none of them stops to wait on the user."
+ALLOW-STDIN, the kernel may ask for input -- `input', `getpass', pdb --
+as a cell run by the user does; emjupy's own requests never do."
   (let* ((msg-id (emjupy--uuid))
          (header (make-hash-table :test 'equal))
          (content (make-hash-table :test 'equal))
@@ -116,10 +112,8 @@ none of them stops to wait on the user."
                  (when (buffer-live-p buffer)
                    (with-current-buffer buffer
                      (setq emjupy--render-timer nil)
-                     ;; Rendering runs from a timer now rather than inside
-                     ;; the WebSocket callback, but the same reasoning
-                     ;; applies: an un-renderable output must not leave the
-                     ;; box silently blank with nothing logged.
+                     ;; An output that cannot be drawn is logged, not left as a
+                     ;; blank box.
                      (condition-case err
                          (emjupy--redraw-pending-output)
                        (error
@@ -136,20 +130,11 @@ none of them stops to wait on the user."
 
 (defun emjupy--open-stream-output (existing name)
   "Return the output in EXISTING that new text on stream NAME continues, or nil.
-
 The last output, if it is on NAME: consecutive output on one stream is
-one stream, as in Jupyter.  Otherwise the most recent output on NAME,
-provided its last line is still open -- it did not end with a newline.
-
-That second case is a progress bar.  `tqdm\=' writes to stderr, and each
-update begins with a carriage return: go back to the start of the line I
-am on and overwrite it.  A `print\=' in the loop writes to stdout between
-those updates, so they were never consecutive, never merged, and every
-update became an output of its own -- a column of bars, each showing its
-carriage return as a literal ^M, instead of one bar being redrawn.  A
-terminal keeps each stream\='s line open until a newline closes it, and
-this does the same.  A line that has been closed is left alone, so text
-that genuinely came later is not moved above what came before it."
+one stream, as in Jupyter.  Otherwise the latest output on NAME whose
+last line is still open, not ended by a newline -- a progress bar, whose
+updates on stderr alternate with prints on stdout.  A terminal keeps each
+stream's line open until a newline closes it, and so does this."
   (let ((last (car (last existing))))
     (if (emjupy--stream-p last name)
         last
@@ -163,10 +148,10 @@ that genuinely came later is not moved above what came before it."
 (defvar emjupy--stream-cursors (make-hash-table :test 'eq :weakness 'key)
   "Where the cursor is in each stream output that cursor codes left mid-text.
 Kept apart from the output, which is saved as it is: the position is the
-terminal\'s, not the notebook\'s.")
+terminal's, not the notebook's.")
 
 (defun emjupy--stream-write (output old chunk)
-  "Set OUTPUT\'s text to OLD with CHUNK written to it, as on a terminal.
+  "Set OUTPUT's text to OLD with CHUNK written to it, as on a terminal.
 Cursor codes -- stacked progress bars -- are applied from where the last
 write left the cursor; text without them, written at the end, has only
 its carriage returns applied, as it always had."
@@ -182,12 +167,8 @@ its carriage returns applied, as it always had."
 
 (defun emjupy--merge-stream-output (existing output-hash)
   "Return EXISTING with OUTPUT-HASH merged in, or nil if it cannot be.
-
-Stream text continues the output it belongs to rather than starting a
-new one -- see `emjupy--open-stream-output\=' for which that is.  Keeping
-each message separately is what let a `tqdm\=' bar leave thousands of
-entries behind, every one walked on every redraw, so the notebook got
-slower for the rest of the session."
+Stream text continues the output it belongs to, chosen by
+`emjupy--open-stream-output', rather than adding one per message."
   (when (emjupy--stream-p output-hash)
     (let ((target (emjupy--open-stream-output existing (gethash "name"
                                                                 output-hash))))
@@ -217,16 +198,12 @@ match the cells right away -- saving, or a test."
 
 (defun emjupy--redraw-pending-output ()
   "Redraw the output of cells that have some waiting, in place if possible.
-
-Falls back to rebuilding the notebook when the buffer and the cells have
-come out of step -- a cell added or removed, or a render interrupted --
-since patching one region only makes sense while the rest still matches."
+The notebook is rebuilt instead when the buffer and the cells disagree."
   (let ((cells emjupy--cells-awaiting-output))
     (setq emjupy--cells-awaiting-output nil)
-    ;; Keep the structs matching the buffer.  The full redraw used to do
-    ;; this on the way past; patching one region does not touch the other
-    ;; cells, so an edit made while output was in flight would otherwise sit
-    ;; in the buffer and never reach the cell it belongs to.
+    ;; Keep the cells matching the buffer: patching one region does not read the
+    ;; others, and an edit made while output was in flight would never reach its
+    ;; cell.
     (when cells (emjupy--sync-all-cells))
     (if (and cells (emjupy--overlays-sane-p)
              (cl-every (lambda (cell)
@@ -240,14 +217,14 @@ since patching one region only makes sense while the rest still matches."
   "Functions called with each comm message from a kernel.
 Each is called with the KERNEL, the message type -- \"comm_open\",
 \"comm_msg\" or \"comm_close\" -- the message content, and the binary
-buffers the message carried, a list of `emjupy-bytes\='.  This is how
+buffers the message carried, a list of `emjupy-bytes'.  This is how
 the layer that knows about widgets hears of them.")
 
 (defvar emjupy-output-owner-functions nil
   "Functions asked which cell output answering a request belongs to.
-Each is called with the request\'s message id and returns a cell or nil.
+Each is called with the request's message id and returns a cell or nil.
 Asked only for a request no cell is waiting on: one emjupy sent itself,
-such as moving a widget\'s slider, whose redrawn figure belongs to the
+such as moving a widget's slider, whose redrawn figure belongs to the
 cell showing the widget.")
 
 ;;;; Clearing output
@@ -263,8 +240,8 @@ cell showing the widget.")
 
 (defun emjupy--clear-cell-outputs-now (cell notebook)
   "Clear CELL's outputs in NOTEBOOK, as a kernel's `clear_output' asks.
-Widgets stay: in a notebook a widget\'s own output area is what an
-`interact\=' clears before drawing again, and the controls are outside
+Widgets stay: in a notebook a widget's own output area is what an
+`interact' clears before drawing again, and the controls are outside
 it.  Here the outputs are one list, so the widgets are what is kept."
   (setf (emjupy-cell-outputs cell)
         (vconcat (seq-filter #'emjupy--widget-view-output-p
@@ -299,11 +276,11 @@ message id and the serialized message."
     (cons msg-id (json-serialize msg))))
 
 (defvar emjupy--input-history nil
-  "Answers given to a kernel\'s requests for input -- pdb\'s commands, say.")
+  "Answers given to a kernel's requests for input -- pdb's commands, say.")
 
 (defun emjupy--input-requested (kernel data)
-  "Ask the user for what KERNEL\'s request for input, DATA, asks.
-A cell called `input\=', `getpass\=', or pdb, and the kernel waits for
+  "Ask the user for what KERNEL's request for input, DATA, asks.
+A cell called `input', `getpass', or pdb, and the kernel waits for
 the answer.  Asked from a timer, not here in the process filter, where
 waiting on the minibuffer would hold up every other message."
   (let ((content (gethash "content" data)))
@@ -314,10 +291,10 @@ waiting on the minibuffer would hold up every other message."
 
 (defun emjupy--answer-input-request (kernel prompt password parent-header)
   "Ask PROMPT in the minibuffer and send the answer to KERNEL.
-PARENT-HEADER is the request\'s.  With PASSWORD the answer is not shown,
+PARENT-HEADER is the request's.  With PASSWORD the answer is not shown,
 and not kept in the history.  \\[keyboard-quit] interrupts the kernel,
-as Jupyter\'s own frontends do: it waits for an answer, and an empty one
-would count as one -- pdb would repeat its last command."
+as Jupyter's own frontends do: an empty answer would count, and pdb
+would repeat its last command."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (label (format "[%s] %s"
                         (file-name-nondirectory
@@ -341,8 +318,8 @@ would count as one -- pdb would repeat its last command."
 ;;;; Adding output to a cell
 
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
-  "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK\='s buffer."
-  ;; `clear_output\=' with wait: the clear happens now, as the new output
+  "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK's buffer."
+  ;; `clear_output' with wait: the clear happens now, as the new output
   ;; arrives, so the old one stays up until there is something to replace it
   (when (gethash cell emjupy--clear-before-next-output)
     (remhash cell emjupy--clear-before-next-output)
@@ -352,10 +329,8 @@ would count as one -- pdb would repeat its last command."
                                            []) nil)))))
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
-    ;; Stream text that starts an output of its own still has its carriage
-    ;; returns applied.  The first update of a progress bar arrives like
-    ;; that -- nothing before it to merge into -- and rendering it as it came
-    ;; put a literal ^M at the start of the line.
+    ;; Stream text starting an output of its own still has carriage returns
+    ;; applied: the first update of a progress bar comes that way.
     (when (and (not merged) (emjupy--stream-p output-hash))
       (emjupy--stream-write output-hash ""
                             (emjupy--mime-text (gethash "text" output-hash))))
@@ -370,7 +345,7 @@ would count as one -- pdb would repeat its last command."
 ;;;; Binary frames
 
 (cl-defstruct (emjupy-bytes (:constructor emjupy-bytes-make (data)))
-  "Bytes a kernel message carried in binary: an image widget\'s, say.
+  "Bytes a kernel message carried in binary: an image widget's, say.
 Wrapped, so that no one takes them for text."
   data)
 
@@ -386,8 +361,8 @@ Wrapped, so that no one takes them for text."
 
 (defun emjupy--decode-binary-message (bytes)
   "Split a binary WebSocket frame BYTES into its message and its buffers.
-Return a cons of the message\'s JSON text and a list of the buffers, as
-unibyte strings.  The format is the Jupyter server\'s: a count of parts,
+Return a cons of the message's JSON text and a list of the buffers, as
+unibyte strings.  The format is the Jupyter server's: a count of parts,
 the offset of each, then the parts -- the JSON first, then the buffers."
   (let* ((n (emjupy--u32 bytes 0))
          (offsets (cl-loop for i from 1 to n collect (emjupy--u32 bytes
@@ -399,8 +374,8 @@ the offset of each, then the parts -- the JSON first, then the buffers."
 
 (defun emjupy--encode-binary-message (json buffers)
   "Return a binary WebSocket frame of the message JSON and its BUFFERS.
-JSON is the serialized message, as `json-serialize\=' gives it; BUFFERS
-unibyte strings.  The format `emjupy--decode-binary-message\=' reads."
+JSON is the serialized message, as `json-serialize' gives it; BUFFERS
+unibyte strings.  The format `emjupy--decode-binary-message' reads."
   (let* ((parts (cons (encode-coding-string json 'utf-8) buffers))
          (n (length parts))
          (offset (* 4 (1+ n)))
@@ -412,7 +387,7 @@ unibyte strings.  The format `emjupy--decode-binary-message\=' reads."
            (append (mapcar #'emjupy--u32-bytes (nreverse offsets)) parts))))
 
 (defun emjupy--ws-message-parts (frame)
-  "Return FRAME\'s message as a cons of its JSON text and its buffers.
+  "Return FRAME's message as a cons of its JSON text and its buffers.
 A message carrying binary data comes as a binary frame, read here; any
 other has no buffers."
   (if (and (websocket-frame-p frame)
@@ -421,7 +396,7 @@ other has no buffers."
     (cons (emjupy--ws-payload frame) nil)))
 
 (defun emjupy--ws-send-binary (bytes kernel)
-  "Send the binary frame BYTES on KERNEL\'s WebSocket."
+  "Send the binary frame BYTES on KERNEL's WebSocket."
   (websocket-send (emjupy-kernel-ws kernel)
                   (make-websocket-frame :opcode 'binary :payload bytes
                                         :completep t)))
@@ -437,15 +412,12 @@ replayed straight through the handler."
 
 (defvar emjupy--internal-requests (make-hash-table :test 'equal)
   "Message ids of emjupy's own requests, mapped to their callbacks.
-
-Kept apart from a kernel's pending table, which maps ids to cells: these
-requests belong to no cell and their output must not be rendered as if
-it did.")
+Apart from a kernel's pending table: they belong to no cell.")
 
 (defun emjupy--kernel-eval (kernel code callback)
   "Run CODE on KERNEL and pass its printed output, as printed, to CALLBACK.
 
-For emjupy\='s own questions -- \"where are you?\" -- not for user code."
+For emjupy's own questions -- \"where are you?\" -- not for user code."
   (when (emjupy--ws-live-p kernel)
     (let* ((req (emjupy--make-execute-request code))
            (msg-id (car req)))
@@ -464,16 +436,11 @@ For emjupy\='s own questions -- \"where are you?\" -- not for user code."
 
 (defun emjupy--request-half-seen (id part pending)
   "Note that PART of request ID has arrived; forget the request once both have.
-
-PART is `reply\=' for execute_reply and `idle\=' for the status message
-that closes the request.  Outputs travel on the iopub channel and the
-reply on the shell channel, and the protocol does not order one against
-the other: an output can come after the reply.  The request used to be
-forgotten on the reply, so an output arriving later found nothing waiting
-for it and was dropped -- on a slow machine, routinely.  Idle is what
-follows the last output, and it can itself come before the reply, so the
-request is forgotten only when both have been seen, in either order.
-PENDING is the kernel\'s table of requests awaiting output."
+PART is `reply' for execute_reply and `idle' for the status that
+follows the last output.  The protocol orders neither against the
+other, and an output can come after the reply, so the request is
+forgotten only when both have come.  PENDING is the kernel's table of
+requests awaiting output."
   (let ((seen (gethash id emjupy--request-halves)))
     (if (and seen (not (eq seen part)))
         (progn (remhash id emjupy--request-halves)
@@ -513,10 +480,8 @@ kernels never cross-talk."
     ;; One of emjupy's own questions: hand the answer to its callback and
     ;; keep it out of the notebook entirely.
     (when internal
-      ;; Gathered until the request is done, then handed over whole.  The
-      ;; callback used to get the first stream message alone, which for a
-      ;; one-line answer is all of it -- but a large answer comes in
-      ;; several, and the rest was dropped.
+      ;; Gathered until the request is done, then handed over whole: a large
+      ;; answer comes in several messages.
       (when (string= msg-type "stream")
         (push (or (gethash "text" (gethash "content" data)) "") (cdr internal)))
       (when (emjupy--idle-p msg-type data)
@@ -556,10 +521,8 @@ kernels never cross-talk."
                (out-hash (make-hash-table :test 'equal)))
           (puthash "output_type" "execute_result" out-hash)
           (puthash "data" (or data-obj (make-hash-table :test 'equal)) out-hash)
-          ;; `metadata' and `execution_count' are REQUIRED on an
-          ;; execute_result by the nbformat v4 schema; omitting them makes
-          ;; the notebook we save fail `nbformat.validate' and so unusable
-          ;; by nbconvert/papermill/other tools.
+          ;; `metadata' and `execution_count' are required on an execute_result
+          ;; by nbformat v4; without them the saved notebook fails validation.
           (puthash "metadata" (or (gethash "metadata" content)
                                   (make-hash-table :test 'equal))
                    out-hash)
@@ -633,19 +596,13 @@ kernels never cross-talk."
       (unless cell
         (user-error "No cell found at point"))
 
-      ;; 1. Sync buffer edits back into ALL cells, not just this one: the
-      ;; source sent to the kernel is read from the struct, and if the old
-      ;; output cannot be cleared in place the fallback redraws the whole
-      ;; notebook from the structs.
+      ;; 1.  Sync ALL cells: the code sent is read from the cell, and a fallback
+      ;; redraw rebuilds the notebook from the cells.
       (emjupy--sync-all-cells)
 
-      ;; 2. Clear the previous output, so a stale box does not linger while
-      ;;    the new run is in flight.  In place, as C-c C-l does: only this
-      ;;    cell's output changes, and redrawing the whole notebook for it
-      ;;    moved every position held in the buffer -- the fake cursors of
-      ;;    `multiple-cursors', markers, other windows' points -- to its
-      ;;    start, and recorded an undo step for a command that edits
-      ;;    nothing.
+      ;; 2.  Clear the previous output, in place as C-c C-l does: a full redraw
+      ;; would move every position held in the buffer -- markers, other windows'
+      ;; points -- and record an undo step for a command that edits nothing.
       (setf (emjupy-cell-outputs cell) [])
       (unless (emjupy--refresh-cell-output cell)
         (emjupy--rerender-notebook cell))
@@ -656,10 +613,8 @@ kernels never cross-talk."
              (msg-id (car req))
              (json-payload (cdr req)))
 
-        ;; The kernel handles requests in order, so telling it the width
-        ;; first -- if it has not been told this one -- means the cell
-        ;; runs with it set.  Sent from a timer on connect alone, it lost
-        ;; the race to a cell run straight after opening a notebook.
+        ;; The kernel handles requests in order, so the width is told first, if
+        ;; it is new, and the cell runs with it.
         (emjupy--ensure-kernel-width emjupy--buffer-notebook)
         ;; The cell's output is this run's from now on: what an earlier run
         ;; of it still sends -- one kept through a dropped connection, its
@@ -697,12 +652,9 @@ stepping over overlays mid-flight lands in the output box."
           (goto-char (overlay-start (emjupy-cell-overlay next)))
         (emjupy-insert-cell-below)))))
 
-;; --- Kernel transport seam -------------------------------------------------
-;; Everything that touches a live WebSocket goes through these two functions,
-;; each scoped to ONE kernel. That keeps a stale value from blowing up with an
-;; opaque `wrong-type-argument' deep inside websocket.el -- the user just gets
-;; told this notebook has no kernel -- and gives the test-suite a single,
-;; honest place to substitute a fake transport.
+;; Everything touching a live WebSocket goes through these two functions, each
+;; for one kernel: a stale value gets a plain "no kernel" rather than an error
+;; inside websocket.el, and tests have one place to substitute a fake transport.
 
 ;;;; The connection
 
@@ -730,15 +682,10 @@ runs, for instance -- rather than this file calling into them.")
   "The kernel and width last sent to it, as (KERNEL-ID . WIDTH).")
 
 (defun emjupy--tell-kernel-width (nb &optional width)
-  "Tell NB\='s kernel how wide its output is drawn: WIDTH, or the box\='s now.
-
-Sets COLUMNS in the kernel\='s environment, the variable programs consult
-to learn how wide the terminal is -- directly, or through
-`shutil.get_terminal_size\=' -- when their output is not a terminal.
-Without it they guess, and a guess sized to the machine the server runs
-on drew progress bars and tables far wider than the cell.  Output that
-still comes out too wide is folded where the box ends when it is drawn;
-this is what lets well-behaved output not need that."
+  "Tell NB's kernel how wide its output is drawn: WIDTH, or the box's now.
+Sets COLUMNS in the kernel's environment, which programs read when their
+output is not a terminal, so progress bars and tables fit.  Wider output
+is still folded where the box ends."
   (let ((kernel (and nb (emjupy-notebook-kernel nb)))
         (buf (and nb (emjupy-notebook-buffer nb))))
     (when (and kernel (emjupy--ws-live-p kernel) (buffer-live-p buf))
@@ -753,7 +700,7 @@ this is what lets well-behaved output not need that."
                 (cons (emjupy-kernel-id kernel) columns)))))))
 
 (defun emjupy--ensure-kernel-width (nb)
-  "Tell NB\='s kernel the box width, unless it already has this one."
+  "Tell NB's kernel the box width, unless it already has this one."
   (let ((kernel (and nb (emjupy-notebook-kernel nb))))
     (when kernel
       (unless (equal emjupy--kernel-width-told
@@ -763,7 +710,7 @@ this is what lets well-behaved output not need that."
 ;;;; Reconnecting after a drop
 
 (defvar-local emjupy--kept-runs nil
-  "Requests running when this notebook\'s connection dropped, kept.
+  "Requests running when this notebook's connection dropped, kept.
 A cons of the kernel id and a table of request id to cell, handed to the
 connection that replaces it.")
 
@@ -781,12 +728,10 @@ connection that replaces it.")
 
 (defun emjupy--kernel-connection-closed (kernel label)
   "The WebSocket to KERNEL, for the notebook called LABEL, has closed.
-Closed by emjupy, or with reconnecting turned off, any cell still running
-on it is ended: its reply and closing idle will not come over a closed
-connection.  Dropped, the cells are kept running and emjupy tries to
-reconnect, for `emjupy-reconnect-window\=' seconds: the server keeps the
-messages that came meanwhile and replays them to the same session, and
-the cells get their output after all."
+Closed by emjupy, or with reconnecting off, cells still running on it
+are ended.  Dropped, they keep running and emjupy reconnects for
+`emjupy-reconnect-window' seconds; the server replays what came
+meanwhile to the same session."
   (let* ((pending (emjupy-kernel-pending kernel))
          (nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb)))
@@ -822,7 +767,7 @@ the cells get their output after all."
                  ""))))))
 
 (defun emjupy--try-reconnect (buf kernel-id kernel-name deadline label)
-  "Try to reconnect BUF\'s notebook to KERNEL-ID, named KERNEL-NAME, once.
+  "Try to reconnect BUF's notebook to KERNEL-ID, named KERNEL-NAME, once.
 Run every few seconds after its connection dropped, until it is back or
 DEADLINE passes; then the kept cells, for the notebook called LABEL, are
 ended as a closed connection ends them."
@@ -851,21 +796,18 @@ ended as a closed connection ends them."
                               (substitute-command-keys
                                "could not reconnect (\\[emjupy-reconnect-kernel] tries again)"))))
          (t
-          ;; Connecting is not waited for: a socket that comes up is found
-          ;; live next time; one that does not closes, and this tries again.
-          ;; Opening it can fail at once -- the server unreachable -- and
-          ;; that is only one more try gone.  Everything: `websocket-open'
-          ;; reports a connection refused as a plain error.
+          ;; Not waited for: a socket that comes up is found live next time; one
+          ;; that does not closes, and this tries again.  Any error counts as
+          ;; one more try: `websocket-open' reports a refused connection as a
+          ;; plain error.
           (condition-case nil
               (emjupy-connect-kernel nb kernel-id kernel-name)
             (error nil))))))))
 
 (defun emjupy--adopt-kept-runs (kernel)
-  "Hand KERNEL the requests kept when its notebook\'s connection dropped.
-Messages the server replays, and those still coming, then reach their
-cells.  A little later, a cell still running is checked against the
-kernel: if it is idle the run ended while the connection was down, and
-the cell is ended too -- its output may have missed the end."
+  "Hand KERNEL the requests kept when its notebook's connection dropped.
+A little later, a cell still running is checked: if the kernel is idle,
+the run ended while disconnected, and the cell is ended too."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb))))
     (when (buffer-live-p buf)
@@ -902,8 +844,8 @@ the cell is ended too -- its output may have missed the end."
                               "a run ended while the connection was down, its output perhaps incomplete")))))))
 
 (defun emjupy--ws-session-id (notebook kernel-id)
-  "Return the session id NOTEBOOK\'s connections to KERNEL-ID go under.
-The same each time, in this Emacs: the server keeps a session\'s messages
+  "Return the session id NOTEBOOK's connections to KERNEL-ID go under.
+The same each time, in this Emacs: the server keeps a session's messages
 while its connection is down, and replays them to the next connection
 of that session -- one with a new id, every connection did, got none."
   (let ((h (md5 (format "%s|%s|%s" emjupy--session-id kernel-id
@@ -937,11 +879,8 @@ several notebooks -- from several servers -- stay live at once."
                                      ""
                                    (concat "&token="
                                            (url-hexify-string token))))))
-         ;; Belt and braces: some deployments (and some reverse proxies in
-         ;; front of a tunnel) strip or ignore the query-string token but
-         ;; honour the Authorization header.  Shared with the language
-         ;; server's socket, which lacked them and could not connect where
-         ;; this one could.
+         ;; The token in a header too: some deployments and proxies drop the
+         ;; query string.  Shared with the language server's socket.
          (headers (emjupy--websocket-auth-headers server))
          (kernel (make-emjupy-kernel
                   :id kernel-id :name kernel-name :server server
@@ -968,10 +907,8 @@ several notebooks -- from several servers -- stay live at once."
     (setf (emjupy-notebook-kernel notebook) kernel)
     ;; cells kept running when the last connection dropped
     (emjupy--adopt-kept-runs kernel)
-    ;; Tell whoever wants to know that a kernel is now attached -- the
-    ;; language-server layer asks it where it runs.  A hook rather than a
-    ;; call: that layer sits above this one, and naming it here would make
-    ;; each depend on the other.  Deferred so the socket is up first.
+    ;; A hook, run once the socket is up: the language-server layer, above this
+    ;; one, asks the kernel where it runs.
     (run-with-timer 0.5 nil #'run-hook-with-args
                     'emjupy-kernel-connected-functions notebook)
     kernel))
@@ -1004,13 +941,9 @@ the caller can fall back to a bare kernel."
 
 (defun emjupy--spawn-and-connect-kernel (notebook)
   "Start a fresh Python 3 kernel on NOTEBOOK's server and attach it.
-
-Started through a SESSION bound to the notebook\='s path, not by posting
-to /api/kernels directly.  Jupyter starts a session\='s kernel in the
-notebook\='s own directory, so `open(\"data.csv\")\=' in a cell means what it
-means in Jupyter -- beside the notebook -- rather than resolving against
-the server root.  It also makes the kernel discoverable as that
-notebook\='s kernel by other front-ends."
+Through a session bound to the notebook's path, so the kernel runs in
+the notebook's directory, as in Jupyter, and other front-ends see it as
+the notebook's kernel."
   (let ((server (emjupy-notebook-server notebook)))
     (let* ((res (or (emjupy--start-kernel-session notebook)
                     (let ((payload (make-hash-table :test 'equal)))
@@ -1079,7 +1012,7 @@ attaching two notebooks to one kernel makes them share state."
 ;;;; Interrupting and restarting
 
 (defun emjupy-interrupt-kernel ()
-  "Interrupt whatever this notebook\='s kernel is running.
+  "Interrupt whatever this notebook's kernel is running.
 
 The equivalent of an interrupt signal in a terminal: the running cell
 stops with a
@@ -1126,15 +1059,9 @@ Other open notebooks, and their kernels, are untouched."
 
 (defun emjupy--repair-if-scrambled (nb)
   "Redraw NB if its buffer and cells have come out of step.
-
-A socket that dies mid-render -- which is what suspending the machine
-does to a tunnelled connection -- can leave the buffer showing something
-the cells do not hold.  The cells are the notebook; the buffer is a
-drawing of them, so redrawing costs nothing and fixes it.
-
-Returns the problems that were found, or nil if there were none.  This
-is why `emjupy-re-render' worked: it was doing by hand what the
-reconnection should have done itself."
+A socket dying mid-render, as suspending the machine does to a tunnel,
+can leave the buffer unlike the cells.  Return the problems found, or
+nil."
   (when-let* ((buf (emjupy-notebook-buffer nb)))
     (when (buffer-live-p buf)
       (with-current-buffer buf

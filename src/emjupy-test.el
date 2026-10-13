@@ -1388,7 +1388,7 @@ mojibake."
 
 (ert-deftest emjupy-test-eglot-advice-is-inert-outside-notebooks ()
   "The advice must not change how Eglot commands behave in ordinary
-buffers -- it only redirects inside `emjupy-mode\'."
+buffers -- it only redirects inside `emjupy-mode'."
   (with-temp-buffer
     (python-mode)
     (should (equal (emjupy--eglot-command-advice (lambda (&rest args)
@@ -1398,7 +1398,7 @@ buffers -- it only redirects inside `emjupy-mode\'."
 
 (ert-deftest emjupy-test-eglot-delegate-errors-clearly-without-a-server ()
   "With no language server the user gets a plain explanation, not a raw
-jsonrpc-error out of Eglot\'s innards."
+jsonrpc-error out of Eglot's innards."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "x = 1" :outputs []
                                 :metadata (make-hash-table))))
@@ -1451,7 +1451,7 @@ reason the shadow buffer exists."
               (when (buffer-live-p shadow) (kill-buffer shadow)))))))))
 
 (ert-deftest emjupy-test-eglot-advice-installed-on-the-listed-commands ()
-  "Every command in `emjupy-eglot-delegated-commands\' is actually advised."
+  "Every command in `emjupy-eglot-delegated-commands' is actually advised."
   (dolist (cmd emjupy-eglot-delegated-commands)
     (should (advice-member-p #'emjupy--eglot-command-advice cmd))))
 
@@ -1523,7 +1523,7 @@ untouched: the real file is the right destination there."
           (should (equal (emjupy--xref-remap nb (list item)) (list item))))))))
 
 (ert-deftest emjupy-test-dashboard-remote-root-lookup ()
-  "`emjupy-remote-root\' takes one directory for every server, or an
+  "`emjupy-remote-root' takes one directory for every server, or an
 alist keyed by server."
   (let ((a (make-emjupy-server :base-url "localhost:8888"))
         (b (make-emjupy-server :base-url "localhost:9999")))
@@ -1538,7 +1538,7 @@ alist keyed by server."
       (should (equal (emjupy--remote-root-for b) "/ssh:box:/srv/nb")))))
 
 (ert-deftest emjupy-test-dashboard-dired-needs-a-root ()
-  "Without `emjupy-remote-root\' set, `d\' says so rather than guessing."
+  "Without `emjupy-remote-root' set, `d' says so rather than guessing."
   (with-temp-buffer
     (emjupy-list-mode)
     (setq emjupy-list--server (make-emjupy-server :base-url "localhost:8888"))
@@ -1547,7 +1547,7 @@ alist keyed by server."
       (should-error (emjupy-list-dired) :type 'user-error))))
 
 (ert-deftest emjupy-test-output-faces-are-background-only ()
-  "Every output face may set a background and `:extend\' and nothing else.
+  "Every output face may set a background and `:extend' and nothing else.
 They are applied over output text, so any colour attribute they carried
 would fight the faces on tracebacks and rich output."
   (dolist (face '(emjupy-output emjupy-output-error
@@ -1617,7 +1617,7 @@ overlay across the whole box."
           (should-not (overlay-get (emjupy-cell-output-ov cell) 'face)))))))
 
 (ert-deftest emjupy-test-error-and-warning-tints-work-on-both-themes ()
-  "`auto\' error and warning colours tint toward red and yellow, and stay
+  "`auto' error and warning colours tint toward red and yellow, and stay
 distinguishable from the ordinary output colour on light and dark alike."
   (dolist (theme '(("#ffffff" . "#000000") ("#1c1c1c" . "#e5e5e5")))
     (cl-letf (((symbol-function 'face-attribute)
@@ -1675,7 +1675,7 @@ output colour."
           (should (equal (gethash 'emjupy-output-image got) "#abcdef")))))))
 
 (ert-deftest emjupy-test-box-width-leaves-a-right-margin ()
-  "Rules stop short of the right edge by `emjupy-box-right-margin\'.
+  "Rules stop short of the right edge by `emjupy-box-right-margin'.
 Emacs cannot always report exactly how many columns are usable, so the
 margin is the knob for setups where the rule still runs past the edge."
   (let ((emjupy-box-width 'window)
@@ -1688,7 +1688,7 @@ margin is the knob for setups where the rule still runs past the edge."
 
 (ert-deftest emjupy-test-window-width-excludes-line-numbers ()
   "The line-number column is drawn inside the text area, so
-`window-body-width\' counts it -- and a rule sized from that overshoots
+`window-body-width' counts it -- and a rule sized from that overshoots
 the right edge by the width of the numbers."
   (let ((win (selected-window)))
     (with-current-buffer (window-buffer win)
@@ -1893,10 +1893,10 @@ reinterpret one of them."
 (ert-deftest emjupy-test-cell-lookup-survives-typing-at-a-boundary ()
   "Text typed at the end of a cell's last line still belongs to that cell.
 
-The `emjupy-cell\' property is stamped at render time and plain `insert\'
+The `emjupy-cell' property is stamped at render time and plain `insert'
 does not carry it onto new text, so a lookup by property missed anything
 typed at a boundary -- failing loudly in some commands and silently in
-others: `emjupy-insert-cell-below\' found no current cell and appended to
+others: `emjupy-insert-cell-below' found no current cell and appended to
 the END of the notebook instead of inserting below."
   (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                :source "x = 1"
@@ -1934,7 +1934,7 @@ cookie and every write answered 403 \"'_xsrf' argument missing\"."
   (should-not (member "/api" emjupy--xsrf-endpoints)))
 
 (ert-deftest emjupy-test-xsrf-sent-as-argument-on-writes ()
-  "Tornado's check reads an `_xsrf\' argument or the X-XSRFToken header;
+  "Tornado's check reads an `_xsrf' argument or the X-XSRFToken header;
 sending both makes \"argument missing\" impossible whenever we hold a
 cookie.  A GET carries neither."
   (let ((server (make-emjupy-server :base-url "localhost:9" :token "abc"))
@@ -2077,7 +2077,7 @@ the secret back on screen, and into savehist for anyone who persists it."
   "Ports, notebooks and kernels each keep their own history, so a port
 does not turn up while completing a notebook name.
 
-Asserted by driving the prompts rather than reading `interactive-form\':
+Asserted by driving the prompts rather than reading `interactive-form':
 once the package is byte-compiled -- which is what any archive does --
 that form is a byte-code object and nothing can be read out of it."
   (should (boundp 'emjupy--port-history))
@@ -2226,7 +2226,7 @@ that never produced them."
           (should-not (string-match-p "stale" (buffer-string))))))))
 
 (ert-deftest emjupy-test-copy-cell-strips-output ()
-  "Copying takes the type and the source only.  A cell\='s output belongs to
+  "Copying takes the type and the source only.  A cell's output belongs to
 the run that produced it."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
                                 :source "# heading" :outputs []
@@ -2280,7 +2280,7 @@ the run that produced it."
           (should-error (emjupy-yank-cell) :type 'user-error))))))
 
 (ert-deftest emjupy-test-keybindings-have-no-duplicates ()
-  "Each command is reachable by one key, so `C-h m\' is not a wall of
+  "Each command is reachable by one key, so `C-h m' is not a wall of
 synonyms.  The prefix keys are the exception: they carry sub-bindings."
   (let ((by-command (make-hash-table :test 'eq))
         (dupes nil))
@@ -2320,8 +2320,8 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
     (should-not (lookup-key emjupy-mode-map (kbd key)))))
 
 (ert-deftest emjupy-test-latex-fragments-found ()
-  "All four delimiter styles are recognised, and `$$\' is matched before
-`$\' or a display block reads as two empty inline ones."
+  "All four delimiter styles are recognised, and `$$' is matched before
+`$' or a display block reads as two empty inline ones."
   (with-temp-buffer
     (insert "Inline $x^2$ then $$e^{i\\pi}+1=0$$ then \\(a+b\\) then \\[c=d\\] end")
     (let ((frags (emjupy--latex-fragments (point-min) (point-max))))
@@ -2334,7 +2334,7 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
                      "$x^2$")))))
 
 (ert-deftest emjupy-test-latex-preview-is-opt-in-and-markdown-only ()
-  "Previews are off unless asked for, and never touch code cells: a `$\'
+  "Previews are off unless asked for, and never touch code cells: a `$'
 in a string is not a formula."
   (should-not emjupy-render-latex)
   (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () 'org))
@@ -2370,11 +2370,11 @@ in a string is not a formula."
                                "x^2"))))))))))
 
 (ert-deftest emjupy-test-latex-backend-detection ()
-  "`auto\' prefers org, which needs no Emacs package beyond what ships
+  "`auto' prefers org, which needs no Emacs package beyond what ships
 with Emacs; math-preview is the fallback.
 
 Probing is enabled deliberately: this test is about the detection
-itself, and `executable-find\' is stubbed so the answer still does not
+itself, and `executable-find' is stubbed so the answer still does not
 depend on what this machine has installed."
   (let ((emjupy-probe-environment t))
     (cl-letf (((symbol-function 'executable-find)
@@ -2552,7 +2552,7 @@ black glyphs on a dark background."
       (should-not (equal (nth 0 files) (nth 1 files))))))
 
 (ert-deftest emjupy-test-no-user-reserved-keys ()
-  "`C-c\=' followed by a plain letter is reserved for USERS by the Emacs
+  "`C-c' followed by a plain letter is reserved for USERS by the Emacs
 Lisp manual, and package-lint reports any such binding as an error --
 which MELPA requires to be clean.  Leave that space alone."
   (let ((taken nil))
@@ -2563,7 +2563,7 @@ which MELPA requires to be clean.  Leave that space alone."
     (should-not taken)))
 
 (ert-deftest emjupy-test-clear-cell-output ()
-  "`C-c C-l\' discards this cell's output and its execution count, and
+  "`C-c C-l' discards this cell's output and its execution count, and
 takes the output box with it -- leaving [In: 4] beside no output would
 claim something had been run since."
   (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
@@ -2672,9 +2672,9 @@ round."
 (ert-deftest emjupy-test-clear-output-bindings ()
   "The keys, and that they stay out of the space reserved for users.
 
-`C-c\' followed by a plain letter belongs to the user, and package-lint
+`C-c' followed by a plain letter belongs to the user, and package-lint
 -- which MELPA requires to be clean -- reports any such binding as an
-error.  `C-c C-l\' and `C-c C-u C-l\' are all control characters."
+error.  `C-c C-l' and `C-c C-u C-l' are all control characters."
   (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-l"))
               'emjupy-clear-cell-output))
   (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-u C-l"))
@@ -2715,7 +2715,7 @@ looked like from the outside."
         (should (string-match-p "RESULT" (buffer-string)))))))
 
 (ert-deftest emjupy-test-re-render-command ()
-  "`emjupy-re-render\' rebuilds the display and keeps pending edits."
+  "`emjupy-re-render' rebuilds the display and keeps pending edits."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "a = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -2809,7 +2809,7 @@ being typed."
     (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair)))))
 
 (ert-deftest emjupy-test-python-indent-warning-silenced ()
-  "python-mode says \"Can\='t guess python-indent-offset\" when it cannot work
+  "python-mode says \"Can't guess python-indent-offset\" when it cannot work
 one out.  A cell is a fragment, so it usually cannot -- and this runs
 once per code cell, filling the echo area on every redraw."
   (let ((seen nil))
@@ -2822,8 +2822,8 @@ once per code cell, filling the echo area on every redraw."
                            (string-match-p "python-indent-offset" m)) seen))))
 
 (ert-deftest emjupy-test-percent-export-format ()
-  "The export is percent format: `# %%\=' per code cell, markdown carried
-across as a commented `# %% [markdown]\=' block.
+  "The export is percent format: `# %%' per code cell, markdown carried
+across as a commented `# %% [markdown]' block.
 
 Deliberately not the shadow buffer verbatim, though that is where the
 idea comes from: its markers carry emjupy's internal cell ids, which
@@ -2966,7 +2966,7 @@ undo, so it asks -- and declining leaves the kernel alone."
 Rendering erases the buffer and rebuilds it.  Output arriving over the
 WebSocket midway restarted the rebuild on a half-built buffer and left
 the notebook duplicated on top of itself -- and the next sync copied
-that into the first cell\='s source, so redrawing kept it."
+that into the first cell's source, so redrawing kept it."
   (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                               :source "a = 1"
                               :outputs [] :metadata (make-hash-table)))
@@ -2997,7 +2997,7 @@ that into the first cell\='s source, so redrawing kept it."
 (ert-deftest emjupy-test-cell-at-point-past-the-last-cell ()
   "Point past the last cell still resolves to a cell.
 
-Returning nil made `emjupy-insert-cell-below\' think there was no
+Returning nil made `emjupy-insert-cell-below' think there was no
 current cell, so it appended to the END of the notebook instead of
 inserting below the one being looked at."
   (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source "a"
@@ -3032,8 +3032,8 @@ inserting below the one being looked at."
         ;; no raw escapes on screen
         (should-not (save-excursion (search-forward "33m" nil t)))
         (should (search-forward "yellow" nil t))
-        ;; and the word actually carries a colour, as a `face\' property --
-        ;; ansi-color marks its output with `font-lock-face\', which is only
+        ;; and the word actually carries a colour, as a `face' property --
+        ;; ansi-color marks its output with `font-lock-face', which is only
         ;; honoured where font-lock runs, and emjupy leaves it off
         (let ((face (get-text-property (- (point) 3) 'face)))
           (should (cl-some (lambda (f) (and (consp f) (plist-get f
@@ -3066,7 +3066,7 @@ with 403 -- without ever asking for the token."
 (ert-deftest emjupy-test-sync-refuses-when-overlays-are-out-of-step ()
   "Syncing must never write garbage into the cells.
 
-It reads whatever an overlay spans straight into a cell\='s source, so one
+It reads whatever an overlay spans straight into a cell's source, so one
 stale or overlapping overlay is enough for a cell to swallow the whole
 notebook -- and since the structs are what gets saved and re-rendered,
 that corruption survives every redraw.  Refusing keeps the notebook."
@@ -3109,12 +3109,12 @@ the end of the notebook."
         (should (eq (emjupy--cell-at-point) c1))))))
 
 (ert-deftest emjupy-test-non-cell-regions-are-read-only ()
-  "Text can only be typed into a cell\='s source.
+  "Text can only be typed into a cell's source.
 
 The gutters, rules and output boxes belong to no cell, so anything typed
 there is stored nowhere and vanishes at the next redraw -- better
 refused than silently lost.  The boundaries matter as much as the
-middle: typing at the end of a cell\='s last line must still work."
+middle: typing at the end of a cell's last line must still work."
   (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                               :source "a = 1"
                               :outputs [] :metadata (make-hash-table)))
@@ -3145,7 +3145,7 @@ middle: typing at the end of a cell\='s last line must still work."
         (should (equal (emjupy-cell-source c1) "a = 1 + 9"))))))
 
 (ert-deftest emjupy-test-protection-can-be-turned-off ()
-  "`emjupy-protect-non-cell-regions\=' nil leaves the buffer fully editable."
+  "`emjupy-protect-non-cell-regions' nil leaves the buffer fully editable."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "a = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -3182,7 +3182,7 @@ middle: typing at the end of a cell\='s last line must still work."
 
 (ert-deftest emjupy-test-tab-indents-and-cycles ()
   "TAB indents the line as python-mode would, and offers the
-alternatives on repeat.  After `def f():\=' the next line could be the
+alternatives on repeat.  After `def f():' the next line could be the
 body or back at the outer level, and python-mode cycles between them --
 so emjupy asks python-mode rather than guessing."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
@@ -3217,7 +3217,7 @@ indentation over prose."
 
 (ert-deftest emjupy-test-traceback-buffer ()
   "C-$ opens the full traceback with room to read it, keeping the
-kernel\='s colours on top of Python highlighting."
+kernel's colours on top of Python highlighting."
   (let ((o (make-hash-table :test 'equal))
         (cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "boom()"
@@ -3263,10 +3263,10 @@ kernel\='s colours on top of Python highlighting."
         (should-error (emjupy-show-traceback) :type 'user-error)))))
 
 (ert-deftest emjupy-test-shadow-sits-beside-the-notebook ()
-  "The shadow file goes in the notebook\='s own directory when one can be
+  "The shadow file goes in the notebook's own directory when one can be
 worked out.
 
-A language server resolves `import mylib\=' relative to the directory of
+A language server resolves `import mylib' relative to the directory of
 the file it is reading, so a shadow file in a temp directory cannot see
 the .py next to the notebook -- which is why looking up your own
 functions answered \"No definition found\"."
@@ -3296,8 +3296,8 @@ functions answered \"No definition found\"."
 (ert-deftest emjupy-test-kernel-started-through-a-session ()
   "Kernels are started via a session bound to the notebook.
 
-Jupyter starts a session\='s kernel in the notebook\='s own directory, so
-`open(\"data.csv\")\=' in a cell means what it means in Jupyter.  Posting
+Jupyter starts a session's kernel in the notebook's own directory, so
+`open(\"data.csv\")' in a cell means what it means in Jupyter.  Posting
 to /api/kernels directly, as emjupy used to, leaves the kernel in the
 server root."
   (let ((calls nil))
@@ -3345,7 +3345,7 @@ a local one."
                      "/ssh:box:/srv/definitely/not/here/")))))
 
 (ert-deftest emjupy-test-remote-kernel-without-a-host-falls-back ()
-  "With a remote kernel and no `emjupy-shadow-host\', the shadow file goes
+  "With a remote kernel and no `emjupy-shadow-host', the shadow file goes
 to a temp directory -- xref will not find your modules, but nothing is
 written to a wrong path."
   (let ((nb (make-emjupy-notebook :path "sub/nb.ipynb" :cells []
@@ -3359,7 +3359,7 @@ written to a wrong path."
                               (emjupy--shadow-directory-for nb))))))
 
 (ert-deftest emjupy-test-internal-requests-do-not-reach-cells ()
-  "emjupy\='s own questions to the kernel must not print into the notebook."
+  "emjupy's own questions to the kernel must not print into the notebook."
   (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                  :source "x"
                                  :outputs [] :metadata (make-hash-table)))
@@ -3404,7 +3404,7 @@ written to a wrong path."
 
 It runs on the completion, eldoc and xref paths -- once per keystroke --
 and over TRAMP each of these is an ssh round trip.  Measured against ssh
-on localhost, before any network: `write-region\' 214 ms, and a lock file
+on localhost, before any network: `write-region' 214 ms, and a lock file
 per modification another 100 ms."
   (let ((calls nil))
     (cl-letf* ((real-write (symbol-function 'write-region))
@@ -3430,7 +3430,7 @@ per modification another 100 ms."
 (ert-deftest emjupy-test-shadow-buffer-has-no-lock-files ()
   "Lock files are off in the shadow buffer.
 
-Emacs writes a `.#name\' lock beside a visited file whenever the buffer
+Emacs writes a `.#name' lock beside a visited file whenever the buffer
 becomes modified.  On a remote file that is remote I/O per keystroke --
 121 ms against localhost ssh, versus 20 with locking off -- and the lock
 guards against a second editor that cannot exist for a generated file."
@@ -3447,7 +3447,7 @@ guards against a second editor that cannot exist for a generated file."
               (should-not create-lockfiles))))))))
 
 (ert-deftest emjupy-test-shadow-sync-to-disk-option ()
-  "`always\' restores the old write-on-every-edit behaviour."
+  "`always' restores the old write-on-every-edit behaviour."
   (should (eq emjupy-shadow-sync-to-disk 'lazy))
   (let ((writes 0))
     (cl-letf* ((real-write (symbol-function 'write-region))
@@ -3485,7 +3485,7 @@ there, or they are a rule with no cell."
 Re-rendering deleted the overlays reachable from the current cells, so
 an overlay belonging to a cell that had been removed -- deleted, merged,
 or dropped when the notebook was re-parsed into fresh structs -- was
-never deleted.  `erase-buffer\' collapses it to position 1, where it goes
+never deleted.  `erase-buffer' collapses it to position 1, where it goes
 on displaying its before-string and after-string: a stack of stray
 \"[In: 8]\" and \"[Out: 15]\" rules piling up above the first cell."
   (cl-flet ((mk (s) (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
@@ -3524,8 +3524,8 @@ The kernel reports its working directory a moment AFTER it connects, so
 the first shadow buffer of a session is created before that answer
 arrives and lands in the fallback temp directory.  Reusing it thereafter
 left the language server reading a local scratch file, and imports of
-the user\='s own modules stayed unresolvable however
-`emjupy-shadow-host\' was set."
+the user's own modules stayed unresolvable however
+`emjupy-shadow-host' was set."
   (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                  :source "x = 1"
                                  :outputs [] :metadata (make-hash-table)))
@@ -3556,14 +3556,14 @@ the user\='s own modules stayed unresolvable however
       (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
 
 (ert-deftest emjupy-test-version-reports-where-it-loaded-from ()
-  "`emjupy-version\' names the version and the directory, so \"am I running
+  "`emjupy-version' names the version and the directory, so \"am I running
 the fix?\" can be answered without recalling how it was installed."
   (let ((report (emjupy-version)))
     (should (string-match-p (regexp-quote emjupy-version) report))
     (should (string-match-p "loaded from" report))))
 
 (ert-deftest emjupy-test-version-constant-matches-header ()
-  "`emjupy-version\' must equal the Version: header, or it reports a lie."
+  "`emjupy-version' must equal the Version: header, or it reports a lie."
   (let ((header
          (with-temp-buffer
            (insert-file-contents
@@ -3683,7 +3683,7 @@ squarely on the user while they are running cells."
   "Relocating the shadow buffer must not stop to ask.
 
 It visits a file but is a regenerated copy of the cells, and since edits
-are no longer written through it is always \"modified\" -- so `kill-buffer\'
+are no longer written through it is always \"modified\" -- so `kill-buffer'
 would prompt every time the path changed."
   (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                  :source "x = 1"
@@ -3722,8 +3722,8 @@ resolve.  Both arrive while a notebook is opened, so nil here means
                                                                  :token "t")))))
 
 (ert-deftest emjupy-test-lsp-document-uri-is-on-the-server ()
-  "The document URI names a path on the SERVER, built from the kernel\='s
-working directory, so `import mylib\=' resolves against the code beside
+  "The document URI names a path on the SERVER, built from the kernel's
+working directory, so `import mylib' resolves against the code beside
 the notebook.  Nothing here ever opens it."
   (let ((nb (make-emjupy-notebook :cells [] :path "sub/analysis.ipynb"
                                   :kernel-cwd "/srv/project")))
@@ -3731,7 +3731,7 @@ the notebook.  Nothing here ever opens it."
                    "file:///srv/project/analysis.emjupy.py"))))
 
 (ert-deftest emjupy-test-lsp-url-carries-the-token ()
-  "The WebSocket URL is the Jupyter server\='s own, with its token."
+  "The WebSocket URL is the Jupyter server's own, with its token."
   (let ((server (make-emjupy-server :base-url "localhost:9999"
                                     :token "sekrit")))
     (let ((url (emjupy--lsp-url server)))
@@ -3854,7 +3854,7 @@ asynchronous, which is indistinguishable from a hang.
 
 The request is asserted to have been SENT, not only to have returned
 quickly.  An earlier version of this test called a function that no
-longer existed, inside `ignore-errors\=', so it failed at once and the
+longer existed, inside `ignore-errors', so it failed at once and the
 timing passed without anything having been asked."
   :tags '(:timing)
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
@@ -3889,7 +3889,7 @@ The server then describes THIS machine -- its interpreter, its packages,
 none of the modules beside the notebook -- which for ordinary Python is
 mostly right and worth having, and for anything environment-dependent is
 confidently wrong.  So it is offered by default and
-`emjupy-shadow-when-kernel-unreachable\' nil declines it."
+`emjupy-shadow-when-kernel-unreachable' nil declines it."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -3938,7 +3938,7 @@ always be to add one."
                    (aref (emjupy-notebook-cells parsed) 0)) 'code)))))
 
 (ert-deftest emjupy-test-create-new-notebook-is-on-n ()
-  "Creating a notebook is `emjupy-create-new-notebook\', on n in the listing."
+  "Creating a notebook is `emjupy-create-new-notebook', on n in the listing."
   (should (commandp 'emjupy-create-new-notebook))
   (should (eq (lookup-key emjupy-list-mode-map (kbd "n"))
               'emjupy-create-new-notebook)))
@@ -3972,7 +3972,7 @@ first reported the refusal and stopped, the second asked and worked."
   "A burst of output costs one redraw, not one per message.
 
 A redraw rebuilds the whole notebook.  Doing that per arriving message
-is the difference between a progress bar and a frozen Emacs: `tqdm\'
+is the difference between a progress bar and a frozen Emacs: `tqdm'
 sends one message per iteration, and each redraw of a notebook with
 figures costs tens of milliseconds."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
@@ -3999,7 +3999,7 @@ figures costs tens of milliseconds."
 (ert-deftest emjupy-test-progress-bar-collapses-to-one-output ()
   "Consecutive stream output on one channel is one stream, as in Jupyter.
 
-Keeping each message is what let a `tqdm\' bar leave thousands of entries
+Keeping each message is what let a `tqdm' bar leave thousands of entries
 behind -- every one walked on every redraw, so the notebook stayed slow
 for the rest of the session.  Carriage returns collapse too, which is
 what makes a progress bar a bar rather than a thousand lines."
@@ -4050,10 +4050,10 @@ buffer to match the cells before it looks at it."
     (emjupy-flush-output (emjupy-notebook-buffer nb))))
 
 (ert-deftest emjupy-test-language-support-switch ()
-  "`emjupy-language-support\=' nil silences every per-command language path.
+  "`emjupy-language-support' nil silences every per-command language path.
 
 One switch, so a slowdown can be attributed in a single setq: with it
-off nothing runs after a command except emjupy\='s own bookkeeping, and
+off nothing runs after a command except emjupy's own bookkeeping, and
 the notebook still works."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "import os"
@@ -4175,10 +4175,10 @@ It did nothing, and said nothing."
             (should (string-match-p "Language support is off" (cadr err)))))))))
 
 (ert-deftest emjupy-test-slow-hook-reporting ()
-  "`emjupy-report-slow-hooks\=' names the slow hook, or says nothing.
+  "`emjupy-report-slow-hooks' names the slow hook, or says nothing.
 
 A hang is hard to attribute from the outside; this says which of
-emjupy\='s per-command hooks is slow, or -- just as usefully -- that none
+emjupy's per-command hooks is slow, or -- just as usefully -- that none
 of them is."
   (let ((said nil))
     (cl-letf (((symbol-function 'message)
@@ -4201,10 +4201,10 @@ of them is."
 (ert-deftest emjupy-test-stray-rules-are-swept ()
   "Any emjupy overlay no live cell owns is deleted on a redraw.
 
-A cell overlay draws its rule through a `before-string\', which shows
+A cell overlay draws its rule through a `before-string', which shows
 even when the overlay has collapsed to zero width -- so one left behind
 appears as a stray box border, and several stack up at the top where
-`erase-buffer\' collapsed them.  The render already deletes the overlays
+`erase-buffer' collapsed them.  The render already deletes the overlays
 it knows about; this catches anything it does not, which is what makes
 the symptom unrepresentable rather than merely unlikely."
   (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
@@ -4267,13 +4267,13 @@ their cells just as the source overlays are."
   "Re-opening a notebook into its existing buffer leaves no stray borders.
 
 Re-opening reuses the buffer but parses fresh cell structs, so the
-previous structs\=' overlays become unreachable.  The open path used to
+previous structs' overlays become unreachable.  The open path used to
 erase the text without deleting them, and an overlay collapsed to zero
 width still draws its rule -- which is the stack of borders at the top
 of a notebook opened again, the case that happens when the notebook was
 left running on the server.
 
-Drives `emjupy-open-notebook\' rather than imitating it, so that it fails
+Drives `emjupy-open-notebook' rather than imitating it, so that it fails
 if the open path stops going through the redraw."
   (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"))
          (ipynb (json-serialize
@@ -4328,9 +4328,9 @@ if the open path stops going through the redraw."
   "A refused WebSocket says nothing useful, so /lsp/status is asked.
 
 Its answer separates the three causes, which look identical from the
-outside: no `jupyter-lsp\' at all, a refused token, or the endpoint
+outside: no `jupyter-lsp' at all, a refused token, or the endpoint
 present but listing no language server -- the last being the usual
-surprise, since `jupyterlab-lsp\' is only the plumbing and installs
+surprise, since `jupyterlab-lsp' is only the plumbing and installs
 none."
   (let ((server (make-emjupy-server :base-url "box:9999" :token "t")))
     (cl-flet ((said (stub)
@@ -4603,7 +4603,7 @@ path relative to the root.  Take the second off the end of the first."
   "A definition on the server opens over HTTP, not as a local path.
 
 The language server runs beside the kernel and answers with paths on
-THAT machine.  Handing one to `xref-make-file-location\' opened it as if
+THAT machine.  Handing one to `xref-make-file-location' opened it as if
 it were local, so a jump the server had answered correctly still landed
 nowhere."
   (let* ((server (make-emjupy-server :base-url "box:9999" :token "t"
@@ -4718,7 +4718,7 @@ way to turn a rename into plausible-looking nonsense."
   "The WebSocket-backed server overrides the transport, not the protocol.
 
 Eglot reaches a server through jsonrpc generics, and
-`jsonrpc-connection-send\' dispatches on the connection class -- so a
+`jsonrpc-connection-send' dispatches on the connection class -- so a
 subclass can carry the traffic anywhere.  That is what makes every Eglot
 command work at once rather than one at a time."
   (should (memq 'eglot-lsp-server
@@ -4763,7 +4763,7 @@ the rewrite in one direction or the other."
   "Splitting and merging no longer cost the undo history.
 
 Both change only the cells involved, so everything outside moves by a
-known amount and `emjupy--undo-adjust\' can keep the entries: before is
+known amount and `emjupy--undo-adjust' can keep the entries: before is
 untouched, inside is dropped, after is shifted.  This was the last of
 the structural gaps notes_undo.org described."
   (cl-flet ((mk (s) (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
@@ -4805,10 +4805,10 @@ the structural gaps notes_undo.org described."
   "Rewriting is by directory prefix, so the root travels with the document.
 
 The project has to contain the shadow buffer or Eglot will not manage it,
-and an unmanaged buffer sends no `didOpen\' -- the server never learns the
+and an unmanaged buffer sends no `didOpen' -- the server never learns the
 document exists, and every lookup comes back empty.  So the project stays
 local and the paths are corrected on the wire: one substitution fixes
-`rootUri\', the document URI, and anything else naming a path beneath
+`rootUri', the document URI, and anything else naming a path beneath
 them."
   (let ((local "file:///tmp/shadow/")
         (remote "file:///srv/project/"))
@@ -4854,7 +4854,7 @@ behaved that way."
       (with-current-buffer buf
         (buffer-enable-undo)
         (setq buffer-undo-list nil)
-        ;; type into the first cell, then clear the second cell\='s output
+        ;; type into the first cell, then clear the second cell's output
         (goto-char (overlay-start (emjupy-cell-overlay c1)))
         (end-of-line)
         (insert " + 7")
@@ -4987,7 +4987,7 @@ TRAMP path is most wanted, the address cannot supply one."
                (make-emjupy-server :base-url "box:8888" :token "t"))))
 
 (ert-deftest emjupy-test-ssh-destination-parsing ()
-  "The host is the last word that is neither an option nor an option\='s
+  "The host is the last word that is neither an option nor an option's
 argument.  Tedious, but not ambiguous."
   (should (equal (emjupy--ssh-destination "ssh -L 9999:localhost:9999 ua_w")
                  "ua_w"))
@@ -5001,7 +5001,7 @@ argument.  Tedious, but not ambiguous."
   (should-not (emjupy--ssh-destination "ssh -N")))
 
 (ert-deftest emjupy-test-ssh-host-is-a-host-not-a-path ()
-  "`emjupy-ssh-host\' names the machine only; the path comes from the kernel.
+  "`emjupy-ssh-host' names the machine only; the path comes from the kernel.
 
 That is what lets several projects on one machine each keep their own
 root while the machine is said once."
@@ -5131,7 +5131,7 @@ avoid.  What matters is whether the attached server is ours."
 (ert-deftest emjupy-test-insert-keeps-overlays-consistent ()
   "Inserting a cell before another leaves both with their own region.
 
-Text inserted at an overlay\='s start is taken into that overlay, since
+Text inserted at an overlay's start is taken into that overlay, since
 overlays do not advance at the front.  The following cell therefore
 swallowed the new one: two cells sharing a region, which shows as a
 doubled boundary, fails the consistency check, and stops syncing -- so
@@ -5584,7 +5584,7 @@ kept out of the history entirely."
 (defmacro emjupy-test--elapsed (&rest body)
   "Return the seconds BODY took, garbage collection left out.
 
-What is measured is emjupy\'s own work.  A collection triggered by the
+What is measured is emjupy's own work.  A collection triggered by the
 garbage earlier tests left -- the randomised ones make a great deal --
 would otherwise land inside the timing, and a test that passed alone
 failed in the full suite one run in two."
@@ -5836,7 +5836,7 @@ the same thing to other front ends rather than being private to emjupy."
   "A cell keeps a bottom edge after its output is cleared.
 
 The bottom rule belongs to whichever box is last.  With output that is
-the output box\='s own footer and the cell has none -- but when the output
+the output box's own footer and the cell has none -- but when the output
 went, so did the only bottom edge, leaving the cell open."
   (let ((cell (emjupy-test--cell-like
                'code "print(1)" (vector (emjupy-test--stream-output "1\n")))))
@@ -5856,9 +5856,9 @@ went, so did the only bottom edge, leaving the cell open."
         (should-not (emjupy--check-invariants))))))
 
 (ert-deftest emjupy-test-collapsed-marker-is-clickable ()
-  "Clicking the marker on a collapsed box restores that cell\='s output.
+  "Clicking the marker on a collapsed box restores that cell's output.
 
-The marker carries the cell\='s id, so the click acts on the cell the
+The marker carries the cell's id, so the click acts on the cell the
 marker belongs to rather than on whatever is near point.  A buffer
 position would not serve: the footer sits at the very end of a cell,
 where it is ambiguous which of two neighbours is meant."
@@ -5931,7 +5931,7 @@ hide."
 (ert-deftest emjupy-test-output-colour-survives-fontification ()
   "Nothing in an output box loses its colour to a fontification pass.
 
-font-lock owns the `face\=' property and removes it from every region it
+font-lock owns the `face' property and removes it from every region it
 refontifies.  Redrawing a cell marks its region for refontification, so
 the next pass stripped the lot -- which is why the output background
 vanished a moment after a cell was redrawn and never came back.
@@ -6018,7 +6018,7 @@ is an output band whose background stops partway across the line."
 (ert-deftest emjupy-test-refontifying-leaves-the-output-box-alone ()
   "Re-highlighting a cell cannot disturb anything in an output box.
 
-Highlighting is re-applied to a cell\='s SOURCE after an edit: the old
+Highlighting is re-applied to a cell's SOURCE after an edit: the old
 faces are cleared over its region and new ones copied in from a
 fontified copy of the source.  Where that region reaches into an output
 box it clears what is there and puts nothing back, because the source it
@@ -6200,7 +6200,7 @@ output boxes above grow and shrink."
 (ert-deftest emjupy-test-brackets-pair-in-cells ()
   "Brackets pair as you type, as they would in a Python buffer.
 
-emjupy-mode derives from `fundamental-mode\=', which brings none of the
+emjupy-mode derives from `fundamental-mode', which brings none of the
 editing conveniences, and nothing about a notebook suggests they have to
 be asked for separately."
   (let ((cell (emjupy-test--cell-like 'code "x = 1")))
@@ -6229,7 +6229,7 @@ for; and DEL, which reveals a rendered formula and only makes sense with
 point already on one.")
 
 (defun emjupy-test--menu-commands ()
-  "Return the commands offered by `emjupy-menu\='."
+  "Return the commands offered by `emjupy-menu'."
   (let (found)
     (letrec ((walk (lambda (node)
                      (cond
@@ -6247,14 +6247,14 @@ point already on one.")
   "Everything on a key is in the menu.
 
 The menu is the discovery aid: forty-odd bindings are more than anyone
-finds by reading `C-h m\', which lists them in definition order rather
+finds by reading `C-h m', which lists them in definition order rather
 than by what they are for.  A command reachable by a key and absent from
 the menu is one nobody will find, so this fails rather than letting the
 two drift apart."
   (let ((in-menu (emjupy-test--menu-commands))
         (bound nil))
     ;; Recursively: most of the bindings live under the C-c prefix, and
-    ;; `map-keymap\' does not descend into a prefix on its own -- an earlier
+    ;; `map-keymap' does not descend into a prefix on its own -- an earlier
     ;; version of this test enumerated only the handful of top-level keys
     ;; and passed while missing everything it was written to check.
     (letrec ((collect (lambda (km)
@@ -6279,8 +6279,8 @@ two drift apart."
 (ert-deftest emjupy-test-menu-is-reachable ()
   "The menu is on a key, and not on a reserved one.
 
-`C-c C-h\' would have been the guessable choice, but `C-h\' after a prefix
-is reserved for the list of that prefix\='s bindings -- the fallback this
+`C-c C-h' would have been the guessable choice, but `C-h' after a prefix
+is reserved for the list of that prefix's bindings -- the fallback this
 menu improves on, and one worth keeping."
   (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-v")) 'emjupy-menu))
   (should-not (eq (lookup-key emjupy-mode-map (kbd "C-c C-h")) 'emjupy-menu))
@@ -6331,7 +6331,7 @@ Not by emulating commands one at a time: most of what a programming mode
 gives is the syntax table, which decides what counts as a symbol and so
 what \\[dabbrev-expand] finds and where \\[forward-word] stops, and the
 comment variables, without which \\[comment-dwim] has no comment syntax
-and says so.  emjupy-mode derives from `fundamental-mode\=', which has
+and says so.  emjupy-mode derives from `fundamental-mode', which has
 neither."
   (let ((cell (emjupy-test--cell-like
                'code "from library import my_function\nx = my_function()")))
@@ -6372,7 +6372,7 @@ as soon as the syntax table agrees about what a word is."
 (ert-deftest emjupy-test-redraw-with-a-target-keeps-the-scroll ()
   "A redraw aimed at a cell moves point, not the window.
 
-Cycling a cell\='s type and re-indenting both redraw with the cell they
+Cycling a cell's type and re-indenting both redraw with the cell they
 are working on as the target, and both threw the window to the bottom of
 the buffer -- which is what made them unusable rather than merely
 untidy."
@@ -6391,22 +6391,22 @@ untidy."
                       (emjupy--visible-from (window-start w)))))
             (emjupy-cycle-cell-type)
             (redisplay t)
-            ;; compared by line number: the line\='s text may change, its
+            ;; compared by line number: the line's text may change, its
             ;; place in the buffer should not
             (should (= (line-number-at-pos
                         (emjupy--visible-from (window-start w))) top))))))))
 
 (ert-deftest emjupy-test-server-is-told-where-modules-are ()
-  "The language server is told the notebook\='s own directory.
+  "The language server is told the notebook's own directory.
 
-A server finds `import mylib\=' by looking beside the file that imports
+A server finds `import mylib' by looking beside the file that imports
 it.  Beside a notebook there is no file -- only a shadow whose name the
 server is told -- so whether that directory can be read depends on how
 the notebook is reached.  Saying where the modules are does not depend
 on that.
 
 The message is built here rather than left to
-`eglot-workspace-configuration\=', which Eglot reads while connecting,
+`eglot-workspace-configuration', which Eglot reads while connecting,
 before the buffer counts as one it manages: a value set there arrives as
 an empty settings object."
   (let ((nb (make-emjupy-notebook :cells [] :path "n.ipynb"
@@ -6457,12 +6457,12 @@ the actual answer."
 (ert-deftest emjupy-test-local-language-server-says-so ()
   "Falling back to a language server here is announced, once.
 
-It reads this machine\='s files and this machine\='s Python, so it answers
+It reads this machine's files and this machine's Python, so it answers
 about neither the code nor the environment the notebook runs in.  The
 standard library still resolves, which is what makes it easy to miss --
-the imports that quietly come back empty are the user\='s own modules.
+the imports that quietly come back empty are the user's own modules.
 Silence there cost a long diagnosis, and the transcript that settled it
-began with the words `Running language server: /usr/bin/pylsp\='."
+began with the words `Running language server: /usr/bin/pylsp'."
   (let ((cell (emjupy-test--cell-like 'code "x = 1"))
         (said nil))
     (emjupy-test--with-notebook (vector cell) buf nb
@@ -6491,7 +6491,7 @@ began with the words `Running language server: /usr/bin/pylsp\='."
 (ert-deftest emjupy-test-running-a-cell-keeps-undo ()
   "Running a cell does not throw away the undo history.
 
-Two full redraws happened on that path -- one clearing the cell\='s old
+Two full redraws happened on that path -- one clearing the cell's old
 output before the run, one updating its execution count after -- and a
 full redraw drops the history, because undo entries hold plain buffer
 positions and a rebuild moves all of them.  Both changes are confined to
@@ -6527,9 +6527,9 @@ being unusable in practice however well it survived everything else."
         (should (string-match-p "y = 2" (buffer-string)))))))
 
 (ert-deftest emjupy-test-finishing-a-cell-keeps-undo ()
-  "Updating a cell\='s execution count does not throw away the history.
+  "Updating a cell's execution count does not throw away the history.
 
-The count lives in the cell\='s header, which can be redrawn on its own.
+The count lives in the cell's header, which can be redrawn on its own.
 Rebuilding the notebook for it meant undo died the moment a cell
 finished -- after the user had already gone back to typing."
   (let ((cell (emjupy-test--cell-like 'code "print(1)")))
@@ -6572,7 +6572,7 @@ cannot be asked this question -- not that it may break undo.  Adding a
 command here should feel like work.")
 
 (defun emjupy-test--notebook-commands ()
-  "Return the commands bound in `emjupy-mode-map\=', prefixes included."
+  "Return the commands bound in `emjupy-mode-map', prefixes included."
   (let (found)
     (letrec ((collect (lambda (km)
                         (map-keymap
@@ -6642,7 +6642,7 @@ different cell; afterwards the typing must still be undoable."
                               ;; The sequence is continued, not restarted:
                               ;; a structural command is its own step, so
                               ;; the typing sits behind it and needs a
-                              ;; second press.  `undo-more\=' cannot be used
+                              ;; second press.  `undo-more' cannot be used
                               ;; -- a step that records its own redo ends
                               ;; the sequence it would have continued.
                               (setq this-command 'undo last-command 'undo)
@@ -6810,7 +6810,7 @@ would silently stop guarding a command that still exists."
       (should (memq (car entry) bound)))))
 
 (ert-deftest emjupy-test-clearing-one-cell-asks-first ()
-  "Clearing a cell\='s output asks, and says what would go.
+  "Clearing a cell's output asks, and says what would go.
 
 The output may be the result of a long run, and the kernel cannot be
 asked to produce it again for nothing."
@@ -6837,7 +6837,7 @@ asked to produce it again for nothing."
         (should (= (length (emjupy-cell-outputs cell)) 0))))))
 
 (ert-deftest emjupy-test-clear-confirmation-can-be-turned-off ()
-  "`emjupy-confirm-clear-output\=' nil clears without asking."
+  "`emjupy-confirm-clear-output' nil clears without asking."
   (let ((cell (emjupy-test--cell-like
                'code "print(1)"
                (vector (emjupy-test--stream-output "out\n")))))
@@ -6853,12 +6853,12 @@ asked to produce it again for nothing."
           (should (= (length (emjupy-cell-outputs cell)) 0)))))))
 
 (ert-deftest emjupy-test-both-websockets-authenticate-alike ()
-  "The language server\='s socket carries what the kernel\='s socket carries.
+  "The language server's socket carries what the kernel's socket carries.
 
 A token in the query string is not accepted everywhere a token in a
 header is -- the kernel socket has always sent both, with a comment
 saying why: a proxy in front of a tunnel may strip the query.  The
-language server\='s socket sent neither, which is how a notebook could
+language server's socket sent neither, which is how a notebook could
 execute cells over a WebSocket while the language server on the same
 host refused to connect, and why the fallback to a LOCAL server kept
 happening."
@@ -6876,7 +6876,7 @@ happening."
                  (make-emjupy-server :base-url "h" :token "")))))
 
 (ert-deftest emjupy-test-lsp-socket-sends-the-headers ()
-  "The headers reach `websocket-open\=', not merely exist."
+  "The headers reach `websocket-open', not merely exist."
   (let ((sent 'unset)
         (server (make-emjupy-server :base-url "localhost:9999"
                                     :token "s3cret")))
@@ -6953,7 +6953,7 @@ asked the server once."
     (puthash "name" "a.ipynb" item)
     (puthash "path" "a.ipynb" item)
     (puthash "last_modified" "2026-09-25T09:00:00Z" item)
-    ;; the shape `emjupy--list-entries\=' builds
+    ;; the shape `emjupy--list-entries' builds
     (let ((row (list (list :kind 'notebook :path "a.ipynb"
                            :modified (gethash "last_modified" item))
                      (emjupy--list-row 'notebook "notebook" "a.ipynb"
@@ -7008,7 +7008,7 @@ usually ceases to exist -- made the edit unrecoverable.  These commands
 record a step that restores the region exactly, and nothing can reach
 those entries until that step has been undone, so they are kept.
 
-Asserted as `recoverable within a few presses\=' rather than `one press\=':
+Asserted as `recoverable within a few presses' rather than `one press':
 a structural command is its own undo step now, and the edit sits behind
 it."
   (dolist (command '(emjupy-move-cell-up emjupy-join-cell-above
@@ -7052,7 +7052,7 @@ the bottom, at the moment someone is least expecting to be moved."
 (ert-deftest emjupy-test-definitions-point-at-the-kernels-machine ()
   "A definition outside the notebook is named on the machine that has it.
 
-The language server sees the kernel\='s filesystem and answers with paths
+The language server sees the kernel's filesystem and answers with paths
 as it sees them.  Taken literally here they name files on this machine,
 usually files that do not exist -- so jumping to a definition opened an
 empty buffer at a plausible path instead of the file eldoc had just been
@@ -7064,7 +7064,7 @@ quoting from."
            (nb (make-emjupy-notebook :cells [] :path "n.ipynb" :server server
                                      :kernel-cwd "/home/me/project"))
            (emjupy-remote-root "/ssh:box:/home/me/project"))
-      ;; a file under the server\='s root is renamed onto the remote
+      ;; a file under the server's root is renamed onto the remote
       (should (equal (emjupy--remote-name-for nb "/home/me/project/library.py")
                      "/ssh:box:/home/me/project/library.py"))
       ;; the standard library too: /usr/lib/python3.13/glob.py exists on both
@@ -7122,7 +7122,7 @@ read."
   "The shadow goes to a temp directory rather than a made-up local path.
 
 Keeping it beside the notebook is what lets a language server resolve
-`import mylib\=' by looking next to the file.  But when the shadow must
+`import mylib' by looking next to the file.  But when the shadow must
 stay on this machine and the notebook is on another, \"beside\" names a
 LOCAL directory after a REMOTE path -- so emjupy created
 /home/you/project/ here and put the shadow in it, which is how a
@@ -7158,7 +7158,7 @@ temp directory does the same job without inventing directories."
 (ert-deftest emjupy-test-tunnel-detected-however-ssh-was-invoked ()
   "A tunnel is recognised whether or not the command line begins \"ssh\".
 
-Matching only a line starting with `ssh\=' missed /usr/bin/ssh and
+Matching only a line starting with `ssh' missed /usr/bin/ssh and
 autossh -- between them most tunnels that were not typed by hand a
 moment ago.  A missed tunnel means no host, so no remote name, so
 \\[xref-find-definitions] lands on a local path that is not there."
@@ -7180,7 +7180,7 @@ moment ago.  A missed tunnel means no host, so no remote name, so
                     (emjupy--ssh-host-forwarding 9999))))))
 
 (ert-deftest emjupy-test-definition-elsewhere-says-so-rather-than-inventing ()
-  "A definition on the kernel\='s machine that cannot be reached says so.
+  "A definition on the kernel's machine that cannot be reached says so.
 
 With no way to build a remote name -- a tunnelled server and nothing
 configured -- the local name is a file this machine has not got.
@@ -7326,7 +7326,7 @@ showing its carriage return as a literal ^M."
   "Output that genuinely came later is not moved above what came before.
 
 Only a line still open -- no newline yet -- is continued across another
-stream\'s output.  A warning that ends its line is finished, and the
+stream's output.  A warning that ends its line is finished, and the
 next warning is a new line after whatever came in between."
   (let ((cell (make-emjupy-cell :id "o" :type 'code :source "" :outputs []
                                 :metadata (make-hash-table :test 'equal))))
@@ -7377,7 +7377,7 @@ through the path that handles output as it arrives."
 
 (defun emjupy-test--feed-in-order (order)
   "Run one request whose messages arrive in ORDER; return the cell and kernel.
-ORDER is a list of `result\=', `reply\=' and `idle\='."
+ORDER is a list of `result', `reply' and `idle'."
   (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                  :source "40 + 2" :outputs []
                                  :metadata (make-hash-table)))
@@ -7462,7 +7462,7 @@ content, so those are kept, as two distinct figures must be."
                                     (png "iVBORw0KGgoAAA=")))))))))
 
 (defun emjupy-test--drawn-widths (cell)
-  "Return the width in columns of each line of CELL\='s drawn output.
+  "Return the width in columns of each line of CELL's drawn output.
 The padding is left out: it is a stretch to the border, not text."
   (let ((ov (emjupy-cell-output-ov cell)) widths)
     (save-excursion
@@ -7543,7 +7543,7 @@ every output type, not for progress bars."
 
 url.el joins the request line, headers and body and refuses the result
 if it is multibyte.  An XSRF cookie read from a response with
-`match-string\=' is ASCII but multibyte, and with any character outside
+`match-string' is ASCII but multibyte, and with any character outside
 ASCII in the body -- a progress bar drawn in U+2588 -- the notebook could
 not be saved: \"Multibyte text in HTTP request\"."
   (let* ((server (make-emjupy-server :base-url "127.0.0.1:9" :token ""))
@@ -7570,7 +7570,7 @@ not be saved: \"Multibyte text in HTTP request\"."
                    (apply #'concat url data (mapcar #'cdr headers)))))))
 
 (ert-deftest emjupy-test-kernel-is-told-the-width ()
-  "The kernel\'s COLUMNS is set to the width of the box."
+  "The kernel's COLUMNS is set to the width of the box."
   (let ((sent nil)
         (cell (emjupy-test--cell-like 'code "x")))
     (emjupy-test--with-notebook (vector cell) buf nb
@@ -7588,8 +7588,8 @@ not be saved: \"Multibyte text in HTTP request\"."
 (ert-deftest emjupy-test-local-server-paths-are-left-local ()
   "A definition from a language server on THIS machine stays a local path.
 
-The fallback server reads this machine\'s files, so its paths are this
-machine\'s.  Sending them to the kernel\'s host would point at files
+The fallback server reads this machine's files, so its paths are this
+machine's.  Sending them to the kernel's host would point at files
 that may not be there."
   (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"
                                      :root "/home/me/project"))
@@ -7630,9 +7630,9 @@ which lost the race to a cell run straight away."
 (ert-deftest emjupy-test-running-a-cell-does-not-redraw-the-notebook ()
   "Running a cell clears its old output in place, not by a whole redraw.
 
-Only that cell\'s output changes.  A whole redraw moved every position
+Only that cell's output changes.  A whole redraw moved every position
 held in the buffer to its start -- the fake cursors of multiple-cursors,
-markers, other windows\' points -- and recorded an undo step for a
+markers, other windows' points -- and recorded an undo step for a
 command that edits nothing."
   (let* ((out (let ((o (make-hash-table :test 'equal)))
                 (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
@@ -7661,13 +7661,13 @@ command that edits nothing."
           (should (= rebuilds 0))
           ;; the old output is gone from the buffer
           (should-not (string-match-p "old output" (buffer-string)))
-          ;; and the marker still sits where it was, in cell 1\'s text
+          ;; and the marker still sits where it was, in cell 1's text
           (should (equal (buffer-substring-no-properties
                           (overlay-start (emjupy-cell-overlay c1)) mark)
                          "x1")))))))
 
 (ert-deftest emjupy-test-caret-goes-up-wherever-point-is ()
-  "\\`^\' in the server listing shows the parent directory, from any row.
+  "\\`^' in the server listing shows the parent directory, from any row.
 
 It used to run the same command as RET, which goes up only from the
 \"..\" row: on a notebook it opened the notebook, and on a folder it went
@@ -7697,8 +7697,8 @@ down into it."
 It is a generated copy of the cells: no lock file, no auto-save file.
 Setting its coding system marked the buffer modified, and Emacs takes a
 lock on the first modification -- which happened before locking was
-turned off, so a `.#\' file, and in a graphical session an auto-save
-`#...#\' one, were left in the user\'s project directory."
+turned off, so a `.#' file, and in a graphical session an auto-save
+`#...#' one, were left in the user's project directory."
   (let* ((dir (make-temp-file "emjupy-shadow-dir" t))
          (emjupy-lsp-enabled nil)
          (c (emjupy-test--cell-like 'code "x = 1")))
@@ -7774,14 +7774,14 @@ in place.  Found by the undo fuzz."
           (should-not (emjupy--check-invariants)))))))
 
 (ert-deftest emjupy-test-reshown-output-is-not-highlighted-as-code ()
-  "Output shown again after being hidden keeps its own face, not Python\'s.
+  "Output shown again after being hidden keeps its own face, not Python's.
 
 Redrawing a cell in place inserts its text at the start of the next
-cell\'s overlay, which takes the insertion in until the redraw moves it
+cell's overlay, which takes the insertion in until the redraw moves it
 back.  The change hook, there to re-highlight what the user types, took
 the next cell to be the one edited and re-highlighted its region --
-now the reshown output -- as code: keywords coloured, and the output\'s
-background gone where they were.  emjupy\'s own drawing is not an edit
+now the reshown output -- as code: keywords coloured, and the output's
+background gone where they were.  emjupy's own drawing is not an edit
 to re-highlight, and no longer runs the hook."
   (dolist (how '(command click))
     (let* ((out (let ((o (make-hash-table :test 'equal)))
@@ -7811,7 +7811,7 @@ to re-highlight, and no longer runs the hook."
                                  '(emjupy-output))))))))))))
 
 (ert-deftest emjupy-test-internal-answer-in-pieces-arrives-whole ()
-  "An answer to one of emjupy\'s own questions arrives whole, however split.
+  "An answer to one of emjupy's own questions arrives whole, however split.
 
 The callback was given the first stream message and the request was then
 forgotten, so a large answer -- plotly.js, asked of the kernel, is near
@@ -7836,7 +7836,7 @@ forgotten, so a large answer -- plotly.js, asked of the kernel, is near
     (should-not (gethash "big" emjupy--internal-requests))))
 
 (ert-deftest emjupy-test-widgets-are-drawn-before-their-output ()
-  "A widget is drawn above the cell\'s other outputs; the saved order stays."
+  "A widget is drawn above the cell's other outputs; the saved order stays."
   (let* ((img (let ((o (make-hash-table :test 'equal))
                     (d (make-hash-table :test 'equal)))
                 (puthash "output_type" "display_data" o) (puthash "text/plain"

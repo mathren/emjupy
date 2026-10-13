@@ -378,8 +378,8 @@ of its kernel, which may come to be shown in it."
 
 (defun emjupy--widget-own-modules (state)
   "Return the modules a widget with STATE needs beyond the standard ones.
-Each is a cons of the module\'s name and version: its model\'s, its
-view\'s, or both."
+Each is a cons of the module's name and version: its model's, its
+view's, or both."
   (cl-loop for (name . version)
            in (list (cons (gethash "_model_module" state)
                           (gethash "_model_module_version" state))

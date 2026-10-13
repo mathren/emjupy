@@ -179,7 +179,7 @@ several requests in flight, against the order with every reply last."
          (cell (aref cells (random (length cells))))
          (ov (emjupy-cell-overlay cell))
          ;; the cell's extent in the buffer, not its stored source, which
-         ;; is stale until the next sync: a position past the source\'s end
+         ;; is stale until the next sync: a position past the source's end
          ;; is the separator, where typing is rightly refused
          (len (max 0 (- (overlay-end ov) (overlay-start ov) 1))))
     (goto-char (+ (overlay-start ov) (random (1+ len))))
@@ -197,7 +197,7 @@ several requests in flight, against the order with every reply last."
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
               ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
       ;; A command that declines -- nothing to hide, no cell above to join
-      ;; -- says so with `user-error\=', and that is a correct answer.
+      ;; -- says so with `user-error', and that is a correct answer.
       (let ((emjupy-confirm-clear-output nil))
         (ignore-error user-error
           (pcase op
@@ -302,7 +302,7 @@ the cells -- type and source -- as they read back from the buffer."
 (ert-deftest emjupy-fuzz-undo-after-two-joins ()
   "Undo after joining twice, with output and typing between, does not err.
 
-The edit fuzz\'s shortest failing sequence, fixed here so it can be
+The edit fuzz's shortest failing sequence, fixed here so it can be
 worked on: undo fails with \"Changes to be undone are outside visible
 portion of buffer\", meaning some undo entries point past the end of the
 buffer -- positions a join, or the redraw of output after one, did not
@@ -337,7 +337,7 @@ shift."
 (ert-deftest emjupy-fuzz-inserted-cell-keeps-its-separator ()
   "A backspace at the start of a cell inserted before another is refused.
 
-Inserting a cell protected the gaps while the following cell\'s overlay
+Inserting a cell protected the gaps while the following cell's overlay
 still stretched back over the new one, so the gap between the two was
 left writable; a backspace there deleted it and the cells ran together.
 The edit fuzz found it, shrunk to: insert a cell, insert another just
@@ -490,12 +490,12 @@ thousands, sequences cut off half-way, codes no terminal knows."
 (ert-deftest emjupy-fuzz-deeply-nested-notebook-is-refused-cleanly ()
   "JSON nested beyond what the parser takes is a typed error, not a crash.
 
-The parser refuses it with `json-object-too-deep\=', which is a
-`json-error\=' but NOT a `json-parse-error\=' -- and the handlers caught
+The parser refuses it with `json-object-too-deep', which is a
+`json-error' but NOT a `json-parse-error' -- and the handlers caught
 only the latter, so an over-deep reply from the server, or a frame of
 invalid UTF-8 from the language server, escaped them as an untyped error.
-They catch `json-error\=' now.  A reply that deep reaches callers as the
-`emjupy-http-error\=' they expect."
+They catch `json-error' now.  A reply that deep reaches callers as the
+`emjupy-http-error' they expect."
   (let ((json (concat "{\"cells\": [], \"metadata\": "
                       (apply #'concat (make-list 20000 "{\"a\": "))
                       "1" (make-string 20000 ?})

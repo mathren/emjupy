@@ -12,32 +12,17 @@
 
 ;;; Commentary:
 
-;; Talks LSP to the language server that `jupyter-lsp' runs ON THE JUPYTER
-;; SERVER, over that server's own WebSocket -- the same transport the
-;; notebook already uses, and the same arrangement JupyterLab's
-;; `jupyterlab-lsp' uses.
+;; Talks LSP to the language server `jupyter-lsp' runs on the Jupyter server,
+;; over that server's WebSocket, as JupyterLab's `jupyterlab-lsp' does.  For a
+;; remote notebook this replaces a shadow FILE, which over TRAMP cost dozens of
+;; round trips, and whose waits ran timers that re-entered it.  The document is
+;; synced in-band with `didChange', and the server sits beside the kernel, so
+;; imports resolve where the code runs.  Its URI is a path on the server, which
+;; emjupy never opens.
 ;;
-;; This replaces the shadow FILE for remote notebooks, and the reason is
-;; measured rather than aesthetic.  Handing Eglot a file means Eglot opens
-;; it, and when the notebook is remote that file is remote: creating one
-;; cost 36 SSH round trips, mostly directory probing while something looked
-;; for a project root.  Worse, TRAMP waits by calling
-;; `accept-process-output', which runs Emacs's timers -- 29 of them in a
-;; 0.3s wait, measured -- so the eldoc timer fired INSIDE the TRAMP call and
-;; asked for the shadow buffer again, recursively, until Emacs gave up with
-;; "Lisp nesting exceeds `max-lisp-eval-depth'".
-;;
-;; Over this transport there is no file and no second connection.  The
-;; document is synced in-band with `didChange', which is what LSP is for,
-;; and the server sits next to the kernel, so `import mylib' resolves
-;; against the environment the code will actually run in.
-;;
-;; The document URI is a path on the SERVER's filesystem, not this one.
-;; That is the point: the server resolves it, we never open it.
-;;
-;; The text of that document -- every code cell, each under a marker naming
-;; its cell -- is built here too, and parsed back into positions, since both
-;; this transport and the Eglot layer above it need it.
+;; The document's text -- every code cell, under a marker naming it -- is built
+;; here too, and parsed back into positions, for this transport and the Eglot
+;; layer above.
 
 ;;; Code:
 
@@ -46,20 +31,18 @@
 (require 'emjupy-core)
 (require 'emjupy-http)
 (require 'jsonrpc)
-;; Eglot and websocket.el are hard requirements: Eglot ships with the
-;; Emacs this package requires, websocket is a declared dependency, and
-;; the transport below inherits from Eglot's own server class, so a
-;; missing Eglot was always a load error rather than a degradation.
+;; Eglot and websocket.el are required: Eglot comes with Emacs 30, websocket is
+;; a dependency, and the transport inherits from Eglot's server class.
 (require 'eglot)
 (require 'websocket)
 
 ;;;; Options
 
 (defcustom emjupy-lsp-enabled t
-  "When non-nil, use the language server run by `jupyter-lsp\='.
+  "When non-nil, use the language server run by `jupyter-lsp'.
 
 That server lives next to the kernel and is reached over the Jupyter
-server\='s own WebSocket -- no file on disk, no second connection, and
+server's own WebSocket -- no file on disk, no second connection, and
 the environment it describes is the one the code will run in.  Set this
 to nil to fall back to the Eglot shadow-file arrangement."
   :type 'boolean
@@ -89,15 +72,15 @@ meets the requirement."
   :group 'emjupy)
 
 (defcustom emjupy-tell-server-where-modules-are t
-  "When non-nil, name the notebook\='s own directory to the language server.
+  "When non-nil, name the notebook's own directory to the language server.
 
-A language server finds `import mylib\=' by looking beside the file that
+A language server finds `import mylib' by looking beside the file that
 imports it.  Beside a notebook there is no file: there is a shadow whose
 name the server is told and whose contents it is sent, and whether it
 can be read from that directory is a question of how the notebook is
 reached.  Saying where the modules are does not depend on that.
 
-Written for `python-lsp-server\='.  Set to nil if your server takes its
+Written for `python-lsp-server'.  Set to nil if your server takes its
 settings from elsewhere and would rather not be told."
   :type 'boolean
   :group 'emjupy)
@@ -147,10 +130,8 @@ stripped the Content-Length framing LSP uses over a pipe."
                  nil))))
     (when (hash-table-p msg)
       (let ((id (gethash "id" msg)))
-        ;; Responses only.  Server-initiated requests and notifications --
-        ;; diagnostics, progress -- are not answered: nothing here needs
-        ;; them, and pretending otherwise would mean maintaining state the
-        ;; notebook never reads.
+        ;; Responses only: requests and notifications from the server --
+        ;; diagnostics, progress -- are not answered.
         (when (and id (or (gethash "result" msg) (gethash "error" msg)))
           (let ((callback (and (emjupy-lsp-callbacks session)
                                (gethash id (emjupy-lsp-callbacks session)))))
@@ -164,11 +145,7 @@ stripped the Content-Length framing LSP uses over a pipe."
 
 (defun emjupy--lsp-async (session method params callback)
   "Send METHOD with PARAMS over SESSION; call CALLBACK with the result.
-
-Nothing waits.  A blocking wait here is what made every cursor movement
-cost the full request timeout when the server was slow to answer or
-never answered at all -- and since eldoc runs after every command, that
-was the whole editor."
+Nothing waits: eldoc runs after every command."
   (when (emjupy--lsp-live-p session)
     (let ((id (cl-incf (emjupy-lsp-next-id session))))
       (unless (emjupy-lsp-callbacks session)
@@ -196,10 +173,8 @@ was the whole editor."
 
 (defun emjupy--lsp-document-uri (nb)
   "Return the document URI for NB, on the SERVER's filesystem.
-
-Built from the kernel's working directory, which is the notebook's own
-folder, so the server resolves `import mylib' against the code that
-sits beside it.  Nothing here ever opens this path."
+In the kernel's working directory, the notebook's own, so imports
+resolve against the code beside it."
   (let ((dir (or (emjupy-notebook-kernel-cwd nb) "/"))
         (name (file-name-nondirectory
                (or (emjupy-notebook-path nb) "notebook.ipynb"))))
@@ -242,8 +217,8 @@ Kept so the warning about falling back can say what went wrong, rather
 than leaving the user to find out that anything did.")
 
 (defun emjupy--lsp-socket-error (_ws type err)
-  "Report ERR, raised in the language server WebSocket\='s TYPE callback.
-Given as the socket\='s error handler, which otherwise -- an empty one was
+  "Report ERR, raised in the language server WebSocket's TYPE callback.
+Given as the socket's error handler, which otherwise -- an empty one was
 given -- dropped every error unseen.  Recorded too, in
 `emjupy--lsp-last-failure', for when the echo area has moved on."
   (let ((what (format "%s: %s" type (error-message-string err))))
@@ -252,16 +227,12 @@ given -- dropped every error unseen.  Recorded too, in
 
 (defun emjupy--lsp-explain-failure (server)
   "Say why SERVER has no language server, distinguishing the three causes.
+Asked of /lsp/status:
 
-The WebSocket refusing tells us nothing useful on its own, so ask
-/lsp/status, whose answer separates the cases:
-
-  404  `jupyter-lsp\' is not installed, so there is no endpoint at all
+  404  `jupyter-lsp' is not installed
   403  the token was refused
-  200  the endpoint is there -- then the question is what it lists,
-       and an empty list means no LANGUAGE server is installed, which
-       is the usual surprise: `jupyterlab-lsp\' is only the plumbing
-       and installs none."
+  200  it is there; an empty list means no language server is
+       installed -- `jupyterlab-lsp' installs none."
   (let* ((status (condition-case err
                      (emjupy--http-request "GET" server "/lsp/status")
                    ;; a refusal is the answer looked for; a bug is not
@@ -339,18 +310,14 @@ The WebSocket refusing tells us nothing useful on its own, so ask
 
 (cl-defun emjupy--lsp-session (nb)
   "Return a ready LSP session for NB, making one if needed, or nil.
-
-Needs a server and a kernel working directory: without the first there
-is nowhere to connect, and without the second no URI the server could
-resolve.  Both arrive in the ordinary course of opening a notebook, so
-the nil here means \"not yet\", not \"never\"."
+It needs a server and the kernel's working directory, which both come
+as a notebook opens: nil means not yet."
   (unless (and nb (emjupy-notebook-server nb) (emjupy-notebook-kernel-cwd nb))
     (cl-return-from emjupy--lsp-session nil))
   (let ((session (emjupy-notebook-lsp nb)))
-    ;; Connecting and handshaking are started here but never waited for.
-    ;; Until the session reports ready this returns nil, and the caller does
-    ;; nothing -- which is the correct behaviour for eldoc and completion:
-    ;; better no answer than a frozen editor.
+    ;; Connecting and handshaking start here and are never waited for: until the
+    ;; session is ready this returns nil, and eldoc and completion give no
+    ;; answer rather than freeze.
     (cond
      ((and session (emjupy-lsp-ready session) (emjupy--lsp-live-p session))
       (emjupy--lsp-sync nb session)
@@ -418,12 +385,8 @@ the nil here means \"not yet\", not \"never\"."
 
 (defun emjupy--lsp-offset-of-position (text line character)
   "Return the character offset of LINE and CHARACTER within TEXT.
-
-LSP counts lines and characters from zero; Emacs counts buffer positions
-from one and does not count either.  This is the conversion, and it
-clamps rather than signalling, because an edit landing one past the end
-of a document is a server being generous about a final newline, not a
-reason to abandon a rename."
+LSP counts from zero.  Clamped rather than signalling: an edit one past
+the end is a server generous about a final newline."
   (let ((offset 0)
         (remaining line)
         (len (length text)))
@@ -436,11 +399,7 @@ reason to abandon a rename."
 
 (defun emjupy--lsp-apply-edits (text edits)
   "Return TEXT with EDITS applied, where EDITS are LSP TextEdits.
-
-Applied back to front.  Every edit's range refers to the document as the
-server last saw it, so applying one from the front moves the ground
-under all the others -- the classic way to corrupt a rename into
-nonsense that still looks plausible."
+Back to front: each range refers to the text before any edit."
   (let* ((prepared
           (mapcar (lambda (edit)
                     (let* ((range (gethash "range" edit))
@@ -483,17 +442,9 @@ nonsense that still looks plausible."
 
 (defun emjupy--sanitize-for-lsp (string)
   "Return STRING with undecodable raw bytes replaced by U+FFFD.
-
-A byte that never decoded cleanly (Emacs holds these as characters in
-the #x3FFF80..#x3FFFFF range) is not valid UTF-8, and the whole shadow
-document is handed to the language server as a JSON string: `jsonrpc'
-rejects it with `wrong-type-argument utf-8-string-p' and the connection
-never gets off the ground.
-
-The replacement is one character for one character, so every offset in
-the shadow buffer still lines up with the cell source it came from --
-which is what the completion and hover position mapping relies on.  The
-notebook itself is untouched; only the copy the server sees is cleaned."
+A raw byte is not UTF-8, and `jsonrpc' would refuse the document.  One
+character for one, so offsets still line up with the cells; only the
+copy the server sees is changed."
   (if (not (stringp string))
       string
     (apply #'string
@@ -579,27 +530,18 @@ same cells holding the same source objects build the same content."
 (provide 'emjupy-lsp)
 ;;; Eglot over the Jupyter WebSocket ----------------------------------------
 
-;; Everything below exists so that Eglot's own commands -- all of them, and
-;; any added later -- reach the language server running beside the kernel.
-;;
-;; The alternative was wiring each command up by hand, which does not scale
-;; and did not: rename worked and nothing else did.  Eglot talks to a server
-;; through three jsonrpc generics, and `jsonrpc-connection-send' dispatches
-;; on the connection class, so a subclass can carry the traffic anywhere it
-;; likes.  Here it goes over the same WebSocket the notebook already uses.
-;;
-;; `jsonrpc-process-connection' insists on a process object, so one is
-;; created and then ignored: it exists to satisfy a type check and carries
-;; nothing.
+;; Eglot's own commands -- all of them -- reach the server beside the kernel
+;; through a jsonrpc connection class of emjupy's: `jsonrpc-connection-send'
+;; dispatches on the class, and this one sends over the notebook's WebSocket.
+;; `jsonrpc-process-connection' insists on a process, so an idle one is made and
+;; ignored.
 
 ;;;; Eglot over the WebSocket
 
 (defvar emjupy--eglot-pending nil
   "Plist for the next server to be built.
-
-The server's class is named by the symbol `emjupy-eglot-server'.
-`eglot--connect' decides the initargs, so there is no way to pass the
-WebSocket in.  It is left here instead and collected on the way past.")
+`eglot--connect' decides the initargs, so the WebSocket is left here
+for the server class, `emjupy-eglot-server', to collect.")
 
 (defclass emjupy-eglot-server (eglot-lsp-server)
   ((ws :initform nil :accessor emjupy-eglot-server-ws)
@@ -623,21 +565,15 @@ WebSocket in.  It is left here instead and collected on the way past.")
   (let ((ws (emjupy-eglot-server-ws server)))
     (when ws
       ;; The socket was opened before the server existed, so its handler is
-      ;; pointed at the server now that there is one.
-      ;; The socket was opened before the server existed, so its handler is
-      ;; pointed at the server now that there is one.  Set through the
-      ;; struct rather than a setf accessor, which websocket.el does not
-      ;; export.
+      ;; pointed at the server now, through the struct: websocket.el exports no
+      ;; setf accessor.
       (aset ws (cl-struct-slot-offset 'websocket 'on-message)
             (lambda (_ws frame) (emjupy--eglot-receive server frame))))))
 
 (defun emjupy--eglot-rewrite-uris (object from to)
   "Return OBJECT with every URI equal to FROM replaced by TO.
-
-Eglot names the document by the file it manages, which is the shadow
-file on this machine.  The language server knows it by the path the
-kernel would see.  Both directions of every message pass through here,
-which is the one place the two names have to agree."
+Eglot names the document by the shadow file here, the server by the
+kernel's path; every message passes through here, both ways."
   (cond
    ((and (stringp object) (equal object from)) to)
    ((and (stringp object) from to (string-suffix-p "/" from)
@@ -724,13 +660,9 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
     (when msg
       (jsonrpc-connection-receive
        server
-       ;; Only the document itself is renamed on the way back.  Rewriting by
-       ;; directory, as the outbound direction does, would drag every other
-       ;; path under the server's root along with it -- so a definition
-       ;; correctly answered as .../latmod.py came back pointing at a file
-       ;; of that name beside the shadow, which does not exist, and the
-       ;; lookup produced nothing.  Paths elsewhere on the server are left
-       ;; as they are; `emjupy-open-server-file' knows how to fetch them.
+       ;; Only the document itself is renamed on the way back: renaming by
+       ;; directory, as outbound, would move every path under the server's root
+       ;; beside the shadow.  `emjupy-open-server-file' fetches the others.
        (emjupy--eglot-rewrite-uris
         msg
         (emjupy-eglot-server-server-doc server)
@@ -745,20 +677,17 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
   "Close SERVER's WebSocket and end its placeholder process.
 
 The WebSocket is the connection that matters, but Eglot also keeps a
-placeholder process for it -- see `emjupy-eglot-idle-command\=' -- and the
-standard shutdown is what takes the server out of Eglot\'s table.
+placeholder process for it -- see `emjupy-eglot-idle-command' -- and the
+standard shutdown is what takes the server out of Eglot's table.
 Closing only the WebSocket left one such process behind for every
 notebook ever opened.  CLEANUP is passed on."
   (let ((ws (emjupy-eglot-server-ws server)))
     (when (and (websocket-p ws) (websocket-openp ws))
       (websocket-close ws)))
   (setf (emjupy-eglot-server-ws server) nil)
-  ;; The placeholder is `cat\=', which never exits by itself, so it is
-  ;; ended here.  Its sentinel then does what shutting down a connection
-  ;; does -- takes the server out of Eglot\'s table, kills its buffers --
-  ;; when Emacs next handles process events.  Not waited for: the
-  ;; standard shutdown waits for a server to exit on its own and forces it
-  ;; only after a few seconds, which made closing a notebook take two.
+  ;; The placeholder process, `cat', is ended here; its sentinel takes the
+  ;; server out of Eglot's table.  Not waited for: the standard shutdown waits
+  ;; seconds for the server to exit.
   (let ((proc (jsonrpc--process server)))
     (when (process-live-p proc)
       (kill-process proc))
@@ -768,12 +697,9 @@ notebook ever opened.  CLEANUP is passed on."
 ;;;; Workspace configuration
 
 (defun emjupy--set-workspace-configuration (nb server)
-  "Tell SERVER where NB\='s own modules are.
-
-Sent directly rather than through `eglot-workspace-configuration\='.
-Eglot reads that variable while connecting, before the buffer counts as
-one it manages, so a value set there arrives as an empty settings object
--- measured on the wire, not assumed."
+  "Tell SERVER where NB's own modules are.
+Sent directly: Eglot reads `eglot-workspace-configuration' while
+connecting, before the buffer is managed, and sends it empty."
   (when-let* ((cwd (and emjupy-tell-server-where-modules-are
                         server
                         (emjupy-notebook-kernel-cwd nb))))
@@ -788,10 +714,8 @@ one it manages, so a value set there arrives as an empty settings object
 
 (defun emjupy--ensure-managed-by (server)
   "Make the current buffer one that SERVER manages, if it is not already.
-
-`eglot--maybe-activate-editing-mode\=' is what Eglot calls from its own
-hooks; calling it here says so directly rather than relying on the
-buffer being noticed."
+With `eglot--maybe-activate-editing-mode', what Eglot's own hooks
+call."
   (when server
     (unless (eq (eglot-current-server) server)
       (setq-local eglot--cached-server server)
@@ -803,10 +727,8 @@ buffer being noticed."
 
 (defun emjupy--eglot-connect (nb buffer)
   "Attach Eglot to BUFFER, talking to NB's server over its WebSocket.
-
-BUFFER is the shadow buffer, which stays on this machine: it is now only
-something for Eglot to manage, not something a language server reads.
-Returns the server, or nil."
+BUFFER is the shadow buffer, on this machine, only for Eglot to
+manage.  Return the server, or nil."
   (let* ((server (emjupy-notebook-server nb))
          (local-file (buffer-local-value 'buffer-file-name buffer))
          (ws (condition-case err
@@ -840,16 +762,10 @@ Returns the server, or nil."
                                          (or (emjupy-notebook-kernel-cwd nb)
                                              "/"))
                                         (file-name-nondirectory local-file))))
-             ;; The root has to be the directory the SERVER will resolve
-             ;; against, not the one holding the shadow file here.  Eglot
-             ;; turns this into rootUri, and pylsp resolves `import mylib'
-             ;; against it -- so pointing it at the local shadow directory
-             ;; meant every cross-file lookup came back empty while
-             ;; same-document ones worked, which is a confusing way to fail.
-             ;; The project must contain the shadow buffer or Eglot will not
-             ;; manage it -- and an unmanaged buffer sends no didOpen, so the
-             ;; server never learns the document exists.  The root the SERVER
-             ;; is told about is fixed on the wire instead, below.
+             ;; The root the server resolves imports against is its own
+             ;; directory, fixed on the wire below.  Here the project must
+             ;; contain the shadow buffer, or Eglot will not manage it, and the
+             ;; server never hears of the document.
              (project (cons 'transient (file-name-directory local-file))))
         (with-current-buffer buffer
           (condition-case err
@@ -862,23 +778,17 @@ Returns the server, or nil."
                                      (list emjupy-eglot-idle-command)
                                      "python")))
                 (emjupy--set-workspace-configuration nb connected)
-                ;; Make sure this buffer is one the server manages.  Eglot
-                ;; activates that through hooks tied to the project a buffer
-                ;; belongs to, and a shadow buffer in a transient project is
-                ;; not always recognised -- on Emacs 30 the connection
-                ;; succeeded and the buffer was left unmanaged, so every
-                ;; request fell through to a local server instead.
+                ;; Make sure the server manages this buffer: Eglot does it
+                ;; through project hooks, which on Emacs 30 may miss a shadow
+                ;; buffer in a transient project.
                 (emjupy--ensure-managed-by connected)
                 connected)
             ;; Everything: the socket is opened and Eglot started here, and
             ;; either fails with plain errors; the socket is closed whatever.
             (error
              (when (websocket-openp ws) (websocket-close ws))
-             ;; Recorded, not just said.  A message in the echo area during
-             ;; startup is gone by the time anyone asks what happened, and
-             ;; this branch -- the socket opened and Eglot then refused to
-             ;; attach to it -- left the diagnostic reporting no failure at
-             ;; all while a local server quietly took over.
+             ;; Recorded, not only said: an echo-area message at startup is gone
+             ;; by the time anyone asks why a local server took over.
              (setq emjupy--lsp-last-failure
                    (format "Eglot would not attach: %s"
                            (error-message-string err)))

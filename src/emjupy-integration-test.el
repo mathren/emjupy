@@ -844,7 +844,7 @@ Needs EMJUPY_TEST_URL2; skipped otherwise."
               (kill-buffer b))))))))
 
 (ert-deftest emjupy-int-eglot-rename-works-from-a-notebook ()
-  "`eglot-rename\' run in a notebook buffer renames through the shadow
+  "`eglot-rename' run in a notebook buffer renames through the shadow
 buffer, across every cell -- rather than failing with \"No current
 JSON-RPC connection\" because the notebook buffer is not the one Eglot
 manages."
@@ -1040,7 +1040,7 @@ the state this is here to catch."
   "A progress bar written without any width drawn inside the cell.
 
 The kernel is told the box width in COLUMNS, which is how tqdm and
-anything using `shutil.get_terminal_size\=' learn how wide to draw when
+anything using `shutil.get_terminal_size' learn how wide to draw when
 their output is not a terminal; and whatever still comes out wider is
 folded where the box ends."
   (emjupy-int--with-live-kernel
@@ -1322,10 +1322,10 @@ must stop showing as running, rather than wait for a reply that will
 never come.
 
 Expected to fail.  The server restarts the kernel about
-four seconds later but sends nothing over the notebook\'s connection --
+four seconds later but sends nothing over the notebook's connection --
 no \"restarting\" status, no close -- and its REST API reports the new
 kernel as \"starting\", so nothing that arrives says the run is over.
-Ending it needs a check made while a cell runs: the kernel\'s session
+Ending it needs a check made while a cell runs: the kernel's session
 changing, or the kernel polled.  A connection that does close is
 handled: the cells running on it are ended."
   :expected-result :failed

@@ -44,7 +44,7 @@ The output a message causes is drawn in the cell its widget is in.")
 
 (defun emjupy--widget-put-path (state path value)
   "Set the place PATH names in STATE to VALUE.
-PATH is a vector of keys and indices, as `buffer_paths\=' gives them."
+PATH is a vector of keys and indices, as `buffer_paths' gives them."
   (let ((place state) (keys (append path nil)))
     (while (cdr keys)
       (setq place (if (integerp (car keys)) (aref place (car keys))
@@ -54,10 +54,10 @@ PATH is a vector of keys and indices, as `buffer_paths\=' gives them."
       (puthash (car keys) value place))))
 
 (defun emjupy--widget-on-comm (kernel msg-type content &optional buffers)
-  "Keep the widget models up to date from KERNEL\='s comm messages.
+  "Keep the widget models up to date from KERNEL's comm messages.
 MSG-TYPE is the message type and CONTENT its content.  BUFFERS are the
-binary data the message carried; each goes where `buffer_paths\=' says,
-in the state -- an image widget\'s value, say."
+binary data the message carried; each goes where `buffer_paths' says,
+in the state -- an image widget's value, say."
   (let ((id (gethash "comm_id" content))
         (data (gethash "data" content)))
     (pcase msg-type
@@ -79,7 +79,7 @@ in the state -- an image widget\'s value, say."
       ("comm_close" (remhash id emjupy--widget-models)))))
 
 (defun emjupy--widget-redraw (kernel)
-  "Redraw the cells of KERNEL\'s notebook that show widgets.
+  "Redraw the cells of KERNEL's notebook that show widgets.
 A widget changed in the kernel -- a progress bar moving, an image
 replaced -- is drawn anew; the redraw waits for the output timer, so
 many changes in a row cost one."
@@ -94,7 +94,7 @@ many changes in a row cost one."
       (emjupy--schedule-render buf))))
 
 (defun emjupy--widget-put-buffers (state data buffers)
-  "Put BUFFERS into STATE where DATA\'s `buffer_paths\=' say."
+  "Put BUFFERS into STATE where DATA's `buffer_paths' say."
   (when buffers
     (cl-loop for path across (or (gethash "buffer_paths" data) [])
              for buffer in buffers
@@ -161,7 +161,7 @@ ACTION says what using it does, with ARG: see `emjupy-widget-activate'."
 
 (defun emjupy--widget-date-text (value)
   "Return the date or time VALUE as text: ISO 8601, as it is edited.
-A widget\'s month counts from 0, as in JavaScript."
+A widget's month counts from 0, as in JavaScript."
   (let ((date (and (gethash "year" value)
                    (format "%04d-%02d-%02d" (gethash "year" value)
                            (1+ (gethash "month" value))
@@ -311,7 +311,7 @@ ID is the widget's comm id."
   (numberp (gethash "value" s)))
 (defun emjupy--widget-date-kind (s)
   "Return `date', `time' or `both' if S is for a date or a time, else nil.
-From its value, or -- when it has none yet -- from its model\'s name, the
+From its value, or -- when it has none yet -- from its model's name, the
 one thing that says what a value it would take."
   (let ((v (gethash "value" s))
         (name (or (gethash "_model_name" s) "")))
@@ -329,7 +329,7 @@ one thing that says what a value it would take."
   "Return non-nil if S, a widget's state, has the shape of a date value."
   (emjupy--widget-date-kind s))(defun emjupy--widget-list-p (s)
   "Return non-nil if S is a list of words or numbers, edited as text.
-Those widgets say whether a value may repeat; a file upload\'s value is
+Those widgets say whether a value may repeat; a file upload's value is
 a list too, of files, which no text stands for."
   (and (vectorp (gethash "value" s)) (emjupy--widget-has s "allow_duplicates")))
 (defun emjupy--widget-typed-p (s)
@@ -366,7 +366,7 @@ ID is the widget's comm id."
 
 (defun emjupy--widget-limits (s)
   "Return the lowest and highest value of S, as a cons.
-A widget with a `base\=' is logarithmic: its bounds are exponents."
+A widget with a `base' is logarithmic: its bounds are exponents."
   (let ((low (gethash "min" s)) (high (gethash "max" s))
         (base (gethash "base" s)))
     (if (and (numberp base) (numberp low) (numberp high))
@@ -379,11 +379,11 @@ A widget with a `base\=' is logarithmic: its bounds are exponents."
     (and (emjupy-bytes-p v) (emjupy-bytes-data v))))
 
 (defun emjupy--widget-media-p (s)
-  "Return non-nil if S, a widget\'s state, has the shape of a sound or video."
+  "Return non-nil if S, a widget's state, has the shape of a sound or video."
   (and (emjupy--widget-bytes s) (emjupy--widget-has s "format" "autoplay")))
 (defun emjupy--widget-draw-media (id s)
   "Draw S, a sound or a video, as a line opening it in a window of its own.
-ID is the widget\'s comm id."
+ID is the widget's comm id."
   (let ((bytes (emjupy--widget-bytes s)))
     (list (emjupy--widget-button
            (format "▶ %s (%s, %s) -- RET or click to play it"
@@ -393,24 +393,24 @@ ID is the widget\'s comm id."
            id 'open-media))))
 
 (defun emjupy--widget-image-p (s)
-  "Return non-nil if S, a widget\'s state, has the shape of an image."
+  "Return non-nil if S, a widget's state, has the shape of an image."
   (and (emjupy--widget-bytes s) (emjupy--widget-has s "format")))
 (defun emjupy--widget-image-type (s)
-  "Return the image type of S\'s format, or nil if Emacs cannot draw it."
+  "Return the image type of S's format, or nil if Emacs cannot draw it."
   (let ((type (pcase (downcase (or (gethash "format" s) ""))
                 ("png" 'png) ((or "jpeg" "jpg") 'jpeg) ("gif" 'gif)
                 ((or "svg" "svg+xml") 'svg) ("webp" 'webp))))
     (and type (image-type-available-p type) type)))
 (defun emjupy--widget-image-payload (s)
-  "Return S\'s image as `emjupy--render-image-output\=' takes it."
+  "Return S's image as `emjupy--render-image-output' takes it."
   (let ((bytes (emjupy--widget-bytes s)))
     (if (eq (emjupy--widget-image-type s) 'svg)
         (decode-coding-string bytes 'utf-8)
       (base64-encode-string bytes t))))
 (defun emjupy--widget-draw-image (id s)
   "Draw S, an image, in the notebook, or a line opening it.
-The line is drawn instead when `emjupy-inline-figures\=' is nil.  ID is
-the widget\'s comm id."
+The line is drawn instead when `emjupy-inline-figures' is nil.  ID is
+the widget's comm id."
   (let ((bytes (emjupy--widget-bytes s))
         (type (emjupy--widget-image-type s)))
     (list (cond ((string-empty-p bytes) (propertize "[empty image]"
@@ -429,7 +429,7 @@ the widget\'s comm id."
                     id 'open-image))))))
 
 (defun emjupy--widget-upload-p (s)
-  "Return non-nil if S, a widget\'s state, has the shape of a file upload."
+  "Return non-nil if S, a widget's state, has the shape of a file upload."
   (and (vectorp (gethash "value" s)) (emjupy--widget-has s "accept"
                                                          "multiple")))
 (defun emjupy--widget-draw-upload (id s)
@@ -489,12 +489,12 @@ the widget\'s comm id."
          #'emjupy--widget-draw-text))
   "How a widget is drawn, by the shape of its state: (NAME TEST DRAW).
 The first rule whose TEST is true of the state draws the widget: DRAW is
-called with the comm id and the state, and returns the widget\'s lines.
-The order matters -- a range\'s value is a list, and is tried before
+called with the comm id and the state, and returns the widget's lines.
+The order matters -- a range's value is a list, and is tried before
 lists; options before a value, since a dropdown has both.")
 
 (defun emjupy--widget-add-rule (rule)
-  "Put RULE, (NAME TEST DRAW), first in `emjupy-widget-rules\=', once.
+  "Put RULE, (NAME TEST DRAW), first in `emjupy-widget-rules', once.
 For a layer above this one: a widget that draws itself must be known as
 such before any other rule takes it for what its state looks like."
   (unless (assq (car rule) emjupy-widget-rules)
@@ -517,7 +517,7 @@ such before any other rule takes it for what its state looks like."
      (t
       (let ((lines (funcall (nth 2 rule) id state))
             (desc (gethash "description" state)))
-        ;; a description goes before the control, but a container\'s
+        ;; a description goes before the control, but a container's
         ;; children have their own, and a button wears it already
         (if (and lines (stringp desc) (not (string-empty-p desc))
                  (not (memq (car rule) '(container button))))
@@ -573,7 +573,7 @@ BUFFERS, unibyte strings, go where BUFFER-PATHS say in the state."
         (emjupy-flush-output buf)))))
 
 (defun emjupy--widget-at (event)
-  "Return the widget control at EVENT\'s position, or at point.
+  "Return the widget control at EVENT's position, or at point.
 The value is a list of the comm id, the action, its argument and the
 cell."
   (let* ((pos (if (mouse-event-p event) (posn-point (event-start event))
@@ -585,7 +585,7 @@ cell."
           (emjupy--cell-at-point-including-output pos))))
 
 (defun emjupy--widget-clamp (state value)
-  "Return VALUE held within STATE\'s bounds, if it has any."
+  "Return VALUE held within STATE's bounds, if it has any."
   (let* ((limits (emjupy--widget-limits state)) (low (car limits))
          (high (cdr limits)))
     (if (and (numberp low) (numberp high)) (min high (max low value)) value)))
@@ -605,7 +605,7 @@ A widget with a `base\\=' is logarithmic: a step multiplies by the base."
 
 (defun emjupy--widget-read (state arg)
   "Ask for a new value for the widget whose state is STATE.
-What is asked for follows the value\'s kind; ARG is the end of a range
+What is asked for follows the value's kind; ARG is the end of a range
 being edited, 0 or 1.  Returns the value to send."
   (let* ((value (gethash "value" state))
          (limits (emjupy--widget-limits state))
@@ -739,7 +739,7 @@ Its content is sent apart, as binary data, so it is null here."
     entry))
 
 (defun emjupy--widget-file-bytes (file)
-  "Return FILE\'s contents, as a unibyte string."
+  "Return FILE's contents, as a unibyte string."
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert-file-contents-literally file)

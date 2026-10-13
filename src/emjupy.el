@@ -110,7 +110,7 @@ Says the version, the directory the code was loaded from and, when that
 is a git checkout, the revision -- so \"am I running the fix?\" has an
 answer that does not depend on remembering how it was installed.
 
-In a notebook buffer it also says the kernel\='s working directory and
+In a notebook buffer it also says the kernel's working directory and
 which language server is answering -- the one beside the kernel, or one
 on this machine, which cannot see your own modules when the kernel runs
 elsewhere.

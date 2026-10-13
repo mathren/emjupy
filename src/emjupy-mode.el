@@ -12,10 +12,8 @@
 
 ;;; Commentary:
 
-;; `emjupy-mode', its keymap and menu, and the glue between the buffer and
-;; the layers under it: completion, documentation, and the language
-;; settings a cell borrows.  Above everything that draws or runs cells,
-;; and below the notebook browser, which opens buffers in this mode.
+;; `emjupy-mode', and the glue between the buffer and the layers under it:
+;; completion, documentation, and the language settings a cell borrows.
 
 ;;; Code:
 
@@ -38,7 +36,7 @@
 When a number, any per-command work taking more than that many seconds
 is logged with the name of the function responsible.  0.05 is a good
 starting point.  This exists because a hang is hard to attribute from
-the outside: it says which of emjupy\='s hooks is the slow one, or --
+the outside: it says which of emjupy's hooks is the slow one, or --
 just as usefully -- that none of them is, and the time is going
 somewhere else entirely."
   :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
@@ -47,8 +45,8 @@ somewhere else entirely."
 (defcustom emjupy-electric-pairs t
   "When non-nil, pair brackets and quotes as you type in cells.
 
-`electric-pair-mode\=' is global and off by default, and `emjupy-mode\='
-derives from `fundamental-mode\=', so a notebook would otherwise behave
+`electric-pair-mode' is global and off by default, and `emjupy-mode'
+derives from `fundamental-mode', so a notebook would otherwise behave
 less like a Python buffer than the code in it deserves.  Set to nil to
 leave the matter to your own configuration."
   :type 'boolean
@@ -97,21 +95,12 @@ NAME is what gets reported."
 (defconst emjupy--internal-text-properties
   '(emjupy-cell emjupy-pad emjupy-overlay)
   "Text properties that belong to this buffer and must not travel.
-
-`emjupy-cell' is the worst of them: it holds the cell STRUCT, so text
-copied out of a cell carries a reference to that whole cell -- its
-outputs, its overlay, its hash tables -- and the reference is a snapshot
-that stops being true the moment the cell changes.  Yank it somewhere
-else and the pasted text claims to belong to a cell it has nothing to do
-with, which `emjupy--cell-at-point' reads as a fallback when no overlay
-covers the position.")
+`emjupy-cell' holds the cell itself: yanked elsewhere, the text would
+claim a cell it has nothing to do with.")
 
 (defun emjupy--strip-internal-properties (string)
   "Return STRING without emjupy's internal text properties.
-
-Faces and the like are kept: they are what makes yanked code still look
-like code.  Only the properties that mean something to emjupy alone, and
-only inside the buffer they came from, are removed."
+Faces stay, so yanked code still looks like code."
   (let ((copy (copy-sequence string)))
     (remove-list-of-text-properties 0 (length copy)
                                     emjupy--internal-text-properties copy)
@@ -133,19 +122,11 @@ commands of every file, so they are bound above them all.")
 ;;;; Language settings
 
 (defun emjupy--adopt-language-settings ()
-  "Take the syntax and comment settings of `emjupy-language-mode\\='.
-
-The aim is that editing a cell is editing that language, without
-emulating one command at a time.  Most of what a programming mode gives
-is not commands at all: it is the syntax table, which decides what
-counts as a word or a symbol and so what \\[dabbrev-expand] will find
-and where \\[forward-word] stops; and the comment variables, without
-which \\[comment-dwim] has no comment syntax to use and says so.
-
-Taken by running the mode in a scratch buffer and copying what it set,
-rather than by listing the variables here.  A list would be a second
-place to keep up to date, and would be wrong the moment the mode changed
--- which is the same trap as emulating the commands."
+  "Take the syntax and comment settings of `emjupy-language-mode'.
+So a cell is edited as that language: the syntax table decides where
+\\[forward-word] stops and what \\[dabbrev-expand] finds, the comment
+variables what \\[comment-dwim] does.  Copied from the mode run in a
+scratch buffer, not listed here, so they follow the mode."
   (when emjupy-language-mode
     (let (table vars)
       (with-temp-buffer
@@ -177,11 +158,10 @@ place to keep up to date, and would be wrong the moment the mode changed
   "The files emjupy is made of, as features.")
 
 (defun emjupy--stray-modules ()
-  "Return the emjupy files loaded from a directory other than this one\='s.
-Each is a cons of the feature and the file.  Two installations on the
-`load-path\=' at once -- a package and a checkout -- give a mix, and a
-mix fails in ways that look like bugs: a command named where its key
-should be, widgets drawn as text."
+  "Return the emjupy files loaded from a directory other than this one's.
+Each is a cons of the feature and the file.  A package and a checkout
+both on the `load-path' give a mix, which fails in ways that look like
+bugs."
   (cl-loop for feature in emjupy--modules
            for file = (and (featurep feature) (feature-file feature))
            when (and file (not (file-equal-p (file-name-directory file)
@@ -192,10 +172,10 @@ should be, widgets drawn as text."
   "Non-nil once this session has looked for a mixed installation.")
 
 (defun emjupy--warn-about-strays ()
-  "Warn, once a session, if emjupy\='s files come from two installations.
+  "Warn, once a session, if emjupy's files come from two installations.
 Run when a notebook first opens rather than when emjupy is loaded, so
 that loading it does nothing but define, and every file is loaded by
-then however emjupy was -- by a `require\=', or an autoloaded command."
+then however emjupy was -- by a `require', or an autoloaded command."
   (unless emjupy--strays-checked
     (setq emjupy--strays-checked t)
     (when-let* ((strays (emjupy--stray-modules)))
@@ -216,11 +196,9 @@ are on the `load-path' -- remove one, or put the one you want first."
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
   (emjupy--adopt-language-settings)
-  ;; When a kernel attaches, the language-server layer asks it where it
-  ;; runs.  Wired here, where the layers meet, rather than by either file on
-  ;; load: the kernel layer cannot name the one above it, and a package
-  ;; should not add hooks just by being loaded.  `add-hook\=' does nothing
-  ;; if it is already there.
+  ;; When a kernel attaches, the language-server layer asks it where it runs.
+  ;; Wired here, where the layers meet, not on load: a package should not add
+  ;; hooks by being loaded.
   (add-hook 'emjupy-kernel-connected-functions #'emjupy--refresh-kernel-cwd)
   ;; and how wide to draw, now and whenever the window changes
   (add-hook 'emjupy-kernel-connected-functions #'emjupy--tell-kernel-width)
@@ -233,32 +211,20 @@ are on the `load-path' -- remove one, or put the one you want first."
   ;; The number column narrows the page; the rules are redrawn to fit.
   (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled
             nil t)
-  ;; Cells hold code, so the editing conveniences a programming mode would
-  ;; give apply here too.  emjupy-mode derives from `fundamental-mode', which
-  ;; brings none of them, and nothing about the buffer suggests to the user
-  ;; that they have to be asked for.
+  ;; Cells hold code: the conveniences a programming mode gives, which
+  ;; `fundamental-mode' does not.
   (when emjupy-electric-pairs
     (electric-pair-local-mode 1))
-  ;; Paint the page: the buffer's own background becomes the canvas, and the
-  ;; cell overlays paint their interiors back to the theme's normal
-  ;; background -- so the gaps between cells read as the page behind them.
-  ;; Remapping (rather than setting a colour here) means the faces can be
-  ;; re-derived on a theme change without redrawing anything.
+  ;; Output backgrounds, from the theme.
   (emjupy--sync-theme-colors)
-  ;; Keep the outlines matched to the window. `window-configuration-change-hook'
-  ;; catches splits and manual drags; `window-size-change-functions' catches
-  ;; whole-frame resizes (full-screen toggles), which do not always change the
-  ;; window configuration.
+  ;; Outlines follow the window: `window-configuration-change-hook' for splits
+  ;; and drags, `window-size-change-functions' for frame resizes.
   (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t)
   (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed
             nil t)
   (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
-  ;; Completion/eldoc for code cells are delegated to the shared code
-  ;; shadow buffer (see section 8) automatically -- no action needed
-  ;; from the user beyond normal editing and the usual M-TAB/eldoc UI.
-  ;; The Jupyter-server transport first: no file, no TRAMP, and the server
-  ;; sits next to the kernel.  The shadow-file path stays as the fallback for
-  ;; a server without `jupyter-lsp'.
+  ;; Completion and eldoc in code cells, through the shadow buffer: over the
+  ;; Jupyter server's `jupyter-lsp' first, a local server otherwise.
   (add-hook 'completion-at-point-functions #'emjupy--capf nil t)
   (add-hook 'eldoc-documentation-functions #'emjupy--eldoc nil t)
   ;; M-. and friends: Eglot's xref backend lives in the shadow buffer, so the

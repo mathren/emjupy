@@ -12,12 +12,11 @@
 
 ;;; Commentary:
 
-;; Logging in to a server, listing/opening/creating notebooks, and reading
-;; and writing strict nbformat v4 JSON.
+;; Logging in to a server, listing, opening and creating notebooks, and reading
+;; and writing nbformat v4.
 ;;
-;; One port = one kernel: `emjupy-login' adopts the kernel already running
-;; behind a tunnel and binds it to that server, so opening a notebook lands
-;; in the live REPL.
+;; One port, one kernel: `emjupy-login' adopts the kernel already running behind
+;; a tunnel, so opening a notebook lands in the live session.
 
 ;;; Code:
 
@@ -120,13 +119,8 @@ credential ends up on screen and in the minibuffer history."
 
 (defun emjupy--server-reachable-p (server)
   "Return non-nil if SERVER accepts SERVER's credentials.
-
-Probes /api/contents, not /api/status.  Status is a health endpoint and
-several jupyter_server versions answer it without authentication at all,
-so a tokenless probe came back 200 and emjupy concluded no token was
-needed -- then every write was refused with 403 and the token was never
-asked for.  Contents is both genuinely protected and the thing emjupy
-actually needs."
+Probes /api/contents: some jupyter_server versions answer /api/status
+without authentication."
   (let ((inhibit-message t)
         (message-log-max nil))
     ;; A failed request -- refused, or no server -- is the answer "no";
@@ -137,11 +131,8 @@ actually needs."
 
 (defun emjupy--resolve-token (base-url explicit)
   "Work out the token for BASE-URL, prompting only when unavoidable.
-
-Order: EXPLICIT, then the token already registered for this server,
-then no token at all (many tunnelled servers are started with
-`--IdentityProvider.token='), and only then ask.  Asking every time is
-what made logging into a second tunnel tedious."
+EXPLICIT, then the token registered for this server, then none -- many
+tunnelled servers run without -- and only then ask."
   (or explicit
       ;; A token already registered for this server is used as it stands.
       ;; It was accepted once; re-probing only to confirm costs a request
@@ -150,11 +141,9 @@ what made logging into a second tunnel tedious."
         (and known
              (let ((tok (emjupy-server-token known)))
                (and tok (not (string-empty-p tok)) tok))))
-      ;; Only now is a probe worth making: is this one of the tunnelled
-      ;; servers started with `--IdentityProvider.token='?  Quietly -- a 403
-      ;; here is the expected answer for a server that does want a token,
-      ;; not a failure, and reporting it made every login look like it had
-      ;; gone wrong once before succeeding.
+      ;; Now a probe is worth making, for a server started with
+      ;; `--IdentityProvider.token='.  Quietly: a 403 is the expected answer
+      ;; from one that wants a token.
       (and (emjupy--server-reachable-p
             (make-emjupy-server :base-url base-url :token ""))
            "")
@@ -168,11 +157,8 @@ what made logging into a second tunnel tedious."
 
 (defun emjupy--bind-server-kernel (server)
   "Pick the kernel this SERVER's port should be bound to, and remember it.
-
-One port = one kernel.  The usual case is a single kernel already
-running behind the tunnel, which is adopted silently -- no prompt, and
-no second kernel process spawned next to the one you started.  Only a
-server with nothing running gets a fresh kernel."
+One port, one kernel: a single kernel running there is adopted
+silently; only a server with none gets a fresh one."
   (let* ((kernels (emjupy--server-kernels server))
          (id (cond
               ((= (length kernels) 1) (cdar kernels))
@@ -192,11 +178,7 @@ server with nothing running gets a fresh kernel."
     id))
 
 (defun emjupy--read-server-url ()
-  "Ask for a port or URL, returning `emjupy-default-port' if none is given.
-
-The prompt shows the default, and answering nothing accepts it -- there
-is little point making someone type the number Jupyter would have used
-anyway."
+  "Ask for a port or URL, returning `emjupy-default-port' if none is given."
   (let ((answer (read-string
                  (format "Jupyter port or URL (default %s): "
                          emjupy-default-port)
@@ -236,11 +218,7 @@ different kernel. With a prefix argument, always prompt for the token."
     ;; hand one out; only the HTML pages do.
     (emjupy--harvest-xsrf server)
 
-    ;; If the credentials turn out to be wrong, ask once and carry on rather
-    ;; than failing the command.  A 403 here means the token guessed above
-    ;; was not accepted -- which is what made logging in take two attempts:
-    ;; the first reported the 403 and stopped, and only the second, having
-    ;; asked for a token, worked.
+    ;; Wrong credentials: ask once and carry on, rather than fail the command.
     (let ((kernel-id
            (condition-case err
                (emjupy--bind-server-kernel server)
@@ -325,14 +303,9 @@ Returns the notebook buffer."
 
             (with-current-buffer buf
               (emjupy-mode)
-              ;; Set the notebook BEFORE drawing, and draw through
-              ;; `emjupy--rerender-notebook' rather than looping over the cells
-              ;; here.  Re-opening a notebook reuses its buffer but parses
-              ;; fresh cell structs, so the previous structs' overlays become
-              ;; unreachable -- and this path used to erase the text without
-              ;; deleting them, leaving each one collapsed at position 1 still
-              ;; drawing its rule.  That is the stack of stray box borders at
-              ;; the top of a re-opened notebook.
+              ;; The notebook is set before drawing, through
+              ;; `emjupy--rerender-notebook': reopening reuses the buffer with
+              ;; fresh cells, and the old overlays must go with the text.
               (setq emjupy--buffer-notebook nb-struct)
               (emjupy--rerender-notebook)
               ;; A freshly opened notebook starts at the top, as a file does.
@@ -410,25 +383,20 @@ Returns the notebook buffer."
 ;;; Server dashboard:
 
 ;;; ---------------------------------------------------------------------
-;; One buffer per server showing what it has: the kernels running on it and
-;; the notebooks stored on it, browsable into subdirectories. Built on
-;; `tabulated-list-mode' rather than hand-drawn, so sorting, navigation and
-;; column handling come from Emacs. It is emphatically NOT a file manager --
-;; press `d\' to hand the directory to Dired, over TRAMP if the server is
-;; remote.
+;; One buffer per server: the kernels running on it and the notebooks stored on
+;; it, browsable into subdirectories.  Built on `tabulated-list-mode'.  Not a
+;; file manager: `d' hands the directory to Dired, over TRAMP when it is remote.
 
 ;;;; The notebook listing
 
 (defvar-local emjupy-list--server nil
-  "The `emjupy-server\' this dashboard describes.")
+  "The `emjupy-server' this dashboard describes.")
 (defvar-local emjupy-list--path ""
   "Contents-API subdirectory this dashboard is showing.")
 
 (defface emjupy-list-notebook
-  ;; Inherit only.  MELPA's guidelines ask packages not to inherit a face
-  ;; AND override its attributes -- adding :weight bold here can look wrong
-  ;; against a user's customisation of the inherited face.  Customise
-  ;; `emjupy-list-notebook' if you want notebooks bolder.
+  ;; Inherit only: MELPA asks packages not to inherit a face and override its
+  ;; attributes.  Customise `emjupy-list-notebook' for bolder notebooks.
   '((t :inherit font-lock-function-name-face))
   "Face for notebook rows in the server dashboard."
   :group 'emjupy)
@@ -468,17 +436,9 @@ Propertized by kind so the row is identifiable at a glance."
                                      'shadow)))))
 
 (defun emjupy--list-entries (server path)
-  "Return `tabulated-list-entries\' for PATH on SERVER.
-
-Grouped rather than interleaved: directories, then notebooks, then
-other files, then the kernels running on the server.  Notebooks sit
-above kernels because opening one is what the dashboard is for; the
-kernels are context.
-
-Within each group, most recently modified first -- the notebook worked
-on this morning is the one wanted, and alphabetical order buries it
-among however many others share its prefix.  Kernels have no
-modification time and stay sorted by name."
+  "Return `tabulated-list-entries' for PATH on SERVER.
+Directories, notebooks, other files, then the server's kernels; within
+each, most recently modified first.  Kernels, without a time, by name."
   (let* ((contents (emjupy--http-request
                     "GET" server (emjupy--contents-path path)))
          (items (and contents (gethash "content" contents)))
@@ -514,12 +474,9 @@ modification time and stay sorted by name."
                              (string-lessp (aref (cadr a) 1)
                                            (aref (cadr b) 1)))))
               (by-recent (rows)
-                ;; Most recently touched first.  The server reports the time
-                ;; as ISO-8601 in UTC, which sorts correctly as text, so
-                ;; nothing needs parsing -- and an entry with no time falls
-                ;; to the bottom rather than to an arbitrary place.  Ties
-                ;; break by name, so a directory of files written in the
-                ;; same second still reads in a settled order.
+                ;; Most recently touched first: the server's ISO-8601 UTC times
+                ;; sort as text, and an entry without one goes last.  Ties by
+                ;; name.
                 (sort rows
                       (lambda (a b)
                         (let ((ta (or (plist-get (car a) :modified) ""))
@@ -562,7 +519,7 @@ EVENT is the mouse event."
 (defun emjupy-list-up ()
   "Show the parent of the directory being listed, wherever point is.
 
-Bound to \\`^\', as in Dired.  It was bound to `emjupy-list-open\=', which
+Bound to \\`^', as in Dired.  It was bound to `emjupy-list-open', which
 only goes up from the \"..\" row: anywhere else it opened the notebook at
 point, or descended into the directory there."
   (interactive)
@@ -611,10 +568,10 @@ point, or descended into the directory there."
 PATH is relative to what the server serves.  There are four ways to
 reach it, tried in this order, because they differ in whether the result
 can be edited:
-- through `emjupy-remote-root\', when it is set.  That is a path this
+- through `emjupy-remote-root', when it is set.  That is a path this
   Emacs can address -- a TRAMP location, or a local directory -- so the
   file opens normally and can be written back.
-- over TRAMP, when the server\'s address names a real host.  Editable.
+- over TRAMP, when the server's address names a real host.  Editable.
 - as a local file, when the server turns out to be on this machine and
   the path exists.  Also editable.
 - otherwise through the Contents API, read-only.  Nothing needs
@@ -767,7 +724,7 @@ first act would always be to add one."
     (define-key map (kbd "d")   #'emjupy-list-dired)
     (define-key map (kbd "n")   #'emjupy-create-new-notebook)
     map)
-  "Keymap for `emjupy-list-mode\'.")
+  "Keymap for `emjupy-list-mode'.")
 
 (define-derived-mode emjupy-list-mode tabulated-list-mode "emjupy-server"
   "Dashboard for one Jupyter server: its kernels and its notebooks."
@@ -779,7 +736,7 @@ first act would always be to add one."
 (defun emjupy-server-dashboard (&optional server)
   "Show what SERVER has: the kernels running on it and its notebooks.
 
-Defaults to this buffer\='s server, or the last one logged into.  One
+Defaults to this buffer's server, or the last one logged into.  One
 buffer per server, so several tunnels can be inspected side by side."
   (interactive)
   (let* ((server (or server (emjupy--server)))
@@ -795,7 +752,7 @@ buffer per server, so several tunnels can be inspected side by side."
 
 ;;;###autoload
 (defalias 'emjupy-notebook-list #'emjupy-server-dashboard
-  "Alias for `emjupy-server-dashboard\'.")
+  "Alias for `emjupy-server-dashboard'.")
 
 ;;;; Exporting to Python
 
@@ -804,13 +761,9 @@ buffer per server, so several tunnels can be inspected side by side."
 
 (defun emjupy--percent-export (nb)
   "Return NB's cells as a plain Python file in percent format.
-
-Not the shadow buffer verbatim, though that is where the idea comes
-from.  The shadow buffer's `# %% [emjupy:12]' markers carry emjupy's
-internal cell ids, which mean nothing outside emjupy, and it holds code
-cells only -- exporting it would silently drop every markdown cell.
-Plain `# %%' is the convention Jupytext, VS Code and Spyder already
-read."
+Plain `# %%' markers, as Jupytext, VS Code and Spyder read, and the
+markdown cells as comments -- not the shadow buffer, which has emjupy's
+own ids and code cells only."
   (let ((chunks nil))
     (cl-loop for cell across (or (emjupy-notebook-cells nb) [])
              do (let ((source (or (emjupy-cell-source cell) "")))
@@ -1029,12 +982,9 @@ validation even though it looks fine in emjupy."
 
 (defun emjupy--autosave-async (nb)
   "Save NB to its server without waiting, as auto-save does.
-The same as saving by hand -- what is on the server checked first, and
-not saved over if it changed elsewhere -- but nothing waits for it:
-over a remote link both requests cost a round trip, and the upload as
-long as the notebook, and auto-save made Emacs freeze for it every two
-minutes.  The notebook is taken as it is now; edits made while it is on
-its way leave it unsaved, for the next save to take."
+As saving by hand -- not over a notebook changed elsewhere -- but
+asynchronous: over a remote link the requests take round trips.  Edits
+made meanwhile leave the notebook unsaved, for the next save."
   (let* ((buf (emjupy-notebook-buffer nb))
          (server (emjupy-notebook-server nb))
          (path (emjupy-notebook-path nb))
@@ -1433,9 +1383,8 @@ Offered first: the environment named in an environment.yml beside it."
 (defun emjupy--environment-jupyter (env &optional where)
   "Return the `jupyter' program of the environment ENV.
 ENV is a conda environment's name, an environment's directory -- a venv
-or a conda prefix -- or empty for the one first on the PATH.  Looked for
-on the machine of WHERE, a directory; the program is named as that
-machine names it."
+or a conda prefix -- or empty for the one first on the PATH.  Looked
+for on the machine of WHERE, a directory, and named as it names it."
   (let* ((default-directory (or where default-directory))
          (remote (and (file-remote-p default-directory) t))
          (here (lambda (path) (or (file-remote-p path 'localname) path)))
@@ -1828,10 +1777,9 @@ running, to come back to."
 ;; its map, empty, and this fills it.  In emjupy-mode.el, the mode's map
 ;; and menu named commands defined only here, above it.
 
-;; `C-c\' followed by a plain letter is reserved for USERS by the Emacs Lisp
-;; manual (Key Binding Conventions), so a package may not take `C-c s\' or
-;; `C-c w\'; package-lint reports it as an error.  Those keys are left free
-;; for you -- see the README for a snippet that puts the cell commands there.
+;; `C-c' followed by a plain letter is reserved for users (Key Binding
+;; Conventions, in the Emacs Lisp manual), and package-lint reports it; the
+;; README shows how to put cell commands there.
 (let ((map emjupy-mode-map))
   ;; Execution
   (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-and-goto-next)
@@ -1850,20 +1798,14 @@ running, to come back to."
   ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
   (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
   (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
-  ;; A prefix, not a plain letter: `C-c' followed by a letter is reserved
-  ;; for users, and package-lint -- which MELPA requires to be clean --
-  ;; reports any such binding as an error.  `C-c C-u C-l' is all control
-  ;; characters and so belongs to the mode.
+  ;; A prefix of control characters, `C-c C-u C-l', not a plain letter.
   (define-key map (kbd "C-c C-u C-l") #'emjupy-clear-all-outputs)
   (define-key map (kbd "C-c C-s") #'emjupy-split-cell)
   (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
   (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
   (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
-  ;; Deleting against a rendered formula reveals it rather than removing
-  ;; a character that cannot be seen.
-  ;; Both spellings: a graphical Emacs sends <backspace>, and although it
-  ;; normally translates to DEL, a configuration that binds <backspace>
-  ;; itself takes precedence and the DEL binding is never reached.
+  ;; Deleting against a rendered formula reveals it.  Both spellings: a
+  ;; configuration binding <backspace> itself would never reach DEL.
   (define-key map (kbd "DEL")         #'emjupy-latex-unrender-or-delete)
   (define-key map (kbd "<backspace>") #'emjupy-latex-unrender-or-delete)
   (define-key map (kbd "C-$")     #'emjupy-show-traceback)

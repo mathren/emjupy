@@ -12,13 +12,12 @@
 
 ;;; Commentary:
 
-;; The data model every other emjupy file builds on: the customization
-;; group, the server/kernel/notebook/cell structs, the registry of known
-;; servers, and the small lookups that answer "which server/notebook/kernel
-;; does this buffer belong to?".
+;; The data model every other emjupy file builds on: the customization group,
+;; the server, kernel, notebook and cell structs, the registry of servers, and
+;; the lookups that say which a buffer belongs to.
 ;;
 ;; Nothing about a connection is global: a server owns its token and XSRF
-;; cookie, a notebook owns its kernel, a kernel owns its WebSocket.
+;; cookie, a notebook its kernel, a kernel its WebSocket.
 
 ;;; Code:
 
@@ -29,14 +28,9 @@
   "Minimal Jupyter Notebook editor."
   :group 'tools)
 
-;; --- State model -----------------------------------------------------------
-;; emjupy supports several notebooks open at once, from several servers at
-;; once (e.g. two ssh tunnels on different local ports). Nothing about a
-;; connection is global: a server owns its own token and XSRF cookie, a
-;; notebook owns its own kernel, and a kernel owns its own WebSocket and its
-;; own table of in-flight requests. The only globals left are the registry of
-;; known servers and a "most recently used" default for commands invoked from
-;; outside a notebook buffer.
+;; Several notebooks, from several servers, may be open at once.  The only
+;; globals are the registry of servers and the most recently used one, a default
+;; for commands run outside a notebook.
 
 ;;;; Shared state
 
@@ -76,10 +70,8 @@ gets a definite answer rather than a local one.")
   ;; Per-server, not global: two servers issue different XSRF cookies, and
   ;; replaying one server's cookie at another gets a 403.
   xsrf
-  ;; The kernel bound to this port. One port = one kernel: notebooks opened
-  ;; from this server attach to it, so selecting a notebook drops you into
-  ;; the REPL already running behind that tunnel. C-c M-z overrides it for
-  ;; an individual notebook.
+  ;; The kernel bound to this port.  One port, one kernel: notebooks opened from
+  ;; this server attach to it.  C-c M-z overrides it for one notebook.
   kernel-id
   ;; Where the files it serves are, as a file name Emacs can open -- a
   ;; TRAMP name, hops and all -- when emjupy knows rather than infers it:
@@ -173,11 +165,10 @@ from a snapshot taken before it changed anything.")
 
 (defun emjupy--private-directory (dir purpose)
   "Make DIR, readable by the user alone, unless it exists; then check it.
-Signal a `file-error\' unless DIR is a directory of the user\'s own, not
-a symbolic link.  In a shared /tmp another user could have made it
-first, or left a link there pointing elsewhere, and what is written in
-it -- PURPOSE says what, for the message -- would go where they choose,
-or be read by them."
+Signal a `file-error' unless DIR is a directory of the user's own,
+not a symbolic link: in a shared /tmp another user could have made it,
+or left a link there.  PURPOSE says what is written in it, for the
+message."
   (let ((dir (directory-file-name dir)))
     (unless (file-exists-p dir)
       (with-file-modes #o700 (make-directory dir t)))
@@ -196,12 +187,8 @@ or be read by them."
 
 (defun emjupy--cell-at-point (&optional pos)
   "Return the cell containing POS (default point), or nil.
-
-Looks at the cell overlays rather than the `emjupy-cell\' text property.
-The property is stamped once at render time and plain `insert\' does not
-carry it onto new text, so anything typed at a cell boundary -- the end
-of its last line, the obvious place to type -- was invisible to a lookup
-by property.  Overlays move with insertions, so they always know."
+From the overlays, which move with insertions, not the `emjupy-cell'
+property, which text typed at a cell's end does not carry."
   (let ((pos (or pos (point)))
         (found nil))
     (when emjupy--buffer-notebook
@@ -215,12 +202,9 @@ by property.  Overlays move with insertions, so they always know."
                       (setq found cell)))))
     (or found
         (get-text-property pos 'emjupy-cell)
-        ;; Past the end of the last cell -- point-max, or a gutter line --
-        ;; no overlay covers the position and no property was stamped there.
-        ;; Fall back to the nearest cell rather than nothing: returning nil
-        ;; made `emjupy-insert-cell-below' think there was no current cell,
-        ;; so it appended to the END of the notebook instead of inserting
-        ;; below the one you were looking at.
+        ;; Past the last cell -- point-max, or a gutter line -- no overlay
+        ;; covers the position: the nearest cell, so a new cell goes below the
+        ;; one in view, not at the end.
         (emjupy--nearest-cell pos))))
 
 (defun emjupy--nearest-cell (pos)
@@ -241,17 +225,12 @@ by property.  Overlays move with insertions, so they always know."
 
 (defun emjupy--cell-at-point-including-output (&optional pos)
   "Return the cell owning POS, counting its output box as part of it.
-
-`emjupy--cell-at-point\' answers for the source only, which is right for
-editing: output is not text the user is writing.  Commands about the
-output itself need the other answer -- with point in an output box, the
-cell meant is the one above, whose output that is."
+For commands about output: in an output box, the cell meant is the one
+above.  `emjupy--cell-at-point' answers for the source only."
   (let ((pos (or pos (point))))
-    ;; The output box is asked about FIRST.  A position inside one lies
-    ;; between two cells as far as the source lookup is concerned, and that
-    ;; lookup answers with the cell below -- which has its own, usually
-    ;; empty, output, so the command reported nothing to hide while point
-    ;; sat in the very output meant.
+    ;; The output box is asked about first: as far as the source lookup goes, a
+    ;; position in one lies before the cell below, and would be answered with
+    ;; it.
     (or (when emjupy--buffer-notebook
           (cl-find-if
            (lambda (cell)

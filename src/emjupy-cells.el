@@ -26,7 +26,7 @@
 ;;;; Options
 
 (defcustom emjupy-confirm-clear-output t
-  "When non-nil, ask before discarding a cell\='s output.
+  "When non-nil, ask before discarding a cell's output.
 
 Output can represent a long run, and the kernel cannot be asked to
 produce it again for nothing.  The question costs a keystroke; the
@@ -36,23 +36,18 @@ mistake costs the run."
 
 ;;;; Redrawing, whole or put right
 
-;; A redraw that stops partway is put right by drawing the notebook again
-;; from its cells, which only this layer can do; so the redraws that need
-;; it are here too -- of a cell's output in place, and of every output
-;; when the width to draw at changes.  The drawing itself is in
-;; emjupy-render.el, below.
+;; A redraw that stops partway is put right by drawing the notebook again from
+;; its cells, which only this layer can do; so the redraws that need it are here
+;; too.  The drawing itself is in emjupy-render.el.
 
 (defvar-local emjupy--recovering nil
   "Non-nil while the buffer is being redrawn after a redraw failed.")
 
 (defmacro emjupy--atomic-redraw (keep-typing &rest body)
   "Run BODY, a redraw, so that it happens whole or is put right.
-An error or a quit partway leaves the buffer half drawn -- text replaced
-and its overlays not yet, or the other way round -- which is scrambling:
-what is shown and what the cells hold come apart.  The cells are the
-notebook and the buffer a drawing of them, so when BODY does not finish
-the buffer is redrawn from them at once, and the error goes on up.
-KEEP-TYPING non-nil means text typed may not be in the cells yet and is
+An error or a quit partway leaves the buffer and the cells apart, so
+the buffer is redrawn from the cells at once, and the error goes on up.
+KEEP-TYPING non-nil means typed text may not be in the cells yet, and is
 synced first; a structural command syncs before it starts, and passes
 nil."
   (declare (indent 1) (debug t))
@@ -69,14 +64,10 @@ nil."
 
 (defun emjupy--append-stream-output (cell)
   "Draw only what CELL's last stream output gained, if that is all.
-Return non-nil if that was done -- nothing new to draw counts, when only
-the box\='s label changes.  Drawing the whole box again costs as
-much as the output is long, so a cell printing for minutes made each
-update slower than the last, and Emacs stuttered while it ran.  Taken
-only when nothing drawn can look different: the same pieces, the stream
-the same object grown at its end, the box folded at the same width, what
-was drawn ending in a whole line, and no carriage return or colour
-escape -- which rewrite or recolour what came before -- anywhere in it."
+Return non-nil if that was done; nothing new to draw counts, when only
+the label changes.  Only when nothing drawn could look different: the
+same pieces, the stream grown at its end, the same fold width, a whole
+line last drawn, and no carriage return or colour escape in it."
   (let* ((out (emjupy-cell-output-ov cell))
          (drawn (and (overlayp out) (eq (overlay-buffer out) (current-buffer))
                      (overlay-get out 'emjupy-drawn)))
@@ -130,10 +121,8 @@ escape -- which rewrite or recolour what came before -- anywhere in it."
 
 (defun emjupy--refresh-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
-
-Only the text between the end of the cell's source and the end of its
-output box is replaced.  Returns non-nil when that could be done; nil
-means the caller should fall back to a full redraw."
+Return non-nil when that could be done; nil means the caller should
+redraw the notebook."
   ;; Output that only grew at its end is added to; done is done, and says
   ;; so -- nil here means "redraw the whole notebook instead".
   (or (emjupy--append-stream-output cell)
@@ -158,17 +147,11 @@ means the caller should fall back to a full redraw."
                     (emjupy--render-cell-output cell)
                     (setq new-end (point)))
                   (emjupy--refresh-cell-header cell)
-                  ;; The bottom edge belongs to whichever box is last.  With
-                  ;; output, that is the output box's own footer and the cell
-                  ;; has none; without, the cell must carry it again --
-                  ;; otherwise clearing output left the cell with no bottom at
-                  ;; all.
+                  ;; The bottom edge belongs to the last box: the output's own
+                  ;; footer, or, with no output, the cell's.
                   (emjupy--refresh-cell-footer cell)
-                  ;; Only the box just drawn: it is all output, and marking the
-                  ;; whole notebook again cost as much as all its output is
-                  ;; long, for every update of every cell.  The marks are the
-                  ;; same on every character, so a part is marked as the whole
-                  ;; would be.
+                  ;; Only the box just drawn is marked: marking the whole
+                  ;; notebook costs as much as all its output, on every update.
                   (when emjupy-protect-non-cell-regions
                     (emjupy--make-read-only start new-end))
                   (emjupy--reconcile-rules))
@@ -179,11 +162,8 @@ means the caller should fall back to a full redraw."
 
 (defun emjupy--repad-output (cell)
   "Re-align CELL's output padding after the window width changed.
-
-Output folded to the old width is drawn again for the new one -- but
-only if it has a line wider than the narrower of the two, since
-anything else looks the same at either and redrawing it would cost a
-cell's worth of work for nothing."
+Output is folded again only if a line is wider than the narrower width;
+anything else looks the same at either."
   (let ((ov (emjupy-cell-output-ov cell))
         (width (emjupy--box-width)))
     (when (and (overlayp ov)
@@ -194,11 +174,8 @@ cell's worth of work for nothing."
       (emjupy--refresh-cell-output cell)
       (setq ov nil))
     (when (overlayp ov)
-      ;; Walk the pad markers, not the characters.  There is one pad per
-      ;; output LINE and there can be tens of thousands of characters -- an
-      ;; inline figure is a single output of some 18,000 -- so stepping
-      ;; through them one at a time made re-aligning proportional to the size
-      ;; of the output rather than to the number of lines in it.
+      ;; Walk the pad markers, one per output line, not the characters: an
+      ;; inline figure is one output of some 18,000.
       (let ((pos (overlay-start ov))
             (end (overlay-end ov)))
         (while (and pos (< pos end))
@@ -212,13 +189,8 @@ cell's worth of work for nothing."
 
 (defun emjupy--refresh-box-rules (&optional force)
   "Redraw cell outlines at the current window width, if it changed.
-With FORCE non-nil, redraw even when the width is unchanged.
-
-The rules live in overlay before/after-strings, which are built once at
-render time -- so without this a rule sized for a full-screen frame
-stays that long when the window shrinks and wraps onto a second line.
-Only the overlay strings are rebuilt, not the buffer text, so point,
-markers and the undo history are all untouched."
+With FORCE non-nil, redraw even when the width is unchanged.  Only the
+overlay strings are rebuilt, so point, markers and undo are untouched."
   (let ((width (emjupy--box-width)))
     (when (and emjupy--buffer-notebook
                (or force (not (eql width emjupy--last-box-width))))
@@ -278,33 +250,23 @@ too wide for it, and wrapped."
       (let* ((text (buffer-substring-no-properties (overlay-start ov)
                                                    (overlay-end ov)))
              (trimmed (string-trim-right text "\n")))
-        ;; An empty cell is drawn with a newline so that it occupies a line
-        ;; and can be typed into.  Trimming one newline leaves that line in
-        ;; the source, so reading the buffer back turned an empty cell into
-        ;; one holding a newline -- a change to the notebook that nobody
-        ;; made, on the first sync after opening it.
+        ;; An empty cell is drawn with a newline, to have a line to type on;
+        ;; that newline is not source.
         (setf (emjupy-cell-source cell)
               (if (string-empty-p (string-trim-right trimmed "[\n]+"))
                   "" trimmed))))))
 
 (defun emjupy--check-invariants (&optional structure-only)
   "Return a list of ways this buffer and its cells disagree, or nil.
-With STRUCTURE-ONLY, whether each cell\'s text matches its source is not
-checked: it is false while typing has not yet been synced.
-
-`emjupy--overlays-sane-p' answers whether anything is wrong;  this says
-what, which is the difference between a test that fails and a test that
-tells you why.  The invariants:
+With STRUCTURE-ONLY, whether each cell's text matches its source is not
+checked: it is false while typing has not been synced.  The invariants:
 
 - every cell has a live overlay in this buffer;
 - the overlays run in cell order and do not overlap;
 - an output box, where there is one, begins where its source ends;
 - nothing but the separating newline sits between one cell and the next;
-- the buffer text of each cell matches that cell's source, so a sync
-  would be a no-op.
-
-The last is the one that matters most: when it fails, what the user sees
-and what would be saved have come apart."
+- the buffer text of each cell matches its source, so a sync would
+  change nothing."
   (let ((cells (append (or (and emjupy--buffer-notebook
                                 (emjupy-notebook-cells emjupy--buffer-notebook))
                            [])
@@ -331,10 +293,8 @@ and what would be saved have come apart."
           (when (and prev-end (< (overlay-start ov) prev-end))
             (push (format "cell %d overlaps the cell before it" index)
                   problems))
-          ;; The text really there, against the text we would save.  Trailing
-          ;; blank lines are not compared: an empty cell is drawn with a
-          ;; newline so that it occupies a line and can be typed into, and
-          ;; that line is display, not content.
+          ;; The text there, against the text that would be saved.  Trailing
+          ;; blank lines are not compared: an empty cell's line is display.
           (unless structure-only
             (let ((shown (string-trim-right
                           (buffer-substring-no-properties
@@ -377,11 +337,7 @@ operation."
 
 (defun emjupy--overlays-sane-p ()
   "Return non-nil if this buffer's cell overlays still describe the cells.
-
-Every cell must have a live overlay inside the buffer, and the overlays
-must run in cell order without overlapping.  Anything else means the
-buffer and the structs have come apart -- a render interrupted partway,
-or something outside emjupy having rewritten the text."
+Every cell has a live overlay, in cell order, not overlapping."
   (let ((cells (append (or (emjupy-notebook-cells emjupy--buffer-notebook)
                            []) nil))
         (prev-end 0)
@@ -403,13 +359,9 @@ or something outside emjupy having rewritten the text."
 
 (defun emjupy--sync-all-cells ()
   "Sync buffer text for all cells in current buffer.
-
-Refuses when the overlays no longer describe the cells.  Syncing reads
-whatever an overlay spans straight into a cell\='s source, so one stale or
-overlapping overlay is enough for a cell to swallow the whole notebook
--- and because the structs are what gets saved and re-rendered, that
-corruption then survives every redraw.  Better to leave the structs
-alone and say so: \[emjupy-re-render] rebuilds the display from them."
+Refused when the overlays no longer describe the cells: one stale
+overlay would read the notebook into a cell, and that would be saved.
+\[emjupy-re-render] redraws the buffer from the cells."
   (when emjupy--buffer-notebook
     (if (not (emjupy--overlays-sane-p))
         (progn
@@ -427,27 +379,12 @@ alone and say so: \[emjupy-re-render] rebuilds the display from them."
 
 (defvar emjupy--rendering-buffers nil
   "Buffers currently being re-rendered.
-
-Global rather than buffer-local on purpose: a re-entrant call arrives
-while some OTHER buffer is current -- a WebSocket callback, a
-fontification temp buffer -- and a buffer-local flag is invisible from
-there.")
+Global: a re-entrant call comes while another buffer is current.")
 
 (defun emjupy--sweep-stray-overlays ()
   "Delete emjupy overlays that no live cell owns.
-
-A cell overlay draws its rule through a `before-string\', which is shown
-even when the overlay has collapsed to zero width -- so one left behind
-by a cell that has gone appears as a stray box border, several of them
-stacking up at the top of the buffer where `erase-buffer\' collapsed
-them.
-
-The render deletes the overlays it knows about, which is every overlay
-reachable from the current cells.  This is the belt: anything tagged as
-emjupy\='s that no current cell claims, or that has collapsed to nothing,
-goes.  Cheap -- the list is a few dozen entries -- and it makes the
-stray borders unrepresentable rather than merely unlikely, which
-matters for a fault I have not been able to reproduce."
+A collapsed overlay still shows its rule, so one left by a deleted cell
+is a stray border at the top of the buffer."
   (let ((claimed (make-hash-table :test 'eq)))
     (cl-loop for cell across (or (and emjupy--buffer-notebook
                                       (emjupy-notebook-cells
@@ -470,10 +407,7 @@ matters for a fault I have not been able to reproduce."
 
 (defun emjupy--cell-region (cell)
   "Return (START . END) of everything CELL occupies, or nil.
-
-A cell owns its source and, when it has one, its output box; the two are
-contiguous.  END is the position just past the gutter newline that
-follows, since that newline belongs to this cell rather than the next."
+Its source and output box, and the newline after them."
   (let ((src (emjupy-cell-overlay cell))
         (out (emjupy-cell-output-ov cell)))
     (when (and (overlayp src) (eq (overlay-buffer src) (current-buffer)))
@@ -503,25 +437,19 @@ Returns the number of characters inserted."
 
 (defun emjupy--redraw-cells-in-place (old-cells new-cells &optional known-sane)
   "Replace what OLD-CELLS occupy with NEW-CELLS, drawn in their place.
-
-The general form of what inserting and deleting do one cell at a time.
-A split is one region becoming two cells, a merge is two regions
-becoming one; in both the change is bounded by the cells involved, so
-everything outside moves by a known amount and the undo history can be
-kept.
-
+What inserting and deleting do, for a split or a merge: everything
+outside moves by a known amount, so the undo history is kept.
 OLD-CELLS must be adjacent and in buffer order.  KNOWN-SANE skips the
-overlay check, for callers that have already added a cell which has no
-overlay yet.  Returns non-nil when it was done, nil when the caller
-should fall back to a full redraw."
+overlay check, for callers that have added a cell with no overlay yet.
+Return non-nil when done, nil when the caller should redraw the
+notebook."
   (emjupy--atomic-redraw nil
     (let ((regions (delq nil (mapcar #'emjupy--cell-region old-cells))))
       (when (and regions
                  (= (length regions) (length old-cells))
-                 ;; KNOWN-SANE is for callers that have already put a new cell
-                 ;; into the notebook: it has no overlay yet, so the check
-                 ;; would fail on the very cell about to be drawn.  They test
-                 ;; before mutating instead.
+                 ;; KNOWN-SANE is for callers that have put a new cell in the
+                 ;; notebook already: it has no overlay yet, so they check
+                 ;; before changing anything.
                  (or known-sane (emjupy--overlays-sane-p)))
         (let ((start (apply #'min (mapcar #'car regions)))
               (end (apply #'max (mapcar #'cdr regions)))
@@ -538,11 +466,9 @@ should fall back to a full redraw."
                 (delete-overlay (emjupy-cell-output-ov cell)))
               (setf (emjupy-cell-overlay cell) nil)
               (setf (emjupy-cell-output-ov cell) nil))
-            ;; The cell that follows may start exactly where this region ends,
-            ;; in which case the text about to be inserted is taken into its
-            ;; overlay and the two come to share a region -- the same fault
-            ;; that inserting a cell had.  Its bounds are noted here and
-            ;; restored afterwards.
+            ;; The next cell may start where this region ends, and take the
+            ;; inserted text into its overlay; its bounds are noted and
+            ;; restored.
             (setq following-after
                   (let ((cells (and emjupy--buffer-notebook
                                     (append (emjupy-notebook-cells
@@ -603,37 +529,25 @@ should fall back to a full redraw."
         (let ((following-ov (and following (emjupy-cell-overlay following)))
               (inserted 0))
           (setq inserted (emjupy--render-cell-incrementally new-cell at))
-          ;; Text inserted at an overlay's start may be taken INTO that
-          ;; overlay, depending on how the overlay was made and on the Emacs
-          ;; version.  Where it is, the following cell swallows the new one:
-          ;; two cells over one region, which shows as a doubled boundary,
-          ;; fails the consistency check and stops syncing -- so the next edit
-          ;; there is not saved and the cell appears to vanish.
-          ;;
-          ;; Tested for rather than assumed: the repair asks whether the two
-          ;; overlays actually overlap, which is the condition that matters
-          ;; and is true or false the same way everywhere.
+          ;; Text inserted at an overlay's start may go into that overlay,
+          ;; depending on how it was made and the Emacs version; then the next
+          ;; cell swallows the new one, and syncing stops.  So the two overlays
+          ;; are tested for overlap, and repaired.
           (let ((new-ov (emjupy-cell-overlay new-cell))
                 (resume (+ at inserted)))
             (when (and (overlayp following-ov)
                        (overlayp new-ov)
                        (eq (overlay-buffer following-ov) (current-buffer))
                        (< (overlay-start following-ov) (overlay-end new-ov)))
-              ;; Past everything just inserted, which includes the blank line
-              ;; separating the new cell from this one -- starting at the new
-              ;; cell's own end would leave that newline inside the following
-              ;; cell, where it shows up as a stray line at the top of its
-              ;; source.
+              ;; Past everything inserted, the separating blank line included:
+              ;; from the new cell's end, that newline would land in the next
+              ;; cell's source.
               (move-overlay following-ov resume
                             (max resume (overlay-end following-ov))))
-            ;; Again, now the following cell starts where it should.  The
-            ;; drawing protected the gaps while that cell's overlay still
-            ;; stretched back over the new one, so the gap between them
-            ;; counted as inside a cell and was left writable: a backspace
-            ;; at the new cell's start then deleted the separator, and the
-            ;; two cells ran together.  Found by the edit fuzz.  Not recorded
-            ;; for undo: marking text read-only edits nothing, and an entry
-            ;; for it would sit among the ones `emjupy--undo-adjust' shifts.
+            ;; Again, now the next cell starts where it should: protected while
+            ;; its overlay still covered the new cell, the gap was left
+            ;; writable, and a backspace there joined the two cells.  Not
+            ;; recorded for undo: it edits nothing.
             (let ((buffer-undo-list t))
               (emjupy--protect-non-cell-regions)))
           (emjupy--undo-adjust at at inserted))
@@ -671,27 +585,15 @@ Returns non-nil when it was done incrementally."
 
 (defun emjupy--rerender-notebook (&optional target-cell)
   "Re-render this notebook, leaving point at TARGET-CELL if given.
-
-Does nothing if a render is already in progress.
-
-Rendering erases the buffer and rebuilds it from the cell structs.
-Anything that re-enters midway -- output arriving over the WebSocket
-during a redraw -- restarts the rebuild on a half-built buffer and
-leaves the notebook duplicated on top of itself.  The next sync then
-copies that whole mess into the first cell\='s source, which is why
-redrawing does not clear it: by then the junk IS the notebook.
-
-The re-entrant call is dropped rather than queued.  It has nothing to
-add: the render already running rebuilds from the same structs, which
-the caller has by then already updated."
+A call made while a render is running is dropped: re-entering would
+rebuild a half-built buffer, and the running render reads the same,
+updated cells."
   (unless (memq (current-buffer) emjupy--rendering-buffers)
     (let ((emjupy--rendering-buffers (cons (current-buffer)
                                            emjupy--rendering-buffers)))
       (if target-cell
-          ;; A target says where POINT should end up, not that the window
-          ;; should jump.  Cycling a cell's type or re-indenting it both
-          ;; redraw with the cell they are working on as the target, and
-          ;; both threw the window to the bottom of the buffer.
+          ;; A target says where point ends up, not that the window should jump
+          ;; to it.
           (emjupy--keeping-the-window
            (lambda () (emjupy--rerender-notebook-1 target-cell)))
         (emjupy--keeping-the-view
@@ -728,16 +630,8 @@ move point, and only the scroll position has to survive."
 
 (defun emjupy--keeping-the-view (thunk)
   "Call THUNK, leaving point and the window scrolled where they were.
-
-Redrawing erases the buffer and rebuilds it, which moves point to the
-end and scrolls the window to follow.  Output arriving in a cell far
-from the one being read would therefore drag the view away from it --
-the reason a running notebook could not be read while it ran.
-
-Positions are remembered as line and column rather than as offsets:
-the rebuild changes how many characters precede a line, since output
-boxes grow and shrink, but the line a reader is looking at is still the
-line they were looking at."
+As line and column: output boxes grow and shrink, so offsets change,
+but the line being read is the same line."
   (let ((line (line-number-at-pos (point))) (column (current-column)))
     (emjupy--keeping-the-window
      (lambda ()
@@ -752,20 +646,9 @@ line they were looking at."
 
 (defun emjupy--rerender-notebook-1 (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
-If TARGET-CELL is given, leave point at that cell afterwards.
-
-Rendering is kept OUT of the undo history.  It erases the whole buffer
-and rebuilds it from the cell structs, which as a recorded change is
-both enormous and meaningless to undo -- a single re-render used to push
-~20 entries onto the list, and undoing one of them tore the notebook
-apart, deleting every cell after the one being edited.
-
-Because the rebuild is invisible to undo, any entries recorded BEFORE it
-now refer to positions in a buffer that no longer exists, so they are
-discarded when the rebuild actually changed the text.  Undo therefore
-stops at the last render rather than corrupting the buffer.  When the
-text comes out identical -- a re-render triggered by something that
-changed nothing -- the history is left intact."
+If TARGET-CELL is given, leave point at that cell afterwards.  The
+rebuild is not itself undone entry by entry: it records one step that
+puts the cells back, so undo carries on through it."
   (when emjupy--buffer-notebook
     (let ((inhibit-read-only t)
           ;; emjupy's own drawing: not an edit to re-highlight
@@ -779,14 +662,9 @@ changed nothing -- the history is left intact."
       (save-restriction
         (widen)
         (let ((buffer-undo-list t))
-          ;; Delete EVERY emjupy overlay in the buffer, not only those the
-          ;; current cells point at.  An overlay whose cell has gone -- the
-          ;; cell was deleted or merged, or the notebook was re-parsed and
-          ;; got a fresh set of structs -- is unreachable from `cells', so it
-          ;; was never deleted.  `erase-buffer' then collapses it to position
-          ;; 1, where it goes on displaying its before-string and
-          ;; after-string: a stack of stray "[In: 8]" and "[Out: 15]" rules
-          ;; piling up at the top of the notebook, one per abandoned cell.
+          ;; Every emjupy overlay goes, not only the current cells': one whose
+          ;; cell is gone is unreachable from `cells', and `erase-buffer' would
+          ;; leave it at position 1, showing its rules.
           (dolist (ov (overlays-in (point-min) (point-max)))
             (when (overlay-get ov 'emjupy-overlay)
               (delete-overlay ov)))
@@ -794,10 +672,8 @@ changed nothing -- the history is left intact."
                    do (setf (emjupy-cell-overlay cell) nil)
                    (setf (emjupy-cell-output-ov cell) nil))
           (erase-buffer)
-          ;; Render every cell first; only move point afterward. Jumping point
-          ;; back to target-cell mid-loop would make later `insert' calls land
-          ;; inside target-cell's own overlay (which then grows to swallow
-          ;; them), shoving it -- and its output -- to the end of the buffer.
+          ;; Every cell first, point after: moving point to the target mid-loop
+          ;; would make later inserts land inside its overlay.
           (cl-loop for cell across cells
                    ;; Each at the end, wherever point has got to: drawn at
                    ;; point, one call that moved it -- measuring a window,
@@ -811,21 +687,16 @@ changed nothing -- the history is left intact."
             (goto-char target-start))
           ;; Nothing may be left drawing a rule that belongs to no cell.
           (emjupy--sweep-stray-overlays)
-          ;; Everything that is not a cell's source is now made read-only.
-          ;; Those regions -- the rules, the gutters between cells, the
-          ;; output boxes -- belong to no cell, so anything typed into them
-          ;; is written nowhere and vanishes at the next redraw.  Worse, it
-          ;; sits in the buffer looking like content until then.
+          ;; All that is not a cell's source is read-only: rules, gutters and
+          ;; output boxes belong to no cell, and anything typed there would
+          ;; vanish at the next redraw.
           (emjupy--protect-non-cell-regions)))
       (unless (equal before (buffer-substring-no-properties (point-min)
                                                             (point-max)))
-        ;; The rebuild moved every position the existing entries hold, so
-        ;; replaying them against the new text would corrupt the buffer.
-        ;; Rather than discard them -- which is what made undo stop at the
-        ;; last redraw -- the rebuild records itself as one step that puts
-        ;; the cells back as they were.  Undoing it restores exactly the
-        ;; text those older entries were recorded against, so they become
-        ;; meaningful again and undo carries on through them.
+        ;; The rebuild moved every position the history holds.  It records
+        ;; itself as one step that puts the cells back as they were, so undoing
+        ;; it restores the text the older entries describe, and undo carries on
+        ;; through them.
         (emjupy--record-rebuild-step snapshot)))))
 
 ;;;; Undo
@@ -836,7 +707,7 @@ Stops the redraw that restoring performs from recording a step of its
 own, which would undo the undo.")
 
 (defun emjupy--copy-cell-fields (cell)
-  "Return a copy of CELL\'s fields, with its metadata table copied too.
+  "Return a copy of CELL's fields, with its metadata table copied too.
 The metadata table is changed in place -- hiding output writes to it --
 so a shallow copy would change along with the cell."
   (let ((copy (copy-emjupy-cell cell)))
@@ -846,21 +717,16 @@ so a shallow copy would change along with the cell."
     copy))
 
 (defun emjupy--snapshot-cells ()
-  "Return the notebook\'s cells as they are now, enough to put them back.
-
-A vector of (CELL . FIELDS): each cell object, with a copy of its fields.
-Restoring writes the fields back into the SAME objects, rather than
-putting copies in their place, because other undo entries name cells --
-moving one, deleting one, inserting one -- and would find nothing once
-the notebook held copies: undoing a split after a move gave the copies
-back, and the move\'s undo then did nothing."
+  "Return the notebook's cells as they are now, enough to put them back.
+A vector of (CELL . FIELDS).  Restored into the same cell objects, not
+copies, since other undo entries name the cells."
   (when emjupy--buffer-notebook
     (vconcat (mapcar (lambda (cell) (cons cell (emjupy--copy-cell-fields cell)))
                      (append
                       (emjupy-notebook-cells emjupy--buffer-notebook) nil)))))
 
 (defun emjupy--snapshot-restore-into (snapshot)
-  "Write SNAPSHOT\'s fields back into its cells; return the cells as a vector."
+  "Write SNAPSHOT's fields back into its cells; return the cells as a vector."
   (vconcat
    (mapcar (lambda (pair)
              (let ((cell (car pair)) (fields (cdr pair)))
@@ -898,22 +764,14 @@ back, and the move\'s undo then did nothing."
               buffer-undo-list)))))
 
 (defmacro emjupy--as-one-undo-step (&rest body)
-  "Run BODY, a change to the notebook\='s cells, as one step undo takes back.
-
-The cells are snapshotted before BODY runs and restored by the undo, and
-the restore records the way forward again, so redo works.  Taking the
-snapshot first is the point: a command that changed a cell and then
-redrew left the redraw to record the state -- after the change -- so
-undoing it restored the change.  A BODY that signals, declining to act,
-records nothing."
+  "Run BODY, a change to the notebook's cells, as one step undo takes back.
+The cells are snapshotted before BODY and restored by the undo, which
+records the way forward again, for redo.  A BODY that signals records
+nothing."
   (declare (indent 0) (debug t))
   `(let* ((snapshot (progn (emjupy--sync-all-cells) (emjupy--snapshot-cells)))
-          ;; No record of an earlier edit is shifted or dropped while BODY
-          ;; runs: undoing the step restores exactly the text they describe,
-          ;; and they are replayed only after it has been.  Shifting them
-          ;; could not be done right -- undoing a deletion reinserts the cell,
-          ;; and the shift that makes room moved the cell's own records into
-          ;; the next one.
+          ;; No earlier entry is shifted or dropped while BODY runs: undoing the
+          ;; step restores the text they describe first.
           (result (let ((emjupy--in-cell-step t)) ,@body)))
      (unless (or (eq buffer-undo-list t) undo-in-progress (null snapshot))
        (push (list 'apply #'emjupy--restore-cells-snapshot snapshot)
@@ -1017,19 +875,9 @@ separate entity, the output always travels with its cell automatically."
 
 (defun emjupy--rerender-preserving-point ()
   "Re-render the notebook without disturbing where the user is typing.
-
-`emjupy--rerender-notebook\' erases the buffer and rebuilds it, so point
-has to be put back deliberately.  Passing the cell as its TARGET-CELL
-argument is not that: it moves point to the START of that cell.  Doing
-so from the WebSocket handler meant every arriving line of output yanked
-the cursor to the top of the executing cell -- so the cell you had just
-run appeared to steal point back, and output landing while you edited
-elsewhere threw you across the buffer mid-keystroke."
-  ;; Fold what is on screen back into the structs FIRST.  The re-render
-  ;; rebuilds the buffer from the structs, so anything typed since the last
-  ;; sync -- which, while a slow cell runs, is everything the user has done
-  ;; -- would simply be overwritten and lost.  That is the "scrambling":
-  ;; output arrives, and your edits silently revert.
+Not with TARGET-CELL, which moves point to the start of that cell."
+  ;; What is on screen goes back into the cells FIRST: the redraw rebuilds the
+  ;; buffer from them, and anything typed since the last sync would be lost.
   (emjupy--sync-all-cells)
   (let* ((cell (emjupy--cell-at-point))
          (ov (and cell (emjupy-cell-overlay cell)))
@@ -1044,7 +892,7 @@ elsewhere threw you across the buffer mid-keystroke."
 (defun emjupy--recover-from-broken-redraw (keep-typing)
   "Redraw the notebook from its cells, after a redraw that stopped partway.
 With KEEP-TYPING, what is typed is synced first: for output redrawn, the
-cells\='s text was not being touched, so it is what the user typed.  A
+cells's text was not being touched, so it is what the user typed.  A
 structural command synced before it started, and its cells are whole."
   (let ((inhibit-quit t))
     (condition-case err
@@ -1061,10 +909,9 @@ structural command synced before it started, and its cells are whole."
 
 (defun emjupy--sync-sound-cells ()
   "Sync every cell whose own overlay still spans exactly its text.
-Where the overlays as a whole no longer describe the cells, syncing them
-all would read misplaced text into the cells, and is refused; but a cell
-whose overlay is live, in order and clear of its neighbours still spans
-exactly what was typed in it, and keeping that is the point."
+Where the overlays as a whole are wrong, syncing all is refused, but a
+cell whose overlay is live, in order and clear of its neighbours holds
+what was typed in it."
   (let ((prev-end (point-min)))
     (cl-loop for cell across
              (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
@@ -1082,7 +929,7 @@ exactly what was typed in it, and keeping that is the point."
   "Timer that checks this buffer when Emacs is next idle, or nil.")
 
 (defun emjupy--check-after-redraw ()
-  "Check this buffer\='s structure when Emacs is next idle, once.
+  "Check this buffer's structure when Emacs is next idle, once.
 Many redraws in a row -- output streaming in -- cost one check."
   (unless (timerp emjupy--integrity-timer)
     (setq emjupy--integrity-timer
@@ -1091,11 +938,8 @@ Many redraws in a row -- output streaming in -- cost one check."
 
 (defun emjupy--check-integrity (buffer)
   "Put BUFFER right if its structure and its cells have come apart.
-Only the structure is checked -- overlays live, in order, not
-overlapping, each output box after its source -- never whether the text
-matches the cells, which is false whenever something has been typed and
-not yet synced: redrawing on that would undo the typing.  The problems
-found are said, so that what caused them can be found too."
+Only the structure is checked, not the text, which differs while
+typing is unsynced.  The problems found are reported."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq emjupy--integrity-timer nil)
@@ -1110,13 +954,13 @@ found are said, so that what caused them can be found too."
                  (string-join problems "; "))))))
 
 (defun emjupy-cells-enable ()
-  "Ready this notebook buffer\'s check of its structure.
+  "Ready this notebook buffer's check of its structure.
 Run when a notebook buffer starts."
   ;; A notebook closed before Emacs is idle again takes its check with it.
   (add-hook 'kill-buffer-hook #'emjupy--cancel-integrity-check nil t))
 
 (defun emjupy--cancel-integrity-check ()
-  "Cancel this buffer\'s pending structure check, if there is one."
+  "Cancel this buffer's pending structure check, if there is one."
   (when (timerp emjupy--integrity-timer)
     (cancel-timer emjupy--integrity-timer)
     (setq emjupy--integrity-timer nil)))
@@ -1231,10 +1075,9 @@ reverse, would silently reinterpret one of them."
               (setf (emjupy-notebook-cells nb)
                     (vconcat (append (cl-subseq cells 0 idx)
                                      (cl-subseq cells (1+ idx)))))
-              ;; The check has to happen before the cell list is rewritten: the
-              ;; merged-away cell is no longer in it, so asking afterwards says
-              ;; the overlays disagree and sends this to a full rebuild, which
-              ;; loses the undo history.  The same trap splitting fell into.
+              ;; Checked before the cell list changes: afterwards the merged
+              ;; cell is gone, the overlays disagree, and a full rebuild loses
+              ;; the undo history.
               (unless (emjupy--redraw-cells-in-place (list above cell)
                                                      (list above) sane)
                 (emjupy--rerender-notebook above))
@@ -1292,11 +1135,8 @@ moving point or guessing from a buffer position."
     hidden))
 
 (defun emjupy--confirm-clearing (cell)
-  "Return non-nil if CELL\='s output may be discarded.
-
-The prompt names what would go -- how many outputs, and the execution
-count that produced them -- so the answer is about this cell rather than
-about clearing in general."
+  "Return non-nil if CELL's output may be discarded.
+The prompt names the outputs and the execution count that made them."
   (or (not emjupy-confirm-clear-output)
       (let* ((n (length (or (emjupy-cell-outputs cell) [])))
              (count (emjupy-cell-exec-count cell)))
@@ -1316,7 +1156,7 @@ outputs until you save.
 
 Asks first, since the output may have taken a long time to produce and
 clearing it is not something the kernel can be asked to repeat cheaply.
-`emjupy-confirm-clear-output\=' turns the question off."
+`emjupy-confirm-clear-output' turns the question off."
   (interactive)
   (emjupy--as-one-undo-step
     (emjupy--as-one-undo-step
@@ -1329,10 +1169,8 @@ clearing it is not something the kernel can be asked to repeat cheaply.
               (message "[emjupy] Left it alone.")
             (setf (emjupy-cell-outputs cell) [])
             (setf (emjupy-cell-exec-count cell) nil)
-            ;; Only this cell's box goes, so only this cell need be redrawn --
-            ;; and redrawing just it keeps the undo history, where rebuilding
-            ;; the notebook threw it away.  Nothing was lost even then, but an
-            ;; edit made before clearing could not be undone afterwards.
+            ;; Only this cell's box goes, so only this cell is redrawn, which
+            ;; keeps the undo history.
             (unless (emjupy--refresh-cell-output cell)
               (emjupy--rerender-notebook cell))
             (message "[emjupy] Cleared this cell's output.")))))))
@@ -1365,11 +1203,8 @@ outputs until you save."
                                   do (setf (emjupy-cell-outputs cell) []
                                            (emjupy-cell-exec-count cell) nil)
                                   collect cell)))
-            ;; Each cell loses its own box, so each is redrawn on its own.
-            ;; Rebuilding the notebook for it moved every buffer position an
-            ;; undo entry holds, and took the history with it.  If any cell
-            ;; cannot be patched in place, the whole thing falls back rather
-            ;; than leaving half the notebook redrawn two different ways.
+            ;; Each cell is redrawn on its own, keeping the undo history; if any
+            ;; cannot be, the whole notebook is, rather than half each way.
             (unless (cl-every (lambda (cell)
                                 (and (emjupy--refresh-cell-header cell)
                                      (emjupy--refresh-cell-output cell)))
@@ -1488,14 +1323,14 @@ The new cell has no output and no execution count."
 (defvar python-indent-guess-indent-offset-verbose)
 
 (defun emjupy-indent-or-cycle ()
-  "Indent the current line the way `python-mode\=' would, cycling on repeat.
+  "Indent the current line the way `python-mode' would, cycling on repeat.
 
-Python indentation is a guess -- after `if x:\=' the next line could be a
-body, a continuation, or back at the outer level -- so `python-mode\='
+Python indentation is a guess -- after `if x:' the next line could be a
+body, a continuation, or back at the outer level -- so `python-mode'
 offers the alternatives in turn when TAB is pressed again.  Reproducing
-that here means asking `python-mode\=' itself: the cell\='s source is put in a
+that here means asking `python-mode' itself: the cell's source is put in a
 real Python buffer, indented there, and the answer copied back.  A cell
-is not a file, so the line\='s context is the cell, which is what a
+is not a file, so the line's context is the cell, which is what a
 notebook user means by it.
 
 In a markdown cell, and outside any cell, TAB simply inserts."
@@ -1645,10 +1480,8 @@ next line, outside the code."
 What running a markdown cell means in Jupyter: there is no code in it,
 so the result is the rendered form rather than anything from a kernel."
   (emjupy--sync-all-cells)
-  ;; Turn the preview on for this cell if it was off, so that running it
-  ;; renders rather than doing nothing visible.  Running a markdown cell
-  ;; means "show me this formatted", and the maths is the part that most
-  ;; needs showing.
+  ;; Running a markdown cell means "show it formatted": its preview is turned on
+  ;; if it was off.
   (unless emjupy-render-latex
     (setq-local emjupy-render-latex t))
   (emjupy--rerender-notebook cell)
@@ -1733,11 +1566,9 @@ frames and the offending lines are legible."
             (insert coloured)
             (let ((python-indent-guess-indent-offset-verbose nil))
               (delay-mode-hooks (python-mode)))
-            ;; Syntax highlighting first, then the kernel's own colours back
-            ;; on top.  Both live in the `face' property, and font-lock
-            ;; rewrites it wholesale -- so applied the other way round the
-            ;; colours that mark the failing frame are painted over, which is
-            ;; the half of a traceback worth having.
+            ;; Highlighting first, then the kernel's colours on top: font-lock
+            ;; rewrites `face' wholesale, and the colours mark the failing
+            ;; frame.
             (font-lock-ensure)
             (let ((pos 0) (len (length coloured)))
               (while (< pos len)
@@ -1770,10 +1601,8 @@ take a click apart are inlined by the compiler and cannot be stubbed."
   "Show the output whose collapsed marker was clicked.
 EVENT is the mouse event."
   (interactive "e")
-  ;; A click on an overlay string is located by `posn-string\=', which returns
-  ;; the string and the index within it.  A buffer position would not do:
-  ;; the footer sits at the very end of a cell, where it is ambiguous which
-  ;; of two neighbours is meant.
+  ;; Located with `posn-string', the string and the index in it: a buffer
+  ;; position at a cell's end is ambiguous between two cells.
   (let ((posn (event-start event)))
     (emjupy--toggle-output-from-string
      (posn-string posn)

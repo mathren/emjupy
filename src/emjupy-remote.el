@@ -12,13 +12,10 @@
 
 ;;; Commentary:
 
-;; A server is reached over HTTP, but its files are on a machine that
-;; HTTP does not name -- a tunnelled server answers at localhost.  This
-;; works out where they are: the directory the server serves, the host
-;; behind a tunnel, and the TRAMP name that reaches a file there.
-;;
-;; Below the notebook, language-server and Eglot layers, all of which
-;; need it; it needs nothing above HTTP.
+;; A server is reached over HTTP, but its files are on a machine HTTP does not
+;; name: a tunnelled server answers at localhost.  This works out the directory
+;; the server serves, the host behind a tunnel, and the TRAMP name that reaches
+;; a file there.
 
 ;;; Code:
 
@@ -35,7 +32,7 @@
 
 The Contents API tells emjupy what notebooks a server has, but not how
 to reach them as files -- and a tunnelled server looks like localhost
-from here, so there is nothing to infer.  Set this to hand `d\' in the
+from here, so there is nothing to infer.  Set this to hand `d' in the
 dashboard somewhere useful:
 
   (setq emjupy-remote-root \"/ssh:user@host:/home/user/notebooks\")
@@ -43,10 +40,10 @@ dashboard somewhere useful:
 An alist maps it per server:
 
   (setq emjupy-remote-root
-        \='((\"localhost:8888\" . \"~/notebooks\")
+        \\='((\"localhost:8888\" . \"~/notebooks\")
           (\"localhost:9999\" . \"/ssh:box:/srv/nb\")))
 
-nil disables `d\'."
+nil disables `d'."
   :type '(choice (const :tag "Disabled" nil)
                  (directory :tag "One directory for every server")
                  (alist :key-type string :value-type directory))
@@ -55,7 +52,7 @@ nil disables `d\'."
 (defcustom emjupy-ssh-host nil
   "How to reach the machine a tunnelled server runs on.
 
-A host name -- what you would type after `ssh\' -- or an alist keyed by
+A host name -- what you would type after `ssh' -- or an alist keyed by
 server label, or nil to work it out from the running tunnel.
 
 This is a HOST and not a path, deliberately.  The path comes from the
@@ -83,20 +80,13 @@ same for all of them."
 
 (defun emjupy--derive-server-root (nb)
   "Work out the absolute directory NB's server serves, or nil.
-
-Jupyter does not publish its root directory -- deliberately, it is not
-something a client should be told.  But it can be worked out, because two
-things that ARE known overlap: the kernel reports the directory it runs
-in, which is the notebook's own folder, and the Contents API gives the
-notebook's path relative to the root.  Take the second off the end of the
-first and what remains is the root:
+Jupyter does not publish it, but the kernel reports the directory it
+runs in, the notebook's, and the Contents API the notebook's path
+under the root.  The second off the end of the first is the root:
 
   kernel cwd     /home/you/project/analysis
   notebook path  analysis/run.ipynb
-  root           /home/you/project
-
-This is why `emjupy-remote-root' need not be set per project: the running
-kernel already knows, and is asked."
+  root           /home/you/project"
   (let* ((cwd (emjupy-notebook-kernel-cwd nb))
          (path (emjupy-notebook-path nb))
          (rel (and path (file-name-directory path))))
@@ -116,11 +106,8 @@ kernel already knows, and is asked."
 
 (defun emjupy--server-relative-path (server absolute)
   "Return ABSOLUTE as a path relative to SERVER's root, or nil.
-
-The Contents API speaks in paths relative to the root it serves; a
-language server running beside the kernel speaks in absolute ones.  This
-is the conversion between them, and it fails rather than guesses when
-the path lies outside what the server serves."
+The Contents API's paths are relative, a language server's absolute.
+Nil for a path outside the root."
   (let ((root (and server (emjupy--remote-root-for server))))
     (when (and root absolute)
       (let ((root (file-name-as-directory (directory-file-name root))))
@@ -136,10 +123,8 @@ the path lies outside what the server serves."
 
 (defun emjupy--remote-root-for (server)
   "Return the root to use for SERVER, or nil.
-
-A value set by hand wins, since it may point at a mirror or through a
-TRAMP hop that emjupy cannot infer.  Otherwise the root derived from a
-running kernel is used, which needs no configuration at all."
+One set by hand wins: it may name a mirror or a TRAMP hop.  Otherwise
+the root derived from a running kernel."
   (or (emjupy--configured-root-for server)
       (and server (emjupy-server-root server))))
 
@@ -152,10 +137,8 @@ running kernel is used, which needs no configuration at all."
 
 (defun emjupy--ssh-destination (argv)
   "Return the host ARGV connects to, or nil.
-
-ARGV is an `ssh\' command line split into words.  The destination is the
-last word that is neither an option nor an option\='s argument, which is
-tedious to work out but not ambiguous."
+ARGV is an `ssh' command line split into words.  The destination is
+the last word that is neither an option nor an option's argument."
   (let ((words (split-string argv " +" t))
         (destination nil)
         (skip nil))
@@ -174,14 +157,9 @@ tedious to work out but not ambiguous."
 
 (defun emjupy--ssh-host-forwarding (port)
   "Return the host of a running SSH tunnel forwarding local PORT, or nil.
-
-The tunnel is invisible in the HTTP conversation, but it is a process on
-this machine and its command line says where it goes.  Reading it back
-is how emjupy learns a name nobody told it.
-
-It is asked for each item a search for definitions returns, so the
-answer -- none, too -- is kept for `emjupy--tunnel-hosts-seconds\='
-rather than running ps for every one.  Tunnels outlive that easily."
+Read from the tunnel's command line.  Kept for
+`emjupy--tunnel-hosts-seconds', the answer none included: it is asked
+for every definition a search returns."
   (when (and port emjupy-probe-environment)
     (let ((known (gethash port emjupy--tunnel-hosts)))
       (if (and known (< (- (float-time) (car known))
@@ -192,9 +170,9 @@ rather than running ps for every one.  Tunnels outlive that easily."
           host)))))
 
 (defun emjupy--ssh-host-forwarding-1 (port)
-  "Look through this machine\='s processes for an SSH tunnel forwarding PORT.
-Run from a local directory whatever the current buffer\='s: from a TRAMP
-one -- a shadow file beside a remote notebook -- `ps\=' ran on the remote
+  "Look through this machine's processes for an SSH tunnel forwarding PORT.
+Run from a local directory whatever the current buffer's: from a TRAMP
+one -- a shadow file beside a remote notebook -- `ps' ran on the remote
 machine, through TRAMP, where the tunnel is not."
   (let ((default-directory temporary-file-directory))
     (when (executable-find "ps")
@@ -204,10 +182,7 @@ machine, through TRAMP, where the tunnel is not."
             (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))
             (found nil))
         (dolist (line lines found)
-          ;; The command may be a full path, and may be a wrapper that keeps
-          ;; a tunnel alive.  Matching only a line beginning "ssh" missed
-          ;; /usr/bin/ssh and autossh, which is most tunnels that were not
-          ;; typed by hand a moment ago.
+          ;; The command may be a full path, or a wrapper such as autossh.
           (when (and (not found)
                      (string-match-p "\\`\\(?:[^ ]*/\\)?\\(?:auto\\)?ssh\\(?: \\|\\'\\)" line)
                      (string-match-p pattern line))
@@ -228,26 +203,16 @@ machine, through TRAMP, where the tunnel is not."
 
 (defun emjupy--remote-root-for-files (server)
   "Return the configured file-name root for SERVER, if it names another machine.
-
-`emjupy-remote-root\=' is what the user sets when the server is reached
-through a tunnel, which is exactly when nothing else can say where the
+From `emjupy-remote-root', set when nothing else can say where the
 files are."
   (let ((root (emjupy--configured-root-for server)))
     (and root (file-remote-p root) root)))
 
 (defun emjupy--tramp-root-for (server)
-  "Return a TRAMP path to SERVER\='s files, or nil if one cannot be built.
-
-Two things are needed and only one is ever guaranteed.  The absolute
-path comes from a kernel, which reports where it runs.  The machine has
-to come from the address emjupy connects to -- and that only names the
-machine when the connection goes to it directly.
-
-A server reached through `ssh -L 9999:localhost:9999 host\' answers at
-localhost, and nothing in the HTTP conversation mentions `host\' at all:
-the tunnel is invisible from this end, which is the whole point of a
-tunnel.  So exactly in the case where a TRAMP path is most wanted, the
-address cannot supply it, and `emjupy-remote-root\' has to say."
+  "Return a TRAMP path to SERVER's files, or nil if one cannot be built.
+The path comes from a kernel; the machine from the address connected
+to, which names it only without a tunnel.  Through a tunnel,
+`emjupy-remote-root' has to say."
   (let* ((parts (emjupy--server-parts server))
          (host (plist-get parts :host))
          (root (emjupy--server-side-root-for server)))
@@ -256,20 +221,16 @@ address cannot supply it, and `emjupy-remote-root\' has to say."
      ((and root host (not (member (downcase host) emjupy--local-hostnames)))
       (format "/ssh:%s:%s" host root))
      ;; It does not -- a tunnel -- but the tunnel itself can be asked, or
-     ;; `emjupy-ssh-host\' told.  Either way the PATH still comes from the
+     ;; `emjupy-ssh-host' told.  Either way the PATH still comes from the
      ;; kernel, so projects on one machine keep their own roots.
      (root
       (when-let* ((via (emjupy--ssh-host-for server)))
         (format "/ssh:%s:%s" via root))))))
 
 (defun emjupy--server-side-root-for (server)
-  "Return the absolute path SERVER serves, on SERVER\='s own filesystem.
-
-Deliberately not `emjupy--remote-root-for\', which answers \"how do I
-reach these files\" and may be a TRAMP location meaning nothing to the
-Contents API or to a language server.  This answers \"what does the
-server call them\", and only a root derived from a running kernel can
-say, since a kernel reports an absolute path on the machine it runs on."
+  "Return the absolute path SERVER serves, on SERVER's own filesystem.
+What the server calls its files, not how to reach them, which is
+`emjupy--remote-root-for'.  Only a running kernel can say."
   (and server (emjupy-server-root server)))
 
 ;;;; Commands

@@ -151,8 +151,8 @@ beyond what ships with Emacs, and falls back to `math-preview'."
 (defcustom emjupy-latex-foreground 'auto
   "Colour to draw rendered math in.
 
-`auto\' (the default) follows the theme, taking the foreground of the
-`default\' face -- so formulae are dark on a light theme and light on a
+`auto' (the default) follows the theme, taking the foreground of the
+`default' face -- so formulae are dark on a light theme and light on a
 dark one, instead of always black on a transparent background.
 
 A colour string is used verbatim."
@@ -171,7 +171,7 @@ A colour string is used verbatim."
   :group 'emjupy)
 
 (defcustom emjupy-protect-non-cell-regions t
-  "When non-nil, make everything outside a cell\='s source read-only.
+  "When non-nil, make everything outside a cell's source read-only.
 
 The rules, the gutters between cells and the output boxes belong to no
 cell.  Text typed there is stored nowhere and disappears at the next
@@ -208,18 +208,13 @@ still holds exactly what the kernel sent, and is saved back to the
   :type 'boolean
   :group 'emjupy)
 
-;; --- Page colours ----------------------------------------------------------
-;; Cells are marked out by their horizontal rules alone -- the buffer keeps
-;; its normal background throughout.  The one exception is a cell's OUTPUT,
-;; which gets a faint background so results are distinguishable from the code
-;; that produced them.  That band lives on the output overlay, so when the
-;; outputs are cleared and the box shrinks the background goes with them.
+;; Cells are marked out by their rules alone, on the buffer's own background.
+;; Output is the exception: a faint band on the output overlay, which goes when
+;; the output does.
 
-;; Each of these specifies NOTHING by default beyond `:extend', and only
-;; ever gains a `:background'.  They are applied as text properties over
-;; output text, so any colour attribute they carried would fight the faces
-;; on tracebacks and rich output.  `:extend' makes the band fill the whole
-;; line rather than stopping at the last character.
+;; These faces only ever gain a `:background', with `:extend' so the band fills
+;; the line: as text properties over output, any colour would fight the faces of
+;; tracebacks and rich output.
 
 ;;;; Faces and colours
 
@@ -246,12 +241,8 @@ still holds exactly what the kernel sent, and is saved back to the
 
 (defun emjupy--color-rgb (color)
   "Return COLOR as a list of three floats in 0..1, or nil if unknown.
-
-Hex forms are parsed directly rather than handed to
-`color-name-to-rgb', which resolves through the *display's* palette:
-on a tty that quantises to the terminal's colour cube and collapses
-e.g. \"#1c1c1c\" to pure black, which would silently flatten the
-derived canvas colour on any dark theme."
+Hex forms are parsed here: `color-name-to-rgb' goes through the
+display's palette, which on a tty turns a dark grey to black."
   (when (stringp color)
     (if (string-match "\\`#\\([0-9a-fA-F]+\\)\\'" color)
         (let* ((hex (match-string 1 color))
@@ -297,12 +288,8 @@ when HUE is nil."
 
 (defun emjupy--sync-theme-colors ()
   "Recompute the output background faces from the active theme.
-Returns non-nil when the ordinary output colour could be derived.
-
-Note what this does NOT do: it never touches the buffer's own
-background.  An earlier design remapped `default' to a canvas colour and
-painted cells back on top, which inverted the moment anything was wrong
-with the cell colour."
+Return non-nil when the ordinary output colour could be derived.  The
+buffer's own background is never touched."
   (let* ((base (emjupy--resolve-output-color emjupy-output-color nil nil))
          (specs (list (list 'emjupy-output base)
                       (list 'emjupy-output-error
@@ -337,23 +324,15 @@ with the cell colour."
 
 (defun emjupy--window-text-width (win)
   "Return how many columns of text WIN can show without wrapping.
-
-`window-body-width' is not that number.  It counts the line-number
-column, which is drawn inside the text area, so with
-`display-line-numbers-mode' on a rule sized from it overshoots the right
-edge by the width of the numbers -- most visible on a wide window, where
-the numbers are widest and the overshoot wraps a whole line."
+Not `window-body-width', which includes the line-number column."
   (if (not (window-live-p win))
       ;; A window can die between a resize being scheduled and this
       ;; running; a dead one has no width to give, so the default stands.
       emjupy-box-min-width
-    ;; Measured keeping point: `window-max-chars-per-line', Emacs's own,
-    ;; selects WIN to measure it, and selecting a window moves its buffer's
-    ;; point to the window's.  Midway through a redraw that is a stale
-    ;; position near the top, and every cell after it was drawn there, on
-    ;; top of the one before: the notebook came out backwards, cells
-    ;; overlapping and text lost -- when it was shown in a window other
-    ;; than the selected one, as opening and closing buffers leaves it.
+    ;; Measured keeping point: `window-max-chars-per-line' selects WIN, which
+    ;; moves point to the window's.  Midway through a redraw that drew every
+    ;; later cell on top of the one before, in a window other than the selected
+    ;; one.
     (save-excursion
       (let ((cols (window-max-chars-per-line win))
             ;; Read from the window's buffer rather than by selecting it.
@@ -361,13 +340,10 @@ the numbers are widest and the overshoot wraps a whole line."
             ;; so for any other it is worked out from the last line's number.
             (numbers (with-current-buffer (window-buffer win)
                        (if (bound-and-true-p display-line-numbers)
-                           ;; What Emacs reports, or what the column will need
-                           ;; -- the digits of the last line number and the
-                           ;; space either side -- whichever is more: the
-                           ;; report is 0 until the window has been displayed
-                           ;; once, which is when a notebook is first drawn,
-                           ;; and leaves out the gap before the text.  Either
-                           ;; way the rule fits.
+                           ;; Emacs's figure, or the line-number column's --
+                           ;; digits and a space either side -- whichever is
+                           ;; more: Emacs reports 0 until the window has been
+                           ;; shown, and leaves out the gap.
                            (max (if (eq win (selected-window))
                                     (line-number-display-width) 0)
                                 (+ 2 (max (length (number-to-string
@@ -386,10 +362,8 @@ measures each window, which selects it -- six times a cell.")
 
 (defun emjupy--box-width ()
   "Return the column width to draw cell outlines at.
-
-When fitting the window, the NARROWEST window showing this buffer wins:
-a rule sized to a wide window wraps onto a second line in a narrow one,
-and a wrapped rule is far uglier than a short one."
+Fitting the window, the narrowest window showing the buffer wins: a
+rule too wide for a window wraps."
   (cond
    ((integerp emjupy-box-width) emjupy-box-width)
    ((and (consp emjupy--box-width-memo) (car emjupy--box-width-memo)))
@@ -402,11 +376,8 @@ and a wrapped rule is far uglier than a short one."
   (if (integerp emjupy-box-width)
       emjupy-box-width
     (let* ((windows (get-buffer-window-list (current-buffer) nil t))
-           ;; A notebook is rendered before it is displayed (see
-           ;; `emjupy-open-notebook'), so there may be no window to measure
-           ;; yet.  Falling back to a fixed 100 columns baked an over-wide
-           ;; rule into every fresh notebook; the selected window is at least
-           ;; the right order of magnitude.
+           ;; A notebook is drawn before it is shown, so there may be no window
+           ;; yet; the selected one is the right order of magnitude.
            (widths (or (mapcar #'emjupy--window-text-width windows)
                        (list (emjupy--window-text-width (selected-window))))))
       (max emjupy-box-min-width
@@ -430,10 +401,8 @@ and a wrapped rule is far uglier than a short one."
 
 (defun emjupy--spinner-tick ()
   "Advance the indicator and redraw the headers of running cells.
-
-Only the header strings are touched -- they are overlay `before-string'
-properties, not buffer text -- so this cannot disturb what is being
-typed, and does not enter the undo history."
+Only overlay strings change, never buffer text, so typing and undo are
+not disturbed."
   (let ((buf (current-buffer)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
@@ -531,25 +500,16 @@ and does not enter the undo history."
 
 (defun emjupy--reconcile-rules ()
   "Draw every rule as the continuation of the content line above it.
-
-`display-line-numbers-mode' numbers the first screen line of each buffer
-line.  A header drawn as a `before-string' on a cell's first line is
-that screen line, so the number went on the rule and the first line of
-code got none; the footer, drawn at the start of the separator line
-after a cell, took that line's number.  So each box's footer, and the
-header of the box after it, are shown instead as further screen lines of
-the last line of the box -- continuation lines, which are never numbered
-and keep the number column blank, so every rule lines up -- and the
-empty separator line between cells is made invisible.  What is on screen
-is unchanged; the numbers move to where the text is.
-
-The first cell\\='s header has no line above it and stays where it was.
+`display-line-numbers-mode' numbers the first screen line of each line,
+so a header drawn on a cell's first line took the code's number.  Each
+box's footer, and the header of the box after it, are drawn instead as
+continuation lines of the box's last line, never numbered, and the empty
+separator line is hidden.  The first cell's header has no line above it
+and stays.
 
 The rule strings are kept on each box in `emjupy-header' and
-`emjupy-footer'; a `before-string' or `after-string' set on a box is
-taken as its new rule.  Run after anything that redraws a box or
-changes the buffer\\'s structure; it rebuilds every companion, so it
-cannot leave one behind."
+`emjupy-footer'.  Run after anything that redraws a box or changes the
+buffer's structure; it rebuilds every rule."
   (when (bound-and-true-p emjupy--buffer-notebook)
     ;; every box, in buffer order, with its rules taken into keeping
     (let ((boxes nil))
@@ -589,22 +549,15 @@ cannot leave one behind."
               (let* ((gap-end (and ov (overlay-start ov)))
                      (gap (and gap-end (< (overlay-end prev) gap-end))))
                 (cond
-                 ;; Between two boxes, with the separator line between
-                 ;; them.  It must not begin a screen line: one is numbered
-                 ;; by the line it starts on, so the line after a hidden
-                 ;; separator showed the separator's number, and its own was
-                 ;; never seen -- each cell's numbers went 29, 31.  So the
-                 ;; box's last newline is hidden instead, the rules hang on
-                 ;; the separator as continuation lines, which are never
-                 ;; numbered, and the separator's newline ends them: the
-                 ;; cell after starts a screen line of its own, numbered.
+                 ;; Between two boxes.  A screen line is numbered by the line it
+                 ;; starts on, so a hidden separator gave the next line its
+                 ;; number.  Instead the box's last newline is hidden, the rules
+                 ;; hang on the separator as continuation lines, never numbered,
+                 ;; and the separator's newline ends them.
                  (gap
-                  ;; The box's last newline is drawn as itself followed by
-                  ;; the rules: a `display' replacing it, not a hidden
-                  ;; newline -- Emacs draws no overlay string at a hidden
-                  ;; position, so the rules vanished.  The screen lines the
-                  ;; rules make begin mid-line, and are never numbered; the
-                  ;; separator's newline, still there, ends the last of them.
+                  ;; Drawn as the newline followed by the rules, by a `display',
+                  ;; not by hiding it: Emacs draws no overlay string at a hidden
+                  ;; position.
                   (let ((o (make-overlay anchor (1+ anchor) nil t nil))
                         (text (concat "\n" rules)))
                     ;; point there shows at the end of the text, before the rule
@@ -637,10 +590,8 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
                  (emjupy--box-footer label)))
          (end (if (string-suffix-p "\n" text) (1- (length text))
                 (length text))))
-    ;; Face the glyphs but NOT the closing newline.  A newline carrying a
-    ;; background paints a column of its own past the last box character, so
-    ;; on any theme where the inherited face has a background the rule
-    ;; separating input from output stuck out one column to the right.
+    ;; Not the closing newline: one with a background paints a column of its own
+    ;; past the rule.
     (put-text-property 0 end 'face 'emjupy-box-line text)
     text))
 
@@ -662,10 +613,8 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
 
 (defun emjupy--box-header (label &optional corner)
   "Return a box-drawing header line of `emjupy--box-width' columns with LABEL.
-CORNER is the left corner glyph, default \"┌\"; pass \"├\" when this
-header is meant to double as the closing edge of the box above it.  The
-matching right corner is chosen to suit, so the rule closes the box
-instead of trailing off into a bare horizontal line."
+CORNER is the left corner glyph, default \"┌\"; \"├\" makes the header
+double as the bottom edge of the box above.  The right corner matches."
   (let* ((corner (or corner "┌"))
          (right (or (cdr (assoc corner emjupy--box-corner-pairs)) "┐"))
          (prefix (format "%s─ %s " corner label))
@@ -710,15 +659,10 @@ box says that it is collapsed rather than absent."
     ("`[^`\n]+`" 0 font-lock-constant-face))
   "Regexp rules for `emjupy--markdown-fontify-fallback'.")
 
-;; --- LaTeX preview in markdown cells ---------------------------------------
-;; Off by default.  When on, math between the usual delimiters is replaced ON
-;; SCREEN by a rendered image: the overlay carries a `display' property, so the
-;; buffer text stays the LaTeX the user wrote and the cell saves unchanged.
-;;
-;; org ships with Emacs and already knows how to turn a formula into an image,
-;; so this needs a LaTeX install but NO extra Emacs package -- which is the
-;; whole reason not to reach for math-preview, which additionally wants nodejs
-;; and npm.  math-preview is still used if it is what you have.
+;; LaTeX preview in markdown cells, off by default.  Math is replaced on screen
+;; by an image, a `display' on an overlay, so the text and the saved cell stay
+;; the LaTeX written. org renders it, needing LaTeX and no other package;
+;; math-preview is used if it is what there is.
 
 ;; Compile-time only: nothing loads org until a preview is actually asked for.
 (eval-when-compile (require 'org) (require 'ansi-color))
@@ -779,19 +723,15 @@ the whole fragment with its image."
 
 (defun emjupy--latex-math (fragment)
   "Return FRAGMENT as LaTeX in math mode.
-
-A fragment that brings its delimiters -- $...$, $$...$$, \\(...\\),
-\\[...\\] -- is used as written, so display math stays display math.  A
-bare body is taken as inline math.  The body alone is what used to be
-handed to LaTeX, which reads it in TEXT mode: $\\frac{x}{y}$ came out as
-an upright x above a stray bar over y."
+A fragment with its delimiters -- $...$, $$...$$, \\(...\\), \\[...\\]
+-- is used as written; a bare body is taken as inline math."
   (if (string-match-p "\\`[ \t\n]*\\(?:\\$\\|\\\\[[(]\\)" fragment)
       fragment
     (concat "$" fragment "$")))
 
 (defun emjupy--latex-image (body)
   "Render BODY, a LaTeX math fragment, to an image spec, or nil.
-BODY may bring its delimiters or not; see `emjupy--latex-math\='."
+BODY may bring its delimiters or not; see `emjupy--latex-math'."
   (when (and (eq (emjupy--latex-available-p) 'org)
              (require 'org nil 'noerror))
     (let* ((dir (expand-file-name "emjupy-latex/" temporary-file-directory))
@@ -821,11 +761,9 @@ BODY may bring its delimiters or not; see `emjupy--latex-math\='."
       (setq opts (plist-put opts :scale emjupy-latex-scale))
       (when (and fg (stringp fg))
         (setq opts (plist-put opts :foreground fg)))
-      ;; Keep the image transparent.  Passing a buffer makes org honour
-      ;; :background too, and its default -- `default\' -- bakes the theme's
-      ;; background into the PNG as a \\pagecolor.  That looks right until the
-      ;; formula sits on anything else, so ask for transparency explicitly and
-      ;; let the foreground alone carry the contrast.
+      ;; Transparent: given a buffer, org would bake the theme's background into
+      ;; the image, wrong on anything else.  The foreground carries the
+      ;; contrast.
       (setq opts (plist-put opts :background "Transparent"))
       (make-directory dir t)
       (condition-case err
@@ -833,11 +771,9 @@ BODY may bring its delimiters or not; see `emjupy--latex-math\='."
             ;; Cached by content hash: dragging a slider over a notebook full
             ;; of formulae should not re-run LaTeX for each redraw.
             (unless (file-exists-p file)
-              ;; The BUFFER argument is not optional in effect: with nil, org
-              ;; reads :html-foreground and :html-background instead of
-              ;; :foreground and :background -- defaulting to "Black" on
-              ;; "Transparent" whatever the theme says -- and takes :html-scale
-              ;; rather than :scale, so emjupy-latex-scale was ignored too.
+              ;; The buffer is needed: without it org reads the :html- options
+              ;; instead, black on transparent, and ignores
+              ;; `emjupy-latex-scale'.
               (org-create-formula-image (emjupy--latex-math body) file opts
                                         (current-buffer) 'dvipng))
             (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
@@ -901,10 +837,7 @@ N is passed on when this is an ordinary deletion."
 
 (defun emjupy--markdown-fontify-fallback ()
   "Apply markdown faces to the current buffer without any external package.
-
-`markdown-mode' is a MELPA package and emjupy does not depend on it, so
-without this fallback markdown cells render as undifferentiated plain
-text for anyone who hasn't installed it."
+For when `markdown-mode', from MELPA, is not installed."
   (dolist (rule emjupy--markdown-fallback-rules)
     (pcase-let ((`(,regexp ,group ,face) rule))
       (save-excursion
@@ -916,10 +849,9 @@ text for anyone who hasn't installed it."
 
 (defun emjupy--markdown-mode-fn ()
   "Return the best available markdown major-mode function, or nil.
-Prefers the tree-sitter `markdown-ts-mode' (MELPA) when both the
-package and its compiled grammar are actually available, then falls
-back to the classic `markdown-mode' (MELPA), then nil -- in which case
-`emjupy--markdown-fontify-fallback' handles highlighting."
+`markdown-ts-mode' when it and its grammar are available, then
+`markdown-mode'; with neither, `emjupy--markdown-fontify-fallback'
+highlights."
   (cond
    ((and (fboundp 'markdown-ts-mode)
          (fboundp 'treesit-ready-p)
@@ -930,10 +862,7 @@ back to the classic `markdown-mode' (MELPA), then nil -- in which case
 
 (defun emjupy--fontify-as (text cell-type)
   "Return TEXT with font-lock faces applied appropriate for CELL-TYPE.
-Code cells use `python-mode', which ships with Emacs core.  Markdown
-cells use whatever `emjupy--markdown-mode-fn' resolves to, and fall
-back to emjupy's own highlighting when no markdown package is
-installed."
+`python-mode' for code, `emjupy--markdown-mode-fn' for markdown."
   (with-temp-buffer
     (insert text)
     ;; delay-mode-hooks avoids running the user's own mode hooks (linters,
@@ -941,10 +870,8 @@ installed."
     ;; org-mode uses to fontify source blocks.
     (cond
      ((eq cell-type 'code)
-      ;; python-mode guesses `python-indent-offset' on entry and says so
-      ;; when it cannot.  A cell is a fragment, so it usually cannot -- and
-      ;; this runs once per code cell, filling the echo area with
-      ;; "Can't guess python-indent-offset" on every redraw.
+      ;; Quiet: python-mode cannot guess the indentation of a fragment, and
+      ;; would say so for every code cell, on every redraw.
       (let ((python-indent-guess-indent-offset-verbose nil))
         (delay-mode-hooks (python-mode)))
       (font-lock-ensure))
@@ -959,20 +886,11 @@ installed."
 
 (defun emjupy--apply-faces-from (string start)
   "Copy the `face' properties of STRING onto the buffer text at START.
-Only properties are touched; the buffer text itself is left alone.
-
-Copied to `font-lock-face' as well, for the same reason as everything
-else painted here: font-lock removes `face' from the regions it
-refontifies, so the ANSI colours of a traceback and the highlighting
-inside it lasted only until the next pass."
+As `font-lock-face' too, which font-lock does not remove when it
+refontifies."
   (let ((i 0) (len (length string)))
-    ;; Padding is never source.  This re-highlights a cell, and the faces it
-    ;; clears first are the ones it is about to replace -- but if it is ever
-    ;; asked about a region that reaches into an output box, the padding
-    ;; there loses its background and nothing puts it back, because the
-    ;; string being copied from has no padding in it.  The pads carry a mark
-    ;; of their own; it is cheaper to respect it than to rely on the region
-    ;; always being right.
+    ;; Padding is never source: the pads carry a mark of their own, kept even if
+    ;; the region reaches into an output box.
     (emjupy--without-pads start (+ start len)
                           (lambda (from to)
                             (remove-text-properties
@@ -996,13 +914,8 @@ inside it lasted only until the next pass."
 
 (defun emjupy--without-pads (start end fn)
   "Call FN on each run between START and END that is not output.
-
-Output is skipped whole -- its text as well as its padding.  Both are
-painted when the box is drawn, from the outputs themselves, and neither
-has anything to do with the source being re-highlighted; a region that
-reaches in here clears them and puts nothing back, because the source it
-copies from contains no output.  Skipping only the padding left the text
-beside it exposed to the same thing."
+Output, text and padding, is painted from the outputs when the box is
+drawn; re-highlighting source would clear it and put nothing back."
   (let ((pos start))
     (while (< pos end)
       (let ((next (min end
@@ -1033,12 +946,8 @@ beside it exposed to the same thing."
 
 (defun emjupy--refontify-after-change (beg end _len)
   "Re-highlight the cell touched by an edit between BEG and END.
-
-Highlighting is otherwise applied only when a cell is rendered, so
-freshly typed text stays unhighlighted until something triggers a
-re-render -- and `self-insert-command' inherits the sticky face of the
-character before it, so typing after a keyword picks up that keyword's
-face."
+Otherwise typed text stays plain until a redraw, or takes the face of
+the character before it."
   (unless emjupy--refontifying
     (when emjupy--buffer-notebook
       (condition-case err
@@ -1093,11 +1002,8 @@ survives saving and means the same thing to other front ends."
 
 (defun emjupy--hidden-output-label (cell)
   "Return the label shown on CELL's footer while its output is hidden.
-
-The marker carries the cell's id and a keymap of its own, so a click on
-it can say which cell was meant.  Only the marker is live: the rest of
-the rule is an ordinary line, and the pointer highlights the part that
-does something."
+Only the marker is live: it carries the cell's id and a keymap, so a
+click on it knows the cell."
   (let* ((outputs (or (emjupy-cell-outputs cell) []))
          (n (length outputs))
          (glyph (copy-sequence emjupy-hidden-output-glyph))
@@ -1115,17 +1021,10 @@ does something."
 
 (defun emjupy--fold-output-lines (start end width)
   "Break every line between START and END wider than WIDTH columns.
-
-Returns (NEW-END . WIDEST), WIDEST being the widest line as it was
-before breaking.  Nothing in the output decides how wide it is drawn: a
-progress bar sized to a wide terminal, a long log line or a wide table
-ran past the cell's right-hand edge.  Breaking the lines where the box
-ends keeps every kind of output inside it.
-
-Only the drawing changes.  The cell's outputs keep the text as the
-kernel sent it, so saving writes it back unchanged.  Each break is
-marked with `emjupy-fold', so it can be told from a line the output
-really had."
+Return (NEW-END . WIDEST), WIDEST the widest line before breaking, so
+every kind of output stays inside its box.  Only the drawing changes:
+the cell keeps the text the kernel sent.  Each break is marked
+`emjupy-fold'."
   (let ((end (copy-marker end))
         (widest 0))
     (save-excursion
@@ -1161,10 +1060,9 @@ the same text the same way."
                                              (emjupy--box-width))))
       (goto-char (car folded))
       (setq widest (cdr folded)))
-    ;; Paint this piece, not the whole box: one cell can hold a figure, a
-    ;; warning and a traceback at once, and each should read as what it is.
-    ;; A text property rather than an overlay face, so it does not override
-    ;; the font-lock colours on the text underneath.
+    ;; Paint this piece, not the box, so a figure, a warning and a traceback in
+    ;; one cell each read as what they are; a text property, so font-lock
+    ;; colours show through.
     (let ((face (emjupy--output-face out)))
       (when face
         (font-lock-prepend-text-property piece-start (point) 'face face)
@@ -1189,12 +1087,9 @@ a stream, its text as drawn, and the width it was folded at."
             (emjupy--box-width)))))
 
 (defun emjupy--render-cell-output (cell)
-  "Insert CELL\='s output box at point and give it its overlay.
-
-Separate from `emjupy--render-cell\=' so that output arriving can be drawn
-on its own.  Rebuilding the whole notebook for one cell\='s output is what
-made a `tqdm\=' loop crawl, threw away the undo history on every message,
-and restarted fontification from scratch each time."
+  "Insert CELL's output box at point and give it its overlay.
+Apart from `emjupy--render-cell' so output arriving redraws one box,
+not the notebook."
   (let* ((outputs (emjupy-cell-outputs cell))
          (has-outputs (and outputs (> (length outputs) 0))))
     (when has-outputs
@@ -1207,10 +1102,8 @@ and restarted fontification from scratch each time."
                           (piece-start (point)))
                       (cond
                        ((string= out-type "stream")
-                        ;; Carriage returns applied here as well as on
-                        ;; arrival: a notebook saved by Jupyter stores the
-                        ;; stream exactly as written, so a progress bar comes
-                        ;; back as every one of its updates joined by ^M.
+                        ;; Carriage returns applied here too: a notebook saved
+                        ;; by Jupyter stores a progress bar as all its updates.
                         (insert (emjupy--ansi-render
                                  (emjupy--collapse-carriage-returns
                                   (emjupy--mime-text (gethash "text" out))))))
@@ -1244,10 +1137,8 @@ and restarted fontification from scratch each time."
                (header (emjupy--rule (emjupy--cell-out-label cell) "├"))
                (footer (emjupy--rule nil)))
           (overlay-put ov 'emjupy-overlay 'output)
-          ;; What a resize needs to know: at what width the lines were
-          ;; folded, and how wide the widest was before.  Output whose widest
-          ;; line fits both the old and the new width looks the same at
-          ;; either, and is not redrawn.
+          ;; What a resize needs: the width the lines were folded at, and the
+          ;; widest line.  Output that fits both widths is not redrawn.
           (overlay-put ov 'emjupy-fold-width (emjupy--box-width))
           (overlay-put ov 'emjupy-widest widest)
           (overlay-put ov 'emjupy-drawn (emjupy--drawn-state pieces))
@@ -1287,11 +1178,8 @@ one without any cannot be invalidated by an edit elsewhere."
 
 (defun emjupy--undo-map-positions (entry fn)
   "Return ENTRY with every buffer position in it passed through FN.
-
-Undo entries come in several shapes and each hides its positions
-somewhere different.  Missing one does not fail loudly -- it leaves a
-position pointing at the wrong text, and undo then rewrites the wrong
-text.  The shapes are those Emacs documents for `buffer-undo-list'."
+Each shape `buffer-undo-list' documents keeps its positions somewhere
+else; missing one would make undo rewrite the wrong text."
   (cond
    ((integerp entry) (funcall fn entry))
    ((not (consp entry)) entry)
@@ -1303,10 +1191,8 @@ text.  The shapes are those Emacs documents for `buffer-undo-list'."
    ;; (BEG . END) -- an insertion
    ((and (integerp (car entry)) (integerp (cdr entry)))
     (cons (funcall fn (car entry)) (funcall fn (cdr entry))))
-   ;; (nil PROP VAL BEG . END) -- a property change, recorded when a mode
-   ;; puts a text property on the buffer.  A dotted list: `butlast' and
-   ;; `length' fail on it -- "listp, END" -- so it is taken apart by its
-   ;; shape, which is fixed: three elements, then BEG and END.
+   ;; (nil PROP VAL BEG .  END), a property change: a dotted list, so taken
+   ;; apart by its fixed shape, not with `butlast'.
    ((and (null (car entry)) (consp (cdr entry)) (consp (cddr entry))
          (consp (cdddr entry))
          (integerp (car (cdddr entry))) (integerp (cdr (cdddr entry))))
@@ -1323,22 +1209,10 @@ text.  The shapes are those Emacs documents for `buffer-undo-list'."
 
 (defun emjupy--undo-adjust (start old-end delta)
   "Keep the undo history usable across a replacement of START..OLD-END.
-
-Three cases, and they are all the story:
-
-- entries wholly before START are untouched by the edit and stay as they
-  are;
-- entries describing text inside the replaced region describe text that
-  no longer exists, and go;
-- entries after the region are still valid but have moved, so their
-  positions shift by DELTA.
-
-Without the third case this is nearly pointless in practice: output
-usually arrives from a cell ABOVE the one being edited, so the edits
-worth keeping are precisely the ones that moved.  Getting the shift
-wrong is worse than dropping everything -- a wrong position does not
-raise an error, it quietly rewrites the wrong text -- which is why each
-entry shape is handled explicitly rather than by pattern-guessing."
+Entries before START stay; entries inside the region describe text
+that is gone, and go; entries after it have moved, and shift by DELTA.
+Each entry shape is handled explicitly: a wrong position does not
+fail, it rewrites the wrong text."
   (unless emjupy--in-cell-step
     (let ((transform
            (lambda (entry)
@@ -1347,29 +1221,21 @@ entry shape is handled explicitly rather than by pattern-guessing."
                 ((null p) entry)
                 ((< p start) entry)
                 ((< p old-end)
-                 ;; Text inside the region is gone, so an entry describing it
-                 ;; goes too.  Structural commands never get here -- they
-                 ;; suspend this and are undone as a whole -- so this is for
-                 ;; redraws that are not undo steps, such as output arriving.
+                 ;; Text inside the region is gone, and an entry for it goes
+                 ;; too.  Structural commands never get here: they are undone
+                 ;; whole.  This is for redraws, such as output arriving.
                  :emjupy-drop)
                 (t (emjupy--undo-map-positions
                     entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
           (seen (make-hash-table :test 'eq)))
-      ;; In place, cell by cell.  An undo in progress replays from
-      ;; `pending-undo-list', and `primitive-undo' walks that through a local
-      ;; variable it writes back when it is done -- so a structural change
-      ;; made BY an undo, deleting the cell an insertion made, could not be
-      ;; seen by rebinding the list: the next step replayed at the old
-      ;; position and rewrote the wrong text, a typed character surviving
-      ;; while its neighbour was deleted.  The list's cons cells are shared,
-      ;; though -- by it, by `buffer-undo-list' and by that local variable --
-      ;; so changing the entries in them reaches all three.  Each cell once:
-      ;; the two lists share their tails.  An entry to drop cannot be
-      ;; unlinked in place, so it becomes one that does nothing.
-      ;; All or nothing.  Every new entry is worked out before any is
-      ;; changed: changed in place one by one, a failure partway left some
-      ;; entries shifted and the rest not, and the next undo wrote text in
-      ;; the wrong places -- scrambling the notebook.
+      ;; In place: an undo replays from a list `primitive-undo' keeps in a local
+      ;; variable, so a new list would not be seen.  The cons cells are shared
+      ;; by all three lists, so changing them reaches each; each once, since the
+      ;; lists share tails.  An entry to drop becomes one that does nothing.
+      ;;
+      ;; All or nothing: every new entry is worked out before any is changed, or
+      ;; a failure partway would leave the history half shifted, and the next
+      ;; undo would write in the wrong places.
       (let ((changes nil))
         (condition-case err
             (progn
@@ -1385,10 +1251,8 @@ entry shape is handled explicitly rather than by pattern-guessing."
                 (setcar c (if (eq new :emjupy-drop)
                               (list 'apply #'ignore :emjupy-dropped)
                             new))))
-          ;; Everything: an entry is whatever a mode recorded, and none of it
-          ;; has been changed yet.  The entries from START on are stale now,
-          ;; though, and replaying one writes in the wrong place, so they go:
-          ;; some undo history lost is safe, wrong history is not.
+          ;; Anything else is a mode's own entry: the ones from START on are
+          ;; stale and go -- lost history is safe, wrong history is not.
           (error
            (emjupy--undo-drop-from start)
            (when (consp pending-undo-list)
@@ -1408,14 +1272,8 @@ entry shape is handled explicitly rather than by pattern-guessing."
 
 (defun emjupy--undo-drop-from (pos)
   "Drop undo entries referring to POS or later in this buffer.
-
-An edit at POS shifts every position at or after it, and undo entries
-hold plain buffer positions rather than markers, so nothing adjusts them.
-Replaying a stale one does not fail loudly; it rewrites the wrong text.
-
-Entries wholly BEFORE the edit are untouched by it and are kept, which is
-the point: redrawing one cell's output no longer costs the history of
-every edit made anywhere else in the notebook.  See notes_undo.org."
+Undo entries hold positions, not markers, so an edit at POS leaves
+them stale.  Entries before POS stay."
   (when (listp buffer-undo-list)
     (setq buffer-undo-list
           (cl-remove-if (lambda (entry)
@@ -1456,11 +1314,8 @@ every edit made anywhere else in the notebook.  See notes_undo.org."
       ;; Faces are applied as plain (non-sticky) `face' properties so that
       ;; text typed at a cell edge does not inherit the neighbouring face.
       (remove-text-properties src-start (point) '(rear-nonsticky nil)))
-    ;; Always one newline after the source, which sync always removes.  It
-    ;; was added only when the source did not already end in one, so a
-    ;; source ending in a newline lost it on the first sync -- and every
-    ;; save of such a notebook changed its cells.  Found by the
-    ;; round-trip corpus.
+    ;; Always one newline after the source, which sync removes; added only when
+    ;; missing, a source ending in a newline lost it on the first save.
     (insert "\n")
 
     (put-text-property src-start (point) 'emjupy-cell cell)
@@ -1475,11 +1330,9 @@ every edit made anywhere else in the notebook.  See notes_undo.org."
            ;; The rules carry the cell background too, so the outline reads
            ;; as the edge of the paper rather than floating on the canvas.
            (header (emjupy--rule (emjupy--cell-label cell)))
-           ;; When output follows, its header line doubles as this box's
-           ;; closing edge -- no separate footer, no gap between the two.
-           ;; Hidden output is not drawn at all -- the outputs stay in the
-           ;; cell, so showing them again is a redraw and never a re-run --
-           ;; and this cell's own footer says so.
+           ;; When output follows, its header doubles as this box's bottom edge.
+           ;; Hidden output is not drawn -- it stays in the cell -- and the
+           ;; footer says so.
            (hidden (and has-outputs (emjupy--cell-outputs-hidden-p cell)))
            (footer (cond
                     (hidden (emjupy--rule
@@ -1512,10 +1365,8 @@ Maps each to the Emacs image type used to display it.")
 
 (defun emjupy--mime-text (value)
   "Return VALUE as a string.
-nbformat stores multi-line MIME payloads (`text/plain', stream `text',
-tracebacks) as either a single string or an array of line strings
-depending on where the JSON came from -- the Contents API joins them,
-a notebook read straight off disk does not."
+nbformat stores multi-line payloads as one string or a list of lines,
+depending on where the JSON came from."
   (cond
    ((null value) "")
    ((stringp value) value)
@@ -1533,13 +1384,9 @@ without the relevant library (very common for `emacs-nox') will make
 
 (defun emjupy--pad-output-lines (start end face)
   "Fill every line between START and END out to the cell's right border.
-FACE is the background the filler carries.
-
-Not `:extend\', which runs the background to the WINDOW edge and so
-spilled the tint past the outline and across the rest of the frame.  A
-stretch space aligned to `emjupy--box-width\' stops it exactly at the
-border instead -- one character per line rather than a run of spaces,
-and it costs nothing to re-align when the window changes width."
+FACE is the background the filler carries.  A stretch space aligned to
+`emjupy--box-width' stops at the border, where `:extend' would run to
+the window's edge."
   (let ((width (emjupy--box-width)))
     (save-excursion
       (goto-char start)
@@ -1550,19 +1397,12 @@ and it costs nothing to re-align when the window changes width."
           (insert (propertize " "
                               'emjupy-pad t
                               'face face
-                              ;; Also as `font-lock-face': font-lock owns the
-                              ;; `face' property and removes it from any
-                              ;; region it refontifies, which is how the
-                              ;; output background disappeared a moment after
-                              ;; a cell was redrawn.  It does not touch
-                              ;; `font-lock-face', and displays it as a face
-                              ;; whenever font-lock is on.  Both are set so
-                              ;; the tint survives either way.
+                              ;; Also as `font-lock-face': font-lock removes
+                              ;; `face' from what it refontifies, and leaves
+                              ;; `font-lock-face' alone.
                               'font-lock-face face
-                              ;; Ends exactly where the rule does: the rule is
-                              ;; WIDTH characters, occupying columns 0..WIDTH-1,
-                              ;; and a stretch to :align-to WIDTH paints the
-                              ;; same span.
+                              ;; Ends where the rule does: WIDTH characters, and
+                              ;; a stretch to :align-to WIDTH covers the same.
                               'display `(space :align-to ,width)))
           (setq end (+ end 1)))
         (forward-line 1)))
@@ -1570,10 +1410,7 @@ and it costs nothing to re-align when the window changes width."
 
 (defun emjupy--unface-newlines (start end)
   "Remove the output background from the newlines between START and END.
-
-A newline carrying a background face paints a column of its own at the
-end of the line, past where the padding stops -- so the band stuck out
-one character beyond the right-hand rule."
+A newline with a background paints a column past the rule."
   (save-excursion
     (goto-char start)
     (while (< (point) end)
@@ -1587,18 +1424,14 @@ one character beyond the right-hand rule."
 
 (defun emjupy--ansi-render (text)
   "Return TEXT with ANSI escapes applied as faces, or stripped.
-
-`ansi-color-apply' ships with Emacs and converts the escapes into text
-properties.  Tracebacks used to have them stripped and streams showed
-them raw; both now go through here."
+With `ansi-color-apply', which comes with Emacs."
   (let ((s (or text "")))
     (if (not emjupy-render-ansi-colors)
         (replace-regexp-in-string "\033\\[[0-9;]*m" "" s)
       (let ((coloured (ansi-color-apply s)))
-        ;; `ansi-color-apply' marks its output with `font-lock-face', which
-        ;; is only honoured where font-lock is running.  emjupy paints cells
-        ;; with plain `face' properties and leaves font-lock off, so without
-        ;; this the escapes vanish and the colour goes with them.
+        ;; `ansi-color-apply' sets `font-lock-face', honoured only with
+        ;; font-lock on; emjupy uses plain `face', so the colours are moved
+        ;; there.
         (let ((pos 0) (len (length coloured)))
           (while (< pos len)
             (let ((next (or (next-single-property-change
@@ -1609,7 +1442,7 @@ them raw; both now go through here."
         coloured))))
 
 (defun emjupy--cell-traceback (cell)
-  "Return CELL\='s traceback as a string, or nil if it has no error output."
+  "Return CELL's traceback as a string, or nil if it has no error output."
   (let (found)
     (cl-loop for out across (or (emjupy-cell-outputs cell) [])
              until found
@@ -1629,11 +1462,9 @@ them raw; both now go through here."
 
 (defun emjupy--output-face (out)
   "Return the background face for output OUT, or nil to leave it bare.
-
-An image gets its own face because a matplotlib figure is white and a
-tinted band around it reads as a frame the plot does not have.  stderr
-that is not a traceback is treated as a warning: that is where Python
-puts `warnings.warn\', logging, and progress bars."
+Images have their own: a tinted band round a white figure reads as a
+frame.  stderr that is not a traceback is a warning -- warnings,
+logging and progress bars go there."
   (let ((type (gethash "output_type" out)))
     (cond
      ((equal type "error") 'emjupy-output-error)
@@ -1652,8 +1483,8 @@ puts `warnings.warn\', logging, and progress bars."
 
 (defvar emjupy-widget-view-functions nil
   "Function returning the text that shows a widget, or nil.
-Called with the widget\'s model id.  Set by the layer that knows about
-widgets; nil, or a nil return, shows the output\'s `text/plain\=' instead.")
+Called with the widget's model id.  Set by the layer that knows about
+widgets; nil, or a nil return, shows the output's `text/plain' instead.")
 
 (defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
   "MIME type of a plotly figure, sent as its JSON specification.")
@@ -1686,13 +1517,9 @@ kept on the line so that opening it opens this one."
 
 (defun emjupy--insert-rich-output (data)
   "Insert the best available representation of the DATA MIME bundle at point.
-
-Prefers an inline image when this Emacs can genuinely display one, and
-otherwise falls back to the bundle's own `text/plain' representation
-plus a short note.  Without that fallback a figure renders as a
-silently empty output box on a terminal or no-image Emacs: rendering
-happens inside the WebSocket callback, where websocket.el swallows the
-`Invalid image type' error `create-image' raises."
+An inline image where this Emacs can show one, otherwise the bundle's
+`text/plain' and a note -- `create-image' failing inside a WebSocket
+callback would leave the box silently empty."
   (let* ((image (cl-loop for (mime . type) in emjupy--image-mime-types
                          for payload = (and data (gethash mime data))
                          when payload return (list mime type payload)))
@@ -1766,11 +1593,9 @@ hundreds of kilobytes of base64, and this runs on every re-render."
 
 (defun emjupy--widgets-first (outputs)
   "Return OUTPUTS with the ones showing widgets first, otherwise in order.
-An `interact\=' sends its figure before its controls, and after each move
-clears the figure but not the controls, so the controls came below the
-figure at first and above it from then on.  Above is where a notebook
-puts them.  Only the drawing changes: the cell keeps its outputs in the
-order the kernel sent them, which is what is saved."
+An `interact' sends its figure before its controls; controls go above,
+where a notebook puts them.  Only the drawing changes, not the order
+saved."
   (let ((widget-p (lambda (o)
                     (let ((d (and (hash-table-p o) (gethash "data" o))))
                       (and (hash-table-p d)
@@ -1779,10 +1604,8 @@ order the kernel sent them, which is what is saved."
 
 (defun emjupy--outputs-for-render (outputs)
   "Return OUTPUTS as a list, with repeated identical images dropped.
-
-Only image-bearing outputs are collapsed, and only against images
-already seen in the same cell: two `print' calls emitting the same text
-are genuinely two outputs and both must show."
+Only images, and only against those already in the cell: two identical
+prints are two outputs."
   (let ((all (emjupy--widgets-first (append (or outputs []) nil))))
     (if (not emjupy-deduplicate-image-outputs)
         all
@@ -1849,10 +1672,9 @@ Past the end of LINE, the index is its length and the column its width."
   "Return TEXT with CHUNK written to it, as a terminal would show it.
 CURSOR is where the last write left the cursor, a cons of line and
 column, or nil for the end of TEXT.  Applied: newline, carriage return,
-backspace, and the escape codes moving the cursor -- up, down, right,
-left, to a column -- or clearing a line, or part of one.  Colour codes
-are kept, taking no column; others are dropped.  The value is a cons of
-the new text and the cursor, nil for the end of the text."
+backspace, and the escape codes that move the cursor or clear a line;
+colour codes are kept, taking no column, others dropped.  Return a cons
+of the new text and the cursor, nil for the end of the text."
   (let* ((lines (vconcat (split-string text "\n")))
          (row (if cursor (car cursor) (1- (length lines))))
          (col (if cursor (cdr cursor)
@@ -1924,10 +1746,7 @@ the new text and the cursor, nil for the end of the text."
 
 (defun emjupy--collapse-carriage-returns (text)
   "Return TEXT with everything before a carriage return on a line dropped.
-
-What a terminal does, and what a progress bar relies on: a carriage
-return takes the cursor to
-the start of the line and the next write covers what was there."
+As a terminal does, which progress bars rely on."
   (mapconcat (lambda (line)
                (let ((parts (split-string line "\r")))
                  (car (last parts))))
@@ -1938,17 +1757,15 @@ the start of the line and the next write covers what was there."
 
 (defun emjupy--make-read-only (start end)
   "Refuse edits between START and END, without walling off the cells.
-
-`rear-nonsticky\' matters: without it, text inserted immediately AFTER a
-protected region inherits the property, so typing at the very start of a
-cell would be refused along with the gutter above it."
+`rear-nonsticky', so text typed just after a protected region, at the
+start of a cell, is not refused with it."
   (add-text-properties start end
                        '(read-only emjupy
                          front-sticky (read-only)
                          rear-nonsticky (read-only))))
 
 (defun emjupy--protect-non-cell-regions ()
-  "Mark every region that is not a cell\='s source read-only.
+  "Mark every region that is not a cell's source read-only.
 Then put every header and footer where its cell now is."
   (when emjupy-protect-non-cell-regions
     (let ((inhibit-read-only t)

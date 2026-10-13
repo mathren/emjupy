@@ -46,9 +46,9 @@ an xwidget on a build that works with it."
 (defcustom emjupy-figure-window-command nil
   "The program that shows a figure in a window of its own, or nil.
 A list: the program and its arguments, where \"%s\" stands for the
-page\'s URL.  nil finds one: the WebKitGTK window that comes with emjupy
+page's URL.  nil finds one: the WebKitGTK window that comes with emjupy
 -- it needs PyGObject and WebKitGTK, which GNOME desktops have -- then
-the first of `emjupy-figure-window-browsers\=' installed, and the
+the first of `emjupy-figure-window-browsers' installed, and the
 browser if there is none of these."
   :type '(choice (const :tag "Find one" nil)
                  (repeat :tag "Program and arguments" string))
@@ -58,7 +58,7 @@ browser if there is none of these."
   '(("firefox" "--new-window" "%s")
     ("chromium" "--app=%s"))
   "Browsers that can show a figure in a window of their own, tried in order.
-Each is the program and its arguments, where \"%s\" stands for the page\'s
+Each is the program and its arguments, where \"%s\" stands for the page's
 URL; the first installed is used, when the WebKitGTK window that comes
 with emjupy cannot run.  Firefox opens a new window; Chromium an app
 window, without tabs or toolbar.  Another browser can be added: Chrome
@@ -93,10 +93,8 @@ Kept: finding out starts Python.")
 
 (defun emjupy--figure-window-bundled ()
   "Return the command running the bundled figure window, or nil if it cannot.
-Asks Python, once, whether it has PyGObject and WebKitGTK.  The system\'s
-Python is tried too: PyGObject comes with the desktop, so a virtualenv
-or conda Python first on the PATH -- the notebook\'s environment,
-activated -- usually lacks it."
+Asks Python, once, for PyGObject and WebKitGTK, trying the system's too:
+a virtualenv or conda Python first on the PATH usually lacks them."
   (when (file-exists-p emjupy--figure-window-script)
     (cl-loop for python in (delete-dups
                             (delq nil (list (executable-find "python3")
@@ -213,14 +211,9 @@ Plotly.newPlot('figure', spec.data || [], spec.layout || {},
 
 (defun emjupy--plotly-js (callback)
   "Call CALLBACK with the address of plotly.js, once it is known.
-See `emjupy-plotly-js'.  Asking the kernel is asynchronous.
-
-The kernel cannot simply print it: the Jupyter server limits how fast
-output reaches its clients, 1 MB a second by default, and replaces what
-goes faster with a notice -- which is what would be saved as plotly.js.
-So the kernel holds it, and it is fetched in pieces a second apart: some
-five seconds, once per plotly version, after which the copy kept is
-used."
+See `emjupy-plotly-js'.  The kernel holds it, and it is fetched in
+pieces a second apart: the server limits output to 1 MB a second and
+replaces the rest with a notice.  Once per plotly version."
   (if (stringp emjupy-plotly-js)
       (funcall callback (if (string-match-p "\\`[a-z]+://" emjupy-plotly-js)
                             emjupy-plotly-js

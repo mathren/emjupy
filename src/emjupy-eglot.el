@@ -46,7 +46,7 @@ server that directory implies -- a remote one over TRAMP, a local one
 otherwise.  That matters when the Jupyter server is remote: a local
 language server sees the local environment, not the packages the kernel
 actually has.  It is a setting rather than something inferred, because a
-server reached through `ssh -L\' looks like localhost from here."
+server reached through `ssh -L' looks like localhost from here."
   :type '(choice (const :tag "Local temporary directory" nil)
                  (directory :tag "Directory (may be a TRAMP path)"))
   :group 'emjupy)
@@ -54,12 +54,12 @@ server reached through `ssh -L\' looks like localhost from here."
 (defcustom emjupy-shadow-sync-to-disk 'lazy
   "When to write the shadow file to disk.
 
-`lazy\' (the default) writes it once, when it is created.  Later edits
-are sent to the language server by Eglot as `didChange\' notifications,
+`lazy' (the default) writes it once, when it is created.  Later edits
+are sent to the language server by Eglot as `didChange' notifications,
 which is how LSP is meant to work and needs no file at all.
 
-`always\' also rewrites the file on every edit.  That is only useful if
-something outside Emacs reads it, and it is expensive: a `write-region\'
+`always' also rewrites the file on every edit.  That is only useful if
+something outside Emacs reads it, and it is expensive: a `write-region'
 over TRAMP measured 214 ms against ssh on localhost, and it lands on the
 completion and eldoc paths, once per keystroke."
   :type '(choice (const :tag "Once, when created" lazy)
@@ -82,22 +82,22 @@ giving =/ssh:box:/srv/nb/sub=, where Eglot starts the language server on
 =box= and sees the environment the kernel really runs in.
 
 Unset, with a remote kernel, emjupy falls back to a local temp directory
-rather than guess: `xref-find-definitions\' will not find your own
+rather than guess: `xref-find-definitions' will not find your own
 modules, but nothing is written to a wrong path."
   :type '(choice (const :tag "Kernel runs on this machine" nil)
                  (string :tag "TRAMP prefix, e.g. /ssh:box:"))
   :group 'emjupy)
 
 (defcustom emjupy-shadow-beside-notebook t
-  "When non-nil, keep the shadow file in the notebook\='s own directory.
+  "When non-nil, keep the shadow file in the notebook's own directory.
 
 This is what makes \\[xref-find-definitions] work on your own modules.
-A language server resolves `import mylib\=' relative to the directory of
+A language server resolves `import mylib' relative to the directory of
 the file it is reading, so a shadow file parked in a temp directory
 cannot see the .py sitting next to the notebook, and every such lookup
 answers \"No definition found\".
 
-The directory is worked out from `emjupy-remote-root\', which maps a
+The directory is worked out from `emjupy-remote-root', which maps a
 server to where its files actually live.  Without that mapping there is
 nothing to derive -- a tunnelled server looks like localhost -- so the
 temp directory is used and this quietly has no effect.
@@ -118,7 +118,7 @@ opens, and the commands that ask one for something.  Set it to nil to
 find out whether a slowdown comes from language support or from
 somewhere else: the notebook keeps working -- cells run, output arrives,
 everything renders -- and nothing runs after each command except
-emjupy\='s own bookkeeping.  Editing all the code in one buffer, with
+emjupy's own bookkeeping.  Editing all the code in one buffer, with
 \\[emjupy-edit-cell-externally], still works, without a server; set
 back to t, a server is started when next one is asked for."
   :type 'boolean
@@ -153,9 +153,9 @@ short pause and no more; editing and running cells do not depend on it."
     eglot-find-typeDefinition)
   "Eglot commands redirected to the shadow buffer when run in a notebook.
 
-Each is advised so that inside `emjupy-mode\' it runs against the buffer
+Each is advised so that inside `emjupy-mode' it runs against the buffer
 Eglot actually manages, with point at the matching position, and any
-edits it makes are pulled back into the cells.  Outside `emjupy-mode\'
+edits it makes are pulled back into the cells.  Outside `emjupy-mode'
 the advice does nothing at all."
   :type '(repeat symbol)
   :group 'emjupy)
@@ -170,51 +170,24 @@ right and worth having; for anything that depends on the environment the
 code will actually run in, it is confidently wrong.
 
 Set it to nil to have no language support at all in that case rather
-than approximate support.  Either way, `emjupy-shadow-host\' or
-`jupyter-lsp\' on the server gives answers from the right machine."
+than approximate support.  Either way, `emjupy-shadow-host' or
+`jupyter-lsp' on the server gives answers from the right machine."
   :type 'boolean
   :group 'emjupy)
 
-;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it, because the
-;; WebSocket transport inherits from Eglot's own server class.  It is
-;; loaded, not started: nothing connects to a language server until a
-;; shadow buffer asks, and emjupy works without one.
+;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it for its server class
+;; -- but not started: nothing connects until a shadow buffer asks.
 
-;; Eglot's private API. Every call site below is already guarded by `fboundp'
-;; or a runtime `require', but the compiler cannot see that and reports each
-;; one as "not known to be defined" -- noisy under native compilation, where
-;; the warnings surface in the user's *Warnings* buffer at install time.
-;;
-;; These are declared rather than assumed: they are internal names with no
-;; stability promise, and one of them has already been renamed once
-;; (`eglot--server-capable' -> `eglot-server-capable' in Emacs 30), which is
-;; why `emjupy--eglot-capable-p' probes for both.
+;; Eglot's internal API, declared for the compiler; every use is guarded.  These
+;; names have no stability promise: `eglot--server-capable' became
+;; `eglot-server-capable' in Emacs 30, hence `emjupy--eglot-capable-p'.
 
-;; emjupy-mode is a single fundamental-mode-derived buffer mixing code cells,
-;; markdown cells, box-drawing decoration, and output text all interleaved --
-;; nothing like the single-language file Eglot (or any tool that expects
-;; `buffer-file-name'/major-mode to mean one coherent source file) needs to
-;; attach to, and Eglot has no client-side support for LSP's notebookDocument
-;; sync extension (checked directly: no `eglot-*notebook*' symbols exist even
-;; though some servers advertise it), so there's no protocol-level shortcut.
-;;
-;; For CODE cells, all of the notebook's code cells are shown together in one
-;; persistent, real python-mode buffer -- a "shadow" buffer, marked with
-;; `# %% [emjupy:ID]' section headers (in the spirit of the jupytext percent
-;; format) -- so Eglot sees one coherent multi-cell Python document and can
-;; resolve names defined in any cell. Eglot is started on it automatically;
-;; the buffer and its LSP connection persist across edits, so only the FIRST
-;; access in a session pays the server-startup cost.
-;;
-;; That shadow buffer is reachable directly via `C-c '' for heavier editing,
-;; but for everyday use you never need to: completion-at-point-functions and
-;; eldoc-documentation-functions are wired into emjupy-mode itself, silently
-;; delegating to the shadow buffer's Eglot session and mapping positions back
-;; and forth -- so completion/eldoc for code cells just work while typing
-;; directly in the notebook, cross-cell-aware, no action required.
-;;
-;; MARKDOWN cells don't benefit from cross-cell LSP awareness, so they keep
-;; the simpler single-cell external-edit buffer.
+;; A notebook buffer mixes cells, decoration and output, which Eglot cannot
+;; attach to, and Eglot has no notebookDocument support.  So all code cells are
+;; kept together in one python-mode "shadow" buffer, a `# %% [emjupy:ID]'
+;; section per cell, which Eglot sees as one Python file.  Completion and eldoc
+;; in the notebook delegate to it, mapping positions both ways; `C-c '' opens it
+;; for heavier editing.  Markdown cells are edited one at a time.
 
 ;;;; Editing a cell in a buffer of its own
 
@@ -302,38 +275,25 @@ buffer like any ordinary Python file."
 
 (defconst emjupy--shadow-coding 'utf-8-unix
   "Coding system used for the Eglot shadow file, in both directions.
-
-Pinned rather than negotiated.  Left to itself `write-region' calls
-`select-safe-coding-system', which for anything it cannot encode
-cleanly -- a stray undecodable byte in a cell, say -- stops and ASKS,
-defaulting to `raw-text'.  Answering that turns the shadow file into raw
-bytes, so the next visit reads mojibake back (a lone #x97 shows up as
-`\\227') and Emacs then chokes trying to save it.  LSP mandates UTF-8
-anyway, so there is nothing to negotiate.")
+Pinned: left to choose, `write-region' asks for a coding system on an
+undecodable byte, and `raw-text' would turn the file to mojibake.  LSP
+is UTF-8 anyway.")
 
 (defun emjupy--eglot-live-server (&optional buffer)
   "Return the live Eglot server for BUFFER, or nil.
-
-Both halves matter: `eglot-current-server' can return a server whose
-process has since died, and calling into Eglot with one of those raises
-\"No current JSON-RPC connection\" out of the completion machinery, where
-it surfaces to the user as a raw jsonrpc-error."
+`eglot-current-server' can return a server whose process has died, and
+using one raises a jsonrpc-error out of completion."
   (with-current-buffer (or buffer (current-buffer))
     (let ((server (eglot-current-server)))
       (and server (jsonrpc-running-p server) server))))
 
 (defvar emjupy--force-local-shadow nil
   "Non-nil while the shadow file must be on this machine.
-
-The WebSocket transport does not read the shadow file: it is only
-something for Eglot to attach to, and the paths it reports are rewritten
-in flight.  Putting it on the remote host therefore buys nothing and
-costs everything -- building it over TRAMP is slow, can time out, and
-when it does the attach that was waiting on it never happens.  That is
-how the socket came to be reported as never opened.")
+The WebSocket transport never reads the file, and rewrites the paths it
+reports; building it over TRAMP would only be slow, or time out.")
 
 (defun emjupy--shadow-must-stay-here-p (nb)
-  "Non-nil when NB\='s shadow belongs on this machine but its files do not.
+  "Non-nil when NB's shadow belongs on this machine but its files do not.
 
 True exactly when the WebSocket transport is in use and the notebook is
 somewhere this machine cannot reach as a plain path."
@@ -342,7 +302,7 @@ somewhere this machine cannot reach as a plain path."
          (and dir (not (emjupy--local-directory-p dir))))))
 
 (defun emjupy--shadow-directory-for (nb)
-  "Return the directory NB\='s shadow file belongs in."
+  "Return the directory NB's shadow file belongs in."
   ;; Forcing local rejects REMOTE candidates only.  A directory set by hand
   ;; that is already on this machine is still what the user asked for.
   (cl-flet ((usable (dir)
@@ -352,13 +312,10 @@ somewhere this machine cannot reach as a plain path."
     (let* ((explicit (usable (and emjupy-shadow-directory
                                   (file-name-as-directory
                                    emjupy-shadow-directory))))
-           ;; Not beside the notebook when the shadow must stay here and the
-           ;; notebook lives elsewhere: "beside" would mean a LOCAL directory
-           ;; named after a remote path, so emjupy would create
-           ;; /home/you/project/ on this machine and put the shadow in it.
-           ;; The socket transport never reads the file anyway -- it rewrites
-           ;; the paths it reports -- so a temp directory does the same job
-           ;; without inventing directories on the wrong machine.
+           ;; Not beside a notebook that lives elsewhere when the shadow must
+           ;; stay here: that would make a local directory named after a remote
+           ;; path.  The socket transport never reads the file, so a temporary
+           ;; directory serves.
            (beside (and (not explicit)
                         emjupy-shadow-beside-notebook
                         (not (emjupy--shadow-must-stay-here-p nb))
@@ -366,10 +323,10 @@ somewhere this machine cannot reach as a plain path."
       (or explicit beside (emjupy--shadow-temporary-directory)))))
 
 (defun emjupy--shadow-temporary-directory ()
-  "Return the temporary directory for this user\='s shadow files.
+  "Return the temporary directory for this user's shadow files.
 One per user, named after them: a single one in a shared /tmp was made
 by whoever came first, and nobody else could write in it.  It is made
-readable by its owner alone -- a shadow file holds a notebook\='s code."
+readable by its owner alone -- a shadow file holds a notebook's code."
   (file-name-as-directory
    (expand-file-name (format "emjupy-shadow-%s" (user-login-name))
                      temporary-file-directory)))
@@ -378,14 +335,9 @@ readable by its owner alone -- a shadow file holds a notebook\='s code."
 
 (defun emjupy--notebook-directory (nb)
   "Return the directory NB lives in as a file name Emacs can use, or nil.
-
-The kernel is asked first: it is started in the notebook\='s own
-directory, so it knows, and its answer needs no configuration at all.
-`emjupy-remote-root\' is the fallback for when there is no kernel yet.
-
-For a remote kernel the answer is an absolute path on ITS filesystem and
-means nothing here, so it is used only when `emjupy-shadow-host\' says
-how to reach that machine."
+The kernel is asked first: it runs in the notebook's directory.  Then
+`emjupy-remote-root'.  A remote kernel's answer is used only when
+`emjupy-shadow-host' says how to reach its machine."
   (or (emjupy--notebook-directory-from-kernel nb)
       (let* ((server (emjupy-notebook-server nb))
              (root (and server (emjupy--remote-root-for server)))
@@ -397,17 +349,14 @@ how to reach that machine."
 
 (defun emjupy--local-directory-p (dir)
   "Return non-nil if DIR exists on this machine, without contacting another.
-
-`file-directory-p\' on a TRAMP name opens a connection to answer, and
-this is asked on paths that run after a command -- so the question
-\"is this directory here?\" could block Emacs, or fail, on a name that is
-plainly not here.  A remote name is not here by definition."
+`file-directory-p' on a TRAMP name opens a connection, and this runs
+after commands.  A remote name is not here by definition."
   (and dir
        (not (file-remote-p dir))
        (file-directory-p dir)))
 
 (defun emjupy--notebook-directory-from-kernel (nb)
-  "Return NB\='s directory as its kernel reports it, or nil."
+  "Return NB's directory as its kernel reports it, or nil."
   (let ((cwd (emjupy-notebook-kernel-cwd nb)))
     (when (and cwd (not (string-empty-p cwd)))
       (cond
@@ -420,7 +369,7 @@ plainly not here.  A remote name is not here by definition."
        (t nil)))))
 
 (defun emjupy--refresh-kernel-cwd (nb)
-  "Ask NB\='s kernel which directory it is running in, and remember it."
+  "Ask NB's kernel which directory it is running in, and remember it."
   (let ((kernel (emjupy-notebook-kernel nb)))
     (when (and kernel (emjupy--ws-live-p kernel))
       (emjupy--kernel-eval
@@ -433,12 +382,9 @@ plainly not here.  A remote name is not here by definition."
            ;; can be worked out from it -- so browsing its files needs no
            ;; configuration either.
            (emjupy--remember-server-root nb)
-           ;; The working directory is the last thing language support was
-           ;; waiting for, so start it now rather than when the user first
-           ;; asks for a completion.  Starting it then means the first
-           ;; request of a session is the one that pays for the handshake --
-           ;; and if it is going to fail, failing here says so while there is
-           ;; still something to be done about it.
+           ;; The directory was the last thing missing: start now, so the
+           ;; handshake -- or its failure -- comes here, not at the first
+           ;; completion.
            (emjupy-start-language-support nb)))))))
 
 ;;;; Warnings
@@ -448,35 +394,24 @@ plainly not here.  A remote name is not here by definition."
 
 (defun emjupy--warn-local-language-server (nb)
   "Say that NB is about to get a language server on THIS machine.
-
-Starting one is the fallback when the server beside the kernel cannot be
-reached, and it is a poor one: it reads this machine\='s files and this
-machine\='s Python, so it answers about neither the code nor the
-environment the notebook runs in.  Standard library lookups still work,
-which is what makes it easy to miss -- imports of the user\='s own
-modules are the ones that quietly come back empty.
-
-Said once per notebook, with the reason the socket failed when there is
-one."
+The fallback when the server beside the kernel cannot be reached: it
+reads this machine's files and Python, so imports of the user's own
+modules quietly come back empty.  Said once per notebook, with the
+reason the socket failed, if there is one."
   (let ((nb-buffer (or (and nb (emjupy-notebook-buffer nb)) (current-buffer))))
     (when (buffer-live-p nb-buffer)
       (with-current-buffer nb-buffer
-        ;; Marked as said only when something is actually said.  Setting
-        ;; it first meant the earliest call -- before the kernel has
-        ;; reported where it runs, when there is nothing useful to say --
-        ;; silenced the one that mattered.
+        ;; Marked only when something is said: an early call, with nothing to
+        ;; say, must not silence the one that matters.
         (unless emjupy--warned-local-server
-          ;; Not conditional on the kernel having said where it runs.  A
-          ;; local server is started the first time anything asks for a
-          ;; completion, which is before the kernel has answered -- so
-          ;; requiring the directory kept the warning silent in exactly the
-          ;; case it was written for.
+          ;; Not conditional on the kernel's directory: a local server starts at
+          ;; the first completion, before the kernel has answered.
           (progn
             (setq emjupy--warned-local-server t)
             (message
              "[emjupy] %s %s%s"
              "Using a language server on THIS machine: it cannot see the"
-             "kernel\'s files or environment.  M-x emjupy-lsp-diagnose"
+             "kernel's files or environment.  M-x emjupy-lsp-diagnose"
              (if (bound-and-true-p emjupy--lsp-last-failure)
                  (format " (%s)" emjupy--lsp-last-failure)
                ""))))))))
@@ -485,21 +420,15 @@ one."
 
 (defvar emjupy--suppress-plain-eglot nil
   "Non-nil while a WebSocket-backed Eglot is about to be attached.
-
-`emjupy--ensure-shadow-buffer\' starts Eglot itself, in the ordinary way,
-as soon as it has a buffer.  That happens before anything can ask for
-the WebSocket transport -- so the guard against attaching twice saw a
-server already there and left it: a local one, reading the shadow file
-in a temp directory, which resolves symbols in the notebook and nothing
-beside it.  Every cross-file lookup came back empty for that reason, and
-looked like a fault in the transport that was not being used.")
+`emjupy--ensure-shadow-buffer' would otherwise start an ordinary Eglot
+first, and the WebSocket one would find it there and never attach.")
 
 (defun emjupy-start-language-support (&optional nb)
   "Begin language support for NB, without waiting for it.
 
 The shadow buffer is built either way -- it is what Eglot manages -- and
 what differs is the transport underneath.  When the server runs
-`jupyter-lsp\', Eglot is attached over its WebSocket and so reaches the
+`jupyter-lsp', Eglot is attached over its WebSocket and so reaches the
 language server beside the kernel; otherwise Eglot starts one here in
 the ordinary way.
 
@@ -535,17 +464,9 @@ hand.  Reports what it found rather than failing quietly."
 
 (defun emjupy--claim-shadow-for-websocket (buffer)
   "Return non-nil if BUFFER is free for a WebSocket server to attach to.
-
-A plain Eglot server may already be there.  Anything that asks for
-completion or documentation builds the shadow buffer, and that path
-starts a server the ordinary way -- so on a notebook where the kernel
-reports its directory a moment later, the ordinary server wins the race
-and the WebSocket one is never tried.  The result is a language server
-reading a scratch file over TRAMP instead of the one beside the kernel,
-which is the arrangement the WebSocket transport exists to avoid.
-
-Skipping when any server is attached was therefore wrong: what matters
-is whether the attached one is ours.  One that is not is shut down."
+An ordinary Eglot server, started when completion first built the
+buffer, may be there; it is shut down.  Only one of ours counts as
+attached."
   (with-current-buffer buffer
     (let ((server (eglot-current-server)))
       (cond
@@ -577,10 +498,8 @@ The server is folded into the name: two servers can both host
                              (format "%s__%s" tag
                                      (or (emjupy-notebook-path nb)
                                          "untitled"))))))
-    ;; Deliberately no `make-directory' here: with a TRAMP
-    ;; `emjupy-shadow-directory' that would open an ssh connection merely to
-    ;; ask what the path is. The directory is created in
-    ;; `emjupy--ensure-shadow-buffer', which is already about to do remote I/O.
+    ;; No `make-directory' here: for a TRAMP directory it would open a
+    ;; connection just to name a path.  `emjupy--ensure-shadow-buffer' makes it.
     (expand-file-name (concat safe-name ".py") dir)))
 
 ;;;; The shadow buffer
@@ -595,12 +514,8 @@ The server is folded into the name: two servers can both host
 
 (defun emjupy--shadow-block (reason &optional buffer)
   "Stop trying to build a shadow buffer for a while, reporting REASON.
-
-BUFFER is where the pause is recorded, defaulting to the current one.
-It has to be the NOTEBOOK buffer: the flag is buffer-local and the next
-request comes from there, so recording it in the shadow buffer -- which
-is current while Eglot is being started -- would be invisible and the
-attempt would repeat after every command anyway."
+BUFFER is where the pause is recorded, by default the current one.  It
+must be the notebook buffer: the next request comes from there."
   (with-current-buffer (or buffer (current-buffer))
     (setq emjupy--shadow-blocked-until
           (time-add (current-time) emjupy-shadow-retry-interval)))
@@ -613,33 +528,22 @@ attempt would repeat after every command anyway."
 Its content is refreshed to
 match the current cells, and make sure Eglot is (or becomes) attached --
 automatically, with nothing for the user to run."
-  ;; The back-off covers starting a language server, which is what can be
-  ;; slow or impossible.  It used to cover this whole function, so on a
-  ;; machine with no language server installed the first call would fail,
-  ;; set the back-off, and every later call would return early -- leaving
-  ;; the buffer unbuilt and, worse, never moved when its path changed.
-  ;; Building and refreshing the buffer is local work and always safe.
+  ;; The back-off covers starting a language server, the slow or impossible
+  ;; part; building the buffer is local and always safe.
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (nb-buffer (or (emjupy-notebook-buffer nb) (current-buffer)))
          (content (emjupy--build-shadow-content nb))
          (path (emjupy--shadow-file-path nb)))
-    ;; The path can change after the buffer was made.  The kernel reports its
-    ;; working directory asynchronously, a moment after it connects, so the
-    ;; first shadow buffer of a session is created before that answer arrives
-    ;; and lands in the fallback temp directory.  Reusing it thereafter meant
-    ;; the language server kept reading a local scratch file and never saw
-    ;; the notebook's real directory -- so imports of the user's own modules
-    ;; stayed unresolvable no matter what `emjupy-shadow-host' said.
+    ;; The path can change: the kernel reports its directory after the first
+    ;; buffer was made, in the temporary fallback.  Rebuilt, so the server reads
+    ;; the notebook's own directory and finds its modules.
     (when (and (buffer-live-p buf)
                (buffer-local-value 'buffer-file-name buf)
                (not (equal (expand-file-name
                             (buffer-local-value 'buffer-file-name buf))
                            (expand-file-name path))))
-      ;; Never ask.  The shadow buffer visits a file but is a regenerated
-      ;; copy of the cells, so "modified" only means it has drifted from a
-      ;; disk copy nobody reads -- and since edits are no longer written
-      ;; through, it is always modified.  Killing it silently is right;
-      ;; stopping to ask is not.
+      ;; Never ask: the buffer is a regenerated copy of the cells, always
+      ;; "modified".
       (with-current-buffer buf
         (set-buffer-modified-p nil))
       (let ((kill-buffer-query-functions nil)
@@ -647,14 +551,9 @@ automatically, with nothing for the user to run."
         (when (buffer-live-p buf) (kill-buffer buf)))
       (setq buf nil)
       (setf (emjupy-notebook-shadow-buffer nb) nil))
-    ;; Building the buffer is remote I/O when the notebook is remote, and
-    ;; this function is reached from eldoc and completion -- after every
-    ;; command.  One unreachable host would otherwise mean a blocking TRAMP
-    ;; attempt per keystroke, which is indistinguishable from a hang.
-    ;; The back-off applies to remote work only.  Creating a local directory
-    ;; cannot hang, and blocking it meant that on a machine with no language
-    ;; server -- where the back-off is set by the failed attach -- the buffer
-    ;; was never built and never moved when its path changed.
+    ;; This runs from eldoc and completion, after every command, so remote work
+    ;; is backed off: one unreachable host would hang every keystroke.  A local
+    ;; directory cannot hang, and is not.
     (when (and (not (buffer-live-p buf))
                (file-remote-p path)
                (emjupy--shadow-blocked-p))
@@ -668,54 +567,35 @@ automatically, with nothing for the user to run."
               (if (equal dir (emjupy--shadow-temporary-directory))
                   (emjupy--private-directory dir "shadow files")
                 (make-directory dir t))))
-        ;; What making a directory there can raise: a file error -- a host
-        ;; unreachable, a permission refused -- or, from TRAMP, a user error
-        ;; for a remote root misconfigured, a method it does not know.
-        ;; Either leaves the notebook open, without language support.
+        ;; A file error -- unreachable, refused -- or TRAMP's user error: the
+        ;; notebook stays open, without language support.
         ((file-error user-error)
          (emjupy--shadow-block (error-message-string err))
          (cl-return-from emjupy--ensure-shadow-buffer nil))))
     (unless (buffer-live-p buf)
-      ;; A buffer may already be visiting this path from an earlier open of
-      ;; the same notebook. Reuse it rather than writing the file behind its
-      ;; back, which would leave a stale modtime and make the next visit
-      ;; interrupt with "changed on disk. Reread from disk?".
+      ;; Reuse a buffer already visiting the path: writing behind its back would
+      ;; make the next visit ask to reread it.
       (setq buf (find-buffer-visiting path))
       (unless (buffer-live-p buf)
-        ;; Write the real content to disk BEFORE visiting the file.
-        ;;
-        ;; Once any server is running for this project, Eglot auto-manages a
-        ;; newly visited file from `find-file-hook' and sends didOpen with
-        ;; whatever the buffer holds at that instant. Visiting first and
-        ;; filling the buffer afterwards therefore hands the server a stale
-        ;; (or empty) document -- which is why the SECOND notebook opened in
-        ;; a session silently got no hover and almost no completions, even
-        ;; though `eglot--managed-mode' reported t.
+        ;; The content is written BEFORE the file is visited: Eglot sends
+        ;; didOpen from `find-file-hook' with what the buffer holds then, and an
+        ;; empty document left later notebooks without completion.
         (let ((coding-system-for-write emjupy--shadow-coding))
           (write-region content nil path nil 'quiet))
         (setq buf (let ((coding-system-for-read emjupy--shadow-coding))
                     (find-file-noselect path))))
       (setf (emjupy-notebook-shadow-buffer nb) buf)
       (with-current-buffer buf
-        ;; `find-file-noselect' already picked python-mode from the .py
-        ;; suffix. Re-running it would `kill-all-local-variables', tearing
-        ;; down both Eglot's buffer-local state and the two variables set
-        ;; just below.
+        ;; `find-file-noselect' chose python-mode already; running it again
+        ;; would kill Eglot's local state, and the two variables set below.
         (unless (derived-mode-p 'python-mode 'python-ts-mode)
           ;; Quietly: see the note in `emjupy--fontify-as'.
           (let ((python-indent-guess-indent-offset-verbose nil))
             (python-mode)))
-        ;; No lock files and no auto-save files.  This file is a generated
-        ;; copy of the cells, which nobody else edits and which is rebuilt
-        ;; from them anyway, so neither guards anything; and for a remote
-        ;; file each lock is remote I/O on the completion path -- measured at
-        ;; 121 ms per edit over ssh to localhost, against 20 ms without.
-        ;;
-        ;; Settled BEFORE anything below can modify the buffer: Emacs takes a
-        ;; lock on the first modification, and setting the coding system counts
-        ;; as one unless told otherwise.  Done after it, as it was, the lock
-        ;; was already taken -- a `.#' file, and an auto-save `#...#' one, left
-        ;; beside the notebook, in the user's own project directory.
+        ;; No lock or auto-save files: the file is a generated copy nobody else
+        ;; edits, and for a remote one each lock is remote I/O on the completion
+        ;; path.  Set before anything modifies the buffer -- the first
+        ;; modification takes the lock.
         (setq-local create-lockfiles nil)
         (setq buffer-auto-save-file-name nil)
         (auto-save-mode -1)
@@ -729,18 +609,9 @@ automatically, with nothing for the user to run."
         (setq-local create-lockfiles nil)
         (erase-buffer)
         (insert content)
-        ;; Deliberately NOT written to disk here.  Eglot sends the change to
-        ;; the language server in-band, as a didChange notification, and the
-        ;; server works from that -- the file on disk only ever needed to
-        ;; exist so there was something to attach to.
-        ;;
-        ;; Writing it anyway cost a `write-region' per edit, and over TRAMP
-        ;; that is not a detail: measured at 214 ms per call against ssh on
-        ;; LOCALHOST, before any network is involved.  On the completion and
-        ;; eldoc paths that is a couple of hundred milliseconds of blocked
-        ;; Emacs per keystroke -- and because TRAMP blocks the main loop, the
-        ;; WebSocket callbacks carrying cell output cannot run either, so a
-        ;; finished cell appears to hang until something interrupts.
+        ;; Not written to disk: Eglot sends changes in-band (didChange), and the
+        ;; file exists only to attach to.  Writing it per edit is a round trip
+        ;; over TRAMP, on the completion path, blocking cell output too.
         (when (eq emjupy-shadow-sync-to-disk 'always)
           (let ((coding-system-for-write emjupy--shadow-coding))
             (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
@@ -749,41 +620,17 @@ automatically, with nothing for the user to run."
         ;; unmodified either way, or Emacs offers to save a scratch file.
         (set-buffer-modified-p nil))
       (condition-case err
-          ;; NOT eglot-ensure: it defers connecting to `post-command-hook',
-          ;; added *buffer-locally* to whatever buffer was current at call
-          ;; time. This shadow buffer is deliberately never the user's
-          ;; focused buffer -- that's the whole point of automatic,
-          ;; no-switching completion -- so that hook would never fire.
-          ;; This replicates eglot-ensure's own deferred callback body
-          ;; (see `eglot-ensure' in eglot.el) but runs it immediately;
-          ;; that's safe here because, unlike a mode-hook, this buffer is
-          ;; already fully set up (real python-mode, real file) by the
-          ;; time we reach this call.
+          ;; Connected here, not with `eglot-ensure': that waits for
+          ;; `post-command-hook' in the current buffer, which is never this one.
+          ;; `require', not `fboundp': `eglot-ensure' may be an autoload stub,
+          ;; its internals not yet defined.
           ;;
-          ;; `require' (not just `fboundp' on `eglot-ensure') matters here:
-          ;; on a fresh Emacs, `eglot-ensure' exists only as an autoload
-          ;; stub until something actually calls it, which loads the real
-          ;; file and only then defines `eglot--guess-contact' et al. Since
-          ;; we deliberately never call `eglot-ensure' itself, relying on
-          ;; `fboundp' would leave those internals void the first time a
-          ;; notebook is opened in a session that never ran Eglot before.
-          ;; Connecting is the expensive half, and it is retried whenever
-          ;; the server is not attached -- which, if the server cannot be
-          ;; started at all, is after every command.  Over TRAMP that means
-          ;; guessing the contact and launching a remote process each time,
-          ;; so a host without pylsp, or one that is merely slow, brings
-          ;; Emacs to a crawl at exactly the moment the user is running
-          ;; cells.  Same treatment as the file: a short leash, then leave
-          ;; it alone for a while.
-          ;; The flag lives in the NOTEBOOK buffer -- that is where the
-          ;; next request comes from -- and this runs with the shadow
-          ;; buffer current, where it would always read nil.
-          ;; The switch is checked here too, where every path that starts a
-          ;; server passes, and not only by its callers: the warm-up when a
-          ;; notebook opens, M-., and the commands that edit or rename all
-          ;; came through here, and most of them did not look at it.  The
-          ;; buffer above is still built -- editing all the code in one
-          ;; buffer needs no server -- but nothing is attached.
+          ;; Connecting is the expensive half, retried while no server is
+          ;; attached, so it is backed off like the file.  The flag is set in
+          ;; the notebook buffer, where the next request comes from.
+          ;; `emjupy-language-support' is checked here, where every path to a
+          ;; server passes; the buffer is still built, for editing all the code,
+          ;; but nothing is attached.
           (unless (or emjupy--suppress-plain-eglot
                       (not emjupy-language-support)
                       (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
@@ -792,11 +639,9 @@ automatically, with nothing for the user to run."
                            (emjupy--shadow-block "language server did not start"
                                                  nb-buffer))
               (apply #'eglot--connect (eglot--guess-contact))
-              ;; It started, and it is on this machine.  Say so: this is
-              ;; the fallback, and a silent one answers about the wrong
-              ;; files and the wrong Python while looking like it works.
-              ;; Wrapped, because a warning must never be able to break
-              ;; the thing it warns about.
+              ;; Started, and on this machine: say so, since this fallback
+              ;; answers about the wrong files while seeming to work.  Wrapped:
+              ;; a warning must not break what it warns about.
               (emjupy--warn-local-language-server nb)))
         (error
          (emjupy--shadow-block (error-message-string err) nb-buffer))))
@@ -805,13 +650,9 @@ automatically, with nothing for the user to run."
 ;;;; Positions
 
 (defun emjupy--shadow-position-to-cell (nb shadow-pos)
-  "Map SHADOW-POS in NB\='s shadow buffer to (CELL . NOTEBOOK-POS).
-
-Returns nil when the position falls outside every cell section -- on a
-`# %%\=' marker line, say.  This is the inverse of the mapping
-`emjupy--cell-shadow-delegate\' performs on the way in, and it is what
-lets a location the server describes in shadow-file coordinates land on
-the right character of the right cell."
+  "Map SHADOW-POS in NB's shadow buffer to (CELL . NOTEBOOK-POS).
+Return nil outside every cell section, as on a `# %%' line.  The
+inverse of what `emjupy--cell-shadow-delegate' does on the way in."
   (let ((buf (emjupy-notebook-shadow-buffer nb))
         (found nil))
     (when (buffer-live-p buf)
@@ -830,17 +671,14 @@ the right character of the right cell."
                                              (- shadow-pos start))))))))
     found))
 
-;; --- xref ------------------------------------------------------------------
-;; M-. reaches the server through the same shadow buffer as everything else.
-;; Eglot installs its xref backend in the buffer it manages -- the shadow
-;; buffer, not the notebook -- so in a notebook M-. found nothing, or fell
-;; through to a backend that knew nothing about the code.
+;; M-. reaches the server through the shadow buffer like the rest: Eglot's xref
+;; backend is installed in the shadow buffer, not in the notebook.
 
 ;;;; Definitions and references
 
 (defun emjupy--xref-backend ()
-  "`xref-backend-functions\=' entry for notebook buffers.
-None when `emjupy-language-support\=' is nil, which leaves
+  "`xref-backend-functions' entry for notebook buffers.
+None when `emjupy-language-support' is nil, which leaves
 \\[xref-find-definitions] to the other backends rather than starting a
 language server."
   (and emjupy-language-support emjupy--buffer-notebook 'emjupy))
@@ -855,12 +693,9 @@ language server."
          (when backend (funcall fn backend)))))))
 
 (defun emjupy--names-a-file-elsewhere-p (nb file)
-  "Non-nil when FILE belongs to NB\='s kernel and is not on this machine.
-
-Both halves matter.  A path under the kernel\='s root that also exists
-here is the same file -- the kernel is local, or a directory is shared --
-and opening it is right.  A path under that root with nothing here is a
-file on the other machine wearing a local name."
+  "Non-nil when FILE belongs to NB's kernel and is not on this machine.
+A path under the kernel's root that also exists here is the same file;
+one with nothing here is a remote file with a local-looking name."
   (let* ((server (emjupy-notebook-server nb))
          (root (and server (emjupy--server-side-root-for server))))
     (and root
@@ -868,11 +703,9 @@ file on the other machine wearing a local name."
          (not (file-exists-p file)))))
 
 (defun emjupy--answer-is-from-the-kernels-machine-p (nb)
-  "Non-nil if NB\='s language server is the one beside its kernel.
-
-That is the WebSocket server, which runs where the kernel runs.  Anything
-else attached to the shadow buffer is a server started on this machine,
-answering about this machine\'s files."
+  "Non-nil if NB's language server is the one beside its kernel.
+That is the WebSocket server; any other is on this machine, answering
+about its files."
   (let ((sb (emjupy-notebook-shadow-buffer nb)))
     (and (buffer-live-p sb)
          (with-current-buffer sb
@@ -880,23 +713,13 @@ answering about this machine\'s files."
              (and server (object-of-class-p server 'emjupy-eglot-server)))))))
 
 (defun emjupy--xref-on-the-right-machine (nb item)
-  "Return ITEM with its file named on the machine of NB\='s kernel.
-
-The language server answers with paths as it sees them, and it sees the
-kernel\='s filesystem.  Taken literally here those name files on this
-machine -- usually files that do not exist, which is why jumping to a
-definition created an empty buffer at a plausible path instead of
-opening the file.
-
+  "Return ITEM with its file named on the machine of NB's kernel.
+The language server reports paths as the kernel's machine sees them.
 Rewritten to a remote name when the kernel is elsewhere and one can be
-built; left alone when the kernel is local, when it already is remote,
-or when there is nothing to build a name from, since a wrong remote
-name is worse than a local one."
+built; otherwise left as it is -- a wrong remote name is worse."
   (let* ((loc (xref-item-location item))
-         ;; Only an answer from the server beside the kernel names the
-         ;; kernel's files.  The local fallback names files on THIS machine,
-         ;; and sending its paths to the remote host would point at files
-         ;; that may not be there.
+         ;; Only the server beside the kernel names the kernel's files; the
+         ;; local fallback names files on this machine.
          (file (and (emjupy--answer-is-from-the-kernels-machine-p nb)
                     (xref-file-location-p loc)
                     (xref-location-group loc)))
@@ -904,10 +727,9 @@ name is worse than a local one."
                       (not (file-remote-p file))
                       (emjupy--remote-name-for nb file))))
     (when (and file (not remote) (emjupy--names-a-file-elsewhere-p nb file))
-      ;; Nothing to build a remote name from, and the local name is a file
-      ;; this machine has not got.  Opening it would create an empty buffer
-      ;; at a plausible path -- which reads as "the definition is here and
-      ;; is blank" rather than "I cannot reach that machine".
+      ;; No remote name to build, and the local file does not exist: opening it
+      ;; would show an empty buffer at a plausible path, as if the definition
+      ;; were blank.
       (user-error
        "%s is on the machine running the kernel; set `emjupy-remote-root' to reach it"
        (abbreviate-file-name file)))
@@ -920,20 +742,13 @@ name is worse than a local one."
                   (xref-file-location-column loc))))))
 
 (defun emjupy--remote-name-for (nb file)
-  "Return FILE as a name on NB\='s server, or nil to leave it alone.
-
-Every absolute path the language server reports belongs to the machine
-running the kernel, not only the ones under the notebook\'s directory.
-A standard library path is the clearest case: /usr/lib/python3.13/ast.py
-exists on both machines and they are different files, so opening the
-local one shows the wrong source with no hint that anything is amiss.
-
-Nothing is rewritten unless that machine is known to be another one."
+  "Return FILE as a name on NB's server, or nil to leave it alone.
+Every absolute path the server reports is on the kernel's machine --
+a standard library path too, which may exist here as a different file.
+Rewritten only when that machine is known to be another one."
   (let* ((server (emjupy-notebook-server nb))
-         ;; A root set by hand first: a tunnelled server answers at
-         ;; localhost and nothing in the conversation names the machine
-         ;; behind it, so the configured value is the only thing that can
-         ;; say where the files really are.
+         ;; A root set by hand first: a tunnelled server answers at localhost,
+         ;; and only the configured value says where its files are.
          (tramp (and server (or (emjupy--remote-root-for-files server)
                                 (emjupy--tramp-root-for server))))
          (prefix (and tramp (file-remote-p tramp))))
@@ -944,20 +759,14 @@ Nothing is rewritten unless that machine is known to be another one."
       (concat prefix file))))
 
 (defun emjupy--local-truename (file)
-  "Return FILE\'s true name if it is on this machine, else FILE as written.
-`file-truename\' on a TRAMP name asks the other machine, once for every
-symbolic link it follows, and this is asked for each item a search
-returns.  A remote name is compared as written: the shadow\'s is one
-emjupy made, with no link in it to follow."
+  "Return FILE's true name if it is on this machine, else FILE as written.
+`file-truename' on a TRAMP name asks the other machine for every link;
+the shadow's remote name has none."
   (if (file-remote-p file) (expand-file-name file) (file-truename file)))
 
 (defun emjupy--xref-remap (nb items)
   "Rewrite ITEMS pointing into NB's shadow file so they point at its cells.
-
-An xref into the shadow file is useless: it is a scratch copy in a temp
-directory (or on the remote host).  Anything pointing elsewhere -- into a
-library, say -- is left exactly as it is, because the real file is the
-right destination there."
+Items pointing anywhere else, a library say, are left as they are."
   (let* ((buf (emjupy-notebook-shadow-buffer nb))
          (shadow-file (and (buffer-live-p buf)
                            (buffer-local-value 'buffer-file-name buf)))
@@ -1045,7 +854,7 @@ right destination there."
 ;;;; Eglot commands, from the notebook
 
 (defun emjupy--pull-shadow-into-cells (nb)
-  "Write NB\='s shadow sections back into its cells.
+  "Write NB's shadow sections back into its cells.
 The notebook is re-rendered if any  Returns the number of cells updated."
   (let ((buf (emjupy-notebook-shadow-buffer nb))
         (updated 0))
@@ -1066,11 +875,11 @@ The notebook is re-rendered if any  Returns the number of cells updated."
     updated))
 
 (defun emjupy-eglot-delegate (fn)
-  "Run FN in this notebook\='s shadow buffer, at the matching position.
+  "Run FN in this notebook's shadow buffer, at the matching position.
 Anything FN changes is then pulled back into the cells.
 
-This is what makes Eglot\='s own commands usable from a notebook.  They
-call `eglot--current-server-or-lose\', and the notebook buffer is not the
+This is what makes Eglot's own commands usable from a notebook.  They
+call `eglot--current-server-or-lose', and the notebook buffer is not the
 one Eglot manages -- the hidden shadow buffer is -- so invoked directly
 they fail with a bare \"No current JSON-RPC connection\".  Completion and
 eldoc already went through the shadow buffer; everything else did not."
@@ -1092,26 +901,22 @@ eldoc already went through the shadow buffer; everything else did not."
 
 (defun emjupy--eglot-command-advice (orig &rest args)
   "Around-advice running ORIG with ARGS in the shadow buffer, in notebooks.
-
-The interactive arguments are still read in the notebook buffer, before
-this runs, so prompts like `eglot-rename\'s see the symbol under the
-real cursor rather than whatever is under point in the shadow buffer."
+Interactive arguments are read in the notebook first, so prompts see the
+symbol under the real cursor."
   (cond
    ((not emjupy--buffer-notebook)
     (apply orig args))
-   ;; Every command goes the same way now: to the shadow buffer, where
-   ;; Eglot is attached -- over the Jupyter WebSocket when that server has
-   ;; jupyter-lsp, over a local process otherwise.  Nothing here knows
-   ;; which command it is, which is the point.
+   ;; Every command goes to the shadow buffer, where Eglot is attached -- over
+   ;; the Jupyter WebSocket with jupyter-lsp, a local process otherwise.
    (t (emjupy-eglot-delegate (lambda () (apply orig args))))))
 
 (defun emjupy-eglot-install-advice ()
-  "Advise `emjupy-eglot-delegated-commands\' to work inside notebooks."
+  "Advise `emjupy-eglot-delegated-commands' to work inside notebooks."
   (dolist (cmd emjupy-eglot-delegated-commands)
     (advice-add cmd :around #'emjupy--eglot-command-advice)))
 
 (defun emjupy-eglot-remove-advice ()
-  "Undo `emjupy-eglot-install-advice\'."
+  "Undo `emjupy-eglot-install-advice'."
   (dolist (cmd emjupy-eglot-delegated-commands)
     (advice-remove cmd #'emjupy--eglot-command-advice)))
 
@@ -1121,8 +926,8 @@ real cursor rather than whatever is under point in the shadow buffer."
 
 (defun emjupy-commit-shadow-edit ()
   "Commit this shadow buffer back into the notebook.
-Each `# %% [emjupy:ID]\=' section is written into its cell.
-Sections for cells you didn\='t touch are written
+Each `# %% [emjupy:ID]' section is written into its cell.
+Sections for cells you didn't touch are written
 back unchanged; the shadow buffer and its Eglot connection stay alive for
 next time."
   (interactive)
@@ -1146,7 +951,7 @@ next time."
 
 (defun emjupy-abort-shadow-edit ()
   "Discard uncommitted edits in the shared code buffer.
-It is reverted to the cells\=' last-committed state, then the notebook is
+It is reverted to the cells' last-committed state, then the notebook is
 switched back to.
 The buffer and its Eglot connection are kept alive, not killed."
   (interactive)
@@ -1189,28 +994,17 @@ LSP awareness doesn't apply to prose."
                    (if emjupy-language-support ", Eglot active" "")))
       (emjupy--edit-markdown-cell-externally cell nb-buf))))
 
-;; --- Automatic in-place completion/eldoc: no buffer-switching needed -------
-;; The pieces above (shadow buffer + Eglot) already give a *complete* editing
-;; experience via `C-c ''; the functions below make its intelligence show up
-;; directly while typing in a cell in the ORDINARY notebook buffer, with no
-;; action from the user at all -- completion-at-point-functions and
-;; eldoc-documentation-functions are standard Emacs extension points, so
-;; whatever completion UI the user already has (plain M-TAB, Corfu, Company,
-;; Emacs 30's completion-preview-mode, ...) picks this up automatically, the
-;; same way it would for a normal, single-file Eglot-managed buffer.
+;; Completion and eldoc while typing in the notebook itself, delegated to the
+;; shadow buffer through the standard `completion-at-point-functions' and
+;; `eldoc-documentation-functions', so any completion UI works.
 
 ;;;; When the shadow cannot see the kernel
 
 (defun emjupy--shadow-would-mislead-p (nb)
   "Return non-nil when a shadow file for NB would describe the wrong machine.
-
-The kernel is somewhere this Emacs cannot reach -- its working directory
-does not exist locally and `emjupy-shadow-host\' does not say how to get
-there -- so the shadow file lands in a temp directory and any server
-started on it reads THIS machine: the wrong interpreter, the wrong
-packages, and none of the user\='s own modules.  Answers from it would
-look plausible and be wrong, which is worse than no answers, and it
-costs a language server to produce them."
+The kernel's directory is not here and `emjupy-shadow-host' does not
+say how to reach it, so a server would read this machine's Python and
+files: plausible answers, and wrong."
   (let ((cwd (emjupy-notebook-kernel-cwd nb)))
     (and (not emjupy-shadow-when-kernel-unreachable)
          cwd
@@ -1236,11 +1030,8 @@ costs a language server to produce them."
 
 (defun emjupy--lsp-in-charge-p ()
   "Return non-nil when Eglot is attached over the Jupyter WebSocket.
-
-Kept for reporting -- `emjupy-lsp-diagnose\' and the wording of one
-message -- rather than for routing.  Routing no longer needs it: every
-request goes to the shadow buffer, and what differs is only which
-transport Eglot found underneath it."
+For reporting, in `emjupy-lsp-diagnose' and one message; requests all
+go to the shadow buffer either way."
   (and (bound-and-true-p emjupy--buffer-notebook)
        (let ((buf (emjupy-notebook-shadow-buffer emjupy--buffer-notebook)))
          (and (buffer-live-p buf)
@@ -1251,16 +1042,11 @@ transport Eglot found underneath it."
 
 (defun emjupy--cell-shadow-delegate (fn)
   "Delegate to the shadow buffer when point is in a code cell.
-The buffer is synced and warmed, an indirect cursor moved there to the
-equivalent position, and FN called with
-CELL-START, SHADOW-START, and the shadow BUFFER itself -- FN reads
-`(point)' there (already positioned) to do its work.  Returns FN's
-value, or nil if point isn't in a code cell."
-  ;; Only when the better transport is genuinely unavailable.  While it is
-  ;; merely still connecting -- which is the case every time a notebook is
-  ;; opened, and so every time a second one is -- saying the kernel runs
-  ;; elsewhere is both wrong and unhelpful, since it recommends installing
-  ;; something that is installed and about to be used.
+The buffer is synced, point moved to the matching position there, and
+FN called with CELL-START, SHADOW-START and the shadow BUFFER, with that
+buffer current.  Return FN's value, or nil outside a code cell."
+  ;; Only when the better transport is unavailable, not while it is still
+  ;; connecting -- as it is whenever a notebook opens.
   (when (and emjupy--buffer-notebook
              (or (not (bound-and-true-p emjupy-lsp-enabled))
                  (emjupy--shadow-blocked-p))
@@ -1289,15 +1075,13 @@ value, or nil if point isn't in a code cell."
 
 (defun emjupy--cell-completion-at-point ()
   "Return completions for the cell at point.
-This is a `completion-at-point-functions\=' entry; it delegates to Eglot via the
+This is a `completion-at-point-functions' entry; it delegates to Eglot via the
 shared code shadow buffer, so completions see definitions from every
 cell in the notebook, automatically."
   (emjupy--cell-shadow-delegate
    (lambda (cell-start shadow-start buf)
-     ;; Eglot's own capf calls `eglot--current-server-or-lose', which signals
-     ;; a jsonrpc-error when the server is gone -- that error escaped from
-     ;; here and reached the user.  Skip the delegation entirely rather than
-     ;; let a dead server be queried.
+     ;; Eglot's capf signals a jsonrpc-error when its server is gone: skip the
+     ;; delegation rather than query a dead server.
      (let ((result (and (emjupy--eglot-live-server buf)
                         (condition-case err
                             (run-hook-with-args-until-success
@@ -1309,11 +1093,9 @@ cell in the notebook, automatically."
                            nil)))))
        (when (consp result)
          (let* ((orig-collection (nth 2 result))
-                ;; Eglot's collection is a closure the completion UI calls
-                ;; again later, when `current-buffer' is back to the
-                ;; notebook buffer -- but it needs the shadow buffer's own
-                ;; buffer-file-name/server context (e.g. for building LSP
-                ;; requests), so force that context on every invocation.
+                ;; Eglot's collection is called again later, from the notebook
+                ;; buffer, but needs the shadow buffer's context: force it on
+                ;; every call.
                 (wrapped (if (functionp orig-collection)
                              (lambda (string pred action)
                                (with-current-buffer buf
@@ -1334,26 +1116,16 @@ on newer Emacs."
 
 (defun emjupy--cell-eldoc-function (callback)
   "Report hover documentation for the cell at point to CALLBACK.
-This is an `eldoc-documentation-functions\=' entry; it requests hover
-info from Eglot
-directly via the shared code shadow buffer.
-
-Deliberately does NOT delegate to `eldoc-documentation-functions' the
-way completion does: Eglot's own `eglot-hover-eldoc-function' only
-calls back when its buffer is visibly displayed in a window, which is
-never true for this shadow buffer -- staying hidden in the background
-is the whole point.  An asynchronous request goes round that gate,
-and does not hold the editor while the server thinks."
+An `eldoc-documentation-functions' entry, asking Eglot directly:
+Eglot's own function answers only for a buffer shown in a window,
+which the shadow buffer never is."
   (emjupy--cell-shadow-delegate
    (lambda (_cell-start _shadow-start _buf)
      (when (and (emjupy--eglot-live-server)
                 (emjupy--eglot-capable-p :hoverProvider))
        (let ((server (emjupy--eglot-live-server)))
-         ;; Asked for, not waited for.  This runs after every command, so
-         ;; a blocking request costs a round trip per keystroke -- which
-         ;; went unnoticed while the server was a local process and did
-         ;; not once it moved to the far end of a WebSocket.  eldoc is
-         ;; built for a late answer: that is what the callback is for.
+         ;; Asked for, not waited for: this runs after every command, and eldoc
+         ;; is built for a late answer.
          (jsonrpc-async-request
           server :textDocument/hover (eglot--TextDocumentPositionParams)
           :success-fn
@@ -1371,24 +1143,17 @@ and does not hold the editor while the server thinks."
 
 (defun emjupy--release-notebook ()
   "Close the connections opened by this buffer's notebook, on killing it.
-
-Its connection to the kernel and its language-server session are closed,
-and its shadow buffer killed.  The kernel keeps running on the server --
-it outlives the buffer by design, to be adopted again -- but the
-connections belonged to this buffer alone.  Left open, every notebook
-ever opened in a session kept a WebSocket, a language-server connection
-and a shadow buffer alive, and `jupyter-lsp\=' a session for each on the
-server.  A language server that still serves another buffer is left
-running."
+Its kernel connection and language-server session are closed and its
+shadow buffer killed; the kernel keeps running on the server, to be
+adopted again.  A language server serving another buffer stays."
   (when-let* ((nb (bound-and-true-p emjupy--buffer-notebook)))
     (emjupy--disconnect-kernel nb)
     (let* ((sb (emjupy-notebook-shadow-buffer nb))
            (server (and (buffer-live-p sb)
                         (with-current-buffer sb (eglot-current-server)))))
-      ;; The shadow buffer first: killing it is how Eglot is told the
-      ;; document is closed, and how it detaches from it cleanly.  Shutting
-      ;; the server down while the buffer was still managed made Eglot flush
-      ;; its pending changes from it, and fail doing so.
+      ;; The shadow buffer first: killing it is how Eglot is told the document
+      ;; is closed.  Shutting the server down while it was still managed failed
+      ;; flushing its changes.
       (when (buffer-live-p sb)
         (with-current-buffer sb (set-buffer-modified-p nil))
         (let ((kill-buffer-query-functions nil))
@@ -1396,38 +1161,27 @@ running."
       (when (and server
                  (jsonrpc-running-p server)
                  (null (eglot--managed-buffers server)))
-        ;; The connection is ended directly, not through `eglot-shutdown\=':
-        ;; that first sends a shutdown request, and every Eglot request
-        ;; begins by flushing pending changes from the current buffer --
-        ;; here the notebook being killed, or any buffer Eglot does not
-        ;; manage -- which in Emacs 30.1 fails an assertion.  Nor through
-        ;; the standard `jsonrpc-shutdown\=', which waits seconds for a
-        ;; server to exit of its own accord.  Ending the process is enough:
-        ;; its sentinel takes the server out of Eglot\'s table when Emacs
-        ;; next handles process events.  The WebSocket transport has its
-        ;; own shutdown, which also closes the socket.
-        ;; Said to be wanted first, as `eglot-shutdown\=' does: Eglot starts a
-        ;; server again when one dies unexpectedly, so without this every
-        ;; close started a replacement serving nothing.
+        ;; Ended directly: `eglot-shutdown' first flushes changes from the
+        ;; current buffer, which fails an assertion in Emacs 30.1 when that is
+        ;; not a managed one, and `jsonrpc-shutdown' waits seconds for the
+        ;; server to exit.  The process sentinel takes the server out of Eglot's
+        ;; table.  Marked as wanted first, as `eglot-shutdown' does, or Eglot
+        ;; would start a replacement.
         (setf (eglot--shutdown-requested server) t)
         ;; Answers still awaited are no longer wanted.  Left in place, each
-        ;; is told "Server died" as the process goes, and Eglot\'s default
+        ;; is told "Server died" as the process goes, and Eglot's default
         ;; handler raises that as an error from the process sentinel.
         (jsonrpc-forget-pending-continuations server)
         (if (cl-typep server 'emjupy-eglot-server)
             (jsonrpc-shutdown server)
-          ;; `kill-process\=', not `delete-process\=': deleting waits for the
-          ;; process and its stderr pipe to drain -- nearly two seconds,
-          ;; measured, on every close -- where killing sends the signal
-          ;; and returns, and the sentinel reaps it.
+          ;; `kill-process', not `delete-process', which waits about two seconds
+          ;; for the pipes to drain.
           (let ((proc (jsonrpc--process server)))
             (when (process-live-p proc)
               (kill-process proc))))
-        ;; Out of Eglot\'s table now, not when the sentinel gets round to
-        ;; it: a notebook opened in between would otherwise be handed the
-        ;; dying server -- the fallback one is shared by every notebook in
-        ;; a project -- and its first request fail with "Server died".
-        ;; What the sentinel would do; it does it again, harmlessly.
+        ;; Out of Eglot's table now, not when the sentinel runs: a notebook
+        ;; opened in between would be handed the dying server, which a project's
+        ;; notebooks share.
         (eglot--on-shutdown server))
       (setf (emjupy-notebook-shadow-buffer nb) nil))))
 
