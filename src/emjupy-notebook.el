@@ -424,6 +424,42 @@ Propertized by kind so the row is identifiable at a glance."
                                        'emjupy-list-kernel
                                      'shadow)))))
 
+(defun emjupy--list-file-row (item)
+  "Return the listing's row for ITEM, a file in a Contents API listing."
+  (let ((type (gethash "type" item))
+        (modified (or (gethash "last_modified" item) "")))
+    (list (list :kind (intern type) :path (gethash "path" item)
+                :modified modified)
+          (emjupy--list-row (intern type) type (gethash "name" item)
+                            modified))))
+
+(defun emjupy--list-kernel-row (kernel)
+  "Return the listing's row for KERNEL, from the server's list of kernels."
+  (let ((connections (gethash "connections" kernel)))
+    (list (list :kind 'kernel :id (gethash "id" kernel))
+          (emjupy--list-row
+           'kernel "kernel" (or (gethash "name" kernel) "?")
+           (format "%s  (%s connection%s)"
+                   (substring (or (gethash "id" kernel) "") 0 8)
+                   (or connections 0)
+                   (if (eql connections 1) "" "s"))))))
+
+(defun emjupy--list-by-name (rows)
+  "Return ROWS sorted by name."
+  (sort rows (lambda (a b) (string-lessp (aref (cadr a) 1) (aref (cadr b) 1)))))
+
+(defun emjupy--list-by-recent (rows)
+  "Return ROWS, the most recently modified first, ties by name.
+The server's ISO-8601 UTC times sort as text; a row without one goes
+last."
+  (sort rows
+        (lambda (a b)
+          (let ((ta (or (plist-get (car a) :modified) ""))
+                (tb (or (plist-get (car b) :modified) "")))
+            (if (equal ta tb)
+                (string-lessp (aref (cadr a) 1) (aref (cadr b) 1))
+              (string-greaterp ta tb))))))
+
 (defun emjupy--list-entries (server path)
   "Return `tabulated-list-entries' for PATH on SERVER.
 Directories, notebooks, other files, then the server's kernels; within
@@ -434,52 +470,23 @@ each, most recently modified first.  Kernels, without a time, by name."
          (kernels (condition-case nil
                       (emjupy--http-request "GET" server "/api/kernels")
                     (emjupy-http-error nil)))
-         (dirs nil) (notebooks nil) (files nil) (kernel-rows nil))
+         (dirs nil) (notebooks nil) (files nil))
     (cl-loop for item across (or items [])
-             for type = (gethash "type" item)
-             for name = (gethash "name" item)
-             for ipath = (gethash "path" item)
-             for modified = (or (gethash "last_modified" item) "")
-             for row = (list (list :kind (intern type) :path ipath
-                                   :modified modified)
-                             (emjupy--list-row (intern type) type
-                                               name modified))
-             do (pcase type
+             for row = (emjupy--list-file-row item)
+             do (pcase (gethash "type" item)
                   ("directory" (push row dirs))
                   ("notebook" (push row notebooks))
                   (_ (push row files))))
-    (cl-loop for k across (or kernels [])
-             do (push (list (list :kind 'kernel :id (gethash "id" k))
-                            (emjupy--list-row
-                             'kernel "kernel" (or (gethash "name" k) "?")
-                             (format "%s  (%s connection%s)"
-                                     (substring (or (gethash "id" k) "") 0 8)
-                                     (or (gethash "connections" k) 0)
-                                     (if (eql (gethash "connections" k) 1) ""
-                                       "s"))))
-                      kernel-rows))
-    (cl-flet ((by-name (rows)
-                (sort rows (lambda (a b)
-                             (string-lessp (aref (cadr a) 1)
-                                           (aref (cadr b) 1)))))
-              (by-recent (rows)
-                ;; Most recently touched first: the server's ISO-8601 UTC times
-                ;; sort as text, and an entry without one goes last.  Ties by
-                ;; name.
-                (sort rows
-                      (lambda (a b)
-                        (let ((ta (or (plist-get (car a) :modified) ""))
-                              (tb (or (plist-get (car b) :modified) "")))
-                          (if (equal ta tb)
-                              (string-lessp (aref (cadr a) 1) (aref (cadr b) 1))
-                            (string-greaterp ta tb)))))))
-      (append
-       (unless (string-empty-p path)
-         (list (list (list :kind 'up) (emjupy--list-row 'up "dir" ".." ""))))
-       (by-recent dirs)
-       (by-recent notebooks)
-       (by-recent files)
-       (by-name kernel-rows)))))
+    (append
+     (unless (string-empty-p path)
+       (list (list (list :kind 'up) (emjupy--list-row 'up "dir" ".." ""))))
+     (emjupy--list-by-recent dirs)
+     (emjupy--list-by-recent notebooks)
+     (emjupy--list-by-recent files)
+     ;; Reversed, as they were gathered: kernels often share a name, and
+     ;; the sort keeps ties in the order given.
+     (emjupy--list-by-name
+      (nreverse (mapcar #'emjupy--list-kernel-row (or kernels [])))))))
 
 (defun emjupy-list-refresh ()
   "Re-fetch this dashboard from the server."
