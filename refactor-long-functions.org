@@ -1,0 +1,164 @@
+#+TITLE: Plan: the long functions
+#+DATE: <2026-10-13 Tue>
+#+STARTUP: content
+
+The plan for the branch =refactor/long-functions=, from the tip of the
+review series (=c7d6efc=).  This file is the branch's first commit, and
+its last commit deletes it.
+
+* Aim
+
+Every function short enough to read at once, and named for the one thing
+it does, with no loss of function and no repetition.  Measured in lines
+of code, docstrings and comments excluded:
+
+| Now                                     | Target           |
+|-----------------------------------------+------------------|
+| 17 functions over 45 lines, largest 91  | none over 45, most under 30 |
+| the save request built 4 times, a rich output 2 | once each |
+
+* Rules
+
+1. *Tests untouched.*  =src/emjupy-test.el=, =emjupy-integration-test.el= and
+   =emjupy-robustness-test.el= do not change, and pass as they are.
+2. *Names tests use keep their contract.*  Every function a test calls
+   keeps its name, its arguments and what it returns.  New functions are
+   added; none is renamed or removed.
+3. *Calls tests replace are kept.*  Tests replace functions with
+   =cl-letf= -- =emjupy--http-request= in 24 of them, =url-retrieve-synchronously=,
+   =make-directory=, =write-region=, =eglot--connect=, =create-image=, =message=
+   and some 90 more.  Moving code into a helper is invisible to that;
+   dropping or bypassing a call is not.  Every such call stays, and
+   every message keeps its text.
+4. *No inlining.*  No =defsubst= or =define-inline= for a new helper:
+   =cl-letf= cannot replace an inlined function.
+5. *Same file, no new requires.*  A helper lives in its caller's file,
+   in the same =;;;;= section, just above the caller.  The dependency
+   graph stays as it is: 14 files, 60 requires, none against the layers.
+6. *Same dynamic context.*  A helper called inside a =let= of a special
+   variable -- =emjupy--suppress-plain-eglot=, =inhibit-read-only=,
+   =emjupy--in-cell-step= -- is still called inside it, and in the same
+   buffer.
+7. *One function per commit*, each verified: compiling with no warning,
+   checkdoc, the unit suite, and the dependency graph.  The full suites,
+   live included, after each batch.
+
+* Batch A -- repetition first
+
+Small, and it shortens what batches B and C split.
+
+- *A1. The save request, four times.*  =emjupy-create-notebook=,
+  =emjupy-create-new-notebook=, =emjupy--save-to-server= and
+  =emjupy--autosave-async= each build the same body: type, format, content.
+  One =emjupy--notebook-request (content)= builds it.  The calls to
+  =emjupy--http-request= stay where they are.
+- *A2. A rich output, twice.*  In =emjupy--handle-ws-message=, the
+  =execute_result= and =display_data= branches build the same output table,
+  but for its type and execution count.  One =emjupy--rich-output (type
+  content &optional count)=.
+
+* Batch B -- dispatchers into named cases
+
+- *B1. =emjupy--handle-ws-message= (kernel, 91 lines; 8 tests).*  Stays the
+  dispatcher.  Out of it: =emjupy--handle-internal-reply= (emjupy's own
+  requests), and one handler per message type: =emjupy--on-stream=,
+  =emjupy--on-rich-output= (A2), =emjupy--on-error=, =emjupy--on-execute-reply=.
+  =clear_output=, four lines, stays inline.  Each handler takes the cell,
+  the message content and the notebook; =emjupy--append-output-to-cell= and
+  =emjupy--request-half-seen= are called as now.  About 25 lines left.
+- *B2. =emjupy--widget-read= (widgets, 56).*  The date branch, 22 lines,
+  to =emjupy--widget-read-date=; the options branch to
+  =emjupy--widget-read-choice=.  The =cond= stays, one line a case.
+- *B3. =emjupy--list-entries= (notebook, 50; 2 tests).*  The rows for
+  files, the rows for kernels, and their order: =emjupy--list-file-rows=,
+  =emjupy--list-kernel-rows=, =emjupy--list-order=.  One request to
+  =emjupy--http-request= each, as now.
+
+* Batch C -- sequences into steps
+
+- *C1. =emjupy--ensure-shadow-buffer= (eglot, 74; 27 tests, replaced in
+  7).*  The riskiest, and the most read.  Five steps, five functions:
+  - =emjupy--retire-moved-shadow= -- a buffer whose path changed goes;
+  - =emjupy--make-shadow-directory= -- with its timeout and back-off;
+  - =emjupy--create-shadow-buffer= -- content written before the file is
+    visited, coding, no locks, the mode;
+  - =emjupy--sync-shadow-content= -- the cells into the buffer;
+  - =emjupy--attach-plain-eglot= -- =eglot--guess-contact=, =eglot--connect=,
+    the back-off, the warning.
+  Its early exits (=cl-return-from=) become steps returning nil, and the
+  function a short chain of them.  Every primitive the tests replace --
+  =make-directory=, =write-region=, =find-file-noselect=, =eglot--connect= -- is
+  called by the same step, in the same order.
+- *C2. =emjupy-open-notebook= (notebook, 55; 4 tests).*  Reusing an open
+  buffer and filling a new one apart: =emjupy--fill-notebook-buffer=
+  parses, draws, turns the mode on and connects.
+- *C3. =emjupy--autosave-async= (notebook, 57).*  With A1, its local
+  functions (=finish=, =fail=, =upload=, in =cl-labels=) become named
+  functions taking the notebook: closures capturing nothing but it.
+- *C4. =emjupy--http-request= (http, 60; called by 25 functions, replaced
+  in 24 tests).*  The 37 lines of headers and URL to
+  =emjupy--http-headers= and =emjupy--http-url=; the synchronous branch keeps
+  calling =url-retrieve-synchronously=, the asynchronous =url-retrieve=.
+  Its arguments and its errors as they are.
+- *C5. =emjupy-lsp-diagnose= (eglot, 55; 4 tests).*  The report's lines to
+  =emjupy--lsp-diagnosis (nb)=, which only reads; the command shows them.
+- *C6. Four between 45 and 50:* =emjupy--append-stream-output= (whether
+  appending is possible, to =emjupy--stream-appendable-p=),
+  =emjupy--redraw-cells-in-place= (the positions, apart from the
+  replacing), =emjupy--render-cell-output= (drawing the outputs, apart from
+  the overlay), =emjupy--eglot-connect= (opening the socket, apart from
+  attaching).  Each only where the step named reads better than inline.
+
+* Batch D -- special cases
+
+- *D1. =emjupy--widget-page= (widget-page, 85).*  75 of its lines are one
+  HTML template.  It goes to =emjupy--widget-page-template=, a =defconst=;
+  the function fills it, in some ten lines.  The same =format= arguments,
+  in the same order.
+- *D2. =emjupy--reconcile-rules= (render, 56).*  Two phases: collecting
+  each box's rules, =emjupy--rule-boxes=, and hanging them,
+  =emjupy--hang-rules=.
+- *D3. =emjupy--check-invariants= (cells, 49; 24 tests).*  The per-cell
+  checks to =emjupy--cell-invariant-problems (cell next)=.  Tests compare
+  its messages: every one kept, in the same order.
+- *D4. =emjupy--terminal-apply= (render, 64).*  A state machine, which
+  reads best in one place.  Only parsing an escape sequence comes out,
+  to =emjupy--terminal-escape=, returning the action and its length.
+  Checked against the recorded progress-bar writes it is tested with.
+- *Left as they are:* =emjupy--insert-rich-output= (48): a =cond= of short,
+  distinct cases, which a split would only scatter.
+
+* Verifying
+
+After each commit:
+- compiling with no warning, checkdoc and package-lint clean;
+- the unit suite, with no test file changed (=git diff --stat= shows no
+  file under =src/= ending =-test.el=);
+- =make dependency-graph=: 14 files, 60 requires, none against the
+  layers;
+- every module loads on its own.
+
+After each batch, the full suites, live ones included, and the
+measurement: functions over 45 code lines, and the repetition scan.
+
+At the end, the remote test through two SSH hops as well
+(=EMJUPY_TEST_SSH_NOTEBOOK=), and the guide, =docs/reading-the-code.org=,
+updated where it names a function a step now carries.
+
+* Order and size
+
+A1, A2, B1, B2, B3, C1 ... C6, D1 ... D4: about sixteen commits.  A and B
+are low risk.  C1 and C4 carry the most: they are what most tests reach,
+and what the shadow buffer and every request go through.  D4 last, and
+only if the extracted parsing reads better than the loop it came from.
+
+* Risks, and what guards each
+
+| Risk                                          | Guard                                   |
+|-----------------------------------------------+-----------------------------------------|
+| A call a test replaces is bypassed            | rule 3; the tests that replace it fail  |
+| A special variable no longer bound round a call | rule 6; reading each moved =let=      |
+| An early exit changes meaning                 | C1's steps return nil; its 27 tests     |
+| A closure captures a different value          | C3's helpers take the notebook as an argument |
+| A message changes                             | tests capture =message=; moved verbatim |
+| A helper lands in the wrong layer             | rule 5; the dependency graph           |
