@@ -1670,6 +1670,35 @@ Past the end of LINE, the index is its length and the column its width."
     (concat (substring line 0 i) text (substring line (min end
                                                            (length line))))))
 
+(defun emjupy--terminal-erase (line col mode)
+  "Return LINE erased as ESC [ MODE K erases it, the cursor at column COL.
+MODE 0 erases from the cursor to the end, 1 from the start to the
+cursor, anything else the whole line."
+  (pcase mode
+    (0 (substring line 0 (min (car (emjupy--terminal-column line col))
+                              (length line))))
+    (1 (emjupy--terminal-put line 0 (make-string col ?\s)))
+    (_ "")))
+
+(defun emjupy--terminal-colour (line col code)
+  "Return LINE with CODE, a colour escape, kept at column COL.
+It takes no column, so is put where the cursor is, not over text."
+  (let ((at (car (emjupy--terminal-column line col))))
+    (concat (substring line 0 at) code (substring line at))))
+
+(defun emjupy--terminal-result (lines row col)
+  "Return LINES, a vector, as text, with the cursor at ROW and COL.
+A cons of the text and the cursor, nil for the end of the text.
+Trailing spaces go: what a cleared bar leaves."
+  (dotimes (i (length lines))
+    (aset lines i (replace-regexp-in-string " +\\'" "" (aref lines i))))
+  (let* ((last (1- (length lines)))
+         (at-end (and (= row last)
+                      (>= col (cdr (emjupy--terminal-column
+                                    (aref lines last) most-positive-fixnum))))))
+    (cons (mapconcat #'identity lines "\n")
+          (unless at-end (cons row col)))))
+
 (defun emjupy--terminal-apply (text chunk cursor)
   "Return TEXT with CHUNK written to it, as a terminal would show it.
 CURSOR is where the last write left the cursor, a cons of line and
@@ -1714,19 +1743,11 @@ of the new text and the cursor, nil for the end of the text."
                 (?C (setq col (+ col num)))
                 (?D (setq col (max 0 (- col num))))
                 (?G (setq col (1- num)))
-                (?K (let ((at (car (emjupy--terminal-column (line) col))))
-                      (pcase (if (string-empty-p args) 0
-                               (string-to-number args))
-                        (0 (set-line (substring (line) 0
-                                                (min at (length (line))))))
-                        (1 (set-line (emjupy--terminal-put
-                                      (line)
-                                      0 (make-string col ?\s))))
-                        (_ (set-line "")))))
-                ;; a colour: kept where the cursor is, taking no column
-                (?m (let ((at (car (emjupy--terminal-column (line) col))))
-                      (set-line (concat (substring (line) 0 at) code
-                                        (substring (line) at)))))
+                (?K (set-line (emjupy--terminal-erase
+                               (line) col
+                               (if (string-empty-p args) 0
+                                 (string-to-number args)))))
+                (?m (set-line (emjupy--terminal-colour (line) col code)))
                 (_ nil))))
            ((eq ch ?\e) (setq p (min n (+ p 2))))
            (t
@@ -1735,16 +1756,7 @@ of the new text and the cursor, nil for the end of the text."
               (set-line (emjupy--terminal-put (line) col (substring chunk
                                                                     p end)))
               (setq col (+ col (- end p)) p end)))))))
-    ;; What a cleared bar leaves: spaces at the end of lines.
-    (dotimes (i (length lines))
-      (aset lines i (replace-regexp-in-string " +\\'" "" (aref lines i))))
-    (let* ((last (1- (length lines)))
-           (at-end (and (= row last)
-                        (>= col
-                            (cdr (emjupy--terminal-column
-                                  (aref lines last) most-positive-fixnum))))))
-      (cons (mapconcat #'identity lines "\n")
-            (unless at-end (cons row col))))))
+    (emjupy--terminal-result lines row col)))
 
 (defun emjupy--collapse-carriage-returns (text)
   "Return TEXT with everything before a carriage return on a line dropped.
