@@ -264,6 +264,59 @@ too wide for it, and wrapped."
               (if (string-empty-p (string-trim-right trimmed "[\n]+"))
                   "" trimmed))))))
 
+(defun emjupy--cell-problems (cell index prev-end structure-only)
+  "Return the ways CELL, the INDEXth, disagrees with this buffer, in order.
+PREV-END is where the cell before it ends, or nil.  With STRUCTURE-ONLY,
+its text is not compared with its source."
+  (let ((ov (emjupy-cell-overlay cell))
+        (out (emjupy-cell-output-ov cell))
+        (problems nil))
+    (cond
+     ((not (overlayp ov))
+      (push (format "cell %d has no overlay" index) problems))
+     ((not (eq (overlay-buffer ov) (current-buffer)))
+      (push (format "cell %d's overlay is in another buffer" index)
+            problems))
+     (t
+      (when (> (overlay-start ov) (overlay-end ov))
+        (push (format "cell %d's overlay is inside out" index) problems))
+      (when (> (overlay-end ov) (point-max))
+        (push (format "cell %d's overlay runs past the buffer" index)
+              problems))
+      (when (and prev-end (< (overlay-start ov) prev-end))
+        (push (format "cell %d overlaps the cell before it" index)
+              problems))
+      ;; The text there, against the text that would be saved.  Trailing
+      ;; blank lines are not compared: an empty cell's line is display.
+      (unless structure-only
+        (let ((shown (string-trim-right
+                      (buffer-substring-no-properties
+                       (overlay-start ov) (overlay-end ov))
+                      "[\n]+"))
+              (stored (string-trim-right (or (emjupy-cell-source cell) "")
+                                         "[\n]+")))
+          (unless (equal shown stored)
+            (push (format "cell %d shows %S but holds %S" index
+                          shown stored)
+                  problems))))
+      (when (overlayp out)
+        (if (not (eq (overlay-buffer out) (current-buffer)))
+            (push (format "cell %d's output box is in another buffer" index)
+                  problems)
+          (unless (= (overlay-start out) (overlay-end ov))
+            (push (format "cell %d's output box does not follow its source"
+                          index)
+                  problems))))))
+    (nreverse problems)))
+
+(defun emjupy--cell-end (cell)
+  "Return where CELL ends in the buffer, its output box included."
+  (let ((ov (emjupy-cell-overlay cell))
+        (out (emjupy-cell-output-ov cell)))
+    (if (overlayp out)
+        (max (overlay-end ov) (overlay-end out))
+      (overlay-end ov))))
+
 (defun emjupy--check-invariants (&optional structure-only)
   "Return a list of ways this buffer and its cells disagree, or nil.
 With STRUCTURE-ONLY, whether each cell's text matches its source is not
@@ -275,57 +328,21 @@ checked: it is false while typing has not been synced.  The invariants:
 - nothing but the separating newline sits between one cell and the next;
 - the buffer text of each cell matches its source, so a sync would
   change nothing."
-  (let ((cells (append (or (and emjupy--buffer-notebook
-                                (emjupy-notebook-cells emjupy--buffer-notebook))
-                           [])
-                       nil))
-        (problems nil)
+  (let ((problems nil)
         (index -1)
         (prev-end nil))
-    (dolist (cell cells)
+    (dolist (cell (append (or (and emjupy--buffer-notebook
+                                   (emjupy-notebook-cells
+                                    emjupy--buffer-notebook))
+                              [])
+                          nil))
       (setq index (1+ index))
-      (let ((ov (emjupy-cell-overlay cell))
-            (out (emjupy-cell-output-ov cell)))
-        (cond
-         ((not (overlayp ov))
-          (push (format "cell %d has no overlay" index) problems))
-         ((not (eq (overlay-buffer ov) (current-buffer)))
-          (push (format "cell %d's overlay is in another buffer" index)
-                problems))
-         (t
-          (when (> (overlay-start ov) (overlay-end ov))
-            (push (format "cell %d's overlay is inside out" index) problems))
-          (when (> (overlay-end ov) (point-max))
-            (push (format "cell %d's overlay runs past the buffer" index)
-                  problems))
-          (when (and prev-end (< (overlay-start ov) prev-end))
-            (push (format "cell %d overlaps the cell before it" index)
-                  problems))
-          ;; The text there, against the text that would be saved.  Trailing
-          ;; blank lines are not compared: an empty cell's line is display.
-          (unless structure-only
-            (let ((shown (string-trim-right
-                          (buffer-substring-no-properties
-                           (overlay-start ov) (overlay-end ov))
-                          "[\n]+"))
-                  (stored (string-trim-right (or (emjupy-cell-source cell) "")
-                                             "[\n]+")))
-              (unless (equal shown stored)
-                (push (format "cell %d shows %S but holds %S" index
-                              shown stored)
-                      problems))))
-          (when (overlayp out)
-            (if (not (eq (overlay-buffer out) (current-buffer)))
-                (push (format "cell %d's output box is in another buffer" index)
-                      problems)
-              (unless (= (overlay-start out) (overlay-end ov))
-                (push (format "cell %d's output box does not follow its source"
-                              index)
-                      problems))))
-          (setq prev-end (if (overlayp out)
-                             (max (overlay-end ov) (overlay-end out))
-                           (overlay-end ov)))))))
-    (nreverse problems)))
+      (setq problems (append problems (emjupy--cell-problems
+                                       cell index prev-end structure-only)))
+      (let ((ov (emjupy-cell-overlay cell)))
+        (when (and (overlayp ov) (eq (overlay-buffer ov) (current-buffer)))
+          (setq prev-end (emjupy--cell-end cell)))))
+    problems))
 
 (defun emjupy-debug-check-invariants ()
   "Report whether this buffer and its cells still agree.
