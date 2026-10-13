@@ -1,6 +1,6 @@
 #+TITLE: How it works
 #+PREVIOUS_PAGE: troubleshooting.org
-#+NEXT_PAGE: development.org
+#+NEXT_PAGE: reading-the-code.org
 
 * =emjupy= design
 ** Architecture

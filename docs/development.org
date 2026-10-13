@@ -1,5 +1,5 @@
 #+TITLE: Building & development
-#+PREVIOUS_PAGE: design.org
+#+PREVIOUS_PAGE: reading-the-code.org
 #+NEXT_PAGE: limitations.org
 
 =emjupy= is a multi-file Emacs package, which was developed with use of

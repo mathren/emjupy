@@ -225,5 +225,6 @@ The full documentation lives in [[file:docs/index.org][docs/]]:
 - [[file:docs/language-server.org][Language server support]]
 - [[file:docs/troubleshooting.org][Troubleshooting]]
 - [[file:docs/design.org][How it works]]
+- [[file:docs/reading-the-code.org][Reading the code]]
 - [[file:docs/development.org][Building and development]]
 - [[file:docs/limitations.org][Known limitations]]
