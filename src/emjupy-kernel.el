@@ -449,6 +449,52 @@ requests awaiting output."
 
 ;;;; Incoming messages
 
+(defun emjupy--internal-reply (id request msg-type data)
+  "Handle DATA, a message of MSG-TYPE answering emjupy's own request ID.
+REQUEST is the request's entry, (CALLBACK . TEXTS).  The answer is kept
+out of the notebook, and handed to the callback whole once the request
+is done: a large answer comes in several messages."
+  (when (string= msg-type "stream")
+    (push (or (gethash "text" (gethash "content" data)) "") (cdr request)))
+  (when (emjupy--idle-p msg-type data)
+    ;; Its answer has come by now: idle follows every output of the
+    ;; request on the same channel, where execute_reply may not.
+    (remhash id emjupy--internal-requests)
+    (when (cdr request)
+      ;; As printed: a caller asking for a line trims it; one asking for
+      ;; data, a piece of a file, needs every character.
+      (funcall (car request) (apply #'concat (reverse (cdr request)))))))
+
+(defun emjupy--stream-output (content)
+  "Return a stream output, from CONTENT, a stream message's content."
+  (let ((output (make-hash-table :test 'equal)))
+    (puthash "output_type" "stream" output)
+    (puthash "name" (or (gethash "name" content) "stdout") output)
+    (puthash "text" (or (gethash "text" content) "") output)
+    output))
+
+(defun emjupy--error-output (content)
+  "Return an error output, from CONTENT, an error message's content."
+  (let ((output (make-hash-table :test 'equal)))
+    (puthash "output_type" "error" output)
+    (puthash "ename" (gethash "ename" content) output)
+    (puthash "evalue" (gethash "evalue" content) output)
+    (puthash "traceback" (gethash "traceback" content) output)
+    output))
+
+(defun emjupy--cell-replied (cell content id pending notebook)
+  "Finish CELL's run, its request ID answered by an execute_reply.
+CONTENT is the reply's content; PENDING the kernel's table of requests;
+NOTEBOOK the cell's.  The count is set, the cell marked done, and the
+notebook redrawn."
+  (setf (emjupy-cell-exec-count cell) (gethash "execution_count" content))
+  (emjupy--request-half-seen id 'reply pending)
+  (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook)))
+              ((buffer-live-p buf)))
+    (emjupy--mark-done cell buf)
+    (with-current-buffer buf
+      (emjupy--rerender-preserving-point))))
+
 (defun emjupy--rich-output (type content)
   "Return an output of TYPE, from CONTENT, a kernel message's content.
 TYPE is \"execute_result\" or \"display_data\".  The fields nbformat v4
@@ -494,22 +540,8 @@ kernels never cross-talk."
     (when (equal msg-type "input_request")
       (emjupy--input-requested kernel data))
 
-    ;; One of emjupy's own questions: hand the answer to its callback and
-    ;; keep it out of the notebook entirely.
     (when internal
-      ;; Gathered until the request is done, then handed over whole: a large
-      ;; answer comes in several messages.
-      (when (string= msg-type "stream")
-        (push (or (gethash "text" (gethash "content" data)) "") (cdr internal)))
-      (when (emjupy--idle-p msg-type data)
-        ;; Its answer, if any, has come by now: idle follows every output
-        ;; of the request on the same channel.  Forgetting it on
-        ;; execute_reply instead dropped an answer that arrived late.
-        (remhash parent-id emjupy--internal-requests)
-        (when (cdr internal)
-          ;; As printed: a caller asking for a line trims it; one asking
-          ;; for data, a piece of a file, needs every character.
-          (funcall (car internal) (apply #'concat (reverse (cdr internal)))))))
+      (emjupy--internal-reply parent-id internal msg-type data))
 
     (when (member msg-type '("comm_open" "comm_msg" "comm_close"))
       (run-hook-with-args 'emjupy-comm-functions kernel msg-type
@@ -520,51 +552,26 @@ kernels never cross-talk."
         (if (eq (gethash "wait" (gethash "content" data)) t)
             (puthash cell t emjupy--clear-before-next-output)
           (emjupy--clear-cell-outputs-now cell notebook)))
-       ;; Stdout/Stderr live streaming
        ((string= msg-type "stream")
-        (let* ((content (gethash "content" data))
-               (text (gethash "text" content))
-               (name (gethash "name" content))
-               (out-hash (make-hash-table :test 'equal)))
-          (puthash "output_type" "stream" out-hash)
-          (puthash "name" (or name "stdout") out-hash)
-          (puthash "text" (or text "") out-hash)
-          (emjupy--append-output-to-cell cell out-hash notebook)))
+        (emjupy--append-output-to-cell
+         cell (emjupy--stream-output (gethash "content" data)) notebook))
 
        ;; A value returned, or rich output: a figure comes as display_data.
        ((member msg-type '("execute_result" "display_data"))
         (emjupy--append-output-to-cell
          cell (emjupy--rich-output msg-type (gethash "content" data)) notebook))
 
-       ;; Python Error Tracebacks
        ((string= msg-type "error")
-        (let* ((content (gethash "content" data))
-               (ename (gethash "ename" content))
-               (evalue (gethash "evalue" content))
-               (traceback (gethash "traceback" content))
-               (out-hash (make-hash-table :test 'equal)))
-          (puthash "output_type" "error" out-hash)
-          (puthash "ename" ename out-hash)
-          (puthash "evalue" evalue out-hash)
-          (puthash "traceback" traceback out-hash)
-          (emjupy--append-output-to-cell cell out-hash notebook)))
+        (emjupy--append-output-to-cell
+         cell (emjupy--error-output (gethash "content" data)) notebook))
 
        ;; The kernel has published everything this request will produce.
        ((emjupy--idle-p msg-type data)
         (emjupy--request-half-seen parent-id 'idle pending))
 
-       ;; Finish execution frame
        ((string= msg-type "execute_reply")
-        (let* ((content (gethash "content" data))
-               (count (gethash "execution_count" content)))
-          (setf (emjupy-cell-exec-count cell) count)
-          (emjupy--request-half-seen parent-id 'reply pending)
-          (when-let* ((b (and notebook (emjupy-notebook-buffer notebook))))
-            (when (buffer-live-p b) (emjupy--mark-done cell b)))
-          (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook))))
-            (when (buffer-live-p buf)
-              (with-current-buffer buf
-                (emjupy--rerender-preserving-point))))))))))
+        (emjupy--cell-replied cell (gethash "content" data) parent-id
+                              pending notebook))))))
 
 ;;;; Running cells
 
