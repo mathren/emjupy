@@ -29,7 +29,7 @@ on:
       - 'README.org'
       - 'publish.el'
       - 'tools/**'
-      - 'src/test-corpus/**'
+      - 'test_notebooks/test-corpus/**'
 
   pull_request:
     # the same list as for push
@@ -42,7 +42,7 @@ on:
       - 'README.org'
       - 'publish.el'
       - 'tools/**'
-      - 'src/test-corpus/**'
+      - 'test_notebooks/test-corpus/**'
 
 # A newer push to the same branch or pull request makes an older run moot.
 concurrency:

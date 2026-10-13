@@ -34,7 +34,7 @@ browser (see [[file:docs/usage.org::*Interactive output][Interactive output]] an
 #+ATTR_HTML: :width 75%
 [[file:html-content/images/quickstart.gif]]
 
-The repository ships a small notebook, =test_notebook/test.ipynb=, with
+The repository ships a small notebook, =test_notebooks/test.ipynb=, with
 a module beside it, so there is something real to run. To test with
 your own notebooks, jump to step 4.
 
@@ -47,7 +47,7 @@ your own notebooks, jump to step 4.
 2. *A Python environment with Jupyter.*  Either create the one the
    notebook comes with,
    #+begin_src bash
-     conda env create -f test_notebook/environment.yml
+     conda env create -f test_notebooks/environment.yml
      conda activate test_emjupy
    #+end_src
    or install into one you have:
@@ -59,11 +59,11 @@ your own notebooks, jump to step 4.
 
 3. *Start a server* in the notebook's directory, in its own terminal:
    #+begin_src bash
-     cd test_notebook
+     cd test_notebooks
      jupyter server --no-browser --port=8888 --IdentityProvider.token=abc
    #+end_src
    The server can equally run on another machine -- started the same
-   way, in a copy of =test_notebook/= or any directory with notebooks.
+   way, in a copy of =test_notebooks/= or any directory with notebooks.
    Then forward its port from this one, and use the same port below:
    #+begin_src bash
      ssh -N -L 8888:localhost:8888 <remote machine>

@@ -15,8 +15,8 @@
 *.patch
 patches/
 
-test_notebook/__pycache__/*
-test_notebook/.ipynb_checkpoints/*
+test_notebooks/__pycache__/*
+test_notebooks/.ipynb_checkpoints/*
 
 *.#*
 
@@ -31,4 +31,4 @@ test_notebook/.ipynb_checkpoints/*
 
 # shadow files
 .emjupy*
-test_notebook/.emjupy*
+test_notebooks/.emjupy*

@@ -359,8 +359,8 @@ before it, backspace."
 ;;;; 3. Notebook round-trip
 
 (defconst emjupy-fuzz--corpus
-  (expand-file-name "test-corpus" (file-name-directory
-                                   (or load-file-name buffer-file-name)))
+  (expand-file-name "../test_notebooks/test-corpus"
+                    (file-name-directory (or load-file-name buffer-file-name)))
   "Notebooks in every shape the round-trip tests read.
 Written by tools/make-notebook-corpus.py, with nbformat itself.")
 

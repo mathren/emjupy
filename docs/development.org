@@ -409,7 +409,7 @@ the hand-written tests had not.
 | message order   | random interleavings of a kernel's replies and outputs   |
 | random edits    | random sequences of cell commands, invariants after each |
 | undo everything | random edits, then undo to the start                     |
-| round-trip      | every notebook in =src/test-corpus/=, saved and reloaded |
+| round-trip      | every notebook in =test_notebooks/test-corpus/=, saved and reloaded |
 | hostile content | escape floods, huge SVGs, deep JSON, awkward file names  |
 | leaks           | many sessions; timers, processes, hooks, tables after    |
 
@@ -444,7 +444,7 @@ a fix shows up as an unexpected pass -- the cue to take the marking off.
 
 ** The notebook corpus
 
-=src/test-corpus/= is written by =tools/make-notebook-corpus.py=, with
+=test_notebooks/test-corpus/= is written by =tools/make-notebook-corpus.py=, with
 =nbformat= itself, so each notebook is valid by Jupyter's own
 definition.  =tools/check-roundtrip.py= compares a notebook with emjupy's
 save of it -- every cell, source, output, metadata and attachment -- and

@@ -11,7 +11,7 @@ import base64, os
 import nbformat
 from nbformat import v4
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "src", "test-corpus")
+OUT = os.path.join(os.path.dirname(__file__), "..", "test_notebooks", "test-corpus")
 PNG = base64.b64encode(bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
     "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")).decode()
