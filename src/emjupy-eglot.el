@@ -523,25 +523,22 @@ must be the notebook buffer: the next request comes from there."
            reason emjupy-shadow-retry-interval
            "Notebook editing and execution are unaffected."))
 
-(cl-defun emjupy--ensure-shadow-buffer (nb)
-  "Return NB's persistent code shadow buffer, creating it if needed.
-Its content is refreshed to
-match the current cells, and make sure Eglot is (or becomes) attached --
-automatically, with nothing for the user to run."
-  ;; The back-off covers starting a language server, the slow or impossible
-  ;; part; building the buffer is local and always safe.
-  (let* ((buf (emjupy-notebook-shadow-buffer nb))
-         (nb-buffer (or (emjupy-notebook-buffer nb) (current-buffer)))
-         (content (emjupy--build-shadow-content nb))
-         (path (emjupy--shadow-file-path nb)))
-    ;; The path can change: the kernel reports its directory after the first
-    ;; buffer was made, in the temporary fallback.  Rebuilt, so the server reads
-    ;; the notebook's own directory and finds its modules.
-    (when (and (buffer-live-p buf)
-               (buffer-local-value 'buffer-file-name buf)
-               (not (equal (expand-file-name
-                            (buffer-local-value 'buffer-file-name buf))
-                           (expand-file-name path))))
+;; The back-off covers starting a language server, the slow or impossible
+;; part; building the buffer is local and always safe.
+
+(defun emjupy--retire-moved-shadow (nb path)
+  "Return NB's shadow buffer, unless it visits a file other than PATH.
+Then it is killed, and nil returned.  The path can change: the kernel
+reports its directory after the first buffer was made, in the temporary
+fallback.  Rebuilt, so the server reads the notebook's own directory and
+finds its modules."
+  (let ((buf (emjupy-notebook-shadow-buffer nb)))
+    (if (not (and (buffer-live-p buf)
+                  (buffer-local-value 'buffer-file-name buf)
+                  (not (equal (expand-file-name
+                               (buffer-local-value 'buffer-file-name buf))
+                              (expand-file-name path)))))
+        buf
       ;; Never ask: the buffer is a regenerated copy of the cells, always
       ;; "modified".
       (with-current-buffer buf
@@ -549,102 +546,130 @@ automatically, with nothing for the user to run."
       (let ((kill-buffer-query-functions nil)
             (kill-buffer-hook nil))
         (when (buffer-live-p buf) (kill-buffer buf)))
-      (setq buf nil)
-      (setf (emjupy-notebook-shadow-buffer nb) nil))
-    ;; This runs from eldoc and completion, after every command, so remote work
-    ;; is backed off: one unreachable host would hang every keystroke.  A local
-    ;; directory cannot hang, and is not.
-    (when (and (not (buffer-live-p buf))
-               (file-remote-p path)
-               (emjupy--shadow-blocked-p))
-      (cl-return-from emjupy--ensure-shadow-buffer nil))
+      (setf (emjupy-notebook-shadow-buffer nb) nil)
+      nil)))
+
+(defun emjupy--make-shadow-directory (path)
+  "Make the directory PATH is in; return non-nil, or nil after backing off.
+A timeout, a file error -- unreachable, refused -- or TRAMP's user error
+backs off: the notebook stays open, without language support."
+  (condition-case err
+      (with-timeout (emjupy-shadow-timeout
+                     (emjupy--shadow-block "timed out")
+                     nil)
+        (let ((dir (file-name-directory path)))
+          (if (equal dir (emjupy--shadow-temporary-directory))
+              (emjupy--private-directory dir "shadow files")
+            (make-directory dir t)))
+        t)
+    ((file-error user-error)
+     (emjupy--shadow-block (error-message-string err))
+     nil)))
+
+(defun emjupy--create-shadow-buffer (nb path content)
+  "Return a buffer visiting PATH, holding CONTENT, as NB's shadow buffer."
+  ;; Reuse a buffer already visiting the path: writing behind its back would
+  ;; make the next visit ask to reread it.
+  (let ((buf (find-buffer-visiting path)))
     (unless (buffer-live-p buf)
-      (condition-case err
-          (with-timeout (emjupy-shadow-timeout
-                         (emjupy--shadow-block "timed out")
-                         (cl-return-from emjupy--ensure-shadow-buffer nil))
-            (let ((dir (file-name-directory path)))
-              (if (equal dir (emjupy--shadow-temporary-directory))
-                  (emjupy--private-directory dir "shadow files")
-                (make-directory dir t))))
-        ;; A file error -- unreachable, refused -- or TRAMP's user error: the
-        ;; notebook stays open, without language support.
-        ((file-error user-error)
-         (emjupy--shadow-block (error-message-string err))
-         (cl-return-from emjupy--ensure-shadow-buffer nil))))
-    (unless (buffer-live-p buf)
-      ;; Reuse a buffer already visiting the path: writing behind its back would
-      ;; make the next visit ask to reread it.
-      (setq buf (find-buffer-visiting path))
-      (unless (buffer-live-p buf)
-        ;; The content is written BEFORE the file is visited: Eglot sends
-        ;; didOpen from `find-file-hook' with what the buffer holds then, and an
-        ;; empty document left later notebooks without completion.
-        (let ((coding-system-for-write emjupy--shadow-coding))
-          (write-region content nil path nil 'quiet))
-        (setq buf (let ((coding-system-for-read emjupy--shadow-coding))
-                    (find-file-noselect path))))
-      (setf (emjupy-notebook-shadow-buffer nb) buf)
-      (with-current-buffer buf
-        ;; `find-file-noselect' chose python-mode already; running it again
-        ;; would kill Eglot's local state, and the two variables set below.
-        (unless (derived-mode-p 'python-mode 'python-ts-mode)
-          ;; Quietly: see the note in `emjupy--fontify-as'.
-          (let ((python-indent-guess-indent-offset-verbose nil))
-            (python-mode)))
-        ;; No lock or auto-save files: the file is a generated copy nobody else
-        ;; edits, and for a remote one each lock is remote I/O on the completion
-        ;; path.  Set before anything modifies the buffer -- the first
-        ;; modification takes the lock.
-        (setq-local create-lockfiles nil)
-        (setq buffer-auto-save-file-name nil)
-        (auto-save-mode -1)
-        ;; Saving must never stop to ask either.  NOMODIFY: this changes how
-        ;; the file is written, not what it holds.
-        (set-buffer-file-coding-system emjupy--shadow-coding t t)
-        (emjupy-shadow-edit-mode 1)
-        (setq emjupy--edit-shadow-notebook nb)))
+      ;; The content is written BEFORE the file is visited: Eglot sends
+      ;; didOpen from `find-file-hook' with what the buffer holds then, and an
+      ;; empty document left later notebooks without completion.
+      (let ((coding-system-for-write emjupy--shadow-coding))
+        (write-region content nil path nil 'quiet))
+      (setq buf (let ((coding-system-for-read emjupy--shadow-coding))
+                  (find-file-noselect path))))
+    (setf (emjupy-notebook-shadow-buffer nb) buf)
     (with-current-buffer buf
-      (unless (string= content (buffer-string))
-        (setq-local create-lockfiles nil)
-        (erase-buffer)
-        (insert content)
-        ;; Not written to disk: Eglot sends changes in-band (didChange), and the
-        ;; file exists only to attach to.  Writing it per edit is a round trip
-        ;; over TRAMP, on the completion path, blocking cell output too.
-        (when (eq emjupy-shadow-sync-to-disk 'always)
-          (let ((coding-system-for-write emjupy--shadow-coding))
-            (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
-          (set-visited-file-modtime))
-        ;; The disk copy is a bootstrap, not the record: the cells are.  Say
-        ;; unmodified either way, or Emacs offers to save a scratch file.
-        (set-buffer-modified-p nil))
-      (condition-case err
-          ;; Connected here, not with `eglot-ensure': that waits for
-          ;; `post-command-hook' in the current buffer, which is never this one.
-          ;; `require', not `fboundp': `eglot-ensure' may be an autoload stub,
-          ;; its internals not yet defined.
-          ;;
-          ;; Connecting is the expensive half, retried while no server is
-          ;; attached, so it is backed off like the file.  The flag is set in
-          ;; the notebook buffer, where the next request comes from.
-          ;; `emjupy-language-support' is checked here, where every path to a
-          ;; server passes; the buffer is still built, for editing all the code,
-          ;; but nothing is attached.
-          (unless (or emjupy--suppress-plain-eglot
-                      (not emjupy-language-support)
-                      (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
-                      (and (boundp 'eglot--managed-mode) eglot--managed-mode))
-            (with-timeout (emjupy-shadow-timeout
-                           (emjupy--shadow-block "language server did not start"
-                                                 nb-buffer))
-              (apply #'eglot--connect (eglot--guess-contact))
-              ;; Started, and on this machine: say so, since this fallback
-              ;; answers about the wrong files while seeming to work.  Wrapped:
-              ;; a warning must not break what it warns about.
-              (emjupy--warn-local-language-server nb)))
-        (error
-         (emjupy--shadow-block (error-message-string err) nb-buffer))))
+      ;; `find-file-noselect' chose python-mode already; running it again
+      ;; would kill Eglot's local state, and the two variables set below.
+      (unless (derived-mode-p 'python-mode 'python-ts-mode)
+        ;; Quietly: see the note in `emjupy--fontify-as'.
+        (let ((python-indent-guess-indent-offset-verbose nil))
+          (python-mode)))
+      ;; No lock or auto-save files: the file is a generated copy nobody else
+      ;; edits, and for a remote one each lock is remote I/O on the completion
+      ;; path.  Set before anything modifies the buffer -- the first
+      ;; modification takes the lock.
+      (setq-local create-lockfiles nil)
+      (setq buffer-auto-save-file-name nil)
+      (auto-save-mode -1)
+      ;; Saving must never stop to ask either.  NOMODIFY: this changes how
+      ;; the file is written, not what it holds.
+      (set-buffer-file-coding-system emjupy--shadow-coding t t)
+      (emjupy-shadow-edit-mode 1)
+      (setq emjupy--edit-shadow-notebook nb))
+    buf))
+
+(defun emjupy--sync-shadow-content (content)
+  "Make the current buffer, a shadow buffer, hold CONTENT."
+  (unless (string= content (buffer-string))
+    (setq-local create-lockfiles nil)
+    (erase-buffer)
+    (insert content)
+    ;; Not written to disk: Eglot sends changes in-band (didChange), and the
+    ;; file exists only to attach to.  Writing it per edit is a round trip
+    ;; over TRAMP, on the completion path, blocking cell output too.
+    (when (eq emjupy-shadow-sync-to-disk 'always)
+      (let ((coding-system-for-write emjupy--shadow-coding))
+        (write-region (point-min) (point-max) buffer-file-name nil 'quiet))
+      (set-visited-file-modtime))
+    ;; The disk copy is a bootstrap, not the record: the cells are.  Say
+    ;; unmodified either way, or Emacs offers to save a scratch file.
+    (set-buffer-modified-p nil)))
+
+(defun emjupy--attach-plain-eglot (nb nb-buffer)
+  "Attach an ordinary Eglot to the current buffer, NB's shadow buffer.
+Unless one is attached, another is being, language support is off, or
+NB-BUFFER, the notebook's, is backing off."
+  (condition-case err
+      ;; Connected here, not with `eglot-ensure': that waits for
+      ;; `post-command-hook' in the current buffer, which is never this one.
+      ;; `require', not `fboundp': `eglot-ensure' may be an autoload stub,
+      ;; its internals not yet defined.
+      ;;
+      ;; Connecting is the expensive half, retried while no server is
+      ;; attached, so it is backed off like the file.  The flag is set in
+      ;; the notebook buffer, where the next request comes from.
+      ;; `emjupy-language-support' is checked here, where every path to a
+      ;; server passes; the buffer is still built, for editing all the code,
+      ;; but nothing is attached.
+      (unless (or emjupy--suppress-plain-eglot
+                  (not emjupy-language-support)
+                  (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
+                  (and (boundp 'eglot--managed-mode) eglot--managed-mode))
+        (with-timeout (emjupy-shadow-timeout
+                       (emjupy--shadow-block "language server did not start"
+                                             nb-buffer))
+          (apply #'eglot--connect (eglot--guess-contact))
+          ;; Started, and on this machine: say so, since this fallback
+          ;; answers about the wrong files while seeming to work.  Wrapped:
+          ;; a warning must not break what it warns about.
+          (emjupy--warn-local-language-server nb)))
+    (error
+     (emjupy--shadow-block (error-message-string err) nb-buffer))))
+
+(defun emjupy--ensure-shadow-buffer (nb)
+  "Return NB's persistent code shadow buffer, creating it if needed.
+Its content is refreshed to match the current cells, and Eglot attached
+if it is not -- automatically, with nothing for the user to run.  Nil
+while making it is backing off."
+  (let* ((nb-buffer (or (emjupy-notebook-buffer nb) (current-buffer)))
+         (content (emjupy--build-shadow-content nb))
+         (path (emjupy--shadow-file-path nb))
+         (buf (emjupy--retire-moved-shadow nb path)))
+    (unless (buffer-live-p buf)
+      ;; This runs from eldoc and completion, after every command, so remote
+      ;; work is backed off: one unreachable host would hang every keystroke.
+      ;; A local directory cannot hang, and is not.
+      (setq buf (and (not (and (file-remote-p path)
+                               (emjupy--shadow-blocked-p)))
+                     (emjupy--make-shadow-directory path)
+                     (emjupy--create-shadow-buffer nb path content))))
+    (when buf
+      (with-current-buffer buf
+        (emjupy--sync-shadow-content content)
+        (emjupy--attach-plain-eglot nb nb-buffer)))
     buf))
 
 ;;;; Positions
