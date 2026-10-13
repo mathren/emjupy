@@ -603,6 +603,43 @@ A widget with a `base\\=' is logarithmic: a step multiplies by the base."
     (emjupy--widget-send id `(("value" .
                                ,(emjupy--widget-clamp state new))) cell)))
 
+(defun emjupy--widget-read-date (state value)
+  "Ask for the date, time or both of STATE's widget; return the value.
+VALUE, the widget's value now, is offered.  Returned as the widget
+sends it: a table of its parts, months counted from 0, as in JavaScript."
+  (let* ((kind (emjupy--widget-date-kind state))
+         (text (read-string (pcase kind
+                              ('date "Date (YYYY-MM-DD): ")
+                              ('time "Time (HH:MM:SS): ")
+                              (_ "Date and time (YYYY-MM-DD HH:MM:SS): "))
+                            (and (hash-table-p value)
+                                 (emjupy--widget-date-text value))))
+         (parsed (parse-time-string text))
+         (new (make-hash-table :test 'equal)))
+    (when (memq kind '(date both))
+      (unless (decoded-time-year parsed) (user-error "Not a date: %s" text))
+      (puthash "year" (decoded-time-year parsed) new)
+      (puthash "month" (1- (decoded-time-month parsed)) new)
+      (puthash "date" (decoded-time-day parsed) new))
+    (when (memq kind '(time both))
+      (puthash "hours" (or (decoded-time-hour parsed) 0) new)
+      (puthash "minutes" (or (decoded-time-minute parsed) 0) new)
+      (puthash "seconds" (or (decoded-time-second parsed) 0) new)
+      (puthash "milliseconds" 0 new))
+    new))
+
+(defun emjupy--widget-read-list (value)
+  "Ask for a list of values, offering VALUE, a vector; return a vector.
+Numbers stay numbers if VALUE's were."
+  (let ((items (split-string
+                (read-string "Values, separated by commas: "
+                             (mapconcat (lambda (x) (format "%s" x))
+                                        value ", "))
+                "[ \t]*,[ \t]*" t)))
+    (vconcat (if (emjupy--widget-numbers-p value)
+                 (mapcar #'string-to-number items)
+               items))))
+
 (defun emjupy--widget-read (state arg)
   "Ask for a new value for the widget whose state is STATE.
 What is asked for follows the value's kind; ARG is the end of a range
@@ -614,54 +651,25 @@ being edited, 0 or 1.  Returns the value to send."
                               (emjupy--widget-number (cdr limits))))))
     (cond
      ((integerp arg)                    ; one end of a range
-      (let ((v (copy-sequence value)))
+      (let ((v (copy-sequence value))
+            (prompt (format "%s%s: " (if (= arg 0) "From" "To")
+                            (or bounds ""))))
         (aset v arg (emjupy--widget-clamp
-                     state (read-number (format "%s%s: " (if (= arg 0) "From"
-                                                           "To") (or bounds ""))
-                                        (aref value arg))))
+                     state (read-number prompt (aref value arg))))
         v))
      ((numberp value)
-      (let ((n (emjupy--widget-clamp state (read-number
-                                            (format "Value%s: "
-                                                    (or bounds "")) value))))
+      (let ((n (emjupy--widget-clamp
+                state (read-number (format "Value%s: " (or bounds "")) value))))
         (if (integerp value) (round n) n)))
-     ((emjupy--widget-date-kind state)
-      (let* ((kind (emjupy--widget-date-kind state))
-             (text (read-string (pcase kind
-                                  ('date "Date (YYYY-MM-DD): ")
-                                  ('time "Time (HH:MM:SS): ")
-                                  (_ "Date and time (YYYY-MM-DD HH:MM:SS): "))
-                                (and (hash-table-p value)
-                                     (emjupy--widget-date-text value))))
-             (parsed (parse-time-string text))
-             (new (make-hash-table :test 'equal)))
-        (when (memq kind '(date both))
-          (unless (decoded-time-year parsed) (user-error "Not a date: %s" text))
-          (puthash "year" (decoded-time-year parsed) new)
-          ;; from 0, as in JavaScript
-          (puthash "month" (1- (decoded-time-month parsed)) new)
-          (puthash "date" (decoded-time-day parsed) new))
-        (when (memq kind '(time both))
-          (puthash "hours" (or (decoded-time-hour parsed) 0) new)
-          (puthash "minutes" (or (decoded-time-minute parsed) 0) new)
-          (puthash "seconds" (or (decoded-time-second parsed) 0) new)
-          (puthash "milliseconds" 0 new))
-        new))
-     ((vectorp value)
-      (let ((items (split-string (read-string "Values, separated by commas: "
-                                              (mapconcat (lambda (x)
-                                                           (format "%s" x))
-                                                         value ", "))
-                                 "[ \t]*,[ \t]*" t)))
-        (vconcat (if (emjupy--widget-numbers-p value)
-                     (mapcar #'string-to-number items)
-                   items))))
-     ((equal (gethash "_model_name" state)
-             "PasswordModel") (read-passwd "Password: "))
+     ((emjupy--widget-date-kind state) (emjupy--widget-read-date state value))
+     ((vectorp value) (emjupy--widget-read-list value))
+     ((equal (gethash "_model_name" state) "PasswordModel")
+      (read-passwd "Password: "))
      ((emjupy--widget-has state "concise")
       (let ((c (color-values (read-color "Colour: "))))
-        (if c (apply #'format "#%02x%02x%02x" (mapcar (lambda (x)
-                                                        (/ x 256)) c)) value)))
+        (if c
+            (apply #'format "#%02x%02x%02x" (mapcar (lambda (x) (/ x 256)) c))
+          value)))
      (t (read-string "Text: " value)))))
 
 (defun emjupy-widget-activate (&optional event)
