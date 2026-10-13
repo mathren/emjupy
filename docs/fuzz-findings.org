@@ -46,7 +46,7 @@ documentation.  Findings fixed since are marked so.
 | 16 | =environment.yml= naming a missing environment is still offered | improvable  | low      |
 | 17 | The same file can be open twice, through two servers           | edge        | low      |
 | 18 | =tqdm.auto= draws on three lines                                | cosmetic    | low      |
-| 19 | =test_notebooks/interactive.ipynb= text is out of date           | docs        | low      |
+| 19 | =test_notebooks/interactive.ipynb= text is out of date           | fixed       | low      |
 | 20 | First import of numpy and matplotlib: 7.2 s, no feedback        | observation | low      |
 
 * Findings
@@ -245,6 +245,8 @@ documentation.  Findings fixed since are marked so.
 - What :: =test_notebooks/interactive.ipynb= says figures open "in an
   xwidget where this Emacs has one, in the browser otherwise"; they open
   in a window of their own by default, xwidgets being opt-in.
+- Status :: *fixed*: the notebook says where figures open, and names
+  =emjupy-figure-viewer=.
 
 ** 20. A cold first import takes 7 s, with no feedback
 - What :: =import numpy, matplotlib= in a fresh kernel: 7.2 s, the cell
