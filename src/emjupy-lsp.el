@@ -725,47 +725,50 @@ call."
         (eglot--maybe-activate-editing-mode)))
     (eq (eglot-current-server) server)))
 
+(defun emjupy--lsp-open-socket (server)
+  "Open a WebSocket to SERVER's language server; return it, or nil.
+A failure is explained, and recorded for `emjupy-lsp-diagnose'."
+  (condition-case err
+      (websocket-open (emjupy--lsp-url server)
+                      :custom-header-alist
+                      (emjupy--websocket-auth-headers server)
+                      ;; replaced by the Eglot connection made from it,
+                      ;; which takes the socket over
+                      :on-message (lambda (_ws _frame) nil)
+                      :on-error #'emjupy--lsp-socket-error)
+    ;; Everything: `websocket-open' reports a failed connection as a plain
+    ;; error.
+    (error (emjupy--lsp-explain-failure server)
+           (setq emjupy--lsp-last-failure (error-message-string err))
+           nil)))
+
+(defun emjupy--eglot-pending-for (nb ws local-file)
+  "Return what the server class collects, for NB's WS and LOCAL-FILE.
+LOCAL-FILE is the shadow file.  Directory prefixes, not the one file:
+the same substitution then fixes rootUri, the document URI and anything
+else naming a path under them."
+  (let ((server-dir (concat "file://"
+                            (file-name-as-directory
+                             (or (emjupy-notebook-kernel-cwd nb) "/")))))
+    (list :ws ws
+          :local-uri (concat "file://" (file-name-directory local-file))
+          :server-uri server-dir
+          :local-doc (concat "file://" local-file)
+          :server-doc (concat server-dir (file-name-nondirectory local-file)))))
+
 (defun emjupy--eglot-connect (nb buffer)
   "Attach Eglot to BUFFER, talking to NB's server over its WebSocket.
 BUFFER is the shadow buffer, on this machine, only for Eglot to
 manage.  Return the server, or nil."
-  (let* ((server (emjupy-notebook-server nb))
-         (local-file (buffer-local-value 'buffer-file-name buffer))
-         (ws (condition-case err
-                 (websocket-open (emjupy--lsp-url server)
-                                 :custom-header-alist
-                                 (emjupy--websocket-auth-headers server)
-                                 ;; replaced by the Eglot connection made
-                                 ;; below, which takes the socket over
-                                 :on-message (lambda (_ws _frame) nil)
-                                 :on-error #'emjupy--lsp-socket-error)
-               ;; Everything: `websocket-open' reports a failed connection
-               ;; as a plain error.
-               (error (emjupy--lsp-explain-failure server)
-                      (setq emjupy--lsp-last-failure (error-message-string err))
-                      nil))))
+  (let* ((local-file (buffer-local-value 'buffer-file-name buffer))
+         (ws (emjupy--lsp-open-socket (emjupy-notebook-server nb))))
     (when (and ws local-file)
       (let* ((emjupy--eglot-pending
-              (list :ws ws
-                    ;; Directory prefixes, not the one file: the same
-                    ;; substitution then fixes rootUri, the document URI and
-                    ;; anything else naming a path under them.
-                    :local-uri (concat "file://"
-                                       (file-name-directory local-file))
-                    :server-uri (concat "file://"
-                                        (file-name-as-directory
-                                         (or (emjupy-notebook-kernel-cwd nb)
-                                             "/")))
-                    :local-doc (concat "file://" local-file)
-                    :server-doc (concat "file://"
-                                        (file-name-as-directory
-                                         (or (emjupy-notebook-kernel-cwd nb)
-                                             "/"))
-                                        (file-name-nondirectory local-file))))
+              (emjupy--eglot-pending-for nb ws local-file))
              ;; The root the server resolves imports against is its own
-             ;; directory, fixed on the wire below.  Here the project must
-             ;; contain the shadow buffer, or Eglot will not manage it, and the
-             ;; server never hears of the document.
+             ;; directory, fixed on the wire.  Here the project must contain
+             ;; the shadow buffer, or Eglot will not manage it, and the server
+             ;; never hears of the document.
              (project (cons 'transient (file-name-directory local-file))))
         (with-current-buffer buffer
           (condition-case err
