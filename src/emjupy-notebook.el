@@ -267,6 +267,57 @@ The server is part of the name: the same notebook path can exist on two
 different servers, and one buffer cannot represent both."
   (format "*emjupy: %s [%s]*" path (emjupy--server-label server)))
 
+(defun emjupy--fetch-notebook (path server)
+  "Return the notebook at PATH on SERVER, fetched and parsed.
+Signal an error if the server returns no notebook."
+  (let* ((response (emjupy--http-request "GET" server
+                                         (emjupy--contents-path path)))
+         (content (and response (gethash "content" response))))
+    (unless content
+      (error "Failed to fetch notebook content from server"))
+    (let ((nb (emjupy--parse-ipynb (json-serialize content))))
+      (setf (emjupy-notebook-server nb) server
+            (emjupy-notebook-path nb) path
+            (emjupy-notebook-last-modified nb)
+            (gethash "last_modified" response))
+      nb)))
+
+(defun emjupy--draw-opened-notebook (nb buf already-open)
+  "Draw NB, just fetched, in BUF, in `emjupy-mode'.
+ALREADY-OPEN non-nil means BUF showed it before: point stays."
+  (with-current-buffer buf
+    (emjupy-mode)
+    ;; The notebook is set before drawing, through
+    ;; `emjupy--rerender-notebook': reopening reuses the buffer with
+    ;; fresh cells, and the old overlays must go with the text.
+    (setq emjupy--buffer-notebook nb)
+    (emjupy--rerender-notebook)
+    ;; A freshly opened notebook starts at the top, as a file does.
+    ;; One already open keeps where you were: re-opening it to get
+    ;; back to what you were reading should not lose your place.
+    (unless already-open
+      (goto-char (point-min)))
+    ;; As drawn, it is the server copy: nothing unsaved yet.
+    (set-buffer-modified-p nil)
+    (emjupy--save-machinery-start)
+    (add-hook 'kill-buffer-query-functions
+              #'emjupy--kill-buffer-query nil t)
+    (emjupy--offer-recovery nb)))
+
+(defun emjupy--attach-bound-kernel (nb buf server)
+  "Attach NB, shown in BUF, to the kernel bound to SERVER's port, if any.
+So opening a notebook drops you into the kernel already running behind
+that tunnel, rather than into a dead buffer needing a connect step."
+  (when-let* ((kernel-id (emjupy-server-kernel-id server)))
+    (with-current-buffer buf
+      (condition-case err
+          (emjupy-connect-kernel nb kernel-id)
+        ;; Everything: connecting opens a WebSocket, and
+        ;; `websocket-open' reports a failure as a plain error.  The
+        ;; notebook opens either way; the kernel is connected later.
+        (error (message "[emjupy] Could not attach kernel %s: %s"
+                        kernel-id (error-message-string err)))))))
+
 ;;;###autoload
 (defun emjupy-open-notebook (path &optional server)
   "Fetch PATH from SERVER, parse it, and render it in `emjupy-mode'.
@@ -281,73 +332,30 @@ Returns the notebook buffer."
                (message "[emjupy] %s is open with unsaved changes; shown as it is." path)
                open)
       (message "[emjupy] Fetching notebook: %s..." path)
-      (let* ((response-data (emjupy--http-request "GET" server
-                                                  (emjupy--contents-path path)))
-             (content-hash (and response-data (gethash "content"
-                                                       response-data))))
-        (if (not content-hash)
-            (error "Failed to fetch notebook content from server")
-          (let* ((ipynb-json (json-serialize content-hash))
-                 (nb-struct (emjupy--parse-ipynb ipynb-json))
-                 (buf-name (emjupy--notebook-buffer-name path server))
-                 ;; Whether this notebook is already on screen decides where
-                 ;; point ends up below.
-                 (already-open (get-buffer buf-name))
-                 (buf (get-buffer-create buf-name)))
-
-            (setf (emjupy-notebook-server nb-struct) server)
-            (setf (emjupy-notebook-path nb-struct) path)
-            (setf (emjupy-notebook-buffer nb-struct) buf)
-            (setf (emjupy-notebook-last-modified nb-struct)
-                  (gethash "last_modified" response-data))
-
+      (let* ((nb (emjupy--fetch-notebook path server))
+             (buf-name (emjupy--notebook-buffer-name path server))
+             ;; Whether this notebook is already on screen decides where
+             ;; point ends up.
+             (already-open (get-buffer buf-name))
+             (buf (get-buffer-create buf-name)))
+        (setf (emjupy-notebook-buffer nb) buf)
+        (emjupy--draw-opened-notebook nb buf already-open)
+        (switch-to-buffer buf)
+        (unless already-open
+          (goto-char (point-min)))
+        (emjupy--attach-bound-kernel nb buf server)
+        ;; Language support warmed up now, so completion is ready when
+        ;; typing starts rather than paying the server's start then.
+        (when emjupy-language-support
+          (with-demoted-errors "[emjupy] Language support did not start: %S"
             (with-current-buffer buf
-              (emjupy-mode)
-              ;; The notebook is set before drawing, through
-              ;; `emjupy--rerender-notebook': reopening reuses the buffer with
-              ;; fresh cells, and the old overlays must go with the text.
-              (setq emjupy--buffer-notebook nb-struct)
-              (emjupy--rerender-notebook)
-              ;; A freshly opened notebook starts at the top, as a file does.
-              ;; One already open keeps where you were: re-opening it to get
-              ;; back to what you were reading should not lose your place.
-              (unless already-open
-                (goto-char (point-min)))
-              ;; As drawn, it is the server copy: nothing unsaved yet.
-              (set-buffer-modified-p nil)
-              (emjupy--save-machinery-start)
-              (add-hook 'kill-buffer-query-functions
-                        #'emjupy--kill-buffer-query nil t)
-              (emjupy--offer-recovery nb-struct))
-
-            (switch-to-buffer buf)
-            (unless already-open
-              (goto-char (point-min)))
-            ;; Attach this notebook to the kernel bound to its port, so opening
-            ;; it drops you into the REPL already running behind that tunnel
-            ;; rather than into a dead buffer needing a separate connect step.
-            (when-let* ((kernel-id (emjupy-server-kernel-id server)))
-              (with-current-buffer buf
-                (condition-case err
-                    (emjupy-connect-kernel nb-struct kernel-id)
-                  ;; Everything: connecting opens a WebSocket, and
-                  ;; `websocket-open' reports a failure as a plain error.  The
-                  ;; notebook opens either way; the kernel is connected later.
-                  (error (message "[emjupy] Could not attach kernel %s: %s"
-                                  kernel-id (error-message-string err))))))
-            ;; Warm up the code shadow-buffer + Eglot now, in the background,
-            ;; so completions are ready once the user starts typing instead of
-            ;; paying the LSP server startup cost on the first keystroke.
-            (when emjupy-language-support
-              (with-demoted-errors "[emjupy] Language support did not start: %S"
-                (with-current-buffer buf
-                  (emjupy--ensure-shadow-buffer nb-struct))))
-            (message "[emjupy] Opened notebook: %s%s" path
-                     (if (emjupy-server-kernel-id server)
-                         ""
-                       (format ". Press %s to select or spawn a kernel."
-                               (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
-            buf))))))
+              (emjupy--ensure-shadow-buffer nb))))
+        (message "[emjupy] Opened notebook: %s%s" path
+                 (if (emjupy-server-kernel-id server)
+                     ""
+                   (format ". Press %s to select or spawn a kernel."
+                           (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
+        buf))))
 
 ;;;###autoload
 (defun emjupy-create-notebook (&optional server)
