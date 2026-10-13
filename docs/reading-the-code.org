@@ -57,9 +57,11 @@ place around them.
 1. =emjupy-login= (notebook) asks for the server, works out its token
    with =emjupy--resolve-token=, and binds one kernel to the port with
    =emjupy--bind-server-kernel=: one port, one kernel.
-2. =emjupy-open-notebook= (notebook) fetches the JSON and parses it with
-   =emjupy--parse-ipynb= into cells, turns on =emjupy-mode=, draws with
-   =emjupy--rerender-notebook=, and connects with =emjupy-connect-kernel=.
+2. =emjupy-open-notebook= (notebook) reads the notebook with
+   =emjupy--fetch-notebook=, which parses it with =emjupy--parse-ipynb=;
+   draws it with =emjupy--draw-opened-notebook=, which turns on
+   =emjupy-mode= and calls =emjupy--rerender-notebook=; and connects with
+   =emjupy--attach-bound-kernel=, which calls =emjupy-connect-kernel=.
 3. =emjupy-connect-kernel= (kernel) opens the WebSocket.  A notebook
    without a kernel gets one from =emjupy--spawn-and-connect-kernel=,
    started through a session so it runs in the notebook's directory.
@@ -69,8 +71,9 @@ place around them.
    output in place, builds the request with =emjupy--make-execute-request=
    and sends it with =emjupy--ws-send=.
 2. Replies come to =emjupy--handle-ws-message= (kernel), the dispatcher
-   for everything a kernel sends.  Output goes to
-   =emjupy--append-output-to-cell=, which merges stream text with
+   for everything a kernel sends.  Each output is built by
+   =emjupy--stream-output=, =emjupy--rich-output= or =emjupy--error-output=
+   and goes to =emjupy--append-output-to-cell=, which merges stream text with
    =emjupy--merge-stream-output= and asks for a redraw with
    =emjupy--schedule-render=.  A request is forgotten only when both its
    reply and its closing idle have come: =emjupy--request-half-seen=.
@@ -93,9 +96,9 @@ place around them.
    =buffer-undo-list= can hold.
 
 ** Saving
-1. =emjupy-save-notebook= calls =emjupy--save-to-server=, which writes
-   =emjupy--serialize-notebook='s JSON after checking the file on the
-   server has not changed since it was read.
+1. =emjupy-save-notebook= calls =emjupy--save-to-server=, which sends the
+   request =emjupy--notebook-request= builds, after checking the file on
+   the server has not changed since it was read.
 2. On idle, =emjupy--idle-save= writes a recovery copy with
    =emjupy--recovery-write=, in a folder made by =emjupy--private-directory=,
    and saves to the server without waiting, with =emjupy--autosave-async=.
@@ -130,9 +133,10 @@ on it.  How a server's files are reached in general is
 Most functions are short.  A few carry the complexity, and a change near
 them deserves the slowest reading:
 
-- =emjupy--ensure-shadow-buffer= (eglot): where the shadow file lives,
-  when it is rebuilt, and when to stop trying -- local and remote, with a
-  back-off so an unreachable host cannot hang Emacs.
+- =emjupy--ensure-shadow-buffer= (eglot) and its steps,
+  =emjupy--retire-moved-shadow= to =emjupy--attach-plain-eglot=: where the
+  shadow file lives, when it is rebuilt, and when to stop trying -- local
+  and remote, with a back-off so an unreachable host cannot hang Emacs.
 - =emjupy--handle-ws-message= (kernel): every message type the kernel
   sends, and which cell it belongs to.
 - =emjupy--reconcile-rules= (render): the rules drawn so line numbers
