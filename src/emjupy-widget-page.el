@@ -204,10 +204,8 @@ print(open(_p).read() if _o.path.exists(_p) else '', end='')" (car module))
   (if (string-match-p "\\`[a-z]+://" script) script
     (concat "file://" (expand-file-name script))))
 
-(defun emjupy--widget-page (token port title modules)
-  "Return the page for the widget open as TOKEN, on the bridge at PORT.
-TITLE names it; MODULES maps module names to the files they are in."
-  (format "<!DOCTYPE html>
+(defconst emjupy--widget-page-template
+  "<!DOCTYPE html>
 <html><head><meta charset=\"utf-8\"><title>%s</title>
 %s
 <style>body{margin:0;font-family:sans-serif} #widget{padding:8px}</style></head>
@@ -282,6 +280,14 @@ require(['@jupyter-widgets/html-manager', '@jupyter-widgets/base'], function (hm
             'The widget manager could not be loaded: ' + e; });
 </script></body></html>
 "
+  "The page a widget opens in, for `format'.
+Filled in order with the title, the script tags, the modules as JSON,
+the bridge's port, and the widget's token.")
+
+(defun emjupy--widget-page (token port title modules)
+  "Return the page for the widget open as TOKEN, on the bridge at PORT.
+TITLE names it; MODULES maps module names to the files they are in."
+  (format emjupy--widget-page-template
           title
           (mapconcat (lambda (s) (format "<script src=\"%s\"></script>"
                                          (emjupy--widget-script-url s)))
