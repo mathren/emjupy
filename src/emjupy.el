@@ -5,7 +5,7 @@
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 ;; Maintainer: Mathieu Renzo <mrenzo@arizona.edu>
-;; Version: 0.1.19
+;; Version: 0.1.20
 ;; Package-Requires: ((emacs "30.1") (websocket "1.15"))
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
@@ -70,7 +70,7 @@
 
 ;;;; Version
 
-(defconst emjupy-version "0.1.19"
+(defconst emjupy-version "0.1.20"
   "Version of emjupy, kept in step with the Version: header above.")
 
 (defun emjupy--source-directory ()
@@ -104,16 +104,11 @@
 
 ;;;###autoload
 (defun emjupy-version (&optional insert)
-  "Report which emjupy is running, and from where.
-
-Says the version, the directory the code was loaded from and, when that
-is a git checkout, the revision -- so \"am I running the fix?\" has an
-answer that does not depend on remembering how it was installed.
+  "Report version, the directory the code was loaded from and, when that
+is a git checkout, the revision.
 
 In a notebook buffer it also says the kernel's working directory and
-which language server is answering -- the one beside the kernel, or one
-on this machine, which cannot see your own modules when the kernel runs
-elsewhere.
+which language server is answering.
 
 With a prefix argument, INSERT, put the report in the buffer instead of
 the echo area, for pasting into a bug report."

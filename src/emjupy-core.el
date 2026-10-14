@@ -113,8 +113,6 @@ gets a definite answer rather than a local one.")
   ;; what a save checks, so as not to overwrite changes made elsewhere.
   last-modified)
 
-;; --- Lookups ---------------------------------------------------------------
-
 ;;;; Lookups
 
 (defun emjupy--intern-server (base-url token)

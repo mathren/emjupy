@@ -346,10 +346,7 @@ checked: it is false while typing has not been synced.  The invariants:
 
 (defun emjupy-debug-check-invariants ()
   "Report whether this buffer and its cells still agree.
-
-Useful when something looks wrong and it is not clear whether the
-display or the notebook is at fault.  Tests call it after every
-operation."
+Tests call it after every operation."
   (interactive)
   (let ((problems (emjupy--check-invariants)))
     (if problems
@@ -483,8 +480,8 @@ Returns the number of characters inserted."
 
 (defun emjupy--redraw-cells-in-place (old-cells new-cells &optional known-sane)
   "Replace what OLD-CELLS occupy with NEW-CELLS, drawn in their place.
-What inserting and deleting do, for a split or a merge: everything
-outside moves by a known amount, so the undo history is kept.
+Inserting, deleting, merging, splitting cause everything
+outside to move by a known amount, so the undo history is kept.
 OLD-CELLS must be adjacent and in buffer order.  KNOWN-SANE skips the
 overlay check, for callers that have added a cell with no overlay yet.
 Return non-nil when done, nil when the caller should redraw the
@@ -531,13 +528,6 @@ notebook."
 
 (defun emjupy-insert-cell-at (nb index new-cell)
   "Put NEW-CELL into NB at INDEX and draw it without rebuilding the buffer.
-
-A full rebuild costs the undo history, because it moves every position
-in the buffer while undo recording is off and undo entries hold plain
-positions.  Inserting one cell moves only what follows it, and by a
-known amount, so the history can be kept: entries before the insertion
-are untouched, and those after it shift.  See notes_undo.org.
-
 Returns non-nil when it was done incrementally, nil when the caller
 should fall back to a full redraw."
   (emjupy--atomic-redraw nil
@@ -1501,7 +1491,7 @@ next line, outside the code."
 ;;;; Appearance
 
 (defun emjupy--render-markdown-cell (cell)
-  "Re-render CELL, which is markdown, and its math.
+  "Re-render markdown CELL including Latex.
 
 What running a markdown cell means in Jupyter: there is no code in it,
 so the result is the rendered form rather than anything from a kernel."
