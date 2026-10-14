@@ -4,10 +4,10 @@
 
 * Multiple cursors
 
-=multiple-cursors.el= works within a notebook, with one exception: a
-command that redraws the WHOLE notebook moves its fake cursors to the
-start of the buffer, and the next edit lands there instead of at each
-cursor.  Measured with cursors on three lines of one cell:
+=multiple-cursors.el= works in a notebook, except that a command
+redrawing the WHOLE notebook moves its fake cursors to the start of the
+buffer, where the next edit lands.  Measured with cursors on three lines
+of one cell:
 
 | While the cursors are active              | Result                        |
 |-------------------------------------------+-------------------------------|
@@ -17,82 +17,72 @@ cursor.  Measured with cursors on three lines of one cell:
 | a cell's type is changed (=C-c C-t=)      | cursors collapse to the start |
 | =M-x emjupy-re-render=                    | cursors collapse to the start |
 
-Rendering a markdown cell and undoing a structural change also redraw
-the whole notebook, and do the same.
-
-For editing across several cells at once, =C-c '= opens every code cell
-in one Python buffer, where multiple cursors, and every other editing
-tool, work as in any file; =C-c C-c= there writes the changes back.
+Rendering a markdown cell and undoing a structural change redraw the
+whole notebook too.  To edit across cells, =C-c '= opens every code cell
+in one Python buffer, where multiple cursors and every other tool work;
+=C-c C-c= there writes the changes back.
 
 * A kernel that dies mid-cell leaves the cell running
 
-If the kernel dies while a cell runs -- it runs out of memory, or the
-code exits the process -- the server restarts it but sends nothing over
-the notebook's connection to say so, and the cell goes on showing as
-running.  =C-c C-x C-c= reconnects to the new kernel and ends the run;
-the dead kernel's variables are gone.  A connection that drops, by
-contrast, is noticed, and the cells running on it are ended.
+A kernel dying while a cell runs -- out of memory, or the code exiting
+-- is restarted by the server, which tells the notebook's connection
+nothing: the cell goes on showing as running.  =C-c C-x C-c= reconnects
+to the new kernel and ends the run; the dead kernel's variables are gone.
+A dropped connection, by contrast, is noticed, and its cells ended.
 
 * Language features need the language server beside the kernel
 
-For a kernel on another machine, completion of your own code and =M-.=
-into it need =jupyter-lsp= and a language server where the kernel runs.
-See [[file:language-server.org][Language server support]].
+For a kernel elsewhere, completion of and =M-.= into your own code need
+=jupyter-lsp= and a language server where the kernel runs.  See
+[[file:language-server.org][Language server support]].
 
 * Rich output: what is drawn in the buffer
 
-In the buffer emjupy draws plain text, images (PNG, JPEG, GIF, SVG) and
-widget controls.  A figure that draws itself in JavaScript is opened in a
-window of its own (see [[file:usage.org][Interactive output]]).  Everything else is shown by
-its plain-text fallback, which every Jupyter output carries:
+The buffer shows plain text, images (PNG, JPEG, GIF, SVG) and widget
+controls; a figure drawing itself in JavaScript opens in a window of its
+own (see [[file:usage.org][Interactive output]]).  Anything else shows its plain-text
+fallback, which every Jupyter output carries:
 
 - HTML without a script -- a pandas =DataFrame= appears as its text table;
 - Markdown and LaTeX sent through =IPython.display= appear as source.
 
-Images need a graphical Emacs; in a terminal they appear as their text
-fallback too.
+Images need a graphical Emacs; in a terminal they show as text too.
 
 * Widgets that draw themselves open in a page, with two gaps
 
-A widget drawn by JavaScript of its own -- plotly's =FigureWidget=, a map
--- opens in a page in the figure window (see [[file:usage.org][Interactive output]]).  Two
-things do not reach that page: what an =Output= widget inside it
-captures, which is drawn in the notebook instead, and the widget manager
-without a network, unless =emjupy-widget-scripts= names local copies.
+A widget drawn by its own JavaScript -- plotly's =FigureWidget=, a map --
+opens in a page in the figure window (see [[file:usage.org][Interactive output]]).  Not
+reaching it: what an =Output= widget inside it captures, drawn in the
+notebook instead; and, offline, the widget manager, unless
+=emjupy-widget-scripts= names local copies.
 
 * Figures open in a window of their own, not inside Emacs
 
-Showing a figure inside Emacs needs an xwidget, and that needs Emacs
-built with =--with-xwidgets=.  Emacs 30.1 refuses WebKitGTK 2.41.92 or
-newer, and current distributions ship newer (Ubuntu 24.04 has 2.52), so
-there Emacs 30.1 has no xwidgets.  The refusal is still warranted: built
-with the check lifted, against 2.52, Emacs aborts as the figure opens.
-So figures open in a window of their own, outside Emacs.
-=emjupy-figure-viewer= can choose an xwidget, for a build known to work
-with one.
+A figure inside Emacs needs an xwidget, so Emacs built
+=--with-xwidgets=.  Emacs 30.1 refuses WebKitGTK 2.41.92 or newer, which
+current distributions ship (Ubuntu 24.04: 2.52), and rightly: built with
+the check lifted, against 2.52, it aborts as the figure opens.
+=emjupy-figure-viewer= can choose an xwidget, for a build known to work.
 
 * Python only
 
-Execution speaks the Jupyter protocol and does not care which kernel is
-on the other end, so R or Julia kernels may well run.  Nothing else is
-set up for them: cells borrow =python-mode='s syntax and comment
-settings (=emjupy-language-mode= changes that), the shadow document the
-language server reads is a =.py= file, and the language-server settings
-are written for =python-lsp-server=.  None of it has been tried.
+Execution speaks the Jupyter protocol, whatever the kernel, so R or Julia
+may well run.  Nothing else is set up for them, untried: cells borrow
+=python-mode='s syntax and comment settings (=emjupy-language-mode=
+changes that), the language server reads a =.py= shadow document, and
+its settings are written for =python-lsp-server=.
 
 * SSH logins with a password, for a notebook opened through TRAMP
 
-=emjupy-open-this-notebook= on a notebook through TRAMP opens a tunnel
-with ssh itself, with no terminal to type a password into.  It needs a
-login without a prompt -- a key, in an agent if it has a passphrase.
-One that asks for a password fails, and emjupy says why and what to do.
-Handling a password, or reusing TRAMP's own connection for the tunnel,
-is not done yet.
+=emjupy-open-this-notebook= on a notebook through TRAMP runs ssh itself
+for the tunnel, with no terminal for a password: it needs a login
+without a prompt -- a key, in an agent if it has a passphrase.  One
+asking for a password fails, and emjupy says why and what to do.
+Handling a password, or reusing TRAMP's connection, is not done yet.
 
 * Emacs 30.1 or later
 
-Emacs 29 was supported until Eglot's differences there caused bugs that
-could not be seen from 30; see [[file:development.org][Building and development]].
+Emacs 29 is not supported: see [[file:development.org][Building and development]].
 
 * Open issues
 
