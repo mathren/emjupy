@@ -24,6 +24,7 @@ test_notebooks/.ipynb_checkpoints/*
 # templates and the Font Awesome stylesheets are .html and .css files that
 # belong in the tree, and a global rule kept them out of it.
 /html-content/*.html
+/html-content/dependencies.*
 .packages/*
 
 # Written by `make coverage`
