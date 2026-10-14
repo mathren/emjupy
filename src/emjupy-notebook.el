@@ -58,19 +58,14 @@ the prose survives the round trip instead of being dropped."
 (defcustom emjupy-recovery-directory
   (expand-file-name (format "emjupy-recovery-%s/" (user-login-name))
                     temporary-file-directory)
-  "Where notebooks with unsaved changes are copied, until they are saved.
-A copy is written a few seconds after a change, when Emacs is idle, and
-when Emacs quits; it is local, so it is written with the server gone.
-Opening the notebook again offers to restore it.
-
-By default a directory of your own under the variable
-`temporary-file-directory' -- /tmp/emjupy-recovery-USER/ on most systems.
-That is emptied when the machine restarts on many systems, so a copy
-outlives Emacs crashing but not the machine: for one that outlives both,
-choose a directory under `user-emacs-directory', which
-\(locate-user-emacs-file \"emjupy-recovery/\") gives.  Copies
-are only written into a directory you own that is not a symbolic link,
-so another user of a shared /tmp cannot have them written elsewhere."
+  "Where notebooks with unsaved changes are copied, until saved.
+A copy is written a few seconds after a change, when idle, and as Emacs
+quits -- locally, so with the server gone too; reopening the notebook
+offers it.  By default a directory of your own under the variable
+`temporary-file-directory', /tmp/emjupy-recovery-USER/ on most systems,
+often emptied on restart: for copies outliving the machine, use
+\(locate-user-emacs-file \"emjupy-recovery/\").  Copies go only into a
+directory you own that is not a symbolic link."
   :type 'directory
   :group 'emjupy)
 
@@ -190,22 +185,16 @@ silently; only a server with none gets a fresh one."
 ;;;###autoload
 (defun emjupy-login (url &optional token)
   "Connect to the Jupyter server at URL and open one of its notebooks.
-TOKEN, when given, is used instead of prompting.
+TOKEN, when given, is used instead of prompting; with a prefix argument
+the token is always asked for, otherwise only if the server needs one.
 
-URL may be a bare port (\"8888\"), a host:port pair, or a full http(s)
-URL. A bare port means localhost -- the usual case when the server is
-reached through `ssh -L'.
+URL may be a bare port (\"8888\"), host:port, or an http(s) URL; a bare
+port means localhost, as behind `ssh -L'.  emjupy adopts the kernel
+already running behind it, so a notebook opens into that live REPL.
 
-Typical workflow: start a notebook kernel on the remote host, forward
-its port with `ssh -L', then run this on that local port. emjupy adopts
-the kernel already running behind the tunnel, so opening a notebook
-puts you straight into that live REPL. A token is only asked for if the
-server actually needs one.
-
-One port = one kernel: log in once per tunnel and each port keeps its
-own kernel, so several remote sessions can be live in one Emacs. Use
-\\[emjupy-connect-kernel-interactive] to give an individual notebook a
-different kernel. With a prefix argument, always prompt for the token."
+One port, one kernel: log in once per tunnel, and several remote
+sessions stay live.  \\[emjupy-connect-kernel-interactive] gives one
+notebook a different kernel."
   (interactive
    (list (emjupy--read-server-url)
          (when current-prefix-arg (emjupy--read-token "Token: "))))
@@ -567,20 +556,12 @@ point, or descended into the directory there."
       (emjupy-list-refresh))))
 
 (defun emjupy-list-open-file (path)
-  "Open PATH, a file on this server, in the best way available.
-
-PATH is relative to what the server serves.  There are four ways to
-reach it, tried in this order, because they differ in whether the result
-can be edited:
-- through `emjupy-remote-root', when it is set.  That is a path this
-  Emacs can address -- a TRAMP location, or a local directory -- so the
-  file opens normally and can be written back.
-- over TRAMP, when the server's address names a real host.  Editable.
-- as a local file, when the server turns out to be on this machine and
-  the path exists.  Also editable.
-- otherwise through the Contents API, read-only.  Nothing needs
-  configuring for this and it always works, but it is a copy fetched
-  over HTTP and writing it back is a different job from reading it."
+  "Open PATH, a file on this server, the best way available.
+PATH is relative to what the server serves.  Tried in order:
+- through `emjupy-remote-root', when set: editable;
+- over TRAMP, when the server's address names a real host: editable;
+- as a local file, when the server is on this machine: editable;
+- otherwise through the Contents API, a read-only copy over HTTP."
   (let* ((server emjupy-list--server)
          (configured (emjupy--configured-root-for server))
          (tramp-root (and (not configured) (emjupy--tramp-root-for server)))

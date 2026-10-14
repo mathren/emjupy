@@ -35,18 +35,14 @@
 
 (defcustom emjupy-shadow-directory nil
   "Directory holding the Eglot shadow files, or nil for a local temp dir.
-
-Set this to a TRAMP path to run the language server on the machine the
-kernel runs on:
+A TRAMP path runs the language server on that machine, as Eglot starts
+the server its file's directory implies:
 
   (setq emjupy-shadow-directory \"/ssh:user@host:/tmp/emjupy-shadow\")
 
-The shadow file is an ordinary Python file, so Eglot starts whatever
-server that directory implies -- a remote one over TRAMP, a local one
-otherwise.  That matters when the Jupyter server is remote: a local
-language server sees the local environment, not the packages the kernel
-actually has.  It is a setting rather than something inferred, because a
-server reached through `ssh -L' looks like localhost from here."
+For a remote Jupyter server, a local language server sees local packages,
+not the kernel's.  A setting, not inferred: behind `ssh -L' the server
+looks like localhost."
   :type '(choice (const :tag "Local temporary directory" nil)
                  (directory :tag "Directory (may be a TRAMP path)"))
   :group 'emjupy)
@@ -67,45 +63,30 @@ completion and eldoc paths, once per keystroke."
   :group 'emjupy)
 
 (defcustom emjupy-shadow-host nil
-  "TRAMP prefix for reaching the machine the kernel runs on, or nil.
-
-Only needed when the kernel is NOT on this machine.  emjupy asks the
-kernel where the notebook lives and gets back an absolute path on ITS
-filesystem -- =/srv/nb/sub= say.  That path means nothing here: Emacs
-would read it as a local one and write the shadow file into whatever
-=/srv/nb/sub= happens to be on your own disk.  So a kernel-reported
-directory is used only when emjupy can actually address it:
+  "TRAMP prefix reaching the machine the kernel runs on, or nil.
+Needed only for a kernel elsewhere: the directory it reports, say
+`/srv/nb/sub', names a path on ITS machine, which here would be a local
+one.  So it is used only when addressable:
 
   (setq emjupy-shadow-host \"/ssh:box:\")
 
-giving =/ssh:box:/srv/nb/sub=, where Eglot starts the language server on
-=box= and sees the environment the kernel really runs in.
-
-Unset, with a remote kernel, emjupy falls back to a local temp directory
-rather than guess: `xref-find-definitions' will not find your own
-modules, but nothing is written to a wrong path."
+gives `/ssh:box:/srv/nb/sub', where Eglot starts the language server on
+`box', in the kernel's environment.  Unset, a remote kernel's shadow
+goes to a local temporary directory: \\[xref-find-definitions] misses
+your own modules, but nothing is written to a wrong path."
   :type '(choice (const :tag "Kernel runs on this machine" nil)
                  (string :tag "TRAMP prefix, e.g. /ssh:box:"))
   :group 'emjupy)
 
 (defcustom emjupy-shadow-beside-notebook t
   "When non-nil, keep the shadow file in the notebook's own directory.
-
-This is what makes \\[xref-find-definitions] work on your own modules.
-A language server resolves `import mylib' relative to the directory of
-the file it is reading, so a shadow file parked in a temp directory
-cannot see the .py sitting next to the notebook, and every such lookup
-answers \"No definition found\".
-
-The directory is worked out from `emjupy-remote-root', which maps a
-server to where its files actually live.  Without that mapping there is
-nothing to derive -- a tunnelled server looks like localhost -- so the
-temp directory is used and this quietly has no effect.
-
-It also has no effect when the shadow has to stay on this machine and
-the notebook is on another: \"beside\" would then name a LOCAL directory
-after a REMOTE path, and emjupy would create it here.  The WebSocket
-transport does not read the file anyway."
+A language server resolves `import mylib' against the file's directory,
+so this is what lets \\[xref-find-definitions] reach the modules beside
+the notebook.  The directory is the kernel's working directory, or
+`emjupy-remote-root''s; a remote one is used only through
+`emjupy-shadow-host'.  No effect when the shadow must stay on this
+machine and the notebook is on another: \"beside\" would make a local
+directory named after a remote path."
   :type 'boolean
   :group 'emjupy)
 
