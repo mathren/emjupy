@@ -238,8 +238,8 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
 
 (defun emjupy--line-numbers-toggled ()
   "Redraw the rules after line numbers are turned on or off.
-The number column takes width from the page, so the rules were drawn
-too wide for it, and wrapped."
+The number column takes width from the page: rules drawn for the old
+width would wrap."
   (when emjupy--buffer-notebook
     (emjupy--refresh-box-rules t)))
 
@@ -1051,8 +1051,8 @@ attribute them to source that never produced them."
   "Merge the cell at point into the one above it.
 
 The two sources are joined with a newline between them, the upper cell
-absorbs the lower, and point lands at the seam -- where the second cell
-used to begin.
+absorbs the lower, and point lands at the seam, where the second cell
+began.
 
 The output of BOTH cells is discarded, along with their execution
 counts.
@@ -1250,8 +1250,8 @@ outputs until you save."
         (let* ((idx (cl-position curr-cell cells))
                (remaining (remq curr-cell cells))
                ;; The cell that slides up into the deleted one's place, or the
-               ;; last one if it was at the end.  Leaving point at the end of
-               ;; the notebook, as it used to, loses your place entirely.
+               ;; last one if it was at the end: point at the notebook's end
+               ;; would lose your place.
                (next (and remaining
                           (nth (min idx (1- (length remaining))) remaining))))
           (unless ;; undoing the delete puts this exact text back, so

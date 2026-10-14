@@ -483,10 +483,9 @@ each distinct picture is drawn once.
 
 The rule tested is emjupy's, not the kernel's: whether the two copies
 are byte-identical depends on matplotlib, matplotlib-inline and the
-user's IPython configuration.  An earlier version asserted that they
-were, and so failed wherever they were not -- when two different
-pictures correctly draw as two.  Now the payloads are compared first, a
-run with no real duplicate is skipped as having nothing to test, and
+user's IPython configuration, and two different pictures rightly draw
+as two.  So the payloads are compared first, a run with no real
+duplicate is skipped as having nothing to test, and
 what is asserted is that every distinct picture appears exactly once."
   (emjupy-int--with-live-kernel
    (let* ((cell (emjupy-int--run
@@ -971,10 +970,10 @@ in the notebook buffer rather than in the shadow file."
 
 Connecting is not enough.  Eglot decides which buffers a server manages
 through hooks tied to the project a buffer belongs to, and a shadow
-buffer in a transient project is not always recognised -- on Emacs 30
-the connection succeeded and the buffer was left unmanaged, so every
-request fell through to a language server started on the local machine,
-which answers about the wrong files.
+buffer in a transient project is not always recognised: on Emacs 30 the
+connection can succeed with the buffer unmanaged, every request then
+falling through to a local language server, which answers about the
+wrong files.
 
 The class of the attached server is what is asserted, not merely that
 one is attached: a local server is still a server, and that is exactly
@@ -1941,10 +1940,9 @@ kernel it took no input and answered no request for it."
 (ert-deftest emjupy-int-output-survives-a-dropped-connection ()
   "A cell running when the connection drops keeps all its output.
 The server keeps a session's messages while its connection is down and
-replays them when the same session connects again.  emjupy connected
-under a new session each time, and ended the cells at the drop, so what
-the cell printed after it was lost.  Now the cells are kept, emjupy
-reconnects on its own under the same session, and the output arrives."
+replays them when the same session connects again: emjupy keeps the
+cells, reconnects on its own under the same session, and the output
+arrives."
   (emjupy-int--with-live-kernel
    (with-current-buffer emjupy-int--buffer
      (let* ((emjupy-reconnect-window 30)
@@ -1976,8 +1974,8 @@ reconnects on its own under the same session, and the output arrives."
 
 (ert-deftest emjupy-int-nested-tqdm-leaves-one-bar ()
   "Nested tqdm bars end as a terminal shows them: one finished outer bar.
-The inner bar, leave=False, is cleared each time; it used to leave a
-stale copy behind for every pass of the outer loop."
+The inner bar, leave=False, is cleared each pass, leaving no stale copy
+behind."
   (emjupy-int--with-live-kernel
    (let ((cell (emjupy-int--run "from tqdm import tqdm\nimport time
 for i in tqdm(range(3), desc='outer', ncols=60):

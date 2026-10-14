@@ -325,7 +325,7 @@ Returns the notebook buffer."
   (let* ((server (or server (emjupy--server)))
          (open (get-buffer (emjupy--notebook-buffer-name path server))))
     ;; Already open with unsaved changes: show it as it is.  Fetching it
-    ;; again replaced its cells with the server's, and the changes were lost.
+    ;; again would replace its cells with the server's, losing the changes.
     (if (and open (buffer-live-p open)
              (with-current-buffer open (buffer-modified-p)))
         (progn (switch-to-buffer open)
@@ -1517,8 +1517,8 @@ Each a plist of :key, naming the route and the remote port; :process;
 (defun emjupy--tramp-chain (file)
   "Return the machines on TRAMP's way to FILE, its own machine last.
 Asked of TRAMP, not read from FILE's name: once TRAMP has gone through a
-hop it names the file without it, and remembers the way -- read from the
-name, the hop, the bastion, was lost."
+hop it names the file without it, and remembers the way: read from the
+name, the hop -- the bastion -- would be lost."
   (tramp-compute-multi-hops (tramp-dissect-file-name file)))
 
 (defun emjupy--tramp-address (v &optional for-ssh)

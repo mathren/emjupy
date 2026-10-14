@@ -146,9 +146,8 @@ whether anything was left in the pending table."
 (ert-deftest emjupy-fuzz-message-order-does-not-matter ()
   "Wherever the replies fall among the outputs, every cell ends the same.
 
-The protocol orders each channel but not one against the other.  The
-dropped-output bug was one such order -- an output after its reply --
-found by chance on a slow machine.  This tries many at random, for
+The protocol orders each channel but not one against the other: an
+output can come after its reply.  This tries many orders at random, for
 several requests in flight, against the order with every reply last."
   (emjupy-fuzz-cases i (emjupy-fuzz-iterations 200)
     (let* ((requests (emjupy-fuzz--requests (1+ (random 3))))
@@ -399,8 +398,8 @@ into them, then serialised."
 Through the structs and through a drawn buffer, saving twice gives the
 same bytes as saving once, and -- where nbformat is available -- the
 saved copy validates and holds every cell, source, output, metadata and
-attachment the original held.  The corpus found that attachments, the
-images pasted into markdown cells, were dropped on save."
+attachment the original held -- attachments too, the images pasted into
+markdown cells."
   (let ((files (directory-files emjupy-fuzz--corpus t "\\.ipynb\\'"))
         (validate (emjupy-fuzz--nbformat-p)))
     (should (> (length files) 5))
@@ -511,8 +510,8 @@ They catch `json-error' now.  A reply that deep reaches callers as the
 
 The path is sent as part of the URL, where a space or an accented letter
 must be percent-encoded, and \"..\" must be sent as written, not
-resolved here.  \"#\" and \"?\" were not encoded, so a notebook named
-a#b.ipynb was asked for as \"a\", and saved there."
+resolved here.  \"#\" and \"?\" are encoded: unencoded, a notebook named
+a#b.ipynb would be asked for, and saved, as \"a\"."
   (let ((server (make-emjupy-server :base-url "127.0.0.1:9" :token ""))
         (seen nil))
     (cl-letf (((symbol-function 'url-retrieve-synchronously)

@@ -413,9 +413,8 @@ leaving output on the buffer's normal background."
   "The buffer background is left completely alone, and a cell with no
 output carries no background overlay at all.
 
-An earlier design remapped `default' to a canvas colour and painted
-cells back on top; that inverted the instant anything was wrong with
-the cell colour, and it did."
+Remapping `default' to a canvas colour, with cells painted back on top,
+would invert the whole buffer the moment a cell colour was wrong."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -485,8 +484,8 @@ and takes the band with it."
 (ert-deftest emjupy-test-typing-does-not-inherit-neighbouring-face ()
   "Text typed straight after a keyword must not pick up its face.
 `self-insert-command' inherits sticky properties from the character
-before point, so a plain word typed after `import' came out keyword
-coloured."
+before point, so a plain word typed after `import' would come out
+keyword coloured."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "import os"
                                 :outputs [] :metadata (make-hash-table))))
@@ -546,9 +545,9 @@ overrides the faces on tracebacks and rich output."
                             :outputs [] :metadata (make-hash-table))))
 
 (ert-deftest emjupy-test-rerender-is-not-recorded-in-undo ()
-  "Re-rendering erases and rebuilds the whole buffer.  Recording that as
-an undoable change used to push ~20 entries onto the list, and undoing
-one of them tore the notebook apart."
+  "Re-rendering erases and rebuilds the whole buffer.  Recorded as an
+undoable change, it would push ~20 entries, undoing one of which tears
+the notebook apart."
   (let ((cells (emjupy-test--three-cell-notebook)))
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
@@ -558,7 +557,7 @@ one of them tore the notebook apart."
 
 (ert-deftest emjupy-test-undo-from-another-cell-does-not-scramble ()
   "Undo invoked with point in a different cell must never damage the
-notebook.  It used to delete every cell after the one being edited."
+notebook -- such as deleting every cell after the one being edited."
   (let ((cells (emjupy-test--three-cell-notebook)))
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
@@ -2129,9 +2128,8 @@ past the outline and across the rest of the frame."
                 (while (< (point) (overlay-end ov))
                   (when (get-text-property (point) 'emjupy-pad)
                     (setq pads (1+ pads))
-                    ;; every pad reaches the rule exactly -- not one short,
-                    ;; which combined with a faced newline used to leave the
-                    ;; band sticking out past the border
+                    ;; every pad reaches the rule exactly: one short, with a
+                    ;; faced newline, would leave the band past the border
                     (should (= (plist-get
                                 (cdr (get-text-property (point) 'display))
                                 :align-to)
@@ -3287,8 +3285,7 @@ functions answered \"No definition found\"."
 
 Jupyter starts a session's kernel in the notebook's own directory, so
 `open(\"data.csv\")' in a cell means what it means in Jupyter.  Posting
-to /api/kernels directly, as emjupy used to, leaves the kernel in the
-server root."
+to /api/kernels directly would leave the kernel in the server root."
   (let ((calls nil))
     (cl-letf (((symbol-function 'emjupy--http-request)
                (lambda (method _s path &optional body &rest _)
@@ -3728,10 +3725,8 @@ the notebook.  Nothing here ever opens it."
 (ert-deftest emjupy-test-shadow-is-built-for-eglot-either-way ()
   "The shadow buffer is what Eglot manages, on either transport.
 
-It used to be skipped when the WebSocket client was live, because that
-client answered requests itself and the shadow only meant TRAMP.  Now
-Eglot rides the WebSocket, so the shadow is simply the buffer it
-attaches to -- local, and built whichever server is underneath."
+Eglot rides the WebSocket too, so the shadow is the buffer it attaches
+to -- local, and built whichever server is underneath."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -3833,15 +3828,13 @@ SIZE of the output instead of the number of lines in it."
 (ert-deftest emjupy-test-eldoc-never-blocks ()
   "Asking the language server must not hold the editor.
 
-eldoc runs after EVERY command.  A blocking wait there costs the full
-request timeout per cursor movement whenever the server is slow or
-silent -- measured at ten seconds a move before this was made
-asynchronous, which is indistinguishable from a hang.
+eldoc runs after EVERY command: a blocking wait there costs the full
+request timeout per cursor movement while the server is slow or silent,
+indistinguishable from a hang.
 
 The request is asserted to have been SENT, not only to have returned
-quickly.  An earlier version of this test called a function that no
-longer existed, inside `ignore-errors', so it failed at once and the
-timing passed without anything having been asked."
+quickly: a call failing at once would pass the timing having asked
+nothing."
   :tags '(:timing)
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "os.pa"
@@ -4147,8 +4140,7 @@ switch, so M-. went through the shadow buffer and started a server."
                                       said) t)))))))))
 
 (ert-deftest emjupy-test-start-language-support-by-hand-says-when-it-is-off ()
-  "`M-x emjupy-start-language-support' in a notebook with the switch off says so.
-It did nothing, and said nothing."
+  "`M-x emjupy-start-language-support' in a notebook with the switch off says so."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -4253,9 +4245,9 @@ their cells just as the source overlays are."
   "Re-opening a notebook into its existing buffer leaves no stray borders.
 
 Re-opening reuses the buffer but parses fresh cell structs, so the
-previous structs' overlays become unreachable.  The open path used to
-erase the text without deleting them, and an overlay collapsed to zero
-width still draws its rule -- which is the stack of borders at the top
+previous structs' overlays become unreachable.  Erasing the text without
+deleting them would leave each collapsed to zero width, still drawing its
+rule -- which is the stack of borders at the top
 of a notebook opened again, the case that happens when the notebook was
 left running on the server.
 
@@ -5217,9 +5209,8 @@ installing something already installed and about to be used."
 (ert-deftest emjupy-test-diagnose-reads-the-attached-server ()
   "The report describes the server Eglot has attached, not a stale slot.
 
-It read a field filled in by an earlier hand-written client.  When that
-client was replaced the field stayed empty, so the report said the
-socket had never opened however well the socket was working."
+A slot of its own could go stale, and say the socket never opened however
+well it works."
   (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                 :source "x = 1"
                                 :outputs [] :metadata (make-hash-table))))
@@ -7366,11 +7357,9 @@ ORDER is a list of `result', `reply' and `idle'."
   "An output that arrives after execute_reply still reaches its cell.
 
 Outputs come on the iopub channel and the reply on the shell channel,
-and the protocol does not order them against each other.  The request
-used to be forgotten on the reply, so a result arriving afterwards found
-nothing waiting and was dropped.  This is the order a slow CI runner
-produced: the integration test for a bare expression saw no
-execute_result at all."
+and the protocol does not order them against each other.  Forgotten on
+the reply, the request would leave a result arriving afterwards nothing
+to go to, and it would be dropped -- the order a slow machine produces."
   (pcase-let ((`(,cell ,kernel ,id)
                (emjupy-test--feed-in-order '(reply result idle))))
     (should (= (length (emjupy-cell-outputs cell)) 1))
@@ -7628,9 +7617,8 @@ command that edits nothing."
 (ert-deftest emjupy-test-caret-goes-up-wherever-point-is ()
   "\\`^' in the server listing shows the parent directory, from any row.
 
-It used to run the same command as RET, which goes up only from the
-\"..\" row: on a notebook it opened the notebook, and on a folder it went
-down into it."
+Not RET's command, which goes up only from the \"..\" row, opening a
+notebook or going down into a folder elsewhere."
   (should (eq (lookup-key emjupy-list-mode-map (kbd "^")) #'emjupy-list-up))
   (with-temp-buffer
     (emjupy-list-mode)
@@ -7654,10 +7642,10 @@ down into it."
   "The shadow file is the only thing written beside the notebook.
 
 It is a generated copy of the cells: no lock file, no auto-save file.
-Setting its coding system marked the buffer modified, and Emacs takes a
-lock on the first modification -- which happened before locking was
-turned off, so a `.#' file, and in a graphical session an auto-save
-`#...#' one, were left in the user's project directory."
+Setting its coding system marks the buffer modified, and Emacs locks on
+the first modification: done before locking is off, it would leave a
+`.#' file, and in a graphical session an auto-save `#...#' one, in the
+user's project directory."
   (let* ((dir (make-temp-file "emjupy-shadow-dir" t))
          (emjupy-lsp-enabled nil)
          (c (emjupy-test--cell-like 'code "x = 1")))
@@ -7709,9 +7697,8 @@ say whether the math is inline or display, and are kept for that."
 (ert-deftest emjupy-test-inserting-a-cell-is-undone-and-redone ()
   "Undo takes back an inserted cell, and redo puts it back.
 
-The insertion was drawn with undo recording off and recorded as nothing,
-so undo skipped it and took back the edit before, leaving the new cell
-in place.  Found by the undo fuzz."
+Drawn with undo recording off, the insertion would record nothing, and
+undo would take back the edit before, leaving the new cell in place."
   (dolist (cmd (list #'emjupy-insert-cell-below #'emjupy-insert-cell-above))
     (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
                          (emjupy-test--cell-like 'code "b = 2"))))
@@ -7741,7 +7728,7 @@ back.  The change hook, there to re-highlight what the user types, took
 the next cell to be the one edited and re-highlighted its region --
 now the reshown output -- as code: keywords coloured, and the output's
 background gone where they were.  emjupy's own drawing is not an edit
-to re-highlight, and no longer runs the hook."
+to re-highlight, and does not run the hook."
   (dolist (how '(command click))
     (let* ((out (let ((o (make-hash-table :test 'equal)))
                   (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
@@ -8407,12 +8394,12 @@ link to elsewhere; then no copy is written there."
 
 (ert-deftest emjupy-test-redraw-in-a-window-not-selected-keeps-its-place ()
   "A notebook redrawn while shown in a window other than the selected one stays whole.
-Measuring that window for the line numbers selected it, and selecting a
-window moves its buffer's point to the window's.  Midway through a
-redraw that is a stale position near the top, so every cell after the
-first was drawn there, on top of the one before: the notebook came out
-backwards, cells overlapping and text lost.  Opening and closing other
-buffers is what leaves a notebook in a window not selected."
+Measuring that window for the line numbers selects it, moving its
+buffer's point to the window's: midway through a redraw a stale position
+near the top, where every later cell would be drawn on top of the one
+before, the notebook backwards, cells overlapping and text lost.
+Opening and closing other buffers leaves a notebook in a window not
+selected."
   (let ((cells (vector (make-emjupy-cell :id (emjupy--new-cell-id)
                                          :type 'markdown
                                          :source "# Title\n\nSome prose."
@@ -8578,7 +8565,7 @@ through TRAMP, where the tunnel is not."
 (ert-deftest emjupy-test-remote-names-are-not-asked-for-their-true-name ()
   "A remote file's true name is not asked of the other machine.
 `file-truename' on a TRAMP name asks the remote machine, per link it
-follows, and it was asked twice for each item a search returned."
+follows -- twice for each item a search returns."
   (cl-letf (((symbol-function 'file-truename)
              (lambda (f) (if (file-remote-p f)
                              (error "Asked the remote machine for %s" f) f))))
