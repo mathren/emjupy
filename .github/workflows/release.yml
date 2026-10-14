@@ -34,6 +34,22 @@ jobs:
       - name: Fetch websocket.el
         run: git clone --depth 1 https://github.com/ahyatt/emacs-websocket.git "$RUNNER_TEMP/websocket"
 
+      # The package as MELPA will check it: no release goes out unless both
+      # checkdoc and package-lint pass.
+      - name: Install package-lint
+        run: |
+          emacs -batch -Q --eval "(progn \
+            (require 'package) \
+            (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t) \
+            (package-initialize) \
+            (package-refresh-contents) \
+            (package-install 'package-lint))"
+
+      - name: checkdoc and package-lint
+        env:
+          EMJUPY_WEBSOCKET_DIR: ${{ runner.temp }}/websocket
+        run: make lint
+
       - name: Check tag matches the package version
         run: make check-version TAG="${GITHUB_REF_NAME}"
 

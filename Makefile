@@ -9,7 +9,7 @@
 #   make compile   byte-compile everything (warnings are errors-ish: read them)
 #   make test      unit tests only (no server needed)
 #   make check     unit + integration tests (needs a live Jupyter server)
-#   make lint      checkdoc and, if installed, package-lint
+#   make lint      checkdoc and package-lint, both required
 #   make docs      export docs/*.org to docs/html/
 #   make versions  which Emacs this is, against the one we target
 #   make package   build emjupy-VERSION.tar
@@ -46,7 +46,7 @@ SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
 # the release tarball and a MELPA install describe themselves alike.
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el $(SRC)/emjupy-figure-window.py
 
-.PHONY: all compile test check lint docs dependency-graph coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
+.PHONY: all compile test check lint checkdoc package-lint docs dependency-graph coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
 
 all: compile
 
@@ -111,8 +111,22 @@ print-package-files:
 recipe-check:
 	@tools/check-recipe.sh $(EMACS)
 
-lint:
-	cd $(SRC) && $(EMACS) -batch -Q -L . $(if $(WEBSOCKET),-L $(abspath $(WEBSOCKET)),) -l lint.el
+# The .el files the package ships, as named in the source directory.
+LINT_FILES = $(notdir $(SOURCES))
+
+lint: checkdoc package-lint
+
+checkdoc:
+	cd $(SRC) && $(EMACS) -batch -Q -L . $(if $(WEBSOCKET),-L $(abspath $(WEBSOCKET)),) \
+	  -l ../tools/checkdoc.el $(LINT_FILES)
+
+# package-lint as MELPA runs it, warnings failing too.  It has to be
+# installed -- from MELPA, or PACKAGE_LINT_DIR naming a checkout -- and an
+# archive must list the dependencies: without either, this fails.
+package-lint:
+	cd $(SRC) && $(EMACS) -batch -Q \
+	  $(if $(PACKAGE_LINT_DIR),-L $(abspath $(PACKAGE_LINT_DIR)),) \
+	  -l ../tools/lint-package.el $(LINT_FILES)
 
 # Called by the release workflow, which passes the tag being released.
 # Three things have to agree or a release ships claiming to be a version

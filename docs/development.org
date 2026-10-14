@@ -194,7 +194,7 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
 | =make compile=       | byte-compile the sources, with =src/= first on the load path                  |
 | =make test=          | the unit tests; integration tests skip without a server                       |
 | =make check=         | unit and integration tests; refuses to run without a server                   |
-| =make lint=          | checkdoc, and package-lint if it is installed                                 |
+| =make lint=          | checkdoc and package-lint, both required: =make checkdoc=, =make package-lint= |
 | =make docs=          | export =docs/*.org= to the site in =html-content/=                            |
 | =make package=       | build =emjupy-VERSION.tar=                                                    |
 | =make install=       | install that tar via =package-install-file=                                   |
@@ -251,9 +251,11 @@ typo does not cost a server start-up.
   #+begin_src bash
   pip install jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]'
   #+end_src
-- For =make lint= to run package-lint as well as checkdoc,
-  =M-x package-install RET package-lint=.  Without it the target says so
-  and checks the rest.
+- For =make lint=, package-lint: =M-x package-install RET package-lint=,
+  or =PACKAGE_LINT_DIR= naming a checkout of it.  =make lint= fails
+  without it, and without an archive listing the dependencies -- MELPA,
+  or the one =EMJUPY_PACKAGE_ARCHIVE= names -- since package-lint checks
+  they are installable.  It runs as MELPA runs it, warnings failing too.
 - For melpazoid, a clone and Docker -- melpazoid runs inside a container,
   which is what makes its result match MELPA's:
   #+begin_src bash
@@ -339,7 +341,7 @@ the INSTALLED copy, and a module added since then is not found at all --
 to the front of =load-path=, or uninstall the package while working on
 it.
 
-=emjupy-run-tests.el=, =lint.el=, =emjupy-pkg.el= and =publish.el= are not
+=emjupy-run-tests.el=, =emjupy-pkg.el= and =publish.el= are not
 compiled at all -- each says =no-byte-compile= -- because they are scripts
 and metadata rather than code to load.  =publish.el= matters most:
 package-vc compiles everything in a checkout, so without it an install
