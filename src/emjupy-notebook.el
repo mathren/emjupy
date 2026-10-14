@@ -561,7 +561,7 @@ point, or descended into the directory there."
          (id (plist-get row :id)))
     (unless (eq (plist-get row :kind) 'kernel)
       (user-error "Not a kernel"))
-    (when (yes-or-no-p (format "Shut down kernel %s? " id))
+    (when (y-or-n-p (format "Shut down kernel %s? " id))
       (emjupy--http-request "DELETE" emjupy-list--server
                             (format "/api/kernels/%s" id))
       (emjupy-list-refresh))))
@@ -667,7 +667,7 @@ first act would always be to add one."
                (emjupy--new-notebook-json
                 (vector (emjupy--blank-code-cell-json))))))
     (when (and (emjupy--http-exists-p server path)
-               (not (yes-or-no-p
+               (not (y-or-n-p
                      (format "%s already exists.  Overwrite it? " path))))
       (user-error "Not overwriting %s" path))
     (emjupy--http-request "PUT" server (emjupy--contents-path path)
@@ -699,7 +699,7 @@ first act would always be to add one."
          (ids (cl-loop for k across kernels collect (gethash "id" k))))
     (cond
      ((null ids) (message "[emjupy] No kernels running."))
-     ((yes-or-no-p (format "Shut down all %d kernel(s)? " (length ids)))
+     ((y-or-n-p (format "Shut down all %d kernel(s)? " (length ids)))
       (dolist (id ids)
         (condition-case err
             (emjupy--http-request "DELETE" server (format "/api/kernels/%s" id))
@@ -806,7 +806,7 @@ file name works there, if you would rather push it somewhere else."
                                     (file-name-nondirectory
                                      (emjupy--export-default-name nb)))))
           (when (or (not (file-exists-p file))
-                    (yes-or-no-p (format "%s exists.  Overwrite it? " file)))
+                    (y-or-n-p (format "%s exists.  Overwrite it? " file)))
             (let ((coding-system-for-write 'utf-8-unix))
               (write-region content nil file))
             (message "[emjupy] Exported to %s" file)
@@ -821,7 +821,7 @@ file name works there, if you would rather push it somewhere else."
         ;; A 404 is "not there"; any other failure is not an answer, and
         ;; is raised -- taking it for "not there" overwrote without asking.
         (when (and (emjupy--http-exists-p server path)
-                   (not (yes-or-no-p (format "%s exists on %s.  Overwrite it? "
+                   (not (y-or-n-p (format "%s exists on %s.  Overwrite it? "
                                              path
                                              (emjupy--server-label server)))))
           (user-error "Not overwriting %s" path))
@@ -1113,7 +1113,7 @@ JupyterLab, or by someone else -- ask before overwriting it."
     (condition-case err
         (emjupy--save-to-server nb)
       (emjupy-save-conflict
-       (if (yes-or-no-p (format "%s changed on the server since it was opened here (%s).  Overwrite it? "
+       (if (y-or-n-p (format "%s changed on the server since it was opened here (%s).  Overwrite it? "
                                 path (nth 2 err)))
            (emjupy--save-to-server nb t)
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))

@@ -1047,7 +1047,7 @@ Other open notebooks, and their kernels, are untouched."
     ;; Ask first: a restart throws away every variable in the session, and
     ;; there is no undo for that.  C-c C-x C-r is one slip from C-c C-x C-c,
     ;; which merely reconnects.
-    (unless (yes-or-no-p
+    (unless (y-or-n-p
              (format "Restart the kernel for %s -- all variables will be lost?"
                      (emjupy-notebook-path nb)))
       (user-error "Kernel left running"))

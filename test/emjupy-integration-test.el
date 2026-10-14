@@ -714,7 +714,7 @@ kernel -- and its interpreter state -- untouched."
           (emjupy-int--run-in a "KEEP_A = 1")
           (emjupy-int--run-in b "KEEP_B = 2")
           (with-current-buffer b
-            (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+            (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
               (emjupy-restart-kernel))
             (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))
           ;; and wait until it will actually run something

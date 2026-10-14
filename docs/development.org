@@ -179,6 +179,7 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
 - =;;;###autoload= on the commands that make sense before emjupy is
   loaded -- logging in, listing, opening, creating, the menu -- and on
   nothing else.
+- A question takes =y-or-n-p=: one key, =y= or =n=, to answer.
 - Every file in sections: its user options first, under =;;;; Options=,
   then a =;;;;= heading for each part.  Messages start =[emjupy]=.
 - Lines of 80 columns at most.  A call too long for one line breaks

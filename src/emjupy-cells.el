@@ -1156,7 +1156,7 @@ The prompt names the outputs and the execution count that made them."
   (or (not emjupy-confirm-clear-output)
       (let* ((n (length (or (emjupy-cell-outputs cell) [])))
              (count (emjupy-cell-exec-count cell)))
-        (yes-or-no-p (format "Clear %d output%s%s? "
+        (y-or-n-p (format "Clear %d output%s%s? "
                              n (if (= n 1) "" "s")
                              (if count (format " from [%s]" count) ""))))))
 
@@ -1211,7 +1211,7 @@ outputs until you save."
         (cond
          ((zerop with-output)
           (message "[emjupy] No cell has any output."))
-         ((not (yes-or-no-p (format "Clear the output of %d cell%s? "
+         ((not (y-or-n-p (format "Clear the output of %d cell%s? "
                                     with-output (if (= with-output 1) "" "s"))))
           (message "[emjupy] Left them alone."))
          (t

@@ -194,8 +194,7 @@ several requests in flight, against the order with every reply last."
   "Perform edit OP in notebook NB, shown in BUF, as a command would."
   (let ((cell (emjupy-fuzz--goto-random-cell nb))
         (n (length (emjupy-notebook-cells nb))))
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
       ;; A command that declines -- nothing to hide, no cell above to join
       ;; -- says so with `user-error', and that is a correct answer.
       (let ((emjupy-confirm-clear-output nil))

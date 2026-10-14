@@ -1086,7 +1086,7 @@ pending requests."
                    (lambda (notebook kernel-id &optional name)
                      (setq reconnected-with (list notebook kernel-id name))))
                   ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) nil)))
-          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
             (emjupy-restart-kernel)))
         (should (string-match-p "kernel-abc" restart-path))
         (should (equal (nth 1 reconnected-with) "kernel-abc"))
@@ -2616,13 +2616,13 @@ produce, so it asks -- and declining changes nothing."
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
         ;; declined
-        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
           (emjupy-clear-all-outputs))
         (should (= (cl-loop for c across cells sum
                             (length (emjupy-cell-outputs c))) 2))
         (should (string-match-p "out" (buffer-string)))
         ;; accepted
-        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
           (emjupy-clear-all-outputs))
         (should (= (cl-loop for c across cells sum
                             (length (emjupy-cell-outputs c))) 0))
@@ -2895,7 +2895,7 @@ makes it work for a remote kernel with no TRAMP and no configuration."
           (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
                     ((symbol-function 'emjupy--http-exists-p)
                      (lambda (&rest _) t))
-                    ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                    ((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
                     ((symbol-function 'emjupy--http-request)
                      (lambda (&rest _) (error "should not have written"))))
             (should-error (emjupy-export-py) :type 'user-error)))))))
@@ -2943,7 +2943,7 @@ undo, so it asks -- and declining leaves the kernel alone."
       (with-current-buffer buf
         (setf (emjupy-notebook-kernel emjupy--buffer-notebook)
               (make-emjupy-kernel :id "k1" :name "python3"))
-        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
                   ((symbol-function 'emjupy--http-request)
                    (lambda (&rest _) (setq posted t))))
           (should-error (emjupy-restart-kernel) :type 'user-error))
@@ -3689,9 +3689,7 @@ would prompt every time the path changed."
             (when (buffer-live-p shadow)
               ;; make it dirty, as ordinary use does
               (with-current-buffer shadow (insert "\n# edited"))
-              (cl-letf (((symbol-function 'yes-or-no-p)
-                         (lambda (&rest _) (setq asked t) t))
-                        ((symbol-function 'y-or-n-p)
+              (cl-letf (((symbol-function 'y-or-n-p)
                          (lambda (&rest _) (setq asked t) t)))
                 (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook)
                       later)
@@ -6594,8 +6592,7 @@ different cell; afterwards the typing must still be undoable."
                                      (1- (length (emjupy-notebook-cells nb))))))
                 (when (overlayp (emjupy-cell-overlay elsewhere))
                   (goto-char (overlay-start (emjupy-cell-overlay elsewhere)))))
-              (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-                        ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+              (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
                         ((symbol-function 'read-string) (lambda (&rest _) "x"))
                         ((symbol-function 'completing-read) (lambda (&rest _)
                                                               "x")))
@@ -6715,7 +6712,6 @@ Returns t, or a string saying what went wrong."
                   ;; declined does nothing, and a guard it cannot reach is
                   ;; no guard at all.
                   ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
-                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
                   ((symbol-function 'read-file-name) (lambda (&rest _)
                                                        "/tmp/emjupy-guard"))
                   ((symbol-function 'message) #'ignore))
@@ -6786,7 +6782,7 @@ asked to produce it again for nothing."
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
         ;; answered no: the output stays
         (let ((asked nil))
-          (cl-letf (((symbol-function 'yes-or-no-p)
+          (cl-letf (((symbol-function 'y-or-n-p)
                      (lambda (prompt) (setq asked prompt) nil)))
             (emjupy-clear-cell-output))
           (should asked)
@@ -6795,7 +6791,7 @@ asked to produce it again for nothing."
           (should (string-match-p "\\[4\\]" asked))
           (should (= (length (emjupy-cell-outputs cell)) 1)))
         ;; answered yes: it goes
-        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
           (emjupy-clear-cell-output))
         (should (= (length (emjupy-cell-outputs cell)) 0))))))
 
@@ -6809,7 +6805,7 @@ asked to produce it again for nothing."
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
         (let ((emjupy-confirm-clear-output nil)
               (asked nil))
-          (cl-letf (((symbol-function 'yes-or-no-p)
+          (cl-letf (((symbol-function 'y-or-n-p)
                      (lambda (&rest _) (setq asked t) t)))
             (emjupy-clear-cell-output))
           (should-not asked)
@@ -6946,7 +6942,7 @@ inside the region being replaced."
         (undo-boundary)
         (goto-char (overlay-start (emjupy-cell-overlay
                                    (aref (emjupy-notebook-cells nb) 1))))
-        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
                   ((symbol-function 'message) #'ignore))
           (ignore-errors (call-interactively command)))
         (goto-char (point-min))
@@ -8093,7 +8089,7 @@ does not exist, so the export overwrote it without asking.  Now a 404 is
             (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
             (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
             (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
-                      ((symbol-function 'yes-or-no-p)
+                      ((symbol-function 'y-or-n-p)
                        (lambda (&rest _)
                          (error "Should not ask: the file is not there")))
                       ((symbol-function 'emjupy--http-request)
@@ -8288,11 +8284,11 @@ The server answers a GET with it, and a PUT by setting a new one."
     (emjupy-test--type-in-first-cell " + 1")
     ;; saved from JupyterLab meanwhile
     (setcar lm "2026-06-01T00:00:00Z")
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil)))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
       (should-error (emjupy-save-notebook) :type 'user-error))
     (should-not (assoc "PUT" requests))
     (should (buffer-modified-p))
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
       (emjupy-save-notebook))
     (should (assoc "PUT" requests))
     (should-not (buffer-modified-p))))
