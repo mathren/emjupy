@@ -330,9 +330,7 @@ Not `window-body-width', which includes the line-number column."
       ;; running; a dead one has no width to give, so the default stands.
       emjupy-box-min-width
     ;; Measured keeping point: `window-max-chars-per-line' selects WIN, which
-    ;; moves point to the window's.  Midway through a redraw that drew every
-    ;; later cell on top of the one before, in a window other than the selected
-    ;; one.
+    ;; moves point to the window's.
     (save-excursion
       (let ((cols (window-max-chars-per-line win))
             ;; Read from the window's buffer rather than by selecting it.
@@ -340,10 +338,9 @@ Not `window-body-width', which includes the line-number column."
             ;; so for any other it is worked out from the last line's number.
             (numbers (with-current-buffer (window-buffer win)
                        (if (bound-and-true-p display-line-numbers)
-                           ;; Emacs's figure, or the line-number column's --
-                           ;; digits and a space either side -- whichever is
-                           ;; more: Emacs reports 0 until the window has been
-                           ;; shown, and leaves out the gap.
+                           ;; Emacs's figure or the line-number column's,
+                           ;; whichever is more: Emacs reports 0 until the
+                           ;; window has been shown, and leaves out the gap.
                            (max (if (eq win (selected-window))
                                     (line-number-display-width) 0)
                                 (+ 2 (max (length (number-to-string
@@ -563,13 +560,10 @@ buffer's structure; it rebuilds every rule."
            ((and anchor (eq (char-after anchor) ?\n))
             (let ((gap-end (and ov (overlay-start ov))))
               (cond
-               ;; Between two boxes.  A screen line is numbered by the line it
-               ;; starts on, so a hidden separator gave the next line its
-               ;; number.  Instead the box's last newline is hidden, the rules
-               ;; hang on the separator as continuation lines, never numbered,
-               ;; and the separator's newline ends them.  Drawn as a `display',
-               ;; not by hiding the newline: Emacs draws no overlay string at a
-               ;; hidden position.
+               ;; Between two boxes: the rules hang on the separator as
+               ;; continuation lines, never numbered, and the box's last newline
+               ;; is hidden -- by a `display', as Emacs draws no overlay string
+               ;; at a hidden position.
                ((and gap-end (< (overlay-end prev) gap-end))
                 (emjupy--hang-rules prev anchor rules 'display))
                ;; Followed at once by another box -- a cell by its output --
@@ -1230,14 +1224,11 @@ fail, it rewrites the wrong text."
                 (t (emjupy--undo-map-positions
                     entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
           (seen (make-hash-table :test 'eq)))
-      ;; In place: an undo replays from a list `primitive-undo' keeps in a local
-      ;; variable, so a new list would not be seen.  The cons cells are shared
-      ;; by all three lists, so changing them reaches each; each once, since the
-      ;; lists share tails.  An entry to drop becomes one that does nothing.
-      ;;
-      ;; All or nothing: every new entry is worked out before any is changed, or
-      ;; a failure partway would leave the history half shifted, and the next
-      ;; undo would write in the wrong places.
+      ;; In place: undo replays from a list `primitive-undo' holds, and the
+      ;; three lists share their cons cells, so changing those reaches each,
+      ;; once.  An entry to drop becomes one that does nothing.  All or nothing:
+      ;; every new entry is worked out first, or a failure would leave the
+      ;; history half shifted.
       (let ((changes nil))
         (condition-case err
             (progn

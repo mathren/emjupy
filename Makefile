@@ -2,15 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # emjupy -- build, test and package
 #
-# The layout follows the Emacs Lisp manual's "Multi-file Packages": the tar
-# unpacks into a single emjupy-VERSION/ directory containing emjupy-pkg.el
-# alongside the sources.
+# The tar unpacks into one emjupy-VERSION/ directory, emjupy-pkg.el beside
+# the sources: the Emacs Lisp manual's "Multi-file Packages".
 #
-#   make compile   byte-compile everything (warnings are errors-ish: read them)
+#   make compile   byte-compile everything (read the warnings)
 #   make test      unit tests only (no server needed)
 #   make check     unit + integration tests (needs a live Jupyter server)
 #   make lint      checkdoc and package-lint, both required
-#   make docs      export docs/*.org to docs/html/
+#   make docs      export docs/*.org, and the dependency graph, to html-content/
 #   make versions  which Emacs this is, against the one we target
 #   make package   build emjupy-VERSION.tar
 #   make install   install that tar into this Emacs via package-install-file
@@ -18,13 +17,8 @@
 
 EMACS   ?= emacs
 
-# Development targets Emacs 30.1, which is what CI runs and what most
-# users are on.  The package still declares 29.1 as its minimum and is
-# tested against it, but 29 is not the version to develop in: Eglot
-# manages buffers differently there, and a bug that made every language
-# server request go to a local process was invisible on 29 for weeks
-# because that is where it was being tested.  `make versions' says which
-# Emacs this is.
+# Emacs 30.1: the least the package runs on, and what CI runs.  `make
+# versions' says which Emacs this is.
 EMACS_TARGET = 30.1
 SRC     := src
 TEST    := test
@@ -41,10 +35,8 @@ LOADPATH  := -L $(SRC) -L $(TEST) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
             emjupy-cells.el emjupy-kernel.el emjupy-figures.el emjupy-widgets.el emjupy-widget-page.el emjupy-remote.el emjupy-lsp.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
-# No README: an installed package's README is what C-h P shows, before
-# the Commentary, and the README is a web page -- badges, screenshots,
-# links into the repository.  MELPA leaves it out for the same reason, so
-# the release tarball and a MELPA install describe themselves alike.
+# No README in the tar: C-h P would show a web page -- badges, links --
+# before the Commentary.  MELPA leaves it out too.
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el $(SRC)/emjupy-figure-window.py
 
 .PHONY: all compile test check lint checkdoc package-lint docs dependency-graph coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
@@ -59,12 +51,8 @@ compile:
 test:
 	$(EMACS) -batch -Q $(LOADPATH) -l $(TEST)/emjupy-run-tests.el
 
-# Integration tests are opt-in; see the README for the environment variables.
-# The command is the same as `test': what decides whether the integration
-# tests run is EMJUPY_TEST_URL, which they check themselves and skip without.
-# So `check' insists on it -- running `check' and silently getting only the
-# unit tests is how a suite comes to look green while the half most likely to
-# catch a regression never ran.
+# The same suite as `test', insisting on EMJUPY_TEST_URL: without it the
+# integration tests skip, and a green run would have run half.
 check:
 ifndef EMJUPY_TEST_URL
 	$(error EMJUPY_TEST_URL is not set, so the integration tests would be \
@@ -73,12 +61,10 @@ run `make test' if you only want the unit tests)
 endif
 	$(EMACS) -batch -Q $(LOADPATH) -l $(TEST)/emjupy-run-tests.el
 
-# Line coverage of the test suite, as lcov in coverage/lcov.info.  Uses
-# whichever tests can run: set the integration variables, as for `check',
-# and the server-facing code is covered too.  Needs undercover.el and its
-# dependencies (dash, shut-up) -- installed, or named in
-# EMJUPY_UNDERCOVER_PATH.  Runs from .el files: instrumentation happens at
-# load time, and a compiled file would be loaded instead.
+# Line coverage, as lcov in coverage/lcov.info -- of the live tests too,
+# given their variables.  Needs undercover.el, installed or in
+# EMJUPY_UNDERCOVER_PATH; runs from .el files, which it instruments as
+# they load.
 coverage:
 	@rm -f $(SRC)/*.elc
 	@mkdir -p coverage
@@ -94,13 +80,12 @@ versions:
 	@$(EMACS) -batch -Q --eval '(message "emacs %s (development targets $(EMACS_TARGET))" emacs-version)'
 	@$(EMACS) -batch -Q --eval '(if (version< emacs-version "$(EMACS_TARGET)") (message "  older than the target: test on $(EMACS_TARGET) before trusting a result") (message "  ok"))'
 
-# Export docs/*.org to docs/html/, which is what GitHub Pages serves when
-# a site is set to publish from the docs/ folder.
-# The dependency graph between the files, drawn from their requires, into
-# the site: docs builds it, so the site's is always the code's.
+# The dependency graph, drawn from the requires, into the site: docs draws
+# it first, so the site's is always the code's.
 dependency-graph:
 	@python3 tools/dependency-graph.py html-content
 
+# docs/*.org to the site, in html-content/.
 docs: dependency-graph
 	$(EMACS) -batch -Q -l publish.el all
 
@@ -129,18 +114,15 @@ package-lint:
 	  $(if $(PACKAGE_LINT_DIR),-L $(abspath $(PACKAGE_LINT_DIR)),) \
 	  -l ../tools/lint-package.el $(LINT_FILES)
 
-# Called by the release workflow, which passes the tag being released.
-# Three things have to agree or a release ships claiming to be a version
-# it is not: the Version: header, the emjupy-version constant that
-# M-x emjupy-version reports, and the tag itself.
-# Set the version everywhere the current one is written -- the header,
-# `emjupy-version', the pkg file and the sample output in the docs:
-#   make set-version VERSION=0.1.3
-# Also run from GitHub by the "Set version" workflow.
+# Write a new version everywhere the current one is -- the header,
+# `emjupy-version', the pkg file, the docs' sample: make set-version
+# VERSION=0.1.3.  Also the "Set version" workflow.
 set-version:
 	@test -n "$(VERSION)" || { echo "usage: make set-version VERSION=X.Y.Z" >&2; exit 2; }
 	@tools/set-version.sh "$(VERSION)"
 
+# The Version: header, `emjupy-version' and, from the release workflow,
+# the tag being released must agree.
 check-version:
 	@version=$$(sed -n 's/^;; Version: *//p' $(SRC)/emjupy.el | head -1); \
 	constant=$$(sed -n 's/^(defconst emjupy-version "\([^"]*\)".*/\1/p' $(SRC)/emjupy.el | head -1); \

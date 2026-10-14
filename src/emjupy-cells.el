@@ -558,10 +558,9 @@ should fall back to a full redraw."
         (let ((following-ov (and following (emjupy-cell-overlay following)))
               (inserted 0))
           (setq inserted (emjupy--render-cell-incrementally new-cell at))
-          ;; Text inserted at an overlay's start may go into that overlay,
-          ;; depending on how it was made and the Emacs version; then the next
-          ;; cell swallows the new one, and syncing stops.  So the two overlays
-          ;; are tested for overlap, and repaired.
+          ;; Text inserted at an overlay's start may go into it, depending on
+          ;; the Emacs version, and the next cell swallow the new one: so the
+          ;; overlays are checked for overlap, and repaired.
           (let ((new-ov (emjupy-cell-overlay new-cell))
                 (resume (+ at inserted)))
             (when (and (overlayp following-ov)
@@ -573,9 +572,8 @@ should fall back to a full redraw."
               ;; cell's source.
               (move-overlay following-ov resume
                             (max resume (overlay-end following-ov))))
-            ;; Again, now the next cell starts where it should: protected while
-            ;; its overlay still covered the new cell, the gap was left
-            ;; writable, and a backspace there joined the two cells.  Not
+            ;; Again, now the next cell starts where it should: else the gap
+            ;; stayed writable, and a backspace there joined the cells.  Not
             ;; recorded for undo: it edits nothing.
             (let ((buffer-undo-list t))
               (emjupy--protect-non-cell-regions)))
@@ -722,10 +720,9 @@ puts the cells back, so undo carries on through it."
           (emjupy--protect-non-cell-regions)))
       (unless (equal before (buffer-substring-no-properties (point-min)
                                                             (point-max)))
-        ;; The rebuild moved every position the history holds.  It records
-        ;; itself as one step that puts the cells back as they were, so undoing
-        ;; it restores the text the older entries describe, and undo carries on
-        ;; through them.
+        ;; The rebuild moved every position the history holds, so it records one
+        ;; step that puts the cells back, and undo carries on through the older
+        ;; entries.
         (emjupy--record-rebuild-step snapshot)))))
 
 ;;;; Undo

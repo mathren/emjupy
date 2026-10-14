@@ -10,21 +10,17 @@
 
 ;;; Commentary:
 
-;; ipywidgets controls -- sliders, checkboxes, dropdowns, and the boxes
-;; that hold them -- drawn as text in the output, and driven from Emacs.
+;; ipywidgets controls -- sliders, checkboxes, dropdowns, the boxes that hold
+;; them -- drawn as text in the output, and driven from Emacs.
 ;;
-;; A widget is a model in the kernel, announced and updated by comm
-;; messages; an output showing one names its model.  The models are kept
-;; here as the messages arrive, and a widget's output is drawn from them.
-;; Using a control sends the kernel the new value, as a browser would.
+;; A widget is a model in the kernel, announced and updated by comm messages;
+;; the models are kept here, and a widget's output drawn from them.  Using a
+;; control sends the kernel the new value, as a browser would; what that changes
+;; -- an `interact' drawing its figure again -- comes back as output answering
+;; that message, so the message is remembered with the cell showing the widget.
 ;;
-;; What that changes comes back as ordinary output -- an `interact' clears
-;; its output and draws its figure again, as `image/png' -- answering the
-;; message sent here rather than the cell's execution.  So the message is
-;; remembered with the cell showing the widget, and the output goes there.
-;;
-;; Widgets that draw themselves in JavaScript -- plotly's FigureWidget,
-;; maps -- have no text to show, and show as their `text/plain'.
+;; Widgets that draw themselves in JavaScript open in a page of their own:
+;; emjupy-widget-page.el.
 
 ;;; Code:
 
@@ -123,12 +119,10 @@ many changes in a row cost one."
 
 ;;;; Drawing a widget from the shape of its state
 
-;; A widget is drawn from what its state holds, not from its type: a value
-;; with bounds and a step is stepped, option labels are chosen from,
-;; children are drawn in turn.  So a widget is drawn without being named
-;; here -- one this file has never heard of, too, if its state has a
-;; familiar shape.  The rules, in `emjupy-widget-rules', are tried in
-;; order; a widget no rule fits shows as its name.
+;; A widget is drawn from what its state holds, not its type: a value with
+;; bounds is stepped, option labels chosen from, children drawn in turn -- so a
+;; widget never named here is drawn too.  The rules, `emjupy-widget-rules', are
+;; tried in order; a widget none fits shows as its name.
 
 (defun emjupy--widget-button (label id action &optional arg)
   "Return LABEL as a control acting on the widget with comm ID.

@@ -10,14 +10,9 @@
 
 ;;; Commentary:
 
-;; Kept separate from emjupy.el on purpose: implementation and tests are
-;; different files, this one requires the other.
-;;
-;; Most tests here are pure/fast and need nothing external. A few, clearly
-;; marked in section 9, need a real Python language server (pylsp, pyright,
-;; or jedi-language-server) on PATH to fully exercise Eglot; those call
-;; `ert-skip' when no such server is found rather than failing, so the rest
-;; of the suite stays green on a machine without one installed.
+;; Unit tests: fast, needing nothing external.  The few that need a real Python
+;; language server on PATH -- pylsp, pyright, jedi-language-server -- skip
+;; without one.
 
 ;;; Code:
 
@@ -99,10 +94,8 @@ exercising the code under test. Sent payloads land in
 ;;; ---------------------------------------------------------------------
 ;;; 2b. nbformat validity of what we WRITE BACK
 ;;; ---------------------------------------------------------------------
-;; The whole point of the .ipynb-as-source-of-truth design is that
-;; non-emacs collaborators can open what we save. A notebook that fails
-;; `nbformat.validate' is rejected by nbconvert, papermill and friends
-;; even though it looks fine inside emjupy.
+;; What emjupy saves must open elsewhere: a notebook failing `nbformat.validate'
+;; is refused by nbconvert, papermill and the rest, however it looks in emjupy.
 
 (ert-deftest emjupy-test-serialize-emits-cell-ids ()
   "nbformat_minor 5 requires an `id' on EVERY cell."
@@ -818,10 +811,9 @@ captured, not silently ignored."
       (puthash "data" dat content)
       (puthash "header" hdr msg) (puthash "parent_header" ph msg)
       (puthash "content" content msg)
-      ;; Handed the raw payload rather than a websocket-frame -- the handler
-      ;; accepts either, so recorded kernel traffic can be replayed. NOT
-      ;; wrapped in ignore-errors: a throw here must fail the test, not be
-      ;; silently absorbed into a passing "0 outputs" assertion.
+      ;; The raw payload, which the handler accepts as a frame would be, so
+      ;; recorded traffic can be replayed.  Not in `ignore-errors': an error
+      ;; must fail the test, not pass as "0 outputs".
       (emjupy--handle-ws-message kernel (json-serialize msg))
       (should (> (length (emjupy-cell-outputs cell)) 0))
       (should (equal (gethash "output_type"
@@ -2290,10 +2282,9 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
          (puthash def (1+ (gethash def by-command 0)) by-command)))
      emjupy-mode-map)
     (maphash (lambda (cmd n)
-               ;; Two commands are bound twice on purpose, both because
-               ;; terminals and graphical frames disagree about which key
-               ;; they send: Shift-RET for execution, and DEL versus
-               ;; <backspace> for revealing a rendered formula.
+               ;; Bound twice on purpose, as terminals and graphical frames send
+               ;; different keys: Shift-RET to run, DEL and <backspace> to
+               ;; reveal a formula.
                (when (and (> n 1)
                           (not (memq cmd '(emjupy-execute-cell-at-point
                                            emjupy-latex-unrender-or-delete))))
@@ -2312,10 +2303,8 @@ synonyms.  The prefix keys are the exception: they carry sub-bindings."
                  ("C-c C-s"     . emjupy-split-cell)
                  ("C-c C-j"     . emjupy-join-cell-above)))
     (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair))))
-  ;; and the retired duplicates really are gone.  Two keys are not listed:
-  ;; C-c C-s was a save duplicate and is now split-cell, and M-<up>/M-<down>
-  ;; were duplicates of the cell-move keys and now move to a NEIGHBOURING
-  ;; cell, which is a different job.
+  ;; and the retired duplicates are gone -- except C-c C-s, now split-cell, and
+  ;; M-<up>/M-<down>, which now move to a neighbouring cell.
   (dolist (key '("M-RET" "C-c C-r" "M-n" "M-p"))
     (should-not (lookup-key emjupy-mode-map (kbd key)))))
 
@@ -3833,10 +3822,9 @@ SIZE of the output instead of the number of lines in it."
                         (apply real args))))
             (let ((inhibit-read-only t))
               (emjupy--repad-output cell)))
-          ;; One look per LINE of the drawn output -- which, now that a line
-          ;; wider than the box is broken where the box ends, is some
-          ;; hundreds for twenty thousand characters -- and nowhere near one
-          ;; per character.
+          ;; One look per drawn LINE -- some hundreds for twenty thousand
+          ;; characters, as wide lines are broken at the box -- not one per
+          ;; character.
           (let* ((ov (emjupy-cell-output-ov cell))
                  (lines (count-lines (overlay-start ov) (overlay-end ov))))
             ;; two looks a line -- at the pad, and at the text before it --
@@ -4932,10 +4920,9 @@ read-only copy -- which needs no configuration and always works."
           (emjupy-list-open-file "lib/mod.py")
           (should (equal opened "/ssh:box:/srv/nb/lib/mod.py"))
           (should-not fetched))
-        ;; a tunnelled server answers at localhost and says nothing about the
-        ;; host it leads to, so there is nothing to build a TRAMP path from
-        ;; and the file is fetched instead.  The detector is stubbed: left
-        ;; live, this reads the tunnels of whichever machine runs the test.
+        ;; a tunnelled server answers at localhost, naming no host to build a
+        ;; TRAMP path from, so the file is fetched.  The detector is stubbed:
+        ;; live, it reads the tunnels of the machine running the test.
         (cl-letf (((symbol-function 'emjupy--ssh-host-forwarding)
                    (lambda (&rest _) nil)))
           (let ((emjupy-remote-root nil)
@@ -4971,10 +4958,8 @@ TRAMP path is most wanted, the address cannot supply one."
                                       :token "t"
                                       :root "/srv/nb"))
                  "/ssh:box.example:/srv/nb"))
-  ;; a tunnel: the address is a local one and says nothing about the host.
-  ;; The detector is stubbed out, or this test would find whatever tunnels
-  ;; the machine running it happens to have -- which it did, on a machine
-  ;; forwarding 9999.
+  ;; a tunnel: the address is local and names no host.  The detector is stubbed,
+  ;; or this would find the tunnels of the machine running it.
   (cl-letf (((symbol-function 'emjupy--ssh-host-forwarding)
              (lambda (&rest _) nil)))
     (let ((emjupy-ssh-host nil))
@@ -5161,10 +5146,9 @@ the next edit there is not saved and a cell appears to vanish."
             ;; it shows as a stray blank line at the top of its source
             (should (equal (emjupy-cell-source c1) "a = 1"))
             (should (equal (emjupy-cell-source c2) "b = 2"))
-            ;; the new cell carries no content of its own.  It is not
-            ;; compared to "" because a freshly rendered empty cell holds a
-            ;; newline either way -- incremental and full renders agree, and
-            ;; that is what matters here
+            ;; the new cell carries no content of its own; not compared to "",
+            ;; as an empty cell holds a newline in incremental and full renders
+            ;; alike.
             (should (string-empty-p
                      (string-trim (emjupy-cell-source
                                    (aref (emjupy-notebook-cells nb) 1)))))
@@ -5431,9 +5415,8 @@ whether the first cell survived, :problems any invariant violations."
                           (progn
                             (undo)
                             ;; Deleting and inserting a cell are undo steps of
-                            ;; their own, so each operation of that kind takes
-                            ;; a step back before the typing is reached.
-                            ;; Anything else is undone with the typing.
+                            ;; their own, each taking a step back before the
+                            ;; typing; anything else is undone with it.
                             (let ((steps 0))
                               (while (and (string-match-p "\\+ 7"
                                                           (buffer-string))
@@ -5556,12 +5539,10 @@ kept out of the history entirely."
 
 ;;; Performance --------------------------------------------------------------
 ;;
-;; These guard against regressions, not absolute speed.  The thresholds are
-;; far above what the operations cost here -- a loaded machine should not
-;; turn them red -- but well below the cost of the mistakes they exist to
-;; catch, which have been order-of-magnitude ones: work proportional to the
-;; whole notebook where it should be proportional to one cell, or a remote
-;; round trip on a path that runs after every keystroke.
+;; These guard against regressions, not absolute speed: the limits are far above
+;; the operations' cost, so a loaded machine does not fail them, and far below
+;; the mistakes they catch -- work over the whole notebook where one cell would
+;; do, or a remote round trip after every keystroke.
 
 (defun emjupy-test--big-notebook (cells-count output-lines)
   "Return CELLS-COUNT code cells, each with OUTPUT-LINES of output."
@@ -5608,15 +5589,10 @@ network is felt tenfold."
       (with-current-buffer buf
         (goto-char (overlay-start (emjupy-cell-overlay
                                    (aref (emjupy-notebook-cells nb) 30))))
-        ;; no language server in a unit test, so this measures emjupy's own
-        ;; share: locating the cell, syncing, and reaching the delegate
-        ;;
-        ;; Once first, untimed: the first call creates the shadow buffer --
-        ;; writes its file, starts python-mode -- which happens once per
-        ;; notebook, not per command.  Timed with the rest, that one cost
-        ;; spread over the fifty calls came to most of the average, and
-        ;; tipped it past the limit whenever the suite had left Emacs
-        ;; slower: 4.9 ms a call in steady state, 52 ms on average with it.
+        ;; no language server in a unit test: this measures emjupy's own share
+        ;; -- finding the cell, syncing, reaching the delegate.  Once first,
+        ;; untimed: the first call creates the shadow buffer, once per notebook,
+        ;; which spread over fifty calls dominated the average.
         (ignore-errors (emjupy--cell-shadow-delegate (lambda (&rest _) nil)))
         (let ((per-call (/ (emjupy-test--elapsed
                              (dotimes (_ 50)
@@ -5704,10 +5680,8 @@ because the speed depends on a network that a test cannot rely on."
                       (when (and (stringp file) (funcall real file))
                         (push (list 'find-file file) remote-calls))
                       (generate-new-buffer " *stand-in*"))))
-          ;; the things that happen on every command
-          ;; deliberately not wrapped in `ignore-errors': a TRAMP failure
-          ;; here is the fault being tested for, and swallowing it made an
-          ;; earlier version of this test pass while the path it guards was
+          ;; what happens on every command; not in `ignore-errors': a TRAMP call
+          ;; here is the fault tested for, and swallowing it would pass a path
           ;; opening connections
           (dotimes (_ 5)
             (run-hooks 'pre-command-hook)
@@ -6253,10 +6227,8 @@ the menu is one nobody will find, so this fails rather than letting the
 two drift apart."
   (let ((in-menu (emjupy-test--menu-commands))
         (bound nil))
-    ;; Recursively: most of the bindings live under the C-c prefix, and
-    ;; `map-keymap' does not descend into a prefix on its own -- an earlier
-    ;; version of this test enumerated only the handful of top-level keys
-    ;; and passed while missing everything it was written to check.
+    ;; Recursively: most bindings are under the C-c prefix, and `map-keymap'
+    ;; does not descend into a prefix.
     (letrec ((collect (lambda (km)
                         (map-keymap
                          (lambda (_event def)
@@ -6628,23 +6600,19 @@ different cell; afterwards the typing must still be undoable."
                         ((symbol-function 'completing-read) (lambda (&rest _)
                                                               "x")))
                 (ignore-errors (call-interactively command)))
-              ;; and the typing must still be takeable back.  More than one
-              ;; step is allowed: an operation that is itself undoable --
-              ;; deleting a cell -- comes back first, and the typing after
-              ;; it.  What is not allowed is for the typing to be gone from
-              ;; the history altogether.
+              ;; and the typing must still be takeable back.  More than one step
+              ;; is allowed -- an undoable operation, deleting a cell, comes
+              ;; back first -- but not the typing gone from the history.
               (goto-char (point-min))
               (let ((steps 0))
                 (while (and (< steps 4)
                             (string-match-p "\\+ 7" (buffer-string))
                             (ignore-errors
                               (undo)
-                              ;; The sequence is continued, not restarted:
-                              ;; a structural command is its own step, so
-                              ;; the typing sits behind it and needs a
-                              ;; second press.  `undo-more' cannot be used
-                              ;; -- a step that records its own redo ends
-                              ;; the sequence it would have continued.
+                              ;; Continued, not restarted: a structural command
+                              ;; is its own step, the typing behind it.  Not
+                              ;; `undo-more': a step recording its own redo ends
+                              ;; the sequence.
                               (setq this-command 'undo last-command 'undo)
                               t))
                   (setq steps (1+ steps)))
@@ -6659,17 +6627,13 @@ different cell; afterwards the typing must still be undoable."
 
 ;;; The undo guard -----------------------------------------------------------
 ;;
-;; Undo is the thing this package most has to protect.  Cells are redrawn
-;; constantly, and a redraw moves every buffer position that an undo entry
-;; holds -- so any command that redraws more than it must will silently take
-;; the history with it.  That has happened repeatedly, each time found by a
-;; user rather than by a test, and each time fixed one command at a time.
+;; Undo is what this package most has to protect: a redraw moves every position
+;; an undo entry holds, so a command redrawing more than it must takes the
+;; history with it.
 ;;
-;; So the guard is driven by the keymap rather than by a list of commands:
-;; every command a key can reach is tried, and a command added later is
-;; covered the day it is bound.  Exempting one requires saying why, here,
-;; which is a decision someone has to make rather than an omission they can
-;; drift into.
+;; So the guard is driven by the keymap, not a list of commands: every command a
+;; key reaches is tried, a new one covered the day it is bound.  Exempting one
+;; means saying why, here.
 
 (defconst emjupy-test--undo-guard-exempt
   '((emjupy-menu . "opens a menu; changes nothing")
@@ -6770,10 +6734,9 @@ Returns t, or a string saying what went wrong."
                    ((not undone) "undo refused")
                    ((string-match-p "\\+ 7"
                                     (buffer-string)) "typing not taken back")
-                   ;; Sync first: undo changes the buffer and the cells
-                   ;; catch up at the next sync, which every path that
-                   ;; reads them performs.  Checking before that would be
-                   ;; asking about a state nothing ever sees.
+                   ;; Sync first: undo changes the buffer, and the cells catch
+                   ;; up at the next sync, which every path reading them
+                   ;; performs.
                    ((progn (emjupy--sync-all-cells) (emjupy--check-invariants))
                     "buffer and cells disagree afterwards")
                    (t t))))))))

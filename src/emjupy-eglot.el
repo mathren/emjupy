@@ -182,12 +182,10 @@ than approximate support.  Either way, `emjupy-shadow-host' or
 ;; names have no stability promise: `eglot--server-capable' became
 ;; `eglot-server-capable' in Emacs 30, hence `emjupy--eglot-capable-p'.
 
-;; A notebook buffer mixes cells, decoration and output, which Eglot cannot
-;; attach to, and Eglot has no notebookDocument support.  So all code cells are
-;; kept together in one python-mode "shadow" buffer, a `# %% [emjupy:ID]'
-;; section per cell, which Eglot sees as one Python file.  Completion and eldoc
-;; in the notebook delegate to it, mapping positions both ways; `C-c '' opens it
-;; for heavier editing.  Markdown cells are edited one at a time.
+;; Eglot cannot attach to a notebook buffer, and has no notebookDocument
+;; support.  So all code cells are kept in one python-mode "shadow" buffer, a `#
+;; %% [emjupy:ID]' section each, which Eglot sees as one Python file; completion
+;; and eldoc map positions to and from it.
 
 ;;;; Editing a cell in a buffer of its own
 
@@ -587,10 +585,9 @@ backs off: the notebook stays open, without language support."
         ;; Quietly: see the note in `emjupy--fontify-as'.
         (let ((python-indent-guess-indent-offset-verbose nil))
           (python-mode)))
-      ;; No lock or auto-save files: the file is a generated copy nobody else
-      ;; edits, and for a remote one each lock is remote I/O on the completion
-      ;; path.  Set before anything modifies the buffer -- the first
-      ;; modification takes the lock.
+      ;; No lock or auto-save files: the file is a generated copy, and for a
+      ;; remote one each lock is remote I/O.  Set before the first modification,
+      ;; which takes the lock.
       (setq-local create-lockfiles nil)
       (setq buffer-auto-save-file-name nil)
       (auto-save-mode -1)
@@ -623,17 +620,11 @@ backs off: the notebook stays open, without language support."
 Unless one is attached, another is being, language support is off, or
 NB-BUFFER, the notebook's, is backing off."
   (condition-case err
-      ;; Connected here, not with `eglot-ensure': that waits for
-      ;; `post-command-hook' in the current buffer, which is never this one.
-      ;; `require', not `fboundp': `eglot-ensure' may be an autoload stub,
-      ;; its internals not yet defined.
-      ;;
-      ;; Connecting is the expensive half, retried while no server is
-      ;; attached, so it is backed off like the file.  The flag is set in
-      ;; the notebook buffer, where the next request comes from.
-      ;; `emjupy-language-support' is checked here, where every path to a
-      ;; server passes; the buffer is still built, for editing all the code,
-      ;; but nothing is attached.
+      ;; Connected here, not with `eglot-ensure', which waits for a command in
+      ;; this buffer that never comes.  Backed off like the file; the flag is
+      ;; set in the notebook buffer, where the next request comes from.  With
+      ;; `emjupy-language-support' off the buffer is still built, for editing
+      ;; the code, but nothing is attached.
       (unless (or emjupy--suppress-plain-eglot
                   (not emjupy-language-support)
                   (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
@@ -1186,12 +1177,9 @@ adopted again.  A language server serving another buffer stays."
       (when (and server
                  (jsonrpc-running-p server)
                  (null (eglot--managed-buffers server)))
-        ;; Ended directly: `eglot-shutdown' first flushes changes from the
-        ;; current buffer, which fails an assertion in Emacs 30.1 when that is
-        ;; not a managed one, and `jsonrpc-shutdown' waits seconds for the
-        ;; server to exit.  The process sentinel takes the server out of Eglot's
-        ;; table.  Marked as wanted first, as `eglot-shutdown' does, or Eglot
-        ;; would start a replacement.
+        ;; Ended directly: `eglot-shutdown' fails an assertion in Emacs 30.1
+        ;; outside a managed buffer, and `jsonrpc-shutdown' waits seconds.
+        ;; Marked as wanted first, or Eglot would start a replacement.
         (setf (eglot--shutdown-requested server) t)
         ;; Answers still awaited are no longer wanted.  Left in place, each
         ;; is told "Server died" as the process goes, and Eglot's default

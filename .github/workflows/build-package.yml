@@ -9,11 +9,8 @@ name: Build
 #                                once, instrumented, in place of integration
 #   tag                          release.yml only -- it tests what it ships
 #
-# Pushes to other branches run nothing until a pull request is opened, and
-# a pull request from a branch of this repository is not run twice, once
-# for the push and once for the request.  A tag starts none of this: path
-# filters are not applied to tag pushes, so a tag used to run this
-# workflow and coverage.yml as well as the release.
+# Pushes to other branches run nothing until a pull request; a pull
+# request from this repository runs once, not for the push too.
 on:
   # Creates the "Run workflow" button in the GitHub Actions tab
   workflow_dispatch:
@@ -50,11 +47,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # One job for everything that needs only Emacs: each job checks out the
-  # code and installs Emacs, so three jobs did that three times, for a few
-  # make targets each.  Nothing is compiled twice: the recipe check
-  # byte-compiles every file -- as MELPA builds them, warnings failing it --
-  # so a separate `make compile' compiled them all again.
+  # One job for all that needs only Emacs.  The recipe check byte-compiles
+  # every file, as MELPA does, warnings failing it.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -127,15 +121,9 @@ jobs:
           name: dependency-graph
           path: html-content/dependencies.*
 
-  # The tests that talk to a real server, a real kernel and a real language
-  # server: the ones most likely to catch a regression in the WebSocket,
-  # session or LSP paths.  Until now they ran only if someone remembered to
-  # run them by hand.
-  # On a push to main, coverage.yml runs this same suite -- unit and live,
-  # against a server -- instrumented, and fails as this would; running it
-  # here too set up a second Python and server for the same tests.  So
-  # here for pull requests, and when run by hand.  The tests that time
-  # things, skipped under coverage, are run by these.
+  # The tests against a real server, kernel and language server, for pull
+  # requests and by hand; on main, coverage.yml runs them.  The tests that
+  # time things, skipped there, run here.
   integration:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
@@ -188,10 +176,8 @@ jobs:
           EMJUPY_TEST_URL: 127.0.0.1:8888
           EMJUPY_TEST_TOKEN: emjupy-ci
           EMJUPY_TEST_ROOT: ${{ runner.temp }}/nbroot
-          # Tests whose subject is a known, unfixed fault are tagged
-          # :unstable and left out here.  They fail some of the time and
-          # say something true when they do, so they stay in the suite --
-          # but a job that fails at random teaches people to ignore it.
+          # Tests of a known, unfixed fault are tagged :unstable and left
+          # out: a job failing at random teaches people to ignore it.
           EMJUPY_SKIP_UNSTABLE: '1'
         run: |
           make clean

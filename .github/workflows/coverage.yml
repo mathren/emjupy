@@ -1,20 +1,11 @@
 name: Coverage
 
-# Line coverage of the whole suite -- unit and integration tests,
-# against a real server with a real kernel and language server, since
-# that is where the WebSocket, session and LSP code runs.
-#
-# Tests tagged :timing are left out: they assert on elapsed time, which
-# means nothing when every function is instrumented.
+# Line coverage of the whole suite, live tests included, against a real
+# server.  Tests tagged :timing are left out: instrumented, time means
+# nothing.
 
-# On main only, for the badge: pull requests are tested by build-package.yml,
-# and measuring coverage there too ran the whole suite a second time.
-#
-# On a push to main this is also the run of the whole suite: build-package
-# leaves its integration job, which ran the same tests against a server of
-# its own, to pull requests.  A test failing fails this run as it would
-# that one; only the tests that time things, skipped here, are left to
-# pull requests.
+# On main only, for the badge; it is also main's run of the live tests,
+# which build-package.yml runs for pull requests.  A failing test fails it.
 on:
   workflow_dispatch:
 

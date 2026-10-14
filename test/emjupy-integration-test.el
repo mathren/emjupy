@@ -10,22 +10,15 @@
 
 ;;; Commentary:
 
-;; These tests talk to a REAL Jupyter server over a REAL connection and run
-;; REAL Python in a REAL kernel. They are opt-in: without the environment
-;; variables below they all `ert-skip', so `emjupy-run-tests.el' stays fast
-;; and hermetic by default.
+;; These tests run real Python in a real kernel, over a real connection to a
+;; Jupyter server.  Opt-in: without the variables below they skip.
 ;;
-;;   EMJUPY_TEST_URL     host:port of a running Jupyter server. Point this at
-;;                       the LOCAL end of an ssh tunnel to exercise the remote
-;;                       path (e.g. 127.0.0.1:18888 for
-;;                       `ssh -N -L 18888:127.0.0.1:8888 user@host').
-;;   EMJUPY_TEST_TOKEN   its token.
+;;   EMJUPY_TEST_URL    host:port of a running Jupyter server; the local
+;;                      end of an ssh tunnel tests the remote path
+;;   EMJUPY_TEST_TOKEN  its token
 ;;
-;; Rationale for having these at all: the pure/mocked suite cannot catch the
-;; things that actually broke here -- an image arriving over the wire that the
-;; running Emacs can't display, a WebSocket URL that drops its base path, a
-;; saved notebook that no other tool will open. Those only show up against a
-;; live server.
+;; They catch what mocks cannot: an image the running Emacs cannot show, a
+;; WebSocket URL losing its base path, a saved notebook other tools refuse.
 
 ;;; Code:
 
@@ -407,10 +400,9 @@ shadow buffer deliberately never is)."
             (ert-skip "Eglot did not connect"))
           (goto-char (overlay-start (emjupy-cell-overlay c1)))
           (goto-char (line-end-position 2))
-          ;; A cold language server can take a few seconds to index before it
-          ;; answers hover, and `emjupy--cell-eldoc-function' deliberately
-          ;; swallows errors (eldoc must never throw on a keystroke) -- so
-          ;; retry rather than assume the first request lands.
+          ;; A cold language server may take seconds to answer hover, and
+          ;; `emjupy--cell-eldoc-function' swallows errors, as eldoc must: so
+          ;; retried.
           (cl-loop repeat 15
                    until got
                    do (emjupy--cell-eldoc-function

@@ -13,16 +13,10 @@
 ;;; Commentary:
 
 ;; Talks LSP to the language server `jupyter-lsp' runs on the Jupyter server,
-;; over that server's WebSocket, as JupyterLab's `jupyterlab-lsp' does.  For a
-;; remote notebook this replaces a shadow FILE, which over TRAMP cost dozens of
-;; round trips, and whose waits ran timers that re-entered it.  The document is
-;; synced in-band with `didChange', and the server sits beside the kernel, so
-;; imports resolve where the code runs.  Its URI is a path on the server, which
-;; emjupy never opens.
-;;
-;; The document's text -- every code cell, under a marker naming it -- is built
-;; here too, and parsed back into positions, for this transport and the Eglot
-;; layer above.
+;; over its WebSocket, as JupyterLab does: the server sits beside the kernel, so
+;; imports resolve where the code runs, and the document is synced in-band.
+;; Also builds the document's text -- every code cell, under a marker naming it
+;; -- and maps positions back, for this transport and Eglot's.
 
 ;;; Code:
 
@@ -530,9 +524,8 @@ same cells holding the same source objects build the same content."
 (provide 'emjupy-lsp)
 ;;; Eglot over the Jupyter WebSocket ----------------------------------------
 
-;; Eglot's own commands -- all of them -- reach the server beside the kernel
-;; through a jsonrpc connection class of emjupy's: `jsonrpc-connection-send'
-;; dispatches on the class, and this one sends over the notebook's WebSocket.
+;; Eglot's commands reach the server beside the kernel through a jsonrpc
+;; connection class of emjupy's, sending over the notebook's WebSocket.
 ;; `jsonrpc-process-connection' insists on a process, so an idle one is made and
 ;; ignored.
 
@@ -765,10 +758,8 @@ manage.  Return the server, or nil."
     (when (and ws local-file)
       (let* ((emjupy--eglot-pending
               (emjupy--eglot-pending-for nb ws local-file))
-             ;; The root the server resolves imports against is its own
-             ;; directory, fixed on the wire.  Here the project must contain
-             ;; the shadow buffer, or Eglot will not manage it, and the server
-             ;; never hears of the document.
+             ;; The project must contain the shadow buffer, or Eglot will not
+             ;; manage it; the server's own root is fixed on the wire.
              (project (cons 'transient (file-name-directory local-file))))
         (with-current-buffer buffer
           (condition-case err

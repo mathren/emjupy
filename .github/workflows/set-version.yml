@@ -1,12 +1,8 @@
 name: Set version
 
-# Run by hand, from the Actions tab: "Set version" -> "Run workflow".
-# Writes the new version everywhere the current one appears -- the
-# package header, `emjupy-version', the pkg file and the docs' sample
-# output -- checks they agree, and commits the change to the branch it
-# was run on.  It does not tag: a tag pushed from a workflow does not
-# start other workflows, so the release would not run.  Tag the commit
-# yourself afterwards to release it.
+# By hand, from the Actions tab.  Writes the new version everywhere the
+# current one is, checks they agree, and commits it.  It does not tag: a
+# tag a workflow pushes starts no other workflow, so tag it yourself.
 on:
   workflow_dispatch:
     inputs:

@@ -1,21 +1,15 @@
 name: Release
 
-# One tag, three things that must agree: the package on the release page,
-# the version inside it, and the documentation on the site.  They are
-# produced by the same run from the same commit, so they cannot drift --
-# the site describes exactly what was released, not whatever main has
-# become since.
+# One tag: the package, its version and the site, built by one run from
+# one commit, so they agree.
 on:
   push:
     tags:
       - '*'
 
 jobs:
-  # One job: each job checks out the code and installs Emacs, and the
-  # package and the site were two.  Everything is built and checked before
-  # anything is published -- the site's links included, which were checked
-  # only after the release was already up, leaving a release without its
-  # documentation when one was broken.
+  # Nothing is published until everything -- the site's links too -- is
+  # built and checked.
   release:
     runs-on: ubuntu-latest
     permissions:
