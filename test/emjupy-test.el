@@ -8875,6 +8875,34 @@ what the save by hand replaces."
                                               "/opt/conda/envs/analysis")
                      ("ml" . "/home/me/.conda/envs/ml"))))))
 
+(ert-deftest emjupy-test-settling-adopted-runs-spares-newer-ones ()
+  "After a reconnect, only the runs adopted are settled, not those sent since.
+A run sent just after reconnecting can finish on the kernel, which then
+reports idle, with its output still on the way; ending it lost that
+output."
+  (let* ((buf (generate-new-buffer " *emjupy-settle*"))
+         (adopted (make-emjupy-cell :id "old"))
+         (newer (make-emjupy-cell :id "new"))
+         (nb (make-emjupy-notebook :buffer buf :path "n.ipynb"))
+         (pending (make-hash-table :test 'equal))
+         (kernel (make-emjupy-kernel :id "k" :notebook nb :pending pending))
+         (ended nil))
+    (puthash "req-old" adopted pending)
+    (puthash "req-new" newer pending)
+    (unwind-protect
+        (cl-letf (((symbol-function 'emjupy--http-request)
+                   (lambda (&rest _)
+                     (let ((h (make-hash-table :test 'equal)))
+                       (puthash "execution_state" "idle" h)
+                       h)))
+                  ((symbol-function 'emjupy--end-runs)
+                   (lambda (cells &rest _) (setq ended cells))))
+          (emjupy--settle-adopted-runs kernel '("req-old"))
+          (should (equal ended (list adopted)))
+          (should-not (gethash "req-old" pending))
+          (should (eq (gethash "req-new" pending) newer)))
+      (kill-buffer buf))))
+
 (ert-deftest emjupy-test-the-menu-names-its-notebook ()
   "The menu's title names the notebook it was opened from.
 Transient computes the title in a temporary buffer, so the notebook

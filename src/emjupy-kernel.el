@@ -812,19 +812,25 @@ the run ended while disconnected, and the cell is ended too."
       (with-current-buffer buf
         (when (and emjupy--kept-runs (equal (car emjupy--kept-runs)
                                             (emjupy-kernel-id kernel)))
-          (maphash (lambda (id cell) (puthash id cell
-                                              (emjupy-kernel-pending kernel)))
-                   (cdr emjupy--kept-runs))
-          (setq emjupy--kept-runs nil)
-          (run-with-timer 4 nil #'emjupy--settle-adopted-runs kernel))))))
+          (let ((ids nil))
+            (maphash (lambda (id cell)
+                       (puthash id cell (emjupy-kernel-pending kernel))
+                       (push id ids))
+                     (cdr emjupy--kept-runs))
+            (setq emjupy--kept-runs nil)
+            (run-with-timer 4 nil #'emjupy--settle-adopted-runs kernel ids)))))))
 
-(defun emjupy--settle-adopted-runs (kernel)
-  "End cells of KERNEL still running if KERNEL is idle: they ended unseen."
+(defun emjupy--settle-adopted-runs (kernel ids)
+  "Settle IDS, requests KERNEL adopted after a drop: end them if it is idle.
+They ended unseen, while the connection was down.  Only these: a run
+sent since may have finished on the kernel with its output still on the
+way, and ending it would lose that output."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb)))
-         (pending (emjupy-kernel-pending kernel)))
-    (when (and (buffer-live-p buf) (hash-table-p pending)
-               (> (hash-table-count pending) 0))
+         (pending (emjupy-kernel-pending kernel))
+         (left (and (hash-table-p pending)
+                    (seq-filter (lambda (id) (gethash id pending)) ids))))
+    (when (and (buffer-live-p buf) left)
       (let ((state (condition-case nil
                        (gethash "execution_state"
                                 (emjupy--http-request
@@ -835,10 +841,11 @@ the run ended while disconnected, and the cell is ended too."
                      (emjupy-http-error nil))))
         (when (equal state "idle")
           (let ((cells nil))
-            (maphash (lambda (id cell) (push cell cells)
-                       (remhash id emjupy--request-halves)) pending)
-            (clrhash pending)
-            (emjupy--end-runs cells buf (emjupy-notebook-path nb)
+            (dolist (id left)
+              (push (gethash id pending) cells)
+              (remhash id pending)
+              (remhash id emjupy--request-halves))
+            (emjupy--end-runs (delete-dups cells) buf (emjupy-notebook-path nb)
                               "a run ended while the connection was down, its output perhaps incomplete")))))))
 
 (defun emjupy--ws-session-id (notebook kernel-id)
