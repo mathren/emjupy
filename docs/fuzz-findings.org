@@ -2,12 +2,10 @@
 #+DATE: <2026-10-10 Sat>
 #+STARTUP: content
 
-Tested at =main= =40f030b= (0.1.15), without changing any code: what was
-weird, slow or could be better, with the numbers measured and how to
-reproduce each.  Emacs 30.1, jupyter-server 2.x, Python 3.12.
-
-A working log, kept in the repository but not published with the
-documentation.  Findings fixed since are marked so.
+Tested at =main= =40f030b= (0.1.15), without changing code: what was
+weird, slow or improvable, measured, with how to reproduce each.  Emacs
+30.1, jupyter-server 2.x, Python 3.12.  A working log, not published
+with the docs; findings fixed since are marked so.
 
 * How it was tested
 
@@ -52,66 +50,36 @@ documentation.  Findings fixed since are marked so.
 * Findings
 
 ** 1. =input()= does not work -- fixed
-- Fixed :: A cell's request for input is asked in the minibuffer and
-  answered: =input()=, =getpass= (as a password, kept out of the
-  history), =pdb= and =breakpoint()=, with a history for =M-p=.  =C-g= at
-  the prompt interrupts the kernel.  A live test covers each.
-- What :: A cell calling =input()= fails at once:
-  =StdinNotImplementedError: raw_input was called, but this frontend does
-  not support input requests.=
-- Why it matters :: Common in teaching notebooks and quick scripts;
-  =getpass=, =pdb= and =breakpoint()= fail the same way.
-- Likely cause :: Execute requests are sent with =allow_stdin= false, or
-  the stdin channel's =input_request= is not answered.  A minibuffer
-  prompt replying with =input_reply= would cover it.
+- Fixed :: A cell's request for input is asked in the minibuffer:
+  =input()=, =getpass= (as a password, kept out of the history), =pdb= and
+  =breakpoint()=, with a history for =M-p=; =C-g= interrupts the kernel.
+  Execute requests send =allow_stdin=, and a kernel's =input_request= is
+  answered with =input_reply=.  Was: =StdinNotImplementedError: raw_input was called, but this frontend
+  does not support input requests.=  A live test covers each.
 - Repro :: =x = input('name? ')=
 
 ** 2. Stacked progress bars come out garbled -- fixed
 - Fixed :: Cursor codes in stream output -- up, down, right, left, to a
-  column, clearing a line -- are applied as a terminal would, chunk by
-  chunk, the cursor kept between them (not saved with the output);
-  colours are kept.  Checked against pyte, a terminal emulator, on
-  recorded tqdm writes: the same screens.  Live: nested tqdm leaves one
-  finished bar.
-- What :: Nested =tqdm= bars, or bars with =position=, leave stale
-  lines.  Shown after a nested run:
-  #+begin_example
-  outer:   0%|          | 0/3 [00:00<?, ?it/s]
-  inner:   0%|          | 0/10 [00:00<?, ?it/s]
-
-  inner:   0%|          | 0/10 [00:00<?, ?it/s]
-  outer:  67%|██████▋   | 2/3 [00:00<00:00, 17.05it/s]
-  inner:   0%|          | 0/10 [00:00<?, ?it/s]
-  outer: 100%|██████
-  #+end_example
-  Two bars with =position=0= and =1=: a stale =A:   0%= line stays above
-  the finished =A= and =B=.
-- Likely cause :: These use cursor movement -- =ESC [ A= (up a line) and
-  =ESC [ K= (clear to end of line) -- which is not interpreted; only =\r=
-  is.  A single bar, =\r= without a final newline, and =end=''=
-  streaming all end up right.
+  column, clearing a line (=ESC [ A=, =ESC [ K=) -- are applied as a
+  terminal would, chunk by chunk, colours kept.  Checked against pyte, a
+  terminal emulator, on recorded =tqdm= writes: the same screens.  Was:
+  nested bars left stale lines, and two with =position=0= and =1= a stale
+  =A:   0%= line above the finished =A= and =B=: only =\r= was applied.
+  A single bar, =\r= without a final newline, and =end=''= streaming were
+  right.
 - Repro :: =for i in tqdm(range(3)):= with an inner
   =tqdm(range(10), leave=False)=
 
 ** 3. Output of a cell still running is lost when the link drops -- fixed
-- Fixed :: The kernel's WebSocket carries a session id, the same on every
-  reconnection, so the server replays what it kept while the connection
-  was down.  A drop no longer ends running cells: emjupy reconnects by
-  itself within =emjupy-reconnect-window=, hands the cells to the new
-  connection, and ends any whose run finished unseen once the kernel is
-  idle.  Live: a connection cut mid-run, every one of 25 ticks arrives,
-  the server logging "Replaying 13 buffered messages".
-- What :: Through the proxy, a cell printing a tick every 0.2 s for 6 s.
-  The proxy was killed at 1.5 s, restarted, and the kernel reconnected
-  (=emjupy-reconnect-kernel=, fast).  The kernel went on running the
-  cell, but only ticks 0 to 5 are ever shown, and the cell is marked
-  stopped.
-- Handled well :: The drop itself: "kernel connection closed; 1 running
-  cell stopped.", the output so far kept, the structure intact.
-- Improvable :: Jupyter servers buffer a session's messages for a short
-  while after a WebSocket closes and replay them to a reconnecting
-  client with the same session id.  Reconnecting with the same session
-  could keep the run's output, and its "running" state.
+- Fixed :: The kernel's WebSocket carries the same session id on every
+  reconnection, so the server replays what it kept meanwhile.  A drop no
+  longer ends running cells: emjupy reconnects within
+  =emjupy-reconnect-window=, hands the cells to the new connection, and
+  ends those that finished unseen once the kernel is idle.  Live: a
+  connection cut mid-run, all 25 ticks arrive, the server logging
+  "Replaying 13 buffered messages".  Was: through a proxy killed at 1.5 s
+  of a 6 s cell, only ticks 0 to 5 shown, the cell marked stopped, even
+  with =emjupy-reconnect-kernel=.
 
 ** 4. A kernel dying mid-cell leaves the cell "running"
 - What :: After =os._exit(1)= the cell still showed as running 15 s
@@ -123,27 +91,18 @@ documentation.  Findings fixed since are marked so.
   automatically.
 
 ** 5. Language server tried with =emjupy-language-support= nil -- fixed
-- Fixed :: Three paths skipped the switch, not the two first suspected:
-  the warm-up when a notebook opens; =M-.=, whose xref backend was
-  registered for every notebook; and the Eglot attach inside
-  =emjupy--ensure-shadow-buffer=, which every command asking a server for
-  something passes through.  The attach checks the switch now, where they
-  converge, so no caller can forget it; the warm-up does not run, and
-  =M-.= is left to other backends.  The shadow buffer is still built when
-  asked for -- editing all the code in one buffer needs no server.  A live
-  test counts the warm-up, unit tests the server starts: one with the
-  switch off before, none after.
-- What :: With the variable set to nil after loading emjupy, opening a
-  notebook printed:
-  =[emjupy] Language-server setup failed (None of 'pylsp, pyls, ... are
-  valid executables); pausing 30s.=
-  Reproduced in a clean session.
-- Why it matters :: The docstring calls it "a single switch over every
-  path that talks to a language server", for telling whether a slowdown
-  comes from language support.
-- Where :: The message comes from =emjupy--shadow-block=, called from
-  =emjupy-start-language-support=, which checks the switch, and from
-  =emjupy--ensure-shadow-buffer=, which did not.
+- Fixed :: Three paths skipped the switch: the warm-up as a notebook
+  opens; =M-.=, its xref backend registered for every notebook; and the
+  Eglot attach in =emjupy--ensure-shadow-buffer=, through which every
+  server request passes.  The attach checks the switch now, where they
+  converge; the warm-up does not run, and =M-.= is left to other
+  backends.  The shadow buffer is still built when asked for: editing
+  all the code needs no server.  Was: =[emjupy] Language-server setup
+  failed (None of 'pylsp, pyls, ... are valid executables); pausing
+  30s.=, from =emjupy--shadow-block=, called by
+  =emjupy-start-language-support=, which checked the switch, and by
+  =emjupy--ensure-shadow-buffer=, which did not.  Tests: a live one counts
+  the warm-up, unit ones the server starts.
 
 ** 6. A 10 MB notebook is slow to open and redraw
 - What :: 100 cells, each with a 100 KB stream output (9.9 MB file):
@@ -241,12 +200,10 @@ documentation.  Findings fixed since are marked so.
 - Improvable :: Draw a box's children side by side when it is a
   horizontal box (=HBox=) and they fit.
 
-** 19. The interactive test notebook's text is out of date
-- What :: =test_notebooks/interactive.ipynb= says figures open "in an
-  xwidget where this Emacs has one, in the browser otherwise"; they open
-  in a window of their own by default, xwidgets being opt-in.
-- Status :: *fixed*: the notebook says where figures open, and names
-  =emjupy-figure-viewer=.
+** 19. The interactive test notebook's text is out of date -- fixed
+- Fixed :: =test_notebooks/interactive.ipynb= said figures open "in an
+  xwidget where this Emacs has one, in the browser otherwise"; it says
+  where they open now, and names =emjupy-figure-viewer=.
 
 ** 20. A cold first import takes 7 s, with no feedback
 - What :: =import numpy, matplotlib= in a fresh kernel: 7.2 s, the cell
