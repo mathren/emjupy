@@ -7,32 +7,25 @@ server that sees the environment the code will run in.
 
 * The server next to the kernel
 
-emjupy talks LSP to the language server that =jupyter-lsp= runs *on the
-Jupyter server*, over that server's own WebSocket -- the same transport
-the notebook already uses, and the arrangement JupyterLab's
-=jupyterlab-lsp= uses.
+emjupy talks LSP to the language server =jupyter-lsp= runs *on the
+Jupyter server*, over that server's WebSocket -- the notebook's own
+transport, and how JupyterLab's =jupyterlab-lsp= works.  So:
 
-The consequences are worth stating plainly:
-
-- *Nothing written on the remote.* The code is sent in-band with
-  =didChange=, which is what LSP is for.  The local shadow file is
-  written once, when it is created, for =eglot= to attach to.
-- *No second connection.* Completion and documentation use no TRAMP, no
-  ssh and no directory probing: measured, zero remote filesystem
-  operations.  Only opening a definition that lives on the kernel's
-  machine goes over TRAMP, since that is a file there.
-- *The right environment.* The server runs beside the kernel, so
-  completions describe the packages the code will actually import, and
-  =M-.= finds your own modules because the server resolves them against
-  the notebook's own directory.
+- *Nothing written on the remote.* Code goes in-band with =didChange=.
+  The local shadow file is written once, for =eglot= to attach to.
+- *No second connection.* Completion and documentation make no TRAMP,
+  ssh or directory calls -- measured, zero remote filesystem operations.
+  Only opening a definition on the kernel's machine uses TRAMP.
+- *The right environment.* Beside the kernel, the server describes the
+  packages the code will import, and =M-.= finds your own modules,
+  resolved against the notebook's directory.
 
 * Requirements
 :PROPERTIES:
 :CUSTOM_ID: requirements
 :END:
 
-Two packages must be installed in the Python environment that runs
-=jupyter server=:
+Two packages, in the Python environment running =jupyter server=:
 
 #+begin_src bash
 pip install jupyter-lsp 'python-lsp-server[all]'
@@ -46,143 +39,117 @@ dependencies:
   - python-lsp-server
 #+end_src
 
-They serve different purposes:
-
 | Package             | Purpose                                     |
 |---------------------+---------------------------------------------|
 | =jupyter-lsp=         | adds the =/lsp/= endpoints to Jupyter         |
 | =jupyterlab-lsp=      | JupyterLab front end; requires =jupyter-lsp=  |
 | =python-lsp-server=   | the Python language server                  |
 
-Installing =jupyterlab-lsp= does not install a language server.  An
-environment containing it alone provides the endpoints with no server
-behind them.
+=jupyterlab-lsp= installs no language server: alone, it gives the
+endpoints with nothing behind them.
 
 * Locating the language server
 
-=jupyter-lsp= detects a server by importing it:
-=importlib.util.find_spec("pylsp")=, evaluated in the interpreter running
-=jupyter server=, and started as =[sys.executable, "-m", "pylsp"]=.  The
-=PATH= variable is not consulted.
-
-A =pylsp= installed elsewhere on the machine is therefore not found.  It
-must be importable by the interpreter running =jupyter server=.
-
-This is a property of the Jupyter server, not of a project: one server
-requires one installation regardless of how many notebooks it serves.
+=jupyter-lsp= finds a server by importing it --
+=importlib.util.find_spec("pylsp")= in the interpreter running
+=jupyter server= -- and starts it as =[sys.executable, "-m", "pylsp"]=.  =PATH= is
+not consulted: a =pylsp= elsewhere on the machine is not found.  One
+installation per server, however many notebooks it serves.
 
 * =eglot= over the Jupyter WebSocket
 
-Every =eglot= command works against the language server running beside the
-kernel -- rename, formatting, code actions, find-implementation, and
-whatever =eglot= gains next.  Nothing is wired up per command.
+Every =eglot= command works against the server beside the kernel --
+rename, formatting, code actions, find-implementation, whatever =eglot=
+gains next -- with nothing wired up per command.
 
 =eglot= reaches a server through three =jsonrpc= generics, and
-=jsonrpc-connection-send= dispatches on the connection class, so a
-subclass can carry the traffic anywhere.  =emjupy-eglot-server= carries
-it over the same WebSocket the notebook already uses.
-=jsonrpc-process-connection= type-checks for a process object, so one is
-stood up and then ignored: it satisfies the check and carries nothing.
+=jsonrpc-connection-send= dispatches on the connection class:
+=emjupy-eglot-server= sends over the notebook's WebSocket.
+=jsonrpc-process-connection= type-checks for a process, so an idle one
+is made and ignored.
 
-The document has two names -- the shadow file on this machine, which is
-what =eglot= manages, and the path the kernel would see, which is what the
-server knows -- so every message is rewritten in one direction or the
-other as it passes through.  That is the single place the two have to
-agree.
+The document has two names -- the shadow file here, which =eglot=
+manages, and the path the kernel sees, which the server knows -- and
+every message is rewritten between them in that one place.  Completion,
+eldoc, =M-.= and every other =eglot= command go to the shadow buffer,
+where =eglot= is attached.
 
-Completion, eldoc, =M-.= and every other =eglot= command go the same
-way: to the shadow buffer, where =eglot= is attached.
-
-With this transport the shadow file is always local: it is something for
-=eglot= to attach to, not something the language server reads -- the
-server is sent its contents over the socket.  =emjupy-shadow-host= plays
-no part; it applies only to the SSH arrangement described in [[file:remote.org][Working
+With this transport the shadow file is always local, as the server is
+sent its contents; =emjupy-shadow-host= applies only to the SSH
+arrangement of [[file:remote.org][Working
 with a remote server]].
 
 * =eglot= commands in a notebook
 
-=eglot='s own commands look for the server of the buffer they run in,
-and a notebook buffer is not the one =eglot= manages -- run there
-unassisted, =M-x eglot-rename= fails with "No current JSON-RPC
-connection".  So the commands in =emjupy-eglot-delegated-commands= --
-=eglot-rename=, =eglot-code-actions=, =eglot-format= and the =eglot-find-*=
-family -- run in the shadow buffer at the position matching point, with
-any edits pulled back into the cells.  Because that buffer holds every cell at
-once, a rename fixes references in *all* of them, not only the cell
-point was in.
+=eglot='s commands look for the server of the buffer they run in, which
+for a notebook is none: =M-x eglot-rename= there fails with "No current
+JSON-RPC connection".  So the commands in
+=emjupy-eglot-delegated-commands= -- =eglot-rename=, =eglot-code-actions=,
+=eglot-format=, the =eglot-find-*= family -- run in the shadow buffer at
+the point's position, their edits pulled back into the cells.  It holds
+every cell, so a rename fixes references in *all* of them.
 
 The advice does nothing outside =emjupy-mode=; =M-x
-emjupy-eglot-remove-advice= takes it off entirely.
+emjupy-eglot-remove-advice= removes it.
 
 * Jumping to definitions
 
-Because the shadow buffer holds every cell at once, a jump crosses
-cells: =M-.= on a call in one cell lands on the definition in another.
-
-=M-.= works inside a notebook. =eglot= installs its =xref= backend in the
-buffer it manages -- the hidden shadow buffer, not the notebook -- so
-emjupy adds a backend that forwards there and maps the answer back.
+=eglot= installs its =xref= backend in the shadow buffer, so emjupy adds
+one in the notebook that forwards there and maps the answer back.  The
+shadow buffer holding every cell, =M-.= on a call in one cell lands on its
+definition in another.
 
 ** Remote =M-.= needs remote LSP
 
-The language server that answers decides what can be found, because it
-can only read the files on the machine it runs on.
+A language server reads only the files of its machine:
 
 | Language server            | Your own modules | Standard library and packages                 |
 |----------------------------+------------------+-----------------------------------------------|
 | beside the kernel (remote) | found            | found -- the kernel's own                     |
 | on this machine (fallback) | *not found*        | found -- but THIS machine's, not the kernel's |
 
-So for a notebook whose kernel runs elsewhere, =M-.= into your own code
-needs =jupyter-lsp= and a language server installed *where the kernel
-runs* -- see [[*Requirements][Requirements]].  Without them emjupy falls back to a
-language server on this machine and says so when it starts; the
-standard library still resolves, but to this machine's copy, which can
-be a different Python.  For a kernel on this machine the two are the
-same machine, and either works.
+For a kernel elsewhere, =M-.= into your own code needs =jupyter-lsp= and
+a language server *where the kernel runs* -- see [[*Requirements][Requirements]].
+Without them emjupy falls back to a server on this machine, saying so,
+and the standard library resolves to this machine's copy, possibly
+another Python.  For a kernel here, either works.
 
-=M-x emjupy-lsp-diagnose= says which server a notebook is using: "over
-the Jupyter WebSocket" is the one beside the kernel, "a local process"
-is the fallback.
+=M-x emjupy-lsp-diagnose= says which server a notebook uses: "over the
+Jupyter WebSocket" is the one beside the kernel, "a local process" the
+fallback.
 
 * Jumping into modules beside a remote notebook
 
 A definition the server beside the kernel reports is a path on the
-kernel's machine, and emjupy opens it there, over TRAMP.  The host comes
-from =emjupy-remote-root= if it names one, and otherwise from the SSH
-tunnel the server is reached through -- found by reading the =ssh=
-process on this machine, so nothing needs configuring when the server
-is behind =ssh -L=.  Every path is sent there, the standard library's
-included: the kernel's Python is what the code runs against.
+kernel's machine, opened there over TRAMP -- the standard library's too,
+as the kernel's Python is what the code runs against.  The host is
+=emjupy-remote-root='s, if it names one, or that of the SSH tunnel the
+server is reached through, read from the =ssh= process here: nothing to
+configure behind =ssh -L=.
 
-When there is no way to reach that machine -- no tunnel to read, nothing
-configured -- emjupy says which file it could not open and that
-=emjupy-remote-root= is what would reach it, rather than opening a file
-of the same name on this machine.
-
-Paths from the fallback server are left as they are: they name this
-machine's files.
+With no way to reach that machine -- no tunnel, nothing configured --
+emjupy names the file it could not open, and =emjupy-remote-root= as what
+would reach it, rather than open a same-named file here.  Paths from the
+fallback server name this machine's files, and are left as they are.
 
 * Eglot is part of the package
 
-=eglot= ships with Emacs 30.1, which this package requires, and it is
-loaded with =emjupy=: the WebSocket transport inherits from Eglot's own
-connection class.  Loaded is not started -- nothing connects to a
-language server until a notebook asks for completion or documentation,
-and =emjupy= works without one.
+=eglot= ships with Emacs 30.1, which emjupy requires, and loads with it:
+the WebSocket transport inherits Eglot's connection class.  Loaded, not
+started: nothing connects until a notebook asks for completion or
+documentation, and =emjupy= works without a server.
 
 * Language server requests
 
-Requests are asynchronous.  eldoc runs after every command, so a
-blocking request would cost one round trip per keystroke.  Completion
-answers from the previous reply and requests the next in the background.
+Requests are asynchronous: eldoc runs after every command, and a
+blocking request would cost a round trip per keystroke.  Completion
+answers from the previous reply, asking for the next in the background.
+The handshake is asynchronous too: =jupyter-lsp= starts the server on
+demand, which may take seconds, with no answers until then.  A socket
+that cannot be opened is retried after =emjupy-lsp-retry-interval=
+seconds.
 
-The handshake is also asynchronous.  =jupyter-lsp= starts the language
-server on demand, so connecting may take several seconds; until it
-completes, no answers are available.  If the socket cannot be opened,
-another attempt is not made for =emjupy-lsp-retry-interval= seconds.
-
-Per-command cost, measured on a twelve-cell notebook containing figures:
+Per-command cost, measured on a twelve-cell notebook with figures:
 
 | Operation     | Time    |
 |---------------+---------|
@@ -192,42 +159,32 @@ Per-command cost, measured on a twelve-cell notebook containing figures:
 
 * When a shadow file would describe the wrong machine
 
-If the kernel runs somewhere this Emacs cannot reach, and
-=emjupy-shadow-host= does not say how to get there, the shadow file --
-and so the language server -- is local.  What it describes is *this*
-machine: its interpreter, its packages, and none of the modules beside
-the notebook.  For ordinary Python that is mostly right and worth
-having, which is why it is the default; for anything that depends on the
-environment the code will actually run in, it is confidently wrong, so
+If the kernel runs where this Emacs cannot reach, and
+=emjupy-shadow-host= does not say how, the shadow file and its server are
+local, describing *this* machine: its interpreter and packages, none of
+the modules beside the notebook.  Mostly right for ordinary Python, so the
+default, but confidently wrong for anything environment-specific, so
 emjupy says so once per notebook.
-
-Set =emjupy-shadow-when-kernel-unreachable= to nil to have no language
-support at all in that case rather than approximate support.  Either
-way, =emjupy-shadow-host= or =jupyter-lsp= on the server gives answers
-from the right machine.
+=emjupy-shadow-when-kernel-unreachable= nil gives no language support
+instead.  =emjupy-shadow-host=, or =jupyter-lsp= on the server, gives
+answers from the right machine.
 
 * When the language server cannot be reached
 
-In the SSH arrangement, where the shadow file sits on the remote over
-TRAMP, completion and eldoc ask for the shadow buffer after every
-command.  If the host is slow or unreachable each attempt blocks Emacs
-while TRAMP waits -- so one failure repeated per keystroke would be
-indistinguishable from a hang.
-
-emjupy gives setup =emjupy-shadow-timeout= seconds (2 by default) and, if
-it fails, stops trying for =emjupy-shadow-retry-interval= seconds (30),
-saying so once.  That covers both halves: creating the file, and
-starting the language server -- the second being the expensive one, and
-the one that otherwise repeats after every command when the host has no
-=pylsp=.  Editing and running cells never depend on the shadow
-buffer, so they keep working: only completion, eldoc and =M-.= are lost
-until the host answers again.
+In the SSH arrangement the shadow file is remote, over TRAMP, and asked
+for after every command: an unreachable host would block every
+keystroke.  So setup gets =emjupy-shadow-timeout= seconds (2) and, on
+failure, is not retried for =emjupy-shadow-retry-interval= seconds (30),
+saying so once -- for creating the file, and for starting the language
+server, the costly half, which otherwise repeats per command when the
+host has no =pylsp=.  Editing and running cells never need the shadow
+buffer: only completion, eldoc and =M-.= wait for the host.
 
 * Falling back
 
-Set =emjupy-lsp-enabled= to nil for the older arrangement, which needs no
-=jupyter-lsp= on the server: the language server runs on this machine, or
-over SSH beside the kernel -- set up as in [[file:remote.org][Working with a remote server]].
+=emjupy-lsp-enabled= nil selects the older arrangement, needing no
+=jupyter-lsp=: the language server runs on this machine, or over SSH
+beside the kernel -- see [[file:remote.org][Working with a remote server]].
 
 * Checking it from the shell
 
@@ -235,8 +192,7 @@ over SSH beside the kernel -- set up as in [[file:remote.org][Working with a rem
 curl -s "http://localhost:9999/lsp/status?token=YOUR_REAL_TOKEN"
 #+end_src
 
-Substitute the real token; the string =YOUR_REAL_TOKEN= will be refused.
-The three answers mean three different things:
+With your real token (=YOUR_REAL_TOKEN= is refused):
 
 | Answer                            | Meaning                                |
 |-----------------------------------+----------------------------------------|
@@ -244,17 +200,13 @@ The three answers mean three different things:
 | ={"message": "Forbidden"}= (403)    | the token was wrong, nothing more      |
 | ={"version": 2, "sessions": {...}}= | the plumbing works; read what it lists |
 
-On a working setup =sessions= names the language servers actually
-installed:
+=sessions= names the language servers installed:
 
 #+begin_example
 {"version": 2, "sessions": {"pylsp": {"status": "not_started", ...}}}
 #+end_example
 
-An *empty* =sessions= is the giveaway that the plumbing is there and the
-language server is not.  =emjupy-lsp-server= (default ="pylsp"=) names
-which of the listed servers to ask for.
-
-emjupy makes the same check for you: when it cannot reach a language
-server it asks =/lsp/status= itself and says which of these three
-situations it found, rather than failing silently.
+An *empty* =sessions= means the plumbing is there and no language server.
+=emjupy-lsp-server= (default ="pylsp"=) names the one to ask for.  emjupy
+asks =/lsp/status= itself when it cannot reach a server, and says which
+of the three it found.
