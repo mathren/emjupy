@@ -90,6 +90,28 @@ on process output, so every assertion about kernel replies has to pump."
     (emjupy--spawn-and-connect-kernel (emjupy--notebook))
     (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p)))))
 
+(defun emjupy-int--shows (regexp &optional seconds)
+  "Wait up to SECONDS, 30 by default, for this buffer to show REGEXP.
+Output is drawn from a timer, after it arrives: checked at once, a slow
+machine had not drawn it yet."
+  (emjupy-int--pump (or seconds 30)
+                    (lambda () (string-match-p regexp (buffer-string)))))
+
+(defun emjupy-int--wait-finished (cell &optional seconds)
+  "Wait up to SECONDS, 60 by default, for CELL's run to finish; return CELL.
+Finished is the reply and the idle after its last output both come: the
+request then leaves the pending table.  The reply alone is not enough --
+it can overtake the output it describes.  Called in CELL's notebook."
+  (let ((pending (emjupy-kernel-pending
+                  (emjupy-notebook-kernel emjupy--buffer-notebook))))
+    (emjupy-int--pump (or seconds 60)
+                      (lambda () (numberp (emjupy-cell-exec-count cell))))
+    (emjupy-int--pump (or seconds 60)
+                      (lambda ()
+                        (not (cl-loop for v being the hash-values of pending
+                                      thereis (eq v cell))))))
+  cell)
+
 (defun emjupy-int--run (code &optional seconds)
   "Put CODE in the notebook's first cell, execute it, wait for the reply.
 Returns the cell. Writes through the BUFFER, because
@@ -104,21 +126,7 @@ first -- setting the struct alone would be silently overwritten."
       (emjupy--rerender-notebook cell)
       (goto-char (overlay-start (emjupy-cell-overlay cell)))
       (emjupy-execute-cell-at-point)
-      ;; execute_reply sets exec-count; that's our completion signal.
-      (emjupy-int--pump (or seconds 60)
-                        (lambda () (numberp (emjupy-cell-exec-count cell))))
-      ;; The reply can overtake the output it describes, so the count alone
-      ;; is not the end.  The request is finished when the kernel has sent
-      ;; both the reply and the idle that follows its last output, which is
-      ;; exactly when it leaves the pending table.  Waiting for that rather
-      ;; than a fixed grace period is what a slow CI runner needed.
-      (let ((pending (emjupy-kernel-pending
-                      (emjupy-notebook-kernel emjupy--buffer-notebook))))
-        (emjupy-int--pump (or seconds 60)
-                          (lambda ()
-                            (not (cl-loop for v being the hash-values of pending
-                                          thereis (eq v cell))))))
-      cell)))
+      (emjupy-int--wait-finished cell seconds))))
 
 (defun emjupy-int--output-types (cell)
   (cl-loop for o across (or (emjupy-cell-outputs cell) [])
@@ -230,7 +238,7 @@ session state -- this is the `resilient to connection drops' claim
        (should (> (length (gethash "traceback" err)) 0)))
      ;; and it must actually appear in the buffer, ANSI colour codes stripped
      (with-current-buffer emjupy-int--buffer
-       (should (string-match-p "ZeroDivisionError" (buffer-string)))
+       (should (emjupy-int--shows "ZeroDivisionError"))
        (should-not (string-match-p "\033\\[" (buffer-string)))))))
 
 (ert-deftest emjupy-int-python-stdlib-and-multiline ()
@@ -585,9 +593,7 @@ asserting against noise."
       (emjupy--rerender-notebook cell)
       (goto-char (overlay-start (emjupy-cell-overlay cell)))
       (emjupy-execute-cell-at-point)
-      (emjupy-int--pump (or seconds 60)
-                        (lambda () (numberp (emjupy-cell-exec-count cell))))
-      cell)))
+      (emjupy-int--wait-finished cell seconds))))
 
 (defun emjupy-int--await-ready (buf &optional tries)
   "Run a trivial cell in BUF until the kernel answers, or give up.
@@ -639,8 +645,7 @@ and finishing a cell in one must not write output into the other."
           (let ((cell (emjupy-int--run-in a "print(ONLY_IN_A)")))
             (should (string-match-p "111" (emjupy-int--stdout cell))))
           ;; output landed only in its own buffer
-          (with-current-buffer a (should (string-match-p "111"
-                                                         (buffer-string))))
+          (with-current-buffer a (should (emjupy-int--shows "111")))
           (with-current-buffer b (should-not (string-match-p "111"
                                                              (buffer-string)))))
       (let ((kill-buffer-query-functions nil))
@@ -1234,7 +1239,7 @@ went, not the kernel."
          ;; the tunnel comes back; so does the same kernel
          (emjupy-int--proxy-say "reset")
          (emjupy-reconnect-kernel)
-         (emjupy-int--pump 10
+         (emjupy-int--pump 30
                            (lambda ()
                              (emjupy--ws-live-p (emjupy-notebook-kernel nb))))
          (should (emjupy--ws-live-p (emjupy-notebook-kernel nb)))))
@@ -1374,7 +1379,7 @@ go.Figure(go.Scatter(x=[1, 2, 3], y=[3, 1, 2])).show()" 60))
      (should (gethash emjupy--plotly-mime data))
      (with-current-buffer emjupy-int--buffer
        ;; the output is the line that opens it, not "Figure"
-       (should (string-match-p "Interactive plotly figure" (buffer-string)))
+       (should (emjupy-int--shows "Interactive plotly figure"))
        (cl-letf (((symbol-function 'emjupy--show-file) (lambda (file)
                                                          (setq shown file))))
          (emjupy-open-output data)
@@ -1419,7 +1424,7 @@ def f(n=3):
        (ert-skip "ipywidgets or matplotlib is not installed where the kernel runs"))
      (with-current-buffer emjupy-int--buffer
        ;; the slider, not "interactive(children=...)"
-       (should (string-match-p "n ◀ 3 ▶" (buffer-string)))
+       (should (emjupy-int--shows "n ◀ 3 ▶"))
        (should-not (string-match-p "interactive(children" (buffer-string)))
        (let ((before (funcall images)))
          (should (= (length before) 1))
