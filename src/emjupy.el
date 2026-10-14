@@ -104,8 +104,8 @@
 
 ;;;###autoload
 (defun emjupy-version (&optional insert)
-  "Report version, the directory the code was loaded from and, when that
-is a git checkout, the revision.
+  "Report the version, and the directory the code was loaded from.
+When that is a git checkout, the revision too.
 
 In a notebook buffer it also says the kernel's working directory and
 which language server is answering.
