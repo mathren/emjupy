@@ -27,6 +27,7 @@ EMACS   ?= emacs
 # Emacs this is.
 EMACS_TARGET = 30.1
 SRC     := src
+TEST    := test
 VERSION := $(shell sed -n 's/^;; Version: \(.*\)/\1/p' $(SRC)/emjupy.el)
 PKG     := emjupy-$(VERSION)
 TAR     := $(PKG).tar
@@ -34,7 +35,7 @@ TAR     := $(PKG).tar
 # websocket is the only external dependency. Point this at a checkout to run
 # offline, otherwise it is resolved from your package dir.
 WEBSOCKET ?= $(EMJUPY_WEBSOCKET_DIR)
-LOADPATH  := -L $(SRC) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
+LOADPATH  := -L $(SRC) -L $(TEST) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
@@ -56,7 +57,7 @@ compile:
 	done
 
 test:
-	$(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el
+	$(EMACS) -batch -Q $(LOADPATH) -l $(TEST)/emjupy-run-tests.el
 
 # Integration tests are opt-in; see the README for the environment variables.
 # The command is the same as `test': what decides whether the integration
@@ -70,7 +71,7 @@ ifndef EMJUPY_TEST_URL
 skipped.  Set EMJUPY_TEST_URL, EMJUPY_TEST_TOKEN and EMJUPY_TEST_ROOT, or \
 run `make test' if you only want the unit tests)
 endif
-	$(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el
+	$(EMACS) -batch -Q $(LOADPATH) -l $(TEST)/emjupy-run-tests.el
 
 # Line coverage of the test suite, as lcov in coverage/lcov.info.  Uses
 # whichever tests can run: set the integration variables, as for `check',
@@ -83,7 +84,7 @@ coverage:
 	@mkdir -p coverage
 	@status=0; \
 	EMJUPY_COVERAGE=$(abspath coverage/lcov.info) \
-	  $(EMACS) -batch -Q $(LOADPATH) -l $(SRC)/emjupy-run-tests.el || status=$$?; \
+	  $(EMACS) -batch -Q $(LOADPATH) -l $(TEST)/emjupy-run-tests.el || status=$$?; \
 	python3 tools/coverage-summary.py coverage/lcov.info; \
 	exit $$status
 

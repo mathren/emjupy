@@ -26,7 +26,11 @@
 
 (require 'package)
 
-(add-to-list 'load-path default-directory)
+;; The tests beside this file, the package in ../src: found however this
+;; is started, not only from the repository's root.
+(let ((here (file-name-directory (or load-file-name buffer-file-name))))
+  (add-to-list 'load-path here)
+  (add-to-list 'load-path (expand-file-name "../src" here)))
 
 (let ((vendored (getenv "EMJUPY_WEBSOCKET_DIR")))
   (when (and vendored (file-directory-p vendored))
@@ -56,7 +60,8 @@
   ;; The patterns are resolved against the directory Emacs was started in,
   ;; which is the repository root under make; absolute names avoid the
   ;; question.  The tests and these scripts are not measured.
-  (let ((src (file-name-directory (or load-file-name buffer-file-name))))
+  (let ((src (expand-file-name "../src" (file-name-directory
+                                          (or load-file-name buffer-file-name)))))
     (eval `(undercover
             ,@(mapcar (lambda (f) (expand-file-name f src))
                       '("emjupy-core.el" "emjupy-http.el" "emjupy-render.el"

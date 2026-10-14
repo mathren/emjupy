@@ -31,7 +31,8 @@ was being tested.
 * Source layout
 
 The sources are in =src/=, listed here from the bottom layer up.  Each
-file requires only files earlier in this table, never later ones.
+file requires only files earlier in this table, never later ones.  The
+tests are in =test/=, the notebooks they read in =test_notebooks/=.
 
 | File                      | Contains                                                    |
 |---------------------------+-------------------------------------------------------------|
@@ -210,13 +211,13 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
 Each check runs once per event, in one workflow unless only another can
 do it:
 
-| Event                          | Runs                                                                                                           |
-|--------------------------------+----------------------------------------------------------------------------------------------------------------|
-| pull request                   | =build-package.yml=: check (lint, the recipe compiled, package, docs), melpazoid, and the tests, unit and live |
-| push to =main=                 | =build-package.yml=: check and melpazoid                                                                       |
-| push to =main= changing =src/= | and =coverage.yml=: the tests, unit and live, once, instrumented -- what fails them fails it                   |
-| tag                            | =release.yml= only                                                                                             |
-| by hand                        | =set-version.yml=, or any of the above from the Actions tab                                                    |
+| Event                                     | Runs                                                                                                           |
+|-------------------------------------------+----------------------------------------------------------------------------------------------------------------|
+| pull request                              | =build-package.yml=: check (lint, the recipe compiled, package, docs), melpazoid, and the tests, unit and live |
+| push to =main=                            | =build-package.yml=: check and melpazoid                                                                       |
+| push to =main= changing =src/= or =test/= | and =coverage.yml=: the tests, unit and live, once, instrumented -- what fails them fails it                   |
+| tag                                       | =release.yml= only                                                                                             |
+| by hand                                   | =set-version.yml=, or any of the above from the Actions tab                                                    |
 
 Every check that needs only Emacs is one job, =check=, since each job
 checks out the code and installs Emacs afresh.  On a push to =main= the
@@ -354,7 +355,7 @@ The self-contained suite requires only =websocket=:
 #+begin_src bash
 make test
 # which is
-emacs -batch -Q -L src -l src/emjupy-run-tests.el
+emacs -batch -Q -l test/emjupy-run-tests.el
 #+end_src
 
 =websocket= is resolved from =load-path= first, then from
@@ -408,7 +409,7 @@ found.
 
 * Robustness tests
 
-=src/emjupy-robustness-test.el= holds the tests that make their own
+=test/emjupy-robustness-test.el= holds the tests that make their own
 inputs.  They run with the rest of =make test=, and each found a bug
 the hand-written tests had not.
 
@@ -588,10 +589,9 @@ The one-line summary is the same in the header of =src/emjupy.el= and in
 
 * Submitting to MELPA
 
-The recipe must list the files explicitly.  A recipe without =:files=
-takes every =.el= in the repository, which here would ship the tests to
-users and include =emjupy-run-tests.el=, a script with no =provide= form
-that =package-lint= rejects.
+The recipe must list the files explicitly: they are in =src/=, where
+MELPA's default =:files= does not look.  The tests, in =test/=, are not
+shipped.
 
 The recipe used is kept at =.github/melpa-recipe=:
 
