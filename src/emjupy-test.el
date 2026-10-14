@@ -8875,6 +8875,25 @@ what the save by hand replaces."
                                               "/opt/conda/envs/analysis")
                      ("ml" . "/home/me/.conda/envs/ml"))))))
 
+(ert-deftest emjupy-test-the-menu-names-its-notebook ()
+  "The menu's title names the notebook it was opened from.
+Transient computes the title in a temporary buffer, so the notebook
+buffer is found through `transient--original-buffer'; looked for in the
+current buffer, the title never named a notebook."
+  (let ((notebook (get-buffer-create " *emjupy-menu-title*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer notebook
+            (setq-local emjupy--buffer-notebook
+                        (make-emjupy-notebook :path "analysis/run.ipynb")))
+          (with-temp-buffer
+            (let ((transient--original-buffer notebook))
+              (should (equal (emjupy--menu-title)
+                             "emjupy  analysis/run.ipynb")))
+            (let ((transient--original-buffer nil))
+              (should (equal (emjupy--menu-title) "emjupy")))))
+      (kill-buffer notebook))))
+
 (ert-deftest emjupy-test-a-notebook-through-tramp-has-an-ssh-route ()
   "A TRAMP name gives the ssh route to its machine, every hop as ssh -J."
   (let ((tramp-default-proxies-alist nil))

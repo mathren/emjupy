@@ -18,7 +18,6 @@
 ;;; Code:
 
 (require 'loadhist)                     ; `feature-file'
-(require 'transient)
 (require 'emjupy-core)
 (require 'emjupy-render)
 (require 'emjupy-cells)

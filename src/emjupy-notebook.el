@@ -1871,6 +1871,18 @@ running, to come back to."
   ;; on, so taking the key would remove the fallback.
   (define-key map (kbd "C-c C-v") #'emjupy-menu))
 
+(defun emjupy--menu-title ()
+  "Return the title of `emjupy-menu': emjupy, and the notebook's path.
+Transient computes it in a temporary buffer; the notebook is the one the
+menu was opened from, `transient--original-buffer'."
+  (with-current-buffer (if (buffer-live-p transient--original-buffer)
+                           transient--original-buffer
+                         (current-buffer))
+    (if emjupy--buffer-notebook
+        (format "emjupy  %s"
+                (or (emjupy-notebook-path emjupy--buffer-notebook) "unsaved"))
+      "emjupy")))
+
 ;;;###autoload (autoload 'emjupy-menu "emjupy" nil t)
 (transient-define-prefix emjupy-menu ()
   "Show what emjupy can do, grouped by what you are trying to do.
@@ -1879,14 +1891,7 @@ There are some forty bindings, and `C-h m' lists them in the order they
 were defined rather than the order anyone thinks in.  This groups them,
 and can be used as a menu in its own right: everything here runs from
 this buffer."
-  [:description
-   (lambda ()
-     (let ((nb (and (bound-and-true-p emjupy--buffer-notebook)
-                    emjupy--buffer-notebook)))
-       (if nb
-           (format "emjupy  %s"
-                   (or (emjupy-notebook-path nb) "unsaved"))
-         "emjupy")))
+  [:description emjupy--menu-title
    ["Run"
     ("c" "this cell, then move on" emjupy-execute-cell-and-goto-next)
     ("e" "this cell, stay here" emjupy-execute-cell-at-point)
