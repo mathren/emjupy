@@ -2,19 +2,18 @@
 #+PREVIOUS_PAGE: limitations.org
 #+NEXT_PAGE:     usage.org
 
-=emjupy= edits and runs Jupyter python notebooks in Emacs. It talks to a
-running Jupyter server over the same HTTP and WebSocket API the
-browser uses, so a kernel on another machine works through an ssh
-tunnel, and the notebook stays a standard =.ipynb= that any other
-Jupyter tool opens. Completion, documentation and =M-.= come through
-=eglot=, from a language server running beside the kernel.
+=emjupy= edits and runs Jupyter notebooks in Emacs. Plots and widgets
+can be shown inline or in an external window or browser (see [[file:docs/usage.org::*Interactive
+ output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]). =emjupy= uses Emacs's own
+tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with whatever completion setup
+you already have (=vertico=, =corfu=, =orderless= or anything else).
+Completion, documentation and =M-.= come through =eglot=, from a language
+server running beside the kernel.
 
-It uses Emacs's own tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with
-whatever completion setup you already have (=vertico=, =corfu=,
-=orderless= or anything else).  See [[./appearance.org]["Looks" tab]] for screenshots.
-
-Interactive plots and widgets can be shown in an external window or
-browser.
+It talks to a running Jupyter server over the same HTTP and WebSocket
+API the browser uses, so a kernel on another machine works through an
+ssh tunnel, and the notebook stays a standard =.ipynb= that any other
+Jupyter tool opens.
 
 * Try it with =emacs -Q=
 

@@ -12,22 +12,19 @@
 [[./html-content/images/emjupy-logo.png]]
 
 
-=emjupy= edits and runs Jupyter notebooks in Emacs.
+=emjupy= edits and runs Jupyter notebooks in Emacs. Plots and widgets
+can be shown inline or in an external window or browser (see [[file:docs/usage.org::*Interactive
+ output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]). =emjupy= uses Emacs's own
+tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with whatever completion setup
+you already have (=vertico=, =corfu=, =orderless= or anything else).
+Completion, documentation and =M-.= come through =eglot=, from a language
+server running beside the kernel.
 
+It talks to a running Jupyter server over the same HTTP and WebSocket
+API the browser uses, so a kernel on another machine works through an
+ssh tunnel, and the notebook stays a standard =.ipynb= that any other
+Jupyter tool opens.
 
-It talks to a
-running Jupyter server over the same HTTP and WebSocket API the
-browser uses, so a kernel on another machine works through an ssh
-tunnel, and the notebook stays a standard =.ipynb= that any other
-Jupyter tool opens. Completion, documentation and =M-.= come through
-=eglot=, from a language server running beside the kernel.
-
-It uses Emacs's own tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with
-whatever completion setup you already have (=vertico=, =corfu=,
-=orderless= or anything else).
-
-Interactive plots and widgets can be shown in an external window or
-browser (see [[file:docs/usage.org::*Interactive output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]).
 
 * Try it in under 2 minutes with =emacs -Q=...
 
@@ -107,6 +104,7 @@ your own notebooks, jump to step 4.
 - =ein=-like workflow and key bindings
 - =emjupy-notebook-list=, like =ein:notebooklist=, to browse notebooks and
   the files beside them
+
 
 * Installation
 
@@ -212,6 +210,7 @@ successor at 0.0.1 running local kernels through a Python
 =jupyter_client= helper, not a Jupyter server, and needing =mode-overlay=,
 which GNU Emacs 30.1 lacks.  I share code with non-Emacs users, so not
 =ob-jupyter=, and =emacs-jupyter= does not suit me.
+
 
 * Documentation
 
