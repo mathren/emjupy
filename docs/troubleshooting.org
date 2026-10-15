@@ -41,7 +41,7 @@ The language server answering is on this machine, not beside the kernel,
 and cannot see the kernel's files: =M-x emjupy-lsp-diagnose= says "a
 local process", =M-x emjupy-version= "language server on this machine".
 Install =jupyter-lsp= and a language server where =jupyter server= runs
--- see [[file:language-server.org::#requirements][Requirements]] -- and restart the server.
+-- see [[file:language-server.org::*Requirements][Requirements]] -- and restart the server.
 
 * A cell shows as running and never finishes
 

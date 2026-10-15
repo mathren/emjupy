@@ -142,7 +142,6 @@ INFO is the export plist."
 
 (add-hook 'org-export-before-processing-hook
           (lambda (_)
-            (clrhash mr/id-map)
             (setq mr/id-counter 0)
             (setq mr/drawer-counter 0)))
 
@@ -178,43 +177,47 @@ INFO is the export plist."
      (replace-regexp-in-string
       "[^a-z0-9]+" "-" text)))))
 
-(defvar mr/id-map (make-hash-table :test 'equal)
-  "Map from random org IDs (e.g. org16891ee) to deterministic slugs.")
-
 (defvar mr/id-counter 0
-  "Counter for fallback deterministic IDs (figures, latex blocks, etc.).")
+  "Counter for deterministic IDs of what is not a headline: figures,
+LaTeX blocks and the like.")
 
-;; Reset state before each file export
-(add-hook 'org-export-before-processing-hook
-          (lambda (_)
-            (clrhash mr/id-map)
-            (setq mr/id-counter 0)))
+(defun mr/slug-every-headline (_backend)
+  "Give every headline without a CUSTOM_ID one: the slug of its title.
+Runs in the export's copy of the buffer, before parsing, so links to a
+headline -- by title, from this page or another -- resolve to the anchor
+the headline gets.  The .org files are not touched."
+  (org-map-entries
+   (lambda ()
+     (unless (org-entry-get nil "CUSTOM_ID")
+       (org-entry-put nil "CUSTOM_ID"
+                      (mr/slugify (org-get-heading t t t t)))))))
 
-(defun mr/headline-html (orig-fun headline contents info)
-  "Around advice for org-html-headline to inject deterministic slug IDs.
-Also populates mr/id-map for use by mr/fix-remaining-ids."
-  (let* ((custom-id (org-element-property :CUSTOM_ID headline))
-         (title (org-export-data (org-element-property :title headline) info))
-         (slug (or custom-id (mr/slugify title))))
-    (org-element-put-property headline :CUSTOM_ID slug)
-    (let ((result (funcall orig-fun headline contents info)))
-      (when (string-match "outline-container-\\(org[a-f0-9]\\{7\\}\\)" result)
-        (puthash (match-string 1 result) slug mr/id-map))
-      result)))
+(add-hook 'org-export-before-parsing-functions #'mr/slug-every-headline)
 
-(advice-add 'org-html-headline :around #'mr/headline-html)
+;; Links to a headline use its CUSTOM_ID, now its slug, not a random id.
+(setq org-html-prefer-user-labels t)
 
-(defun mr/fix-remaining-ids (output backend info)
-  "Replace all remaining random org IDs in the final HTML output.
-IDs mapped via mr/id-map (from headlines) get their slug.
-All other random IDs (figures, latex blocks, etc.) get a counter-based ID."
+(defun mr/resolve-heading-link (orig search file &rest rest)
+  "Resolve a link to another page's headline, SEARCH \"*Title\", to its slug.
+Every headline's anchor is the slug of its title, so no cache of the
+other page's ids is needed.  Other searches go to ORIG, with FILE and
+REST."
+  (if (string-prefix-p "*" search)
+      (mr/slugify (substring search 1))
+    (apply orig search file rest)))
+
+(advice-add 'org-publish-resolve-external-link :around #'mr/resolve-heading-link)
+
+(defun mr/fix-remaining-ids (output backend _info)
+  "Replace the random org IDs left in OUTPUT, for BACKEND html, by counted ones.
+Headlines have their slugs; what remains -- figures, LaTeX blocks -- is
+numbered, so the page is the same each time it is built."
   (when (org-export-derived-backend-p backend 'html)
     (replace-regexp-in-string
      "org[a-f0-9]\\{7\\}"
-     (lambda (match)
-       (or (gethash match mr/id-map)
-           (progn (cl-incf mr/id-counter)
-                  (format "org-element-%d" mr/id-counter))))
+     (lambda (_match)
+       (cl-incf mr/id-counter)
+       (format "org-element-%d" mr/id-counter))
      output)))
 
 (add-to-list 'org-export-filter-final-output-functions #'mr/fix-remaining-ids)

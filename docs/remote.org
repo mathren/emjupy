@@ -105,7 +105,7 @@ address:
 | none of the above                  | an error saying what to set |
 
 The HTTP copy uses the Contents API, needing only a kernel to have
-reported where the server's files are (see [[#server-files][below]]); read-only, its header
+reported where the server's files are (see [[*Where the server's files are][below]]); read-only, its header
 line naming the original path.
 
 * Multiple notebooks & multiple servers
@@ -165,9 +165,6 @@ A tunnelled server still has a token.  emjupy remembers it per server --
 typed again only to check the server from the shell, with =curl= say.
 
 * Where the server's files are
-:PROPERTIES:
-:CUSTOM_ID: server-files
-:END:
 Jupyter does not publish its root directory, deliberately.  emjupy works
 it out: the kernel reports the directory it runs in, the notebook's own,
 and the Contents API the notebook's path relative to the root.  Take the
