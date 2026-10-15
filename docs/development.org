@@ -282,6 +282,10 @@ make docs                   # then open html-content/index.html
 python3 tools/check-links.py
 #+end_src
 
+Link to a section of another page by its =CUSTOM_ID=, and within a page
+too: the site's anchors are the =CUSTOM_ID=, or else a slug of the title,
+and a heading-search link =[[*Title]]= is not mapped to that slug.
+
 =.github/melpa-recipe= must list every file the package ships.
 =make recipe-check= checks it, as CI does: every file the Makefile ships
 is listed, nothing listed is missing, and the recipe's files alone, in

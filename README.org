@@ -13,8 +13,8 @@
 
 
 =emjupy= edits and runs Jupyter notebooks in Emacs. Plots and widgets
-can be shown inline or in an external window or browser (see [[file:docs/usage.org::*Interactive
- output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]). =emjupy= uses Emacs's own
+can be shown inline or in an external window or browser (see
+[[file:docs/usage.org::*Interactive output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]). =emjupy= uses Emacs's own
 tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with whatever completion setup
 you already have (=vertico=, =corfu=, =orderless= or anything else).
 Completion, documentation and =M-.= come through =eglot=, from a language

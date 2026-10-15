@@ -21,6 +21,9 @@ transport, and how JupyterLab's =jupyterlab-lsp= works.  So:
   resolved against the notebook's directory.
 
 * Requirements
+:PROPERTIES:
+:CUSTOM_ID: requirements
+:END:
 Two packages, in the Python environment running =jupyter server=:
 
 #+begin_src bash
@@ -105,7 +108,7 @@ A language server reads only the files of its machine:
 | on this machine (fallback) | *not found*        | found -- but THIS machine's, not the kernel's |
 
 For a kernel elsewhere, =M-.= into your own code needs =jupyter-lsp= and
-a language server *where the kernel runs* -- see [[*Requirements][Requirements]].
+a language server *where the kernel runs* -- see [[#requirements][Requirements]].
 Without them emjupy falls back to a server on this machine, saying so,
 and the standard library resolves to this machine's copy, possibly
 another Python.  For a kernel here, either works.
