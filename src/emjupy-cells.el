@@ -32,7 +32,8 @@ Output can represent a long run, and the kernel cannot be asked to
 produce it again for nothing.  The question costs a keystroke; the
 mistake costs the run."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-editing
+  :safe #'booleanp)
 
 ;;;; Redrawing, whole or put right
 
@@ -1518,9 +1519,10 @@ Emacs too old for `enable-theme-functions'."
       (emjupy--rerender-notebook))))
 
 (defun emjupy-toggle-latex-preview ()
-  "Turn LaTeX previews in markdown cells on or off, and redraw."
+  "Turn LaTeX previews in this notebook's markdown cells on or off.
+Only this notebook: `emjupy-render-latex' sets it for all of them."
   (interactive)
-  (setq emjupy-render-latex (not emjupy-render-latex))
+  (setq-local emjupy-render-latex (not emjupy-render-latex))
   (when (and emjupy-render-latex (not (emjupy--latex-available-p)))
     (message "[emjupy] No LaTeX renderer found: install latex and dvipng, or math-preview."))
   (when emjupy--buffer-notebook (emjupy--rerender-notebook))

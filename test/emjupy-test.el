@@ -8849,6 +8849,66 @@ output."
           (should (eq (gethash "req-new" pending) newer)))
       (kill-buffer buf))))
 
+(ert-deftest emjupy-test-latex-toggle-is-this-notebooks-own ()
+  "Toggling LaTeX preview changes this notebook, not the option itself.
+Set globally, it turned previews on or off in every notebook, and showed
+in Customize as changed outside it."
+  (let ((emjupy-render-latex nil)
+        (a (generate-new-buffer " *latex-a*"))
+        (b (generate-new-buffer " *latex-b*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () t)))
+          (with-current-buffer a (emjupy-toggle-latex-preview))
+          (should (buffer-local-value 'emjupy-render-latex a))
+          (should-not (buffer-local-value 'emjupy-render-latex b))
+          (should-not (default-value 'emjupy-render-latex))
+          (with-current-buffer a (emjupy-toggle-latex-preview))
+          (should-not (buffer-local-value 'emjupy-render-latex a)))
+      (kill-buffer a) (kill-buffer b))))
+
+(defun emjupy-test--plotly-fetch (js limit)
+  "Fetch JS as plotly.js from a fake kernel whose output is cut past LIMIT.
+Return (ADDRESS-OR-NIL . PIECES-ASKED)."
+  (let* ((dir (make-temp-file "emjupy-plotly" t))
+         (file (expand-file-name "plotly-test.min.js" dir))
+         (asked nil) (address nil))
+    (cl-letf (((symbol-function 'emjupy--kernel-eval)
+               (lambda (_kernel code callback)
+                 (if (string-match "_emjupy_js\\[\\([0-9]+\\):\\([0-9]+\\)\\]" code)
+                     (let ((from (string-to-number (match-string 1 code)))
+                           (to (string-to-number (match-string 2 code))))
+                       (push (- to from) asked)
+                       (funcall callback
+                                (if (> (- to from) limit)
+                                    "IOPub data rate exceeded."
+                                  (substring js from (min to (length js))))))
+                   (funcall callback ""))))
+              ((symbol-function 'run-at-time)
+               (lambda (_time _repeat fn &rest args) (apply fn args)))
+              ((symbol-function 'message) #'ignore))
+      (emjupy--plotly-js-fetch 'kernel file (length js) 0 nil
+                               (lambda (url) (setq address url)) 100000)
+      (prog1 (cons (and address
+                        (with-temp-buffer (insert-file-contents file)
+                                          (buffer-string)))
+                   (nreverse asked))
+        (delete-directory dir t)))))
+
+(ert-deftest emjupy-test-plotly-js-is-fetched-in-smaller-pieces-when-cut ()
+  "A piece the server's output limit cut is asked again in halves.
+A server set below Jupyter's default limit replaced the piece with a
+notice, which was written into plotly.js as if it were code."
+  (let* ((js (apply #'concat (make-list 20000 "var plotly = 1;\n")))
+         (result (emjupy-test--plotly-fetch js 60000)))
+    (should (equal (car result) js))
+    ;; 100000 was cut, 50000 went through, and stayed the size
+    (should (equal (seq-take (cdr result) 2) '(100000 50000)))
+    (should (cl-every (lambda (n) (<= n 50000)) (cdr (cdr result)))))
+  ;; a limit below the floor: given up, nothing written
+  (let ((emjupy--plotly-js-min-chunk 25000))
+    (should-not (car (emjupy-test--plotly-fetch
+                      (make-string 200000 ?x) 10000)))))
+
 (ert-deftest emjupy-test-the-menu-names-its-notebook ()
   "The menu's title names the notebook it was opened from.
 Transient computes the title in a temporary buffer, so the notebook

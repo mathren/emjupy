@@ -39,7 +39,7 @@ notebook with figures costs tens of milliseconds.  Coalescing them
 bounds the cost to one redraw per interval however fast the output
 comes."
   :type 'number
-  :group 'emjupy)
+  :group 'emjupy-kernels)
 
 (defcustom emjupy-reconnect-window 30
   "Seconds to keep trying to reconnect after a kernel's connection drops.
@@ -48,7 +48,7 @@ while the connection is down and hands it over when it is back, so a
 tunnel that drops for a moment loses nothing.  nil does not try: the
 cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
   :type '(choice (const :tag "Do not try" nil) number)
-  :group 'emjupy)
+  :group 'emjupy-kernels)
 
 ;;;; Messages
 

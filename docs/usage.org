@@ -238,9 +238,9 @@ default.  Opening is always asked for: it runs the notebook's JavaScript.
 A plotly figure arrives as JSON, and its page is built in Emacs with the
 plotly.js of the kernel that made it: matching, offline, and working
 through a tunnel.  The first figure of a plotly version takes seconds --
-the server throttles output, so plotly.js comes in pieces -- and later
-ones none, as it is kept.  =emjupy-plotly-js= names a URL or file
-instead.
+the server limits output, so plotly.js comes in pieces, smaller ones if
+the server's limit is set low -- and later ones none, as it is kept.
+=emjupy-plotly-js= names a URL or file instead.
 
 =C-c C-f= on an image opens it in a frame of its own, the same each time,
 for a figure too small at cell width.  With =emjupy-inline-figures= nil,
@@ -365,3 +365,12 @@ kernel cwd /home/you/project; language server beside the kernel
 "On this machine" means the fallback server answers: for a kernel
 elsewhere, =M-.= will not find your own modules.  See
 [[file:language-server.org][Language server support]].
+
+* Settings
+
+=M-x customize-group RET emjupy= lists the options by subject:
+appearance, editing, kernels, figures, the language server, remote
+servers, and saving.  Those changing only how a notebook looks or is
+exported -- colours, widths, LaTeX, inline figures, exporting markdown --
+may be set per project in =.dir-locals.el= without Emacs asking; those
+running programs or reaching files and hosts ask first.

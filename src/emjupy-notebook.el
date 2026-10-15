@@ -44,7 +44,7 @@
 
 Jupyter's own default, and the one a tunnel is usually pointed at."
   :type 'string
-  :group 'emjupy)
+  :group 'emjupy-kernels)
 
 (defcustom emjupy-export-markdown-cells t
   "When non-nil, carry markdown cells into an exported .py as comments.
@@ -53,7 +53,8 @@ They are written as a `# %% [markdown]' block with each line commented,
 which is the same percent format Jupytext, VS Code and Spyder read -- so
 the prose survives the round trip instead of being dropped."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-editing
+  :safe #'booleanp)
 
 (defcustom emjupy-recovery-directory
   (expand-file-name (format "emjupy-recovery-%s/" (user-login-name))
@@ -67,12 +68,12 @@ often emptied on restart: for copies outliving the machine, use
 \(locate-user-emacs-file \"emjupy-recovery/\").  Copies go only into a
 directory you own that is not a symbolic link."
   :type 'directory
-  :group 'emjupy)
+  :group 'emjupy-saving)
 
 (defcustom emjupy-recovery-delay 3
   "Seconds of idle time before unsaved changes are copied for recovery."
   :type 'number
-  :group 'emjupy)
+  :group 'emjupy-saving)
 
 (defcustom emjupy-autosave-interval 120
   "Seconds between saves to the server of a notebook with unsaved changes.
@@ -80,12 +81,12 @@ As Jupyter does.  A save that would overwrite changes made on the server
 since the notebook was opened is not made, and auto-saving that notebook
 stops until it is saved by hand.  nil never saves on its own."
   :type '(choice (const :tag "Never" nil) number)
-  :group 'emjupy)
+  :group 'emjupy-saving)
 
 (defcustom emjupy-local-server-timeout 60
   "Seconds to wait for a Jupyter server emjupy starts to answer."
   :type 'number
-  :group 'emjupy)
+  :group 'emjupy-kernels)
 
 ;;;; Logging in
 

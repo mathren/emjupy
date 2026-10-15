@@ -159,6 +159,10 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
 - A question takes =y-or-n-p=: one key, =y= or =n=, to answer.
 - Every file in sections: user options first, under =;;;; Options=, then
   a =;;;;= heading per part.  Messages start =[emjupy]=.
+- A user option goes in its subject's group, defined in emjupy-core.el.
+  It is =:safe= only if it changes nothing but how a notebook looks or is
+  exported: never one that runs a program, loads code, or reaches a file
+  or host.
 - Comments say why, briefly; how the code came to be is in the history.
 - Lines of 80 columns at most.  A long call breaks between arguments, or
   puts them below its name; a deep expression is better bound to a name.

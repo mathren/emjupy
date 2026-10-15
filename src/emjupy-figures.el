@@ -41,7 +41,7 @@ an xwidget on a build that works with it."
                  (const :tag "The browser" browser)
                  (const :tag "An xwidget" xwidget)
                  (const :tag "An xwidget if available, else a window" auto))
-  :group 'emjupy)
+  :group 'emjupy-figures)
 
 (defcustom emjupy-figure-window-command nil
   "The program that shows a figure in a window of its own, or nil.
@@ -52,7 +52,7 @@ the first of `emjupy-figure-window-browsers' installed, and the
 browser if there is none of these."
   :type '(choice (const :tag "Find one" nil)
                  (repeat :tag "Program and arguments" string))
-  :group 'emjupy)
+  :group 'emjupy-figures)
 
 (defcustom emjupy-figure-window-browsers
   '(("firefox" "--new-window" "%s")
@@ -64,7 +64,7 @@ with emjupy cannot run.  Firefox opens a new window; Chromium an app
 window, without tabs or toolbar.  Another browser can be added: Chrome
 as (\"google-chrome\" \"--app=%s\"), say."
   :type '(repeat (repeat :tag "Program and arguments" string))
-  :group 'emjupy)
+  :group 'emjupy-figures)
 
 (defcustom emjupy-plotly-js 'kernel
   "Where the plotly.js a figure page loads comes from.
@@ -74,7 +74,7 @@ network, which also makes it work through a tunnel.  A string is used as
 the script's address instead -- a URL, such as a CDN's, or a file name."
   :type '(choice (const :tag "The kernel's own copy" kernel)
                  (string :tag "A URL or file name"))
-  :group 'emjupy)
+  :group 'emjupy-figures)
 
 ;;;; The figure window
 
@@ -207,13 +207,18 @@ Plotly.newPlot('figure', spec.data || [], spec.layout || {},
           (decode-coding-string (json-serialize figure) 'utf-8)))
 
 (defconst emjupy--plotly-js-chunk 900000
-  "Characters of plotly.js asked of the kernel at a time.")
+  "Characters of plotly.js first asked of the kernel at a time.
+Within what Jupyter's default limit lets one request print.")
+
+(defconst emjupy--plotly-js-min-chunk 25000
+  "Fewest characters of plotly.js asked at a time before giving up.")
 
 (defun emjupy--plotly-js (callback)
   "Call CALLBACK with the address of plotly.js, once it is known.
 See `emjupy-plotly-js'.  The kernel holds it, and it is fetched in
-pieces a second apart: the server limits output to 1 MB a second and
-replaces the rest with a notice.  Once per plotly version."
+pieces: the server cuts a request's output past its rate limit, putting
+a notice in its place.  A piece cut short is asked again in halves, for
+a server set lower than Jupyter's default.  Once per plotly version."
   (if (stringp emjupy-plotly-js)
       (funcall callback (if (string-match-p "\\`[a-z]+://" emjupy-plotly-js)
                             emjupy-plotly-js
@@ -237,12 +242,15 @@ replaces the rest with a notice.  Once per plotly version."
            (if (file-exists-p file)
                (progn (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
                       (funcall callback (concat "file://" file)))
-             (emjupy--plotly-js-fetch kernel file size 0 nil callback))))))))
+             (emjupy--plotly-js-fetch kernel file size 0 nil callback
+                                      emjupy--plotly-js-chunk))))))))
 
-(defun emjupy--plotly-js-fetch (kernel file size from pieces callback)
+(defun emjupy--plotly-js-fetch (kernel file size from pieces callback chunk)
   "Fetch plotly.js from KERNEL into FILE, SIZE characters, starting at FROM.
-PIECES holds what has come, newest first.  When all of it has, the file
-is written and CALLBACK called with its address."
+PIECES holds what has come, newest first; CHUNK is how much to ask at a
+time.  A piece of the wrong length was cut by the server's output limit,
+and is asked again at half the size.  When all has come, the file is
+written and CALLBACK called with its address."
   (if (>= from size)
       (let ((coding-system-for-write 'utf-8-unix))
         (write-region (apply #'concat (reverse pieces)) nil file nil 'quiet)
@@ -250,14 +258,21 @@ is written and CALLBACK called with its address."
         (funcall callback (concat "file://" file)))
     (message "[emjupy] Fetching plotly.js from the kernel... %d%%"
              (/ (* 100 from) size))
-    (emjupy--kernel-eval
-     kernel (format "print(_emjupy_js[%d:%d], end='')"
-                    from (+ from emjupy--plotly-js-chunk))
-     (lambda (piece)
-       ;; a second apart, to stay under the server's output limit
-       (run-at-time 1.0 nil #'emjupy--plotly-js-fetch kernel file size
-                    (+ from emjupy--plotly-js-chunk)
-                    (cons piece pieces) callback)))))
+    (let ((wanted (min chunk (- size from))))
+      (emjupy--kernel-eval
+       kernel (format "print(_emjupy_js[%d:%d], end='')" from (+ from wanted))
+       (lambda (piece)
+         (cond
+          ((= (length piece) wanted)
+           ;; spaced out, as a server may count output over a few seconds
+           (run-at-time 1.0 nil #'emjupy--plotly-js-fetch kernel file size
+                        (+ from wanted) (cons piece pieces) callback chunk))
+          ((>= (/ chunk 2) emjupy--plotly-js-min-chunk)
+           (run-at-time 1.0 nil #'emjupy--plotly-js-fetch kernel file size
+                        from pieces callback (/ chunk 2)))
+          (t
+           (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
+           (message "[emjupy] plotly.js could not be fetched: the server's output limit is too low.  Set `emjupy-plotly-js' to its address or file"))))))))
 
 ;;;; Images and other outputs
 

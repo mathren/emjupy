@@ -28,6 +28,42 @@
   "Minimal Jupyter Notebook editor."
   :group 'tools)
 
+(defgroup emjupy-appearance nil
+  "How notebooks look: output, outlines, LaTeX and figures in the buffer."
+  :group 'emjupy)
+
+(defgroup emjupy-editing nil
+  "Editing cells, and exporting them."
+  :group 'emjupy)
+
+(defgroup emjupy-kernels nil
+  "Servers, kernels, and output as it arrives."
+  :group 'emjupy)
+
+(defgroup emjupy-figures nil
+  "Interactive figures and widgets, opened outside the buffer."
+  :group 'emjupy)
+
+(defgroup emjupy-language-server nil
+  "Completion, documentation and definitions, from a language server."
+  :group 'emjupy)
+
+(defgroup emjupy-remote nil
+  "Where a server on another machine keeps its files."
+  :group 'emjupy)
+
+(defgroup emjupy-saving nil
+  "Saving to the server, and keeping copies of unsaved edits."
+  :group 'emjupy)
+
+(defun emjupy--colour-option-safe-p (value)
+  "Return non-nil if VALUE is a harmless colour: auto, nil, or a name."
+  (or (memq value '(auto nil)) (stringp value)))
+
+(defun emjupy--box-width-safe-p (value)
+  "Return non-nil if VALUE is a harmless `emjupy-box-width': window, a count."
+  (or (eq value 'window) (natnump value)))
+
 ;; Several notebooks, from several servers, may be open at once.  The only
 ;; globals are the registry of servers and the most recently used one, a default
 ;; for commands run outside a notebook.

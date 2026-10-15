@@ -47,7 +47,7 @@ nil disables `d'."
   :type '(choice (const :tag "Disabled" nil)
                  (directory :tag "One directory for every server")
                  (alist :key-type string :value-type directory))
-  :group 'emjupy)
+  :group 'emjupy-remote)
 
 (defcustom emjupy-ssh-host nil
   "How to reach the machine a tunnelled server runs on.
@@ -62,7 +62,7 @@ same for all of them."
   :type '(choice (const :tag "Work it out" nil)
                  (string :tag "Host, e.g. box")
                  (alist :key-type string :value-type string))
-  :group 'emjupy)
+  :group 'emjupy-remote)
 
 ;;;; The server's root
 

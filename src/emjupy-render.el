@@ -43,7 +43,8 @@ Nothing outside a cell's output is ever recoloured."
   :type '(choice (const :tag "Derive from theme" auto)
                  (color :tag "Explicit colour")
                  (const :tag "Disabled" nil))
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'emjupy--colour-option-safe-p)
 
 (defcustom emjupy-output-error-color 'auto
   "Background behind an error output.
@@ -53,7 +54,8 @@ See `emjupy-output-color' for the accepted values."
   :type '(choice (const :tag "Derive from theme" auto)
                  (color :tag "Explicit colour")
                  (const :tag "Use the ordinary output colour" nil))
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'emjupy--colour-option-safe-p)
 
 (defcustom emjupy-output-warning-color 'auto
   "Background behind a warning output.
@@ -62,7 +64,8 @@ This covers anything the kernel sent to stderr that is not a traceback.
   :type '(choice (const :tag "Derive from theme" auto)
                  (color :tag "Explicit colour")
                  (const :tag "Use the ordinary output colour" nil))
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'emjupy--colour-option-safe-p)
 
 (defcustom emjupy-output-image-color "white"
   "Background behind an image output.
@@ -74,19 +77,22 @@ your figures have a different background."
   :type '(choice (color :tag "Explicit colour")
                  (const :tag "Derive from theme" auto)
                  (const :tag "Use the ordinary output colour" nil))
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'emjupy--colour-option-safe-p)
 
 (defcustom emjupy-output-blend 0.08
   "How far to blend toward the foreground for an `auto' output colour.
 0 is invisible, 1 is the foreground colour itself."
   :type 'float
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'numberp)
 
 (defcustom emjupy-output-tint-blend 0.16
   "How far to blend toward red or yellow for `auto' tints.
 This applies to the error and warning  Larger is louder."
   :type 'float
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'numberp)
 
 (defcustom emjupy-box-width 'window
   "Width of the box-drawing rules that outline each cell.
@@ -97,12 +103,14 @@ outline spans the buffer instead of stopping short at a fixed 80
 columns on a wide frame."
   :type '(choice (const :tag "Fit the window" window)
                  (integer :tag "Fixed number of columns"))
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'emjupy--box-width-safe-p)
 
 (defcustom emjupy-box-min-width 60
   "Lower bound for a window-fitted `emjupy-box-width'."
   :type 'integer
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'natnump)
 
 (defcustom emjupy-box-right-margin 2
   "Columns left free at the right edge when fitting rules to the window.
@@ -114,7 +122,8 @@ one or two.  Rather than guess, leave a couple spare.  Raise it if the
 rules still run past the edge in your setup, lower it to 0 if they stop
 short."
   :type 'integer
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'natnump)
 
 (defcustom emjupy-running-indicator ["|" "/" "-" "\\"]
   "Frames cycled in a cell's header while it is executing.
@@ -122,12 +131,12 @@ short."
 A single-element vector such as [\"*\"] gives Jupyter's static marker
 instead of an animation."
   :type '(vector string)
-  :group 'emjupy)
+  :group 'emjupy-appearance)
 
 (defcustom emjupy-running-indicator-interval 0.2
   "Seconds between frames of the running indicator."
   :type 'number
-  :group 'emjupy)
+  :group 'emjupy-appearance)
 
 (defcustom emjupy-render-latex nil
   "When non-nil, show math in markdown cells as rendered images.
@@ -136,7 +145,8 @@ Needs a working LaTeX installation (`latex' plus `dvipng'), or
 `math-preview' on PATH.  Nothing else: the rendering itself is done by
 org, which comes with Emacs."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'booleanp)
 
 (defcustom emjupy-latex-backend 'auto
   "How a LaTeX fragment is turned into an image.
@@ -146,7 +156,7 @@ beyond what ships with Emacs, and falls back to `math-preview'."
   :type '(choice (const :tag "Whatever is available" auto)
                  (const :tag "org's built-in preview" org)
                  (const :tag "math-preview" math-preview))
-  :group 'emjupy)
+  :group 'emjupy-appearance)
 
 (defcustom emjupy-latex-foreground 'auto
   "Colour to draw rendered math in.
@@ -158,17 +168,20 @@ dark one, instead of always black on a transparent background.
 A colour string is used verbatim."
   :type '(choice (const :tag "Follow the theme" auto)
                  (color :tag "Explicit colour"))
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'emjupy--colour-option-safe-p)
 
 (defcustom emjupy-latex-scale 1.0
   "Scale factor for rendered math images."
   :type 'float
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'numberp)
 
 (defcustom emjupy-hidden-output-glyph "▼"
   "Glyph marking an output box that is collapsed."
   :type 'string
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'stringp)
 
 (defcustom emjupy-protect-non-cell-regions t
   "When non-nil, make everything outside a cell's source read-only.
@@ -177,7 +190,8 @@ The rules, the gutters between cells and the output boxes belong to no
 cell.  Text typed there is stored nowhere and disappears at the next
 redraw, so it is better refused than silently lost."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-editing
+  :safe #'booleanp)
 
 (defcustom emjupy-render-ansi-colors t
   "When non-nil, turn ANSI colour escapes in output into real colours.
@@ -186,7 +200,8 @@ Libraries like termcolor, rich and colorama emit them, and a kernel
 happily passes them through -- so without this the output reads
 \"\\033[33mwarning\\033[0m\" instead of a yellow word."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'booleanp)
 
 (defcustom emjupy-inline-figures t
   "Whether figures -- image outputs -- are drawn in the notebook.
@@ -194,7 +209,8 @@ nil shows each as a line instead, and opens it in a window of its own on
 \\<emjupy-mode-map>\\[emjupy-open-output] or a click, the way a plotting
 window would show it."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'booleanp)
 
 (defcustom emjupy-deduplicate-image-outputs t
   "When non-nil, render a repeated identical image only once per cell.
@@ -206,7 +222,8 @@ duplicate is dropped only at render time -- the cell's `outputs' vector
 still holds exactly what the kernel sent, and is saved back to the
 .ipynb unchanged, so the file stays byte-faithful for other clients."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-appearance
+  :safe #'booleanp)
 
 ;; Cells are marked out by their rules alone, on the buffer's own background.
 ;; Output is the exception: a faint band on the output overlay, which goes when

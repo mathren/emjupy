@@ -49,7 +49,8 @@ derives from `fundamental-mode', so a notebook would otherwise behave
 less like a Python buffer than the code in it deserves.  Set to nil to
 leave the matter to your own configuration."
   :type 'boolean
-  :group 'emjupy)
+  :group 'emjupy-editing
+  :safe #'booleanp)
 
 (defcustom emjupy-language-mode 'python-mode
   "The major mode whose settings a notebook borrows for its cells.
@@ -58,7 +59,7 @@ Cells hold code in that language, so the buffer should behave as a
 buffer of it does.  Set to nil to leave the buffer with
 `fundamental-mode\\='s settings."
   :type '(choice (const :tag "None" nil) function)
-  :group 'emjupy)
+  :group 'emjupy-editing)
 
 ;;;; Timing hooks
 

@@ -111,7 +111,8 @@ line at the buffer's end.
 
 * LaTeX in markdown cells
 
-Off by default.  =M-x emjupy-toggle-latex-preview= turns it on, or:
+Off by default.  =M-x emjupy-toggle-latex-preview= turns it on or off in
+one notebook; for all of them:
 
 #+begin_src elisp
 (setq emjupy-render-latex t)
