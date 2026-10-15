@@ -91,7 +91,7 @@ written on the remote: =/tmp/emjupy-shadow-USER/= on most systems,
 readable by you alone, as it holds the notebook's code.
 
 A notebook with unsaved edits is also copied to =emjupy-recovery-directory=
-until saved -- see [[#saving][Saving, and not losing work]].  Those copies are
+until saved -- see [[*Saving, and not losing work][Saving, and not losing work]].  Those copies are
 readable by you alone; delete them when no longer wanted.
 
 * Hiding output
@@ -186,9 +186,6 @@ nor kept; other answers are, for =M-p= -- the last pdb command, say.
 =KeyboardInterrupt=.
 
 * Saving, and not losing work
-:PROPERTIES:
-:CUSTOM_ID: saving
-:END:
 
 =C-x C-s= saves the notebook to its server.  It is also saved
 automatically, as Jupyter does: every =emjupy-autosave-interval= seconds
@@ -220,9 +217,6 @@ each.  Opening a notebook already open with unsaved edits shows it as it
 is, rather than fetching it again.
 
 * Interactive output
-:PROPERTIES:
-:CUSTOM_ID: interactive-output
-:END:
 
 ** Figures
 

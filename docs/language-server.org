@@ -21,10 +21,6 @@ transport, and how JupyterLab's =jupyterlab-lsp= works.  So:
   resolved against the notebook's directory.
 
 * Requirements
-:PROPERTIES:
-:CUSTOM_ID: requirements
-:END:
-
 Two packages, in the Python environment running =jupyter server=:
 
 #+begin_src bash

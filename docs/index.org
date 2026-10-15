@@ -3,12 +3,13 @@
 #+NEXT_PAGE:     usage.org
 
 =emjupy= edits and runs Jupyter notebooks in Emacs. Plots and widgets
-can be shown inline or in an external window or browser (see [[file:docs/usage.org::*Interactive
- output][Interactive output]] and [[file:docs/appearance.org::*GIFs and screenshots][GIFs and screenshots]]). =emjupy= uses Emacs's own
-tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with whatever completion setup
-you already have (=vertico=, =corfu=, =orderless= or anything else).
-Completion, documentation and =M-.= come through =eglot=, from a language
-server running beside the kernel.
+can be shown inline or in an external window or browser (see
+[[file:usage.org::*Interactive
+ output][Interactive output]]). =emjupy= uses Emacs's own tools -- =eglot=, =xref=,
+=eldoc=, =tramp= -- with whatever completion setup you already have
+(=vertico=, =corfu=, =orderless= or anything else). Completion,
+documentation and =M-.= come through =eglot=, from a language server
+running beside the kernel.
 
 It talks to a running Jupyter server over the same HTTP and WebSocket
 API the browser uses, so a kernel on another machine works through an

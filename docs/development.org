@@ -282,10 +282,6 @@ make docs                   # then open html-content/index.html
 python3 tools/check-links.py
 #+end_src
 
-A link to a section of another page is checked to its anchor, so link
-to a heading by a =CUSTOM_ID=: Org cannot resolve a heading searched for
-in another file.
-
 =.github/melpa-recipe= must list every file the package ships.
 =make recipe-check= checks it, as CI does: every file the Makefile ships
 is listed, nothing listed is missing, and the recipe's files alone, in
