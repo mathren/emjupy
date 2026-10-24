@@ -121,6 +121,29 @@ than the latest commit):
 =:lisp-dir "src"= is needed: without it the package installs but
 =emjupy= cannot be loaded.
 
+Or with whichever package manager you already use -- each installs
+=websocket.el= too:
+
+#+BEGIN_SRC elisp
+  ;; package-vc, built into Emacs:
+  (package-vc-install '(emjupy :url "https://github.com/mathren/emjupy"
+                               :lisp-dir "src"))
+
+  ;; elpaca:
+  (elpaca (emjupy :host github :repo "mathren/emjupy"
+                  :files ("src/*.el" "src/*.py" (:exclude "src/quicktry.el"))))
+
+  ;; straight.el:
+  (straight-use-package
+   '(emjupy :type git :host github :repo "mathren/emjupy"
+            :files ("src/*.el" "src/*.py" (:exclude "src/quicktry.el"))))
+#+END_SRC
+
+The sources are in =src/=, so each is told where: =:lisp-dir= for
+package-vc, =:files= for elpaca and straight -- which also install the
+figure window, =emjupy-figure-window.py=, and leave out =quicktry.el=, a
+development tool.
+
 Alternatively, =M-x package-install-file= on the tarball =make package=
 builds.
 
