@@ -1,4 +1,4 @@
-;;; emjupy-test.el --- Tests for emjupy.el -*- lexical-binding: t; -*-
+;;; emjupy-test.el --- Tests for emjupy.el -*- lexical-binding: t; no-byte-compile: t -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 

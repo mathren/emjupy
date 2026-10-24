@@ -315,10 +315,10 @@ emjupy-remote" is that, not a fault in the file.  =make compile= puts
 =src/= first; by hand, put the checkout first on =load-path=, or
 uninstall the package meanwhile.
 
-=emjupy-run-tests.el=, =emjupy-pkg.el= and =publish.el= say
-=no-byte-compile=: scripts and metadata, not code to load.  Without it
-for =publish.el=, an install from git with package-vc, which compiles
-the whole checkout, would warn about the site's build script.
+The tests, the scripts in =tools/=, =emjupy-pkg.el= and =publish.el= say
+=no-byte-compile=: not code to load compiled.  An install from git with
+package-vc -- or =use-package :vc= -- compiles the whole checkout, and
+without it reported an error compiling a test.
 
 * Unit tests
 

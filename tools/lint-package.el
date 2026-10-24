@@ -1,4 +1,4 @@
-;;; lint-package.el --- package-lint, as MELPA runs it  -*- lexical-binding: t; -*-
+;;; lint-package.el --- package-lint, as MELPA runs it  -*- lexical-binding: t; no-byte-compile: t -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 ;; SPDX-License-Identifier: GPL-3.0-or-later

@@ -1,4 +1,4 @@
-;;; emjupy-robustness-test.el --- Randomised and adversarial tests for emjupy  -*- lexical-binding: t; -*-
+;;; emjupy-robustness-test.el --- Randomised and adversarial tests for emjupy  -*- lexical-binding: t; no-byte-compile: t -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 

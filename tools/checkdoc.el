@@ -1,4 +1,4 @@
-;;; checkdoc.el --- checkdoc on the files emjupy ships  -*- lexical-binding: t; -*-
+;;; checkdoc.el --- checkdoc on the files emjupy ships  -*- lexical-binding: t; no-byte-compile: t -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 ;; SPDX-License-Identifier: GPL-3.0-or-later
