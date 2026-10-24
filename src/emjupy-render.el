@@ -25,6 +25,15 @@
 (require 'ansi-color)
 (require 'emjupy-core)
 
+;; org is loaded only when a LaTeX preview is asked for: declared, not
+;; required, for the compiler.
+(declare-function org-create-formula-image "org")
+(defvar org-format-latex-options)
+(defvar org-format-latex-header)
+(defvar org-latex-default-packages-alist)
+(defvar org-latex-packages-alist)
+(defvar python-indent-guess-indent-offset-verbose)
+
 ;;;; Options
 
 (defcustom emjupy-output-color 'auto
@@ -480,8 +489,6 @@ and does not enter the undo history."
     (emjupy--refresh-cell-header cell)
     (unless emjupy--running-cells (emjupy--stop-spinner))))
 
-(defvar python-indent-guess-indent-offset-verbose)
-
 ;;;; Labels and rules
 
 (defun emjupy--cell-label (cell)
@@ -674,15 +681,6 @@ box says that it is collapsed rather than absent."
 ;; by an image, a `display' on an overlay, so the text and the saved cell stay
 ;; the LaTeX written. org renders it, needing LaTeX and no other package;
 ;; math-preview is used if it is what there is.
-
-;; Compile-time only: nothing loads org until a preview is actually asked for.
-(eval-when-compile (require 'org) (require 'ansi-color))
-(declare-function org-create-formula-image "org")
-(declare-function ansi-color-apply "ansi-color" (string))
-(defvar org-format-latex-options)
-(defvar org-format-latex-header)
-(defvar org-latex-default-packages-alist)
-(defvar org-latex-packages-alist)
 
 ;;;; LaTeX
 
@@ -1008,6 +1006,7 @@ survives saving and means the same thing to other front ends."
     ;; Without this, the press begins a drag-selection and the release is
     ;; never delivered as a click.
     (define-key map [down-mouse-1] #'ignore)
+    (define-key map [mouse-1] 'emjupy-toggle-output-at-click)
     map)
   "Keymap active on the marker of a collapsed output box.")
 
@@ -1508,9 +1507,12 @@ table -- says the same in its `text/plain', which is shown instead."
       (let ((text (emjupy--mime-text html)))
         (and (string-match-p "<script" text) text)))))
 
-(defvar emjupy-output-button-map (make-sparse-keymap)
-  "Keymap on the line that stands for an interactive output.
-Its keys are bound by emjupy-figures.el, where opening an output is.")
+(defvar emjupy-output-button-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") 'emjupy-open-output-at-point)
+    (define-key map [mouse-1] 'emjupy-open-output-at-point)
+    map)
+  "Keymap on the line that stands for an interactive output.")
 
 (defun emjupy--insert-open-line (what size data)
   "Insert a line standing for an output that is opened elsewhere.

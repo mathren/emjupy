@@ -37,8 +37,8 @@ per part.
 |     5 | =emjupy-kernel.el=               | running cells, output arriving, reconnecting       |
 |     6 | =emjupy-remote.el=               | where a server's files are: roots, tunnels, TRAMP  |
 |     7 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                   |
-|     8 | =emjupy-mode.el=                 | what a notebook buffer turns on                    |
-|     9 | =emjupy-notebook.el=             | logging in, opening, saving, the keys and the menu |
+|     8 | =emjupy-mode.el=                 | what a notebook buffer turns on, and its keys      |
+|     9 | =emjupy-notebook.el=             | logging in, opening, saving, the menu              |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read

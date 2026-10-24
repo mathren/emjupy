@@ -349,11 +349,6 @@ EVENT is the mouse event, when there was one."
                (point))))
     (emjupy-open-output (get-text-property pos 'emjupy-output-data))))
 
-;; Bound here, where opening an output is, on the map the drawing layer
-;; puts on the line that stands for one.
-(define-key emjupy-output-button-map (kbd "RET") #'emjupy-open-output-at-point)
-(define-key emjupy-output-button-map [mouse-1] #'emjupy-open-output-at-point)
-
 (provide 'emjupy-figures)
 
 ;;; emjupy-figures.el ends here

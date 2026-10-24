@@ -42,18 +42,20 @@ above it in this table.  Tests in =test/=, the notebooks they read in
 | =emjupy-lsp.el=           | language-server WebSocket transport, shadow document text   |
 | =emjupy-eglot.el=         | shadow buffer, Eglot integration, completion, eldoc         |
 | =emjupy-figure-window.py= | the window interactive figures open in, shipped with them   |
-| =emjupy-mode.el=          | =emjupy-mode=, what it turns on, the mixed-install check    |
-| =emjupy-notebook.el=      | login, the notebook browser, saving, the keys and the menu  |
+| =emjupy-mode.el=          | =emjupy-mode=, its keys, its layers, mixed installs         |
+| =emjupy-notebook.el=      | login, the notebook browser, saving, the menu               |
 | =emjupy.el=               | package header, version, and requiring every file in order  |
 | =emjupy-pkg.el=           | package metadata for =make package= (MELPA makes its own)   |
 
 ** Dependencies run one way
 
-No file calls or names anything defined in a file below it in the
-table, and there are no =declare-function= forms for emjupy's own
-functions.  Each file requires the files whose functions it uses, and
-only those; each loads on its own -- =(require 'emjupy-lsp)= in a fresh
-Emacs works -- which is what makes this checkable.
+No file calls or names anything defined in a file below it in the table
+-- except a keymap, which names its commands wherever they are defined,
+with a plain quote: a binding is resolved when the key is pressed, and a
+keymap reads best whole.  There are no =declare-function= forms for
+emjupy's own functions.  Each file requires the files whose functions it
+uses, and only those; each loads on its own -- =(require 'emjupy-lsp)=
+in a fresh Emacs works -- which is what makes this checkable.
 
 The graph is drawn from the code by =tools/dependency-graph.py= when the
 site is built (=make dependency-graph= draws it alone), each file above
@@ -87,11 +89,9 @@ things are put:
   The redraws needing that -- a cell's output in place, every output on
   a width change -- are in the cells layer, so putting one right is a
   plain call.
-- A key on a lower layer's map is bound by the layer whose command it
-  runs: the click on hidden output in the cells layer, opening an output
-  in the figures layer.
-- The mode's keys and menu name commands of every layer, so
-  emjupy-notebook.el, above them all, fills the map =emjupy-mode= makes.
+- A keymap is defined whole where it is made: the output maps in the
+  drawing layer, the mode's map in emjupy-mode.el, the menu in
+  emjupy-notebook.el.
 - A widget control drawn by the widget-page layer carries the function
   that opens it, which the widgets layer calls.
 
@@ -142,12 +142,16 @@ Makefile carry the copyright and SPDX lines as comments, after any =#!=.
 
 The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs Lisp style guide]]:
 
-- Requires at the top, in one block.  An optional or heavy library --
+- Requires at the top, in one block, with the declarations for the
+  compiler -- =declare-function=, a =defvar= for another package's
+  variable -- right after them.  An optional or heavy library --
   =xwidget=, =org= for LaTeX -- is required in the function needing it,
-  with a comment saying why.
+  and declared at the top, with a comment saying why.
 - Loading a file only defines things: hooks are added when =emjupy-mode=
   starts, the mixed-installation check runs when the first notebook
-  opens.
+  opens.  A keymap is a =defvar= whose value builds it, bindings and all
+  -- =(defvar MAP (let ((map (make-sparse-keymap))) (define-key map ...)
+  map))= -- never a =define-key= at top level.
 - Emacs's own indentation, quoted data lists aligned as data; spaces, no
   trailing whitespace, no closing parentheses on a line of their own.
 - =#'= for a function passed as an argument; =when= and =unless= for one

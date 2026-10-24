@@ -23,6 +23,8 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 
+(defvar python-indent-guess-indent-offset-verbose)
+
 ;;;; Options
 
 (defcustom emjupy-confirm-clear-output t
@@ -1337,8 +1339,6 @@ The new cell has no output and no execution count."
 (defvar-local emjupy--indent-cycling nil
   "Non-nil when the last command was also an indent, so TAB cycles.")
 
-(defvar python-indent-guess-indent-offset-verbose)
-
 (defun emjupy-indent-or-cycle ()
   "Indent the current line the way `python-mode' would, cycling on repeat.
 
@@ -1625,10 +1625,6 @@ EVENT is the mouse event."
     (emjupy--toggle-output-from-string
      (posn-string posn)
      (window-buffer (posn-window posn)))))
-
-;; Bound here, beside the command, rather than in the drawing layer that
-;; makes the map: the click toggles a cell's output, which is this layer's.
-(define-key emjupy-hidden-output-map [mouse-1] #'emjupy-toggle-output-at-click)
 
 (provide 'emjupy-cells)
 ;;; emjupy-cells.el ends here
