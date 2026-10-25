@@ -56,7 +56,7 @@ cannot send Shift-RET at all; and =DEL= is registered under both of its
 spellings, since keyboards and terminals disagree about which they
 send.
 
-* =emjupy-shadow-edit-mode= (the =C-c '= buffer)
+* =emjupy-shadow-edit-mode= (=C-c '= on a code cell)
 
 | Key       | Command                     | Effect                                              |
 |-----------+-----------------------------+-----------------------------------------------------|
@@ -64,11 +64,25 @@ send.
 | =C-c '=   | =emjupy-commit-shadow-edit= | Same as =C-c C-c=                                   |
 | =C-c C-k= | =emjupy-abort-shadow-edit=  | Discard edits and return to the notebook            |
 
-The same keys mean different things in the two buffers: =C-c C-c= runs
-the cell in the notebook but commits the edit in the shadow buffer,
-=C-c C-k= deletes the cell in the notebook but discards the edit there,
-and =C-c '= opens the shadow buffer from the notebook and commits from
-it.
+The shadow buffer holds every code cell, as one Python file.
+
+* =emjupy-cell-edit-mode= (=C-c '= on a markdown cell)
+
+| Key       | Command                   | Effect                                          |
+|-----------+---------------------------+-------------------------------------------------|
+| =C-c C-c= | =emjupy-commit-cell-edit= | Write the edit back into the cell and return    |
+| =C-c '=   | =emjupy-commit-cell-edit= | Same as =C-c C-c=                               |
+| =C-c C-k= | =emjupy-abort-cell-edit=  | Discard the edit and return to the notebook     |
+
+The same keys mean different things in an edit buffer and the notebook:
+=C-c C-c= runs the cell in the notebook but commits an edit, =C-c C-k=
+deletes the cell in the notebook but discards an edit, and =C-c '=
+opens an edit buffer from the notebook and commits from it.
+
+* The server dashboard
+
+Its keys -- open, go up, refresh, shut a kernel down, create, hand to
+Dired -- are in [[file:usage.org::*Server dashboard][Using a notebook]].
 
 * Unbound commands (=M-x= only)
 
