@@ -121,8 +121,10 @@ leaves the guide behind without failing anything else."
       (with-temp-buffer
         (insert-file-contents f)
         (goto-char (point-min))
+        ;; a few words may come between: "=NAME= (FILE)", "=NAME=, say (FILE)"
         (while (re-search-forward
-                "=\\(emjupy-[a-z0-9-]*[a-z0-9]\\)=,? (\\([a-z-]+\\))" nil t)
+                "=\\(emjupy-[a-z0-9-]*[a-z0-9]\\)=[^=(]\\{0,25\\}(\\([a-z-]+\\))"
+                nil t)
           (let* ((name (intern (match-string 1)))
                  (claimed (concat "emjupy-" (match-string 2)))
                  (defined (or (symbol-file name 'defun)
@@ -136,6 +138,40 @@ leaves the guide behind without failing anything else."
                             (file-name-base defined) claimed)
                     wrong))))))
     (should-not wrong)))
+
+
+(ert-deftest emjupy-test-the-reading-order-follows-the-layers ()
+  "Reading the code lists every source file, each after what it requires.
+Its table is the order to read the files in, bottom up; a file split or
+added leaves it behind without failing anything else."
+  (skip-unless (file-directory-p emjupy-test--docs-directory))
+  (let* ((src (expand-file-name "../src/" emjupy-test--docs-directory))
+         (guide (expand-file-name "reading-the-code.org"
+                                  emjupy-test--docs-directory))
+         (order
+          (with-temp-buffer
+            (insert-file-contents guide)
+            (let (files)
+              (while (re-search-forward
+                      "^| +[0-9]+ | =\\(emjupy[a-z-]*\\.el\\)=" nil t)
+                (push (match-string 1) files))
+              (nreverse files))))
+         (sources (seq-remove (lambda (f) (equal f "emjupy-pkg.el"))
+                              (directory-files src nil "\\`emjupy.*\\.el\\'")))
+         (problems nil))
+    (dolist (f (seq-difference sources order))
+      (push (format "%s is not in the table" f) problems))
+    (let ((before nil))
+      (dolist (f order)
+        (with-temp-buffer
+          (insert-file-contents (expand-file-name f src))
+          (while (re-search-forward "^(require '\\(emjupy[a-z-]*\\))" nil t)
+            (let ((required (concat (match-string 1) ".el")))
+              (when (and (member required order) (not (member required before)))
+                (push (format "%s requires %s, listed after it" f required)
+                      problems)))))
+        (push f before)))
+    (should-not (nreverse problems))))
 
 (provide 'emjupy-package-test)
 
