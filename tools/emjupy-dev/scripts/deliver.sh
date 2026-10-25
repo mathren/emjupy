@@ -20,6 +20,16 @@ if git -c user.email=t@t -c user.name=t am "$OUT" > "$tmp/am.log" 2>&1; then
 else
   echo "FAILED to apply on $BASE:"; head -5 "$tmp/am.log"; exit 1
 fi
-d=$(diff -rq --exclude=.git --exclude=.packages --exclude='*.html' \
-      --exclude='dependencies.*' --exclude='*.elc' "$tmp/fresh" "$REPO" 2>&1 | head -5)
-if [ -z "$d" ]; then echo "matches the tested tree: $OUT"; rm -rf "$tmp"; else echo "DIFFERS from the tested tree:"; echo "$d"; exit 1; fi
+# The tested tree is the committed one (no uncommitted changes, checked
+# above).  Compared by tree hash, which covers contents, file modes and
+# names alike -- diff -rq sees contents only, and passed a lost executable
+# bit -- and not against the working directory, whose ignored build output
+# is no part of a commit.
+want=$(git -C "$REPO" rev-parse "HEAD^{tree}")
+got=$(git rev-parse "HEAD^{tree}")
+if [ "$want" = "$got" ]; then
+  echo "matches the tested tree: $OUT"; rm -rf "$tmp"
+else
+  git fetch -q "$REPO" HEAD
+  echo "DIFFERS from the tested tree:"; git diff --stat --summary HEAD FETCH_HEAD | head -8; exit 1
+fi
