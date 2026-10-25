@@ -29,6 +29,7 @@
 (require 'emjupy-widgets)
 (require 'emjupy-widget-page)
 (require 'emjupy-lsp)
+(require 'emjupy-shadow)
 (require 'emjupy-eglot)
 
 ;;;; Options

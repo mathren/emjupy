@@ -19,6 +19,7 @@
                 "src/emjupy-figure-window.py"
                 "src/emjupy-remote.el"
                 "src/emjupy-lsp.el"
+                "src/emjupy-shadow.el"
                 "src/emjupy-eglot.el"
                 "src/emjupy-mode.el"
                 "src/emjupy-save.el"

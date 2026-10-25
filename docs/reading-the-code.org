@@ -44,11 +44,12 @@ per part.
 |    12 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
 |    13 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
 |    14 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
-|    15 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
-|    16 | =emjupy-save.el=                   | saving, auto-saving, recovery copies                |
-|    17 | =emjupy-notebook.el=               | logging in, opening, switching, the menu            |
-|    18 | =emjupy-dashboard.el=              | the server dashboard                                |
-|    19 | =emjupy-tramp-open.el=             | opening an .ipynb file, here or through TRAMP       |
+|    15 | =emjupy-shadow.el=                 | the shadow buffer and positions in it               |
+|    16 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
+|    17 | =emjupy-save.el=                   | saving, auto-saving, recovery copies                |
+|    18 | =emjupy-notebook.el=               | logging in, opening, switching, the menu            |
+|    19 | =emjupy-dashboard.el=              | the server dashboard                                |
+|    20 | =emjupy-tramp-open.el=             | opening an .ipynb file, here or through TRAMP       |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read

@@ -71,6 +71,7 @@
 (require 'emjupy-widget-page)
 (require 'emjupy-remote)
 (require 'emjupy-lsp)
+(require 'emjupy-shadow)
 (require 'emjupy-eglot)
 (require 'emjupy-mode)
 (require 'emjupy-save)

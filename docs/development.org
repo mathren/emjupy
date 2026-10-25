@@ -47,6 +47,7 @@ above it in this table.  Tests in =test/=, the notebooks they read in
 | =emjupy-widget-page.el=   | widgets that draw themselves, live in a page, through Emacs |
 | =emjupy-remote.el=        | where a server's files live: roots, SSH tunnels, TRAMP      |
 | =emjupy-lsp.el=           | language-server WebSocket transport, shadow document text   |
+| =emjupy-shadow.el=        | the shadow buffer, positions, edit buffers                  |
 | =emjupy-eglot.el=         | shadow buffer, Eglot integration, completion, eldoc         |
 | =emjupy-figure-window.py= | the window interactive figures open in, shipped with them   |
 | =emjupy-mode.el=          | =emjupy-mode=, its keys, its layers, mixed installs         |
@@ -550,6 +551,7 @@ does not ship.  The tests, in =test/=, are not shipped.  It is kept at
                 "src/emjupy-figure-window.py"
                 "src/emjupy-remote.el"
                 "src/emjupy-lsp.el"
+                "src/emjupy-shadow.el"
                 "src/emjupy-eglot.el"
                 "src/emjupy-mode.el"
                 "src/emjupy-save.el"
