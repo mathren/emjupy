@@ -1,0 +1,914 @@
+;;; emjupy-kernel-test.el --- Unit tests: emjupy-kernel.el  -*- lexical-binding: t; no-byte-compile: t -*-
+
+;; Copyright (C) 2026 Mathieu Renzo
+
+;; Author: Mathieu Renzo <mrenzo@arizona.edu>
+;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is not part of GNU Emacs.
+
+;;; Commentary:
+
+;; Unit tests of emjupy-kernel.el.
+
+;;; Code:
+
+(require 'ert)
+(require 'cl-lib)
+(require 'emjupy)
+(require 'emjupy-test-helpers)
+
+
+;;;; Server URL parsing (remote kernels reached through an SSH tunnel)
+
+(ert-deftest emjupy-test-kernel-ws-url-is-scheme-and-path-aware ()
+  "The kernel WebSocket URL must carry the scheme, the base path, and a
+url-encoded token -- and must NOT emit a bare `?token=' when there is
+no token."
+  (let ((captured nil))
+    (cl-letf (((symbol-function 'websocket-open)
+               (lambda (url &rest _) (setq captured url) nil)))
+      (let* ((server (make-emjupy-server
+                      :base-url "https://example.org:8443/user/alice"
+                      :token "t o k"))
+             (nb (make-emjupy-notebook :path "a.ipynb" :server server)))
+        (emjupy-connect-kernel nb "kid")
+        (should (string-prefix-p "wss://" captured))
+        (should (string-match-p "/user/alice/api/kernels/kid/channels"
+                                captured))
+        (should (string-match-p "token=t%20o%20k" captured)))
+      (let* ((server (make-emjupy-server :base-url "localhost:18888" :token ""))
+             (nb (make-emjupy-notebook :path "b.ipynb" :server server)))
+        (emjupy-connect-kernel nb "kid")
+        (should (string-prefix-p "ws://" captured))
+        (should-not (string-match-p "token=" captured))))))
+
+;;;; Execution: cell order must never scramble; sync must cover ALL cells
+
+(ert-deftest emjupy-test-execute-preserves-cell-order ()
+  "Executing a non-last cell must not shove it (and its output) to the
+end of the buffer -- output belongs directly after its own cell, and
+every later cell must still render after it, in order."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "1+1" :outputs []
+                              :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "2+2" :outputs []
+                              :metadata (make-hash-table)))
+        (c3 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "3+3" :outputs []
+                              :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2 c3) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-at-point)
+         ;; the code that got sent is the cell we asked for, not a neighbour
+         (should (string-match-p (regexp-quote "1+1") (car emjupy-test--sent))))
+        (let ((oh (make-hash-table :test 'equal)))
+          (puthash "output_type" "stream" oh) (puthash "name" "stdout" oh)
+          (puthash "text" "2\n" oh)
+          (emjupy-test--append-and-flush c1 oh nb))
+        (should (< (overlay-start (emjupy-cell-output-ov c1))
+                   (overlay-start (emjupy-cell-overlay c2))))
+        (should (< (overlay-start (emjupy-cell-overlay c2))
+                   (overlay-start (emjupy-cell-overlay c3))))))))
+
+(ert-deftest emjupy-test-execute-syncs-all-cells-not-just-current ()
+  "Executing one cell must not discard unsynced live edits sitting in a
+DIFFERENT cell -- the rerender it triggers rebuilds the whole buffer
+from cell structs, so every cell must be synced first, not just the
+one being run."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "1+1" :outputs []
+                              :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code :source ""
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         ;; type into cell 2 with no explicit sync, the way live typing works
+         (goto-char (overlay-start (emjupy-cell-overlay c2)))
+         (insert "999")
+         ;; then execute cell 1
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-at-point))
+        (should (string-match-p "999" (buffer-string)))))))
+
+;;;; Rich output: display_data / image routing
+
+(ert-deftest emjupy-test-display-data-not-dropped ()
+  "display_data messages -- how matplotlib's inline figure actually
+arrives, separately from the execute_result text repr -- must be
+captured, not silently ignored."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                 :source "plot()"
+                                 :outputs [] :metadata (make-hash-table)))
+         (msg-id "msg-display-data-test")
+         (nb (make-emjupy-notebook :cells (vector cell)))
+         (kernel (make-emjupy-kernel :id "k1"
+                                     :pending (make-hash-table :test 'equal)
+                                     :notebook nb)))
+    (puthash msg-id cell (emjupy-kernel-pending kernel))
+    (let* ((hdr (make-hash-table :test 'equal))
+           (ph (make-hash-table :test 'equal))
+           (dat (make-hash-table :test 'equal))
+           (content (make-hash-table :test 'equal))
+           (msg (make-hash-table :test 'equal)))
+      (puthash "msg_type" "display_data" hdr)
+      (puthash "msg_id" msg-id ph)
+      (puthash "image/png" "iVBORw0KGgo=" dat)
+      (puthash "data" dat content)
+      (puthash "header" hdr msg) (puthash "parent_header" ph msg)
+      (puthash "content" content msg)
+      ;; The raw payload, which the handler accepts as a frame would be, so
+      ;; recorded traffic can be replayed.  Not in `ignore-errors': an error
+      ;; must fail the test, not pass as "0 outputs".
+      (emjupy--handle-ws-message kernel (json-serialize msg))
+      (should (> (length (emjupy-cell-outputs cell)) 0))
+      (should (equal (gethash "output_type"
+                              (aref (emjupy-cell-outputs cell) 0))
+                     "display_data")))))
+
+;;;; Kernel restart
+
+(ert-deftest emjupy-test-restart-kernel-requires-connection ()
+  "Restarting with no kernel signals a clear user-error instead of
+failing deep inside some HTTP call."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "x"
+                                :outputs [] :metadata (make-hash-table)))
+      buf nb
+    (should-error (emjupy-restart-kernel) :type 'user-error)))
+
+(ert-deftest emjupy-test-restart-kernel-reuses-same-id ()
+  "Restart must POST to THIS notebook's own kernel id and reconnect
+with that SAME id (not spawn a fresh one), and drop now-orphaned
+pending requests."
+  (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "tok"))
+         (restart-path nil) (reconnected-with nil))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                  :source "x"
+                                  :outputs [] :metadata (make-hash-table)))
+        buf nb
+      (setf (emjupy-notebook-server nb) server)
+      (let ((kernel (make-emjupy-kernel :id "kernel-abc" :server server
+                                        :pending (make-hash-table :test 'equal)
+                                        :notebook nb)))
+        (setf (emjupy-notebook-kernel nb) kernel)
+        (puthash "stale-msg" 'some-cell (emjupy-kernel-pending kernel))
+        (cl-letf (((symbol-function 'emjupy--http-request)
+                   (lambda (_method _server path &rest _)
+                     (when (string-match-p "/restart" path)
+                       (setq restart-path path))
+                     (make-hash-table :test 'equal)))
+                  ((symbol-function 'emjupy-connect-kernel)
+                   (lambda (notebook kernel-id &optional name)
+                     (setq reconnected-with (list notebook kernel-id name))))
+                  ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) nil)))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+            (emjupy-restart-kernel)))
+        (should (string-match-p "kernel-abc" restart-path))
+        (should (equal (nth 1 reconnected-with) "kernel-abc"))
+        (should (eq (nth 0 reconnected-with) nb))
+        (should (= (hash-table-count (emjupy-kernel-pending kernel)) 0))))))
+
+;;;; Several notebooks / several servers at once
+
+(ert-deftest emjupy-test-output-goes-to-the-requesting-notebook ()
+  "A frame must be delivered to the notebook whose kernel produced it,
+not to whichever buffer happens to be current. This is the
+cross-talk that global `emjupy--current-notebook-buffer' caused: a
+slow cell in notebook A finishing while you were reading notebook B
+wrote A's output into B."
+  (let* ((cell-a (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                   :source "a"
+                                   :outputs [] :metadata (make-hash-table)))
+         (cell-b (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                   :source "b"
+                                   :outputs [] :metadata (make-hash-table)))
+         (buf-a (generate-new-buffer "*emjupy-A*"))
+         (buf-b (generate-new-buffer "*emjupy-B*"))
+         (nb-a (make-emjupy-notebook :path "A.ipynb" :cells (vector cell-a)
+                                     :buffer buf-a))
+         (nb-b (make-emjupy-notebook :path "B.ipynb" :cells (vector cell-b)
+                                     :buffer buf-b))
+         (k-a (make-emjupy-kernel :id "ka"
+                                  :pending (make-hash-table :test 'equal)
+                                  :notebook nb-a)))
+    (unwind-protect
+        (progn
+          (dolist (pair (list (cons buf-a nb-a) (cons buf-b nb-b)))
+            (with-current-buffer (car pair)
+              (emjupy-mode)
+              (setq emjupy--buffer-notebook (cdr pair))
+              (emjupy--rerender-notebook)))
+          (puthash "msg-a" cell-a (emjupy-kernel-pending k-a))
+          ;; deliver A's frame while B is the current buffer
+          (with-current-buffer buf-b
+            (let* ((hdr (make-hash-table :test 'equal))
+                   (ph (make-hash-table :test 'equal))
+                   (content (make-hash-table :test 'equal))
+                   (msg (make-hash-table :test 'equal)))
+              (puthash "msg_type" "stream" hdr)
+              (puthash "msg_id" "msg-a" ph)
+              (puthash "name" "stdout" content)
+              (puthash "text" "belongs-to-A\n" content)
+              (puthash "header" hdr msg) (puthash "parent_header" ph msg)
+              (puthash "content" content msg)
+              (emjupy--handle-ws-message k-a (json-serialize msg)))
+            ;; output is coalesced behind a timer; force the redraw
+            (emjupy-flush-output buf-a))
+          (should (= (length (emjupy-cell-outputs cell-a)) 1))
+          (should (= (length (emjupy-cell-outputs cell-b)) 0))
+          (with-current-buffer buf-a
+            (should (string-match-p "belongs-to-A" (buffer-string))))
+          (with-current-buffer buf-b
+            (should-not (string-match-p "belongs-to-A" (buffer-string)))))
+      (let ((kill-buffer-query-functions nil))
+        (dolist (b (list buf-a buf-b)) (when (buffer-live-p b)
+                                         (kill-buffer b)))))))
+
+;;;; Eglot / completion-framework integration
+
+(ert-deftest emjupy-test-execute-and-goto-next-lands-on-the-next-cell ()
+  "Running a cell leaves point at the START of the FOLLOWING cell."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "one"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "two"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-and-goto-next)
+         ;; the cell ran ...
+         (should (string-match-p "one" (car emjupy-test--sent)))
+         ;; ... and point is at the top of the next one, not back on c1
+         (should (eq (emjupy--cell-at-point) c2))
+         (should (= (point) (overlay-start (emjupy-cell-overlay c2))))
+         ;; nothing was added
+         (should (= (length (emjupy-notebook-cells nb)) 2)))))))
+
+(ert-deftest emjupy-test-execute-and-goto-next-makes-a-cell-at-the-end ()
+  "Running the LAST cell opens a fresh one below and goes there, rather
+than leaving point stranded at the bottom."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "only"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay cell)))
+         (emjupy-execute-cell-and-goto-next)
+         (let ((cells (emjupy-notebook-cells emjupy--buffer-notebook)))
+           (should (= (length cells) 2))
+           (should (equal (emjupy-cell-source (aref cells 1)) ""))
+           (should (eq (emjupy--cell-at-point) (aref cells 1)))
+           (should (= (point)
+                      (overlay-start
+                       (emjupy-cell-overlay (aref cells 1)))))))))))
+
+(ert-deftest emjupy-test-execute-bindings ()
+  "C-c C-c runs and advances; Shift-RET runs and stays put."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-c"))
+              'emjupy-execute-cell-and-goto-next))
+  (should (eq (lookup-key emjupy-mode-map (kbd "S-<return>"))
+              'emjupy-execute-cell-at-point))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-e"))
+              'emjupy-execute-cell-at-point)))
+
+(ert-deftest emjupy-test-execute-in-place-does-not-advance ()
+  "Shift-RET leaves point in the cell it ran."
+  (let* ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "one"
+                               :outputs [] :metadata (make-hash-table)))
+         (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                               :source "two"
+                               :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (emjupy-test--with-fake-kernel
+         (goto-char (overlay-start (emjupy-cell-overlay c1)))
+         (emjupy-execute-cell-at-point)
+         (should (eq (emjupy--cell-at-point) c1))
+         (should (= (length (emjupy-notebook-cells nb)) 2)))))))
+
+(ert-deftest emjupy-test-keybindings-have-no-duplicates ()
+  "Each command is reachable by one key, so `C-h m' is not a wall of
+synonyms.  The prefix keys are the exception: they carry sub-bindings."
+  (let ((by-command (make-hash-table :test 'eq))
+        (dupes nil))
+    (map-keymap
+     (lambda (_event def)
+       (when (and (symbolp def) (fboundp def))
+         (puthash def (1+ (gethash def by-command 0)) by-command)))
+     emjupy-mode-map)
+    (maphash (lambda (cmd n)
+               ;; Bound twice on purpose, as terminals and graphical frames send
+               ;; different keys: Shift-RET to run, DEL and <backspace> to
+               ;; reveal a formula.
+               (when (and (> n 1)
+                          (not (memq cmd '(emjupy-execute-cell-at-point
+                                           emjupy-latex-unrender-or-delete))))
+                 (push (cons cmd n) dupes)))
+             by-command)
+    (should-not dupes)))
+
+(ert-deftest emjupy-test-kernel-bindings-separate-stop-from-select ()
+  "C-c C-z stops what is running; picking a kernel moves to C-c M-z."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-z"))
+              'emjupy-interrupt-kernel))
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c M-z"))
+              'emjupy-connect-kernel-interactive)))
+
+(ert-deftest emjupy-test-kernel-started-through-a-session ()
+  "Kernels are started via a session bound to the notebook.
+
+Jupyter starts a session's kernel in the notebook's own directory, so
+`open(\"data.csv\")' in a cell means what it means in Jupyter.  Posting
+to /api/kernels directly would leave the kernel in the server root."
+  (let ((calls nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (method _s path &optional body &rest _)
+                 (push (list method path body) calls)
+                 (let ((h (make-hash-table :test 'equal))
+                       (k (make-hash-table :test 'equal)))
+                   (puthash "id" "k1" k)
+                   (puthash "kernel" k h)
+                   (puthash "id" "k1" h)
+                   h)))
+              ((symbol-function 'emjupy-connect-kernel) (lambda (&rest _) nil)))
+      (emjupy--spawn-and-connect-kernel
+       (make-emjupy-notebook :path "sub/nb.ipynb" :cells []
+                             :server (make-emjupy-server :base-url "h"
+                                                         :token "t")))
+      (let ((session (cl-find "/api/sessions" calls :key #'cadr :test #'equal)))
+        (should session)
+        (let ((body (json-parse-string (nth 2 session)
+                                       :object-type 'hash-table)))
+          (should (equal (gethash "path" body) "sub/nb.ipynb"))
+          (should (equal (gethash "type" body) "notebook")))))))
+
+(ert-deftest emjupy-test-internal-requests-do-not-reach-cells ()
+  "emjupy's own questions to the kernel must not print into the notebook."
+  (let* ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                 :source "x"
+                                 :outputs [] :metadata (make-hash-table)))
+         (got nil))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (let* ((kernel (make-emjupy-kernel
+                        :id "k" :name "python3"
+                        :pending (make-hash-table :test 'equal)
+                        :notebook emjupy--buffer-notebook)))
+          (clrhash emjupy--internal-requests)
+          (puthash "mid" (cons (lambda (out) (setq got out)) nil)
+                   emjupy--internal-requests)
+          (emjupy--handle-ws-message
+           kernel
+           (json-serialize
+            (let ((m (make-hash-table :test 'equal))
+                  (h (make-hash-table :test 'equal))
+                  (p (make-hash-table :test 'equal))
+                  (c (make-hash-table :test 'equal)))
+              (puthash "msg_type" "stream" h)
+              (puthash "msg_id" "mid" p)
+              (puthash "text" "/home/me/nb\n" c)
+              (puthash "name" "stdout" c)
+              (puthash "header" h m)
+              (puthash "parent_header" p m)
+              (puthash "content" c m)
+              m)))
+          ;; the answer is handed over when the request is done
+          (emjupy--handle-ws-message
+           kernel (emjupy-test--kernel-msg "status" "mid"
+                                           '(("execution_state" . "idle"))))
+          ;; the callback saw it ...
+          ;; as printed: a caller asking for a line trims it itself
+          (should (equal got "/home/me/nb\n"))
+          ;; ... and the cell did not
+          (should (= (length (emjupy-cell-outputs cell)) 0))
+          (should-not (string-match-p "/home/me/nb" (buffer-string))))))))
+
+(ert-deftest emjupy-test-output-redraws-are-coalesced ()
+  "A burst of output costs one redraw, not one per message.
+
+A redraw rebuilds the whole notebook.  Doing that per arriving message
+is the difference between a progress bar and a frozen Emacs: `tqdm'
+sends one message per iteration, and each redraw of a notebook with
+figures costs tens of milliseconds."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "loop()"
+                                :outputs [] :metadata (make-hash-table)))
+        (renders 0))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (cl-letf* ((real (symbol-function 'emjupy--redraw-pending-output))
+                   ((symbol-function 'emjupy--redraw-pending-output)
+                    (lambda (&rest args) (setq renders (1+ renders))
+                      (apply real args))))
+          (dotimes (i 50)
+            (let ((o (make-hash-table :test 'equal)))
+              (puthash "output_type" "stream" o)
+              (puthash "name" "stdout" o)
+              (puthash "text" (format "step %d\n" i) o)
+              (emjupy--append-output-to-cell cell o nb)))
+          ;; nothing has been drawn yet; one redraw is pending
+          (should (= renders 0))
+          (emjupy-flush-output buf)
+          (should (= renders 1)))))))
+
+(ert-deftest emjupy-test-progress-bar-collapses-to-one-output ()
+  "Consecutive stream output on one channel is one stream, as in Jupyter.
+
+Keeping each message is what let a `tqdm' bar leave thousands of entries
+behind -- every one walked on every redraw, so the notebook stayed slow
+for the rest of the session.  Carriage returns collapse too, which is
+what makes a progress bar a bar rather than a thousand lines."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "loop()"
+                                :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (dotimes (i 50)
+          (let ((o (make-hash-table :test 'equal)))
+            (puthash "output_type" "stream" o)
+            (puthash "name" "stderr" o)
+            (puthash "text" (format "\r%d%%|#####| %d/50" i i) o)
+            (emjupy--append-output-to-cell cell o nb)))
+        (emjupy-flush-output buf)
+        (should (= (length (emjupy-cell-outputs cell)) 1))
+        ;; only the last state of the bar survives
+        (let ((text (emjupy--mime-text
+                     (gethash "text" (aref (emjupy-cell-outputs cell) 0)))))
+          (should (string-match-p "49/50" text))
+          (should-not (string-match-p "0/50" text)))
+        ;; a different channel is still its own output
+        (let ((o (make-hash-table :test 'equal)))
+          (puthash "output_type" "stream" o)
+          (puthash "name" "stdout" o)
+          (puthash "text" "done\n" o)
+          (emjupy--append-output-to-cell cell o nb))
+        (should (= (length (emjupy-cell-outputs cell)) 2))))))
+
+(ert-deftest emjupy-test-output-redrawn-in-place ()
+  "Output arriving redraws its own cell, not the whole notebook."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (let ((full 0))
+          (cl-letf* ((real (symbol-function 'emjupy--rerender-preserving-point))
+                     ((symbol-function 'emjupy--rerender-preserving-point)
+                      (lambda (&rest args) (setq full (1+ full))
+                        (apply real args))))
+            (emjupy--append-output-to-cell c1 (emjupy-test--stream "one\n") nb)
+            (emjupy-flush-output buf))
+          ;; no full rebuild was needed
+          (should (= full 0)))
+        ;; and the output is actually there, in the right cell
+        (should (string-match-p "one" (buffer-string)))
+        (should (emjupy-cell-output-ov c1))
+        (should-not (emjupy-cell-output-ov c2))
+        ;; the second cell is still intact and still its own overlay
+        (should (string-match-p "b = 2" (buffer-string)))
+        (should (overlayp (emjupy-cell-overlay c2)))))))
+
+(ert-deftest emjupy-test-undo-survives-output-from-another-cell ()
+  "Typing in one cell survives output arriving in another, undoably.
+
+This is the case that matters: you run a long cell, move down to edit
+another while it works, and its output lands.  The edits worth keeping
+are precisely the ones the output has pushed further down the buffer,
+so keeping them means shifting the positions inside the undo entries
+rather than merely keeping the ones that did not move."
+  (let ((c1 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "a = 1"
+                              :outputs [] :metadata (make-hash-table)))
+        (c2 (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                              :source "b = 2"
+                              :outputs [] :metadata (make-hash-table))))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; type into the SECOND cell
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (end-of-line)
+        (insert " + 99")
+        (undo-boundary)
+        (should (string-match-p "b = 2 \\+ 99" (buffer-string)))
+        ;; output lands in the FIRST cell, above it
+        (emjupy--append-output-to-cell c1 (emjupy-test--stream "one\n") nb)
+        (emjupy-flush-output buf)
+        (should (string-match-p "one" (buffer-string)))
+        (should (string-match-p "b = 2 \\+ 99" (buffer-string)))
+        ;; and the typing can still be undone -- taking back exactly what
+        ;; was typed, and nothing else
+        (undo)
+        (should-not (string-match-p "\\+ 99" (buffer-string)))
+        (should (string-match-p "b = 2" (buffer-string)))
+        (should (string-match-p "a = 1" (buffer-string)))
+        (should (string-match-p "one" (buffer-string)))))))
+
+(ert-deftest emjupy-test-executing-markdown-renders-it ()
+  "Running a markdown cell renders it; no code is sent to the kernel.
+
+Jupyter treats running a markdown cell as rendering it.  emjupy sent its
+prose to Python, which answered with a syntax error about text that was
+never code."
+  (let ((md (make-emjupy-cell :id (emjupy--new-cell-id) :type 'markdown
+                              :source "# Title\n\n$x^2$" :outputs []
+                              :metadata (make-hash-table)))
+        (sent nil))
+    (emjupy-test--with-notebook (vector md) buf nb
+      (with-current-buffer buf
+        (goto-char (overlay-start (emjupy-cell-overlay md)))
+        (cl-letf (((symbol-function 'emjupy--make-execute-request)
+                   (lambda (&rest _) (setq sent t) (cons "id" "{}")))
+                  ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t)))
+          (emjupy-execute-cell-at-point))
+        (should-not sent)
+        ;; and the cell is untouched otherwise
+        (should (eq (emjupy-cell-type md) 'markdown))
+        (should (string-match-p "Title" (emjupy-cell-source md)))))))
+
+;;;; Performance
+
+(ert-deftest emjupy-test-output-redraw-does-not-scale-with-the-notebook ()
+  "Output arriving redraws its own cell, so its cost does not grow with
+the notebook.  Rebuilding everything for one cell's output is what made
+a progress bar unusable."
+  :tags '(:timing)
+  (let* ((small (emjupy-test--big-notebook 5 5))
+         (large (emjupy-test--big-notebook 80 20))
+         (time-for
+          (lambda (cells)
+            (let ((elapsed nil))
+              (emjupy-test--with-notebook cells buf nb
+                (with-current-buffer buf
+                  (let ((cell (aref (emjupy-notebook-cells nb) 0)))
+                    (setq elapsed
+                          (/ (emjupy-test--elapsed
+                               (dotimes (i 20)
+                                 (emjupy--append-output-to-cell
+                                  cell (emjupy-test--stream-output (format "n %d\n" i)) nb)
+                                 (emjupy-flush-output buf)))
+                             20.0)))))
+              elapsed))))
+    (let ((small-time (funcall time-for small))
+          (large-time (funcall time-for large)))
+      ;; sixteen times the notebook must not cost anything like sixteen
+      ;; times as much; allow a wide margin and still catch a rebuild
+      (should (< large-time (max 0.05 (* 6 (max small-time 0.0005))))))))
+
+(ert-deftest emjupy-test-nothing-remote-on-the-interactive-path ()
+  "No path that runs after a command may touch a remote file.
+
+Remote file operations cost a round trip each, and TRAMP blocks Emacs
+while it waits -- which is how output once appeared to stall until the
+user interrupted.  This asserts the absence rather than the speed,
+because the speed depends on a network that a test cannot rely on."
+  (let ((cells (emjupy-test--big-notebook 10 5))
+        (remote-calls nil))
+    (emjupy-test--with-notebook cells buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel-cwd emjupy--buffer-notebook)
+              "/ssh:box:/srv/nb")
+        (goto-char (overlay-start (emjupy-cell-overlay
+                                   (aref (emjupy-notebook-cells nb) 3))))
+        (cl-letf* ((real (symbol-function 'file-remote-p))
+                   ;; Probing a remote path is itself a round trip: asking
+                   ;; whether a TRAMP directory exists opens a connection to
+                   ;; find out.  Counted alongside the writes.
+                   (real-dirp (symbol-function 'file-directory-p))
+                   (real-existsp (symbol-function 'file-exists-p))
+                   ((symbol-function 'file-directory-p)
+                    (lambda (dir &rest args)
+                      (if (and (stringp dir) (funcall real dir))
+                          (progn (push (list 'file-directory-p dir)
+                                       remote-calls) nil)
+                        (apply real-dirp dir args))))
+                   ((symbol-function 'file-exists-p)
+                    (lambda (file &rest args)
+                      (if (and (stringp file) (funcall real file))
+                          (progn (push (list 'file-exists-p file)
+                                       remote-calls) nil)
+                        (apply real-existsp file args))))
+                   ((symbol-function 'make-directory)
+                    (lambda (dir &rest _)
+                      (when (funcall real dir)
+                        (push (list 'make-directory dir) remote-calls))))
+                   ((symbol-function 'write-region)
+                    (lambda (_s _e file &rest _)
+                      (when (and (stringp file) (funcall real file))
+                        (push (list 'write-region file) remote-calls))))
+                   ((symbol-function 'find-file-noselect)
+                    (lambda (file &rest _)
+                      (when (and (stringp file) (funcall real file))
+                        (push (list 'find-file file) remote-calls))
+                      (generate-new-buffer " *stand-in*"))))
+          ;; what happens on every command; not in `ignore-errors': a TRAMP call
+          ;; here is the fault tested for, and swallowing it would pass a path
+          ;; opening connections
+          (dotimes (_ 5)
+            (run-hooks 'pre-command-hook)
+            (emjupy--eldoc #'ignore)
+            (emjupy--capf)
+            (forward-line 1))
+          ;; and output arriving
+          (emjupy--append-output-to-cell
+           (aref (emjupy-notebook-cells nb) 0)
+           (emjupy-test--stream-output "out\n") nb)
+          (emjupy-flush-output buf))
+        (should (equal remote-calls nil))))))
+
+;; deliberately no kernel directory: the warning must not wait for
+;; one, since a local server starts before the kernel answers
+(ert-deftest emjupy-test-running-a-cell-keeps-undo ()
+  "Running a cell does not throw away the undo history.
+
+Two full redraws happened on that path -- one clearing the cell's old
+output before the run, one updating its execution count after -- and a
+full redraw drops the history, because undo entries hold plain buffer
+positions and a rebuild moves all of them.  Both changes are confined to
+one cell, so both are done in place.
+
+Running a cell is the commonest action in a notebook, so this was undo
+being unusable in practice however well it survived everything else."
+  (let ((c1 (emjupy-test--cell-like 'code "print(1)"))
+        (c2 (emjupy-test--cell-like 'code "y = 2")))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (buffer-enable-undo)
+        (setq buffer-undo-list nil)
+        ;; type into the second cell
+        (goto-char (overlay-start (emjupy-cell-overlay c2)))
+        (end-of-line)
+        (insert " + 7")
+        (undo-boundary)
+        (should buffer-undo-list)
+        ;; run the first, as far as a test without a kernel can
+        (goto-char (overlay-start (emjupy-cell-overlay c1)))
+        (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--make-execute-request)
+                   (lambda (&rest _) (cons "id" "{}")))
+                  ((symbol-function 'emjupy--send-ws-text) #'ignore))
+          (ignore-errors (emjupy-execute-cell-at-point)))
+        ;; the history is still there, and still works
+        (should buffer-undo-list)
+        (should (string-match-p "y = 2 \\+ 7" (buffer-string)))
+        (goto-char (point-min))
+        (undo)
+        (should-not (string-match-p "\\+ 7" (buffer-string)))
+        (should (string-match-p "y = 2" (buffer-string)))))))
+
+;;;; The undo guard
+
+(ert-deftest emjupy-test-tqdm-bar-with-prints-is-one-bar ()
+  "A progress bar with a print in the loop stays one bar, redrawn in place.
+
+The messages are the ones ipykernel sends for tqdm over three items with
+a print each, captured from a real kernel.  Each update of the bar is on
+stderr and begins with a carriage return; the prints are on stdout and
+fall between them, so the updates were never consecutive, never merged,
+and each became an output of its own -- a column of bars, every one
+showing its carriage return as a literal ^M."
+  (let ((cell (make-emjupy-cell :id "t" :type 'code :source "" :outputs []
+                                :metadata (make-hash-table :test 'equal))))
+    (dolist (m '(("stderr" "\r0it [00:00, ?it/s]")
+                ("stdout" "0 a/x\n")
+                ("stderr" "\r1it [00:00,  3.33it/s]")
+                ("stdout" "1 b/y\n")
+                ("stderr" "\r2it [00:00,  3.33it/s]")
+                ("stdout" "2 c/z\n")
+                ("stderr" "\r3it [00:00,  3.32it/s]")
+                ("stderr" "\r3it [00:00,  3.32it/s]")
+                ("stderr" "\n")))
+      (emjupy--append-output-to-cell cell (emjupy-test--stream-on (car m)
+                                                                  (cadr m))))
+    (let ((outs (append (emjupy-cell-outputs cell) nil)))
+      ;; two outputs, not nine: the bar, and the prints
+      (should (= (length outs) 2))
+      ;; the bar shows only its final state, where it first appeared
+      (should (equal (gethash "name" (nth 0 outs)) "stderr"))
+      (should (equal (gethash "text" (nth 0 outs)) "3it [00:00,  3.32it/s]\n"))
+      ;; the prints, in order and together
+      (should (equal (gethash "text" (nth 1 outs)) "0 a/x\n1 b/y\n2 c/z\n"))
+      ;; and no carriage return survives anywhere
+      (dolist (o outs)
+        (should-not (string-match-p "\r" (gethash "text" o)))))))
+
+(ert-deftest emjupy-test-closed-stream-lines-keep-their-order ()
+  "Output that genuinely came later is not moved above what came before.
+
+Only a line still open -- no newline yet -- is continued across another
+stream's output.  A warning that ends its line is finished, and the
+next warning is a new line after whatever came in between."
+  (let ((cell (make-emjupy-cell :id "o" :type 'code :source "" :outputs []
+                                :metadata (make-hash-table :test 'equal))))
+    (dolist (m '(("stderr" "warning one\n") ("stdout" "a\n")
+                 ("stderr" "warning two\n")))
+      (emjupy--append-output-to-cell cell (emjupy-test--stream-on (car m)
+                                                                  (cadr m))))
+    (should (equal (mapcar (lambda (o) (list (gethash "name" o)
+                                             (gethash "text" o)))
+                           (append (emjupy-cell-outputs cell) nil))
+                   '(("stderr" "warning one\n")
+                     ("stdout" "a\n")
+                     ("stderr" "warning two\n"))))))
+
+(ert-deftest emjupy-test-kernel-is-told-the-width ()
+  "The kernel's COLUMNS is set to the width of the box."
+  (let ((sent nil)
+        (cell (emjupy-test--cell-like 'code "x")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+        (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--kernel-eval)
+                   (lambda (_k code _cb) (setq sent code))))
+          (emjupy--tell-kernel-width nb)
+          (should (string-match-p (format "COLUMNS.*%d"
+                                          (emjupy--box-width)) sent))
+          (emjupy--tell-kernel-width nb 42)
+          (should (string-match-p "COLUMNS.*42" sent)))))))
+
+(ert-deftest emjupy-test-width-told-once-per-width ()
+  "The kernel is told the width before a run, once for each width it has.
+
+Sent ahead of the execute request, on the channel the kernel handles in
+order, so the cell runs with it set -- not from a timer after connecting,
+which lost the race to a cell run straight away."
+  (let ((sent 0) (width 80)
+        (cell (emjupy-test--cell-like 'code "x")))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+        (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--box-width) (lambda () width))
+                  ((symbol-function 'emjupy--kernel-eval)
+                   (lambda (&rest _) (setq sent (1+ sent)))))
+          (emjupy--ensure-kernel-width nb)
+          (emjupy--ensure-kernel-width nb)
+          (should (= sent 1))               ; the same width is not sent twice
+          (setq width 60)
+          (emjupy--ensure-kernel-width nb)
+          (should (= sent 2)))))))          ; a new one is
+
+(ert-deftest emjupy-test-running-a-cell-does-not-redraw-the-notebook ()
+  "Running a cell clears its old output in place, not by a whole redraw.
+
+Only that cell's output changes.  A whole redraw moved every position
+held in the buffer to its start -- the fake cursors of multiple-cursors,
+markers, other windows' points -- and recorded an undo step for a
+command that edits nothing."
+  (let* ((out (let ((o (make-hash-table :test 'equal)))
+                (puthash "output_type" "stream" o) (puthash "name" "stdout" o)
+                (puthash "text" "old output\nover two lines\n" o) o))
+         (c1 (emjupy-test--cell-like 'code "x1 = 1"))
+         (c2 (emjupy-test--cell-like 'code "y = 2" (vector out)))
+         (rebuilds 0))
+    (emjupy-test--with-notebook (vector c1 c2) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-kernel nb)
+              (make-emjupy-kernel :id "k"
+                                  :pending (make-hash-table :test 'equal)))
+        ;; something holding a position in the other cell
+        (let ((mark (copy-marker (+ 2
+                                    (overlay-start (emjupy-cell-overlay c1))))))
+          (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                    ((symbol-function 'emjupy--ws-send) #'ignore)
+                    ((symbol-function 'emjupy--kernel-eval) #'ignore)
+                    ((symbol-function 'emjupy--rerender-notebook-1)
+                     (let ((real (symbol-function
+                                  'emjupy--rerender-notebook-1)))
+                       (lambda (&rest args) (setq rebuilds (1+ rebuilds))
+                         (apply real args)))))
+            (goto-char (overlay-start (emjupy-cell-overlay c2)))
+            (emjupy-execute-cell-at-point))
+          (should (= rebuilds 0))
+          ;; the old output is gone from the buffer
+          (should-not (string-match-p "old output" (buffer-string)))
+          ;; and the marker still sits where it was, in cell 1's text
+          (should (equal (buffer-substring-no-properties
+                          (overlay-start (emjupy-cell-overlay c1)) mark)
+                         "x1")))))))
+
+(ert-deftest emjupy-test-internal-answer-in-pieces-arrives-whole ()
+  "An answer to one of emjupy's own questions arrives whole, however split.
+
+The callback was given the first stream message and the request was then
+forgotten, so a large answer -- plotly.js, asked of the kernel, is near
+5 MB -- lost everything after its first piece."
+  (let ((got nil)
+        (kernel (make-emjupy-kernel :id "k" :name "python3"
+                                    :pending (make-hash-table :test 'equal))))
+    (clrhash emjupy--internal-requests)
+    (puthash "big" (cons (lambda (out) (setq got out)) nil)
+             emjupy--internal-requests)
+    (dolist (piece '("first " "second " "third\n"))
+      (emjupy--handle-ws-message
+       kernel (emjupy-test--kernel-msg "stream" "big"
+                                       `(("name" .
+                                          "stdout") ("text" . ,piece)))))
+    ;; nothing until the request is done
+    (should-not got)
+    (emjupy--handle-ws-message
+     kernel (emjupy-test--kernel-msg "status" "big" '(("execution_state" .
+                                                       "idle"))))
+    (should (equal got "first second third\n"))
+    (should-not (gethash "big" emjupy--internal-requests))))
+
+(ert-deftest emjupy-test-binary-frames-as-the-server-writes-them ()
+  "A binary frame is read as the Jupyter server writes it.
+The frame below is what jupyter_server's serialize_binary_message made
+of a message with two buffers; the buffers come back byte for byte."
+  (let* ((frame (emjupy-test--unhex "0000000300000010000000f0000000f67b22686561646572223a207b226d73675f74797065223a2022636f6d6d5f6d7367222c20226d73675f6964223a20226d31227d2c2022706172656e745f686561646572223a207b7d2c20226d65746164617461223a207b7d2c20226368616e6e656c223a2022696f707562222c2022636f6e74656e74223a207b22636f6d6d5f6964223a20226331222c202264617461223a207b226d6574686f64223a2022757064617465222c20227374617465223a207b7d2c20226275666665725f7061746873223a205b5b2276616c7565225d2c205b2270616972222c20315d5d7d7d7d89504e4700ff4142"))
+         (parts (emjupy--decode-binary-message frame))
+         (msg (json-parse-string (car parts) :object-type 'hash-table)))
+    (should (equal (gethash "msg_id" (gethash "header" msg)) "m1"))
+    (should (equal (cdr parts) (list (unibyte-string #x89 ?P ?N ?G 0 #xff)
+                                     "AB")))
+    ;; and what is encoded here reads back the same
+    (let ((again (emjupy--decode-binary-message
+                  (emjupy--encode-binary-message (car parts) (cdr parts)))))
+      (should (equal again parts)))
+    ;; a message with no buffers at all
+    (should (equal (emjupy--decode-binary-message
+                    (emjupy--encode-binary-message "{}" nil))
+                   (cons "{}" nil)))))
+
+(ert-deftest emjupy-test-settling-adopted-runs-spares-newer-ones ()
+  "After a reconnect, only the runs adopted are settled, not those sent since.
+A run sent just after reconnecting can finish on the kernel, which then
+reports idle, with its output still on the way; ending it lost that
+output."
+  (let* ((buf (generate-new-buffer " *emjupy-settle*"))
+         (adopted (make-emjupy-cell :id "old"))
+         (newer (make-emjupy-cell :id "new"))
+         (nb (make-emjupy-notebook :buffer buf :path "n.ipynb"))
+         (pending (make-hash-table :test 'equal))
+         (kernel (make-emjupy-kernel :id "k" :notebook nb :pending pending))
+         (ended nil))
+    (puthash "req-old" adopted pending)
+    (puthash "req-new" newer pending)
+    (unwind-protect
+        (cl-letf (((symbol-function 'emjupy--http-request)
+                   (lambda (&rest _)
+                     (let ((h (make-hash-table :test 'equal)))
+                       (puthash "execution_state" "idle" h)
+                       h)))
+                  ((symbol-function 'emjupy--end-runs)
+                   (lambda (cells &rest _) (setq ended cells))))
+          (emjupy--settle-adopted-runs kernel '("req-old"))
+          (should (equal ended (list adopted)))
+          (should-not (gethash "req-old" pending))
+          (should (eq (gethash "req-new" pending) newer)))
+      (kill-buffer buf))))
+
+(ert-deftest emjupy-test-stacked-progress-bars-are-shown-as-a-terminal-shows-them ()
+  "Cursor codes in stream output are applied, chunk by chunk, as a terminal would.
+Stacked progress bars -- tqdm nested, or with `position' -- move the
+cursor up a line to redraw the bar above.  Only carriage returns were
+applied, and stale bars piled up."
+  (dolist (case emjupy-test--terminal-cases)
+    (let ((out (make-hash-table :test 'equal)))
+      (puthash "output_type" "stream" out) (puthash "name" "stderr" out)
+      (emjupy--stream-write out "" (car (nth 1 case)))
+      (dolist (chunk (cdr (nth 1 case)))
+        (emjupy--stream-write out (gethash "text" out) chunk))
+      (let* ((text (replace-regexp-in-string "\e\\[[0-9;]*m" ""
+                                             (gethash "text" out)))
+             (lines (split-string text "\n")))
+        (while (and lines (string-empty-p (car (last lines))))
+          (setq lines (butlast lines)))
+        (ert-info ((car case))
+          (should (equal lines (nth 2 case)))
+          ;; where the cursor is, is the terminal's: never saved with the output
+          (should (equal (sort (hash-table-keys out) #'string<)
+                         '("name" "output_type" "text"))))))))
+
+(ert-deftest emjupy-test-terminal-codes-keep-colours-and-plain-text-as-it-was ()
+  "Colour codes survive the cursor codes around them; text without any is unchanged."
+  ;; x written over the red r is red too, as on a terminal; the line below stays
+  (should (equal (car (emjupy--terminal-apply "" "\e[31mred\e[0m\n\e[1Ax" nil))
+                 "\e[31mxed\e[0m\n"))
+  ;; no cursor codes: the carriage-return rule, as before
+  (let ((out (make-hash-table :test 'equal)))
+    (emjupy--stream-write out "" "a\rb\nc")
+    (should (equal (gethash "text" out) "b\nc"))))
+
+(provide 'emjupy-kernel-test)
+
+;;; emjupy-kernel-test.el ends here

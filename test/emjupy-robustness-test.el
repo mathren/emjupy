@@ -22,7 +22,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'emjupy)
-(require 'emjupy-test)
+(require 'emjupy-test-helpers)
 
 (defvar emjupy-fuzz--seed nil
   "The seed of this run, drawn once so every test in it can report it.")

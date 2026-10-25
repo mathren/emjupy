@@ -159,8 +159,8 @@ them deserves the slowest reading:
 
 - *The tests are the specification.*  Test names say what is promised
   -- =emjupy-test-a-running-remote-server-is-found-again= -- and the
-  docstring why.  Search =test/emjupy-test.el= for the function under
-  review to find what it must do.
+  docstring why.  Search its file's tests, =test/emjupy-FILE-test.el=,
+  for the function under review to find what it must do.
 - *The history has the stories.*  Comments say why code is as it is;
   how it came to be is in the commit messages.  =git log -L :NAME:FILE=
   shows every change to one function, with its reason.

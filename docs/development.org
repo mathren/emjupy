@@ -25,8 +25,9 @@ is the target.
 * Source layout
 
 Sources in =src/=, bottom layer first; each file requires only files
-above it in this table.  Tests in =test/=, the notebooks they read in
-=test_notebooks/=.
+above it in this table.  Tests in =test/=: the unit tests of each file
+in =emjupy-FILE-test.el=, what they share in =emjupy-test-helpers.el=;
+the notebooks they read in =test_notebooks/=.
 
 | File                      | Contains                                                    |
 |---------------------------+-------------------------------------------------------------|
