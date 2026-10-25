@@ -358,7 +358,7 @@ and, in a checkout, the revision; in a notebook buffer, the kernel's
 working directory and which language server answers:
 
 #+begin_src
-emjupy 0.1.20, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
+emjupy 0.1.21, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
 kernel cwd /home/you/project; language server beside the kernel
 #+end_src
 
