@@ -1077,5 +1077,12 @@ Then put every header and footer where its cell now is."
   ;; gaps are protected.
   (emjupy--reconcile-rules))
 
+;;;; In a notebook buffer
+
+(defun emjupy-render-enable ()
+  "Draw the current notebook in the theme's colours, and refontify edits."
+  (emjupy--sync-theme-colors)
+  (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t))
+
 (provide 'emjupy-render)
 ;;; emjupy-render.el ends here

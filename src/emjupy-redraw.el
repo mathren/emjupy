@@ -670,6 +670,18 @@ buffer are folded in first, so nothing you have typed is lost."
   (emjupy--rerender-preserving-point)
   (message "[emjupy] Redrew the notebook."))
 
+;;;; In a notebook buffer
+
+(defun emjupy-redraw-enable ()
+  "Keep the current notebook's rules as wide as its page.
+The number column narrows the page, and so does a resize.
+`window-size-change-functions' is set globally, once for every notebook:
+`emjupy--window-size-changed' refreshes all notebook buffers, so a
+buffer-local copy would run once per buffer, each repeating the work."
+  (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled
+            nil t)
+  (add-hook 'window-size-change-functions #'emjupy--window-size-changed))
+
 (provide 'emjupy-redraw)
 
 ;;; emjupy-redraw.el ends here

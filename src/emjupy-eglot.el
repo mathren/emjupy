@@ -696,5 +696,15 @@ the answer lives."
       (setq buffer-read-only t)
       (display-buffer (current-buffer)))))
 
+;;;; In a notebook buffer
+
+(defun emjupy-eglot-enable ()
+  "Wire language support into the current notebook buffer.
+When a kernel attaches, it is asked where it runs, for the language
+server; and \\[xref-find-definitions] gets a backend forwarding to the
+shadow buffer, where Eglot's is."
+  (add-hook 'emjupy-kernel-connected-functions #'emjupy--refresh-kernel-cwd)
+  (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t))
+
 (provide 'emjupy-eglot)
 ;;; emjupy-eglot.el ends here

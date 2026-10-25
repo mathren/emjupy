@@ -20,7 +20,6 @@
 (require 'loadhist)                     ; `feature-file'
 (require 'emjupy-core)
 (require 'emjupy-render)
-(require 'emjupy-faces)
 (require 'emjupy-latex)
 (require 'emjupy-cells)
 (require 'emjupy-redraw)
@@ -273,41 +272,30 @@ are on the `load-path' -- remove one, or put the one you want first."
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
   (emjupy--adopt-language-settings)
-  ;; When a kernel attaches, the language-server layer asks it where it runs.
-  ;; Wired here, where the layers meet, not on load: a package should not add
-  ;; hooks by being loaded.
-  (add-hook 'emjupy-kernel-connected-functions #'emjupy--refresh-kernel-cwd)
-  ;; and how wide to draw, now and whenever the window changes
-  (add-hook 'emjupy-kernel-connected-functions #'emjupy--tell-kernel-width)
-  (add-hook 'emjupy-box-width-changed-functions #'emjupy--tell-kernel-width)
-  ;; Closing the notebook closes the connections it opened.
-  (add-hook 'kill-buffer-hook #'emjupy--release-notebook nil t)
+  ;; Each layer wires its own hooks, here rather than when it loads.  The
+  ;; order keeps each hook's: language support asks a kernel where it runs
+  ;; before the kernel layer tells it the width, and a notebook releases its
+  ;; connections after the cells layer stops its checks.
+  (emjupy-eglot-enable)
+  (emjupy-kernel-enable)
+  (emjupy-shadow-enable)
   (emjupy-cells-enable)
   (emjupy-widgets-enable)
   (emjupy-widget-page-enable)
-  ;; The number column narrows the page; the rules are redrawn to fit.
-  (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled
-            nil t)
+  (emjupy-redraw-enable)
   ;; Cells hold code: the conveniences a programming mode gives, which
   ;; `fundamental-mode' does not.
   (when emjupy-electric-pairs
     (electric-pair-local-mode 1))
-  ;; Output backgrounds, from the theme.
-  (emjupy--sync-theme-colors)
-  ;; Outlines follow the window: `window-configuration-change-hook' for splits
-  ;; and drags, `window-size-change-functions' for frame resizes.
-  (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t)
+  (emjupy-render-enable)
+  ;; Outlines follow the window through splits and drags.
   (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed
             nil t)
-  (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
   ;; Completion and eldoc in code cells, through the shadow buffer: over the
   ;; Jupyter server's `jupyter-lsp' first, a local server otherwise.
   (add-hook 'completion-at-point-functions #'emjupy--capf nil t)
   (add-hook 'eldoc-documentation-functions #'emjupy--eldoc nil t)
-  ;; M-. and friends: Eglot's xref backend lives in the shadow buffer, so the
-  ;; notebook needs a backend of its own that forwards there.
-  (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t)
-  (add-hook 'pre-command-hook #'emjupy--clear-indent-cycling nil t)
+  (emjupy-commands-enable)
   ;; Everything leaving this buffer -- kill, copy, `M-w' -- goes through
   ;; here, so the cell struct never reaches the kill ring.
   (setq-local filter-buffer-substring-function

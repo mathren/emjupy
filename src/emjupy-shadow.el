@@ -596,6 +596,12 @@ adopted again.  A language server serving another buffer stays."
 
 ;;;###autoload
 
+;;;; In a notebook buffer
+
+(defun emjupy-shadow-enable ()
+  "Close what the current notebook opened when its buffer is killed."
+  (add-hook 'kill-buffer-hook #'emjupy--release-notebook nil t))
+
 (provide 'emjupy-shadow)
 
 ;;; emjupy-shadow.el ends here

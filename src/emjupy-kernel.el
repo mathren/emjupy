@@ -1096,5 +1096,14 @@ kernel's state is intact, only Emacs's socket needs re-establishing."
       (message "[emjupy] Reconnecting %s to kernel %s..."
                (emjupy-notebook-path nb) id))))
 
+;;;; In a notebook buffer
+
+(defun emjupy-kernel-enable ()
+  "Wire the kernel layer into the current notebook buffer.
+The kernel is told how wide to draw when it attaches, and whenever the
+width changes."
+  (add-hook 'emjupy-kernel-connected-functions #'emjupy--tell-kernel-width)
+  (add-hook 'emjupy-box-width-changed-functions #'emjupy--tell-kernel-width))
+
 (provide 'emjupy-kernel)
 ;;; emjupy-kernel.el ends here

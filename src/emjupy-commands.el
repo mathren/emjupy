@@ -812,6 +812,12 @@ EVENT is the mouse event."
      (posn-string posn)
      (window-buffer (posn-window posn)))))
 
+;;;; In a notebook buffer
+
+(defun emjupy-commands-enable ()
+  "Reset indentation cycling before each command in the current notebook."
+  (add-hook 'pre-command-hook #'emjupy--clear-indent-cycling nil t))
+
 (provide 'emjupy-commands)
 
 ;;; emjupy-commands.el ends here
