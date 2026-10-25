@@ -35,19 +35,20 @@ per part.
 |     3 | =emjupy-ipynb.el=                  | nbformat JSON in and out, and the .py export text   |
 |     4 | =emjupy-latex.el=                  | LaTeX previews, org loaded only when asked          |
 |     5 | =emjupy-undo.el=                   | undo entries shifted by a redraw: read slowly       |
-|     6 | =emjupy-http.el=                   | requests, errors (=emjupy-http-error=), XSRF        |
-|     7 | =emjupy-render.el=                 | drawing a cell and its output; undo bookkeeping     |
-|     8 | =emjupy-cells.el=                  | syncing, and the structure checks                   |
-|     9 | =emjupy-redraw.el=                 | redraws, and the undo step: read slowly             |
-|    10 | =emjupy-commands.el=               | the commands on cells                               |
-|    11 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
-|    12 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
-|    13 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
-|    14 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
-|    15 | =emjupy-save.el=                   | saving, auto-saving, recovery copies                |
-|    16 | =emjupy-notebook.el=               | logging in, opening, switching, the menu            |
-|    17 | =emjupy-dashboard.el=              | the server dashboard                                |
-|    18 | =emjupy-tramp-open.el=             | opening an .ipynb file, here or through TRAMP       |
+|     6 | =emjupy-faces.el=                  | what notebooks look like: options and faces         |
+|     7 | =emjupy-http.el=                   | requests, errors (=emjupy-http-error=), XSRF        |
+|     8 | =emjupy-render.el=                 | drawing a cell and its output; undo bookkeeping     |
+|     9 | =emjupy-cells.el=                  | syncing, and the structure checks                   |
+|    10 | =emjupy-redraw.el=                 | redraws, and the undo step: read slowly             |
+|    11 | =emjupy-commands.el=               | the commands on cells                               |
+|    12 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
+|    13 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
+|    14 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
+|    15 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
+|    16 | =emjupy-save.el=                   | saving, auto-saving, recovery copies                |
+|    17 | =emjupy-notebook.el=               | logging in, opening, switching, the menu            |
+|    18 | =emjupy-dashboard.el=              | the server dashboard                                |
+|    19 | =emjupy-tramp-open.el=             | opening an .ipynb file, here or through TRAMP       |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read

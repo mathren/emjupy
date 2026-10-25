@@ -6,6 +6,7 @@
                 "src/emjupy-ipynb.el"
                 "src/emjupy-latex.el"
                 "src/emjupy-undo.el"
+                "src/emjupy-faces.el"
                 "src/emjupy-http.el"
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"

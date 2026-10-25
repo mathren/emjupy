@@ -20,6 +20,7 @@
 (require 'loadhist)                     ; `feature-file'
 (require 'emjupy-core)
 (require 'emjupy-render)
+(require 'emjupy-faces)
 (require 'emjupy-latex)
 (require 'emjupy-cells)
 (require 'emjupy-redraw)

@@ -21,6 +21,7 @@
 (require 'emjupy-core)
 (require 'emjupy-render)
 (require 'emjupy-undo)
+(require 'emjupy-faces)
 (require 'emjupy-latex)
 (require 'emjupy-cells)
 (require 'emjupy-redraw)

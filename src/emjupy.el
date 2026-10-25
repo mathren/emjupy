@@ -59,6 +59,7 @@
 (require 'emjupy-ipynb)
 (require 'emjupy-latex)
 (require 'emjupy-undo)
+(require 'emjupy-faces)
 (require 'emjupy-http)
 (require 'emjupy-render)
 (require 'emjupy-cells)

@@ -35,6 +35,7 @@ above it in this table.  Tests in =test/=, the notebooks they read in
 | =emjupy-ipynb.el=         | .ipynb read and written; the .py percent format             |
 | =emjupy-latex.el=         | LaTeX in markdown cells, drawn as images                    |
 | =emjupy-undo.el=          | undo positions kept right across redraws                    |
+| =emjupy-faces.el=         | appearance options, faces, theme colours                    |
 | =emjupy-http.el=          | REST transport, URL parsing, the HTTP error types           |
 | =emjupy-render.el=        | faces, colours, outlines, drawing output, text helpers      |
 | =emjupy-cells.el=         | syncing the buffer back into the cells, checking it         |
@@ -536,6 +537,7 @@ does not ship.  The tests, in =test/=, are not shipped.  It is kept at
                 "src/emjupy-ipynb.el"
                 "src/emjupy-latex.el"
                 "src/emjupy-undo.el"
+                "src/emjupy-faces.el"
                 "src/emjupy-http.el"
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"
