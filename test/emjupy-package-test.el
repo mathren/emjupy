@@ -86,8 +86,14 @@ would silently stop guarding a command that still exists."
 A function, variable, face, customization group, struct, feature, error
 or test: so a rename or a removal that leaves the docs behind -- the
 reading guide names some sixty functions -- fails here, not in a
-reader's hands."
+reader's hands.
+
+The docs name tests too, which exist only once their files are loaded:
+so they are loaded here -- defining tests, running none -- and this
+passes run alone as in the whole suite."
   (skip-unless (file-directory-p emjupy-test--docs-directory))
+  (dolist (tests '(emjupy-test emjupy-integration-test emjupy-robustness-test))
+    (require tests))
   (let (unknown)
     (dolist (f (directory-files emjupy-test--docs-directory t "\\.org\\'"))
       (with-temp-buffer
