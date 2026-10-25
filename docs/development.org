@@ -59,6 +59,8 @@ the notebooks they read in =test_notebooks/=.
 | =emjupy.el=               | package header, version, and requiring every file in order  |
 | =emjupy-pkg.el=           | package metadata for =make package= (MELPA makes its own)   |
 
+* Code rules
+
 ** Dependencies run one way
 
 No file calls or names anything defined in a file below it in the table
@@ -101,11 +103,7 @@ things are put:
   The redraws needing that -- a cell's output in place, every output on
   a width change -- are in the redraw layer, so putting one right is a
   plain call.
-- Undo is in two files.  emjupy-undo.el keeps the positions in the undo
-  history right when a redraw moves text, and the redraws use it, so it
-  is low.  The undo step a cell command records is in emjupy-redraw.el:
-  undoing a step redraws the notebook, and a full redraw records a step,
-  so the step and the full redraw call each other and share a file.
+- Undo is in two files, on purpose: [[file:reading-the-code.org][Reading the code]] says why.
 - A keymap is defined whole where it is made: the output maps in the
   drawing layer, the mode's map in emjupy-mode.el, the menu in
   emjupy-notebook.el.
@@ -338,7 +336,9 @@ The tests, the scripts in =tools/=, =emjupy-pkg.el= and =publish.el= say
 package-vc -- or =use-package :vc= -- compiles the whole checkout, and
 without it reported an error compiling a test.
 
-* Unit tests
+* Tests
+
+** Unit tests
 
 The self-contained suite needs only =websocket=:
 
@@ -355,7 +355,7 @@ GNU ELPA -- so the suite runs offline too:
 EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket make test
 #+end_src
 
-* Integration tests (real server, real kernel, real LSP)
+** Integration tests (real server, real kernel, real LSP)
 
 =emjupy-integration-test.el= runs real Python in a real kernel on a live
 Jupyter server.  Opt-in: they =ert-skip= unless the environment names a
@@ -390,10 +390,10 @@ The WebSocket language-server tests need =jupyter-lsp= and
 of the local fallback need a server on this machine's =PATH= (=pylsp=,
 =pyright-langserver= or =jedi-language-server=), and skip without one.
 
-* Robustness tests
+** Robustness tests
 
 =test/emjupy-robustness-test.el= holds tests making their own inputs.
-They run with =make test=; each found a bug the hand-written ones missed.
+They run with =make test=, and catch what hand-written tests miss.
 
 | Test            | What it tries                                            |
 |-----------------+----------------------------------------------------------|
@@ -404,7 +404,7 @@ They run with =make test=; each found a bug the hand-written ones missed.
 | hostile content | escape floods, huge SVGs, deep JSON, awkward file names  |
 | leaks           | many sessions; timers, processes, hooks, tables after    |
 
-** Seeds
+*** Seeds
 
 Every failure of a randomised test names its run's seed:
 
@@ -423,13 +423,13 @@ EMJUPY_FUZZ_SEED=4 EMJUPY_FUZZ_ITERATIONS=500 make test
 Shrink a failing sequence before working on it: drop a step, and keep
 the drop while it still fails.
 
-** Expected failures
+*** Expected failures
 
 A test of a known, unfixed fault is marked =:expected-result :failed=,
 the reason in its docstring: the suite stays green, the fault visible,
 and a fix shows as an unexpected pass -- the cue to unmark it.
 
-** The notebook corpus
+*** The notebook corpus
 
 =test_notebooks/test-corpus/= is written by =tools/make-notebook-corpus.py=
 with =nbformat=, so each notebook is valid by Jupyter's own definition.
@@ -447,7 +447,7 @@ CI checks with =nbstripout
 committed -- =.gitattributes= names them, not the corpus, whose outputs
 are what it tests.
 
-** Network faults
+*** Network faults
 
 =tools/faultproxy.py= sits between emjupy and the server and, on command,
 drops connections, stalls, delays or splits what it forwards.  The
@@ -459,12 +459,12 @@ python3 tools/faultproxy.py 127.0.0.1 8888     # prints its port and control por
 echo stall | nc 127.0.0.1 CONTROL-PORT         # or sever, resume, delay 200, chunk 7, reset
 #+end_src
 
-** Compiled files
+*** Compiled files
 
 Emacs loads a =.elc= before its =.el=, newer or not.  To see a test fail
 without a fix, =make clean= first, or the test runs the compiled old code.
 
-* Test hygiene
+** Test hygiene
 
 A unit test must give the same answer on every machine.  Two detections
 would vary: an SSH tunnel's host, read from the process list, and
@@ -482,7 +482,7 @@ it examines.
 - Assert invariants rather than mechanisms, which differ between Emacs
   versions.
 
-* Invariants
+** Invariants
 
 =M-x emjupy-debug-check-invariants= reports how a buffer and its cells
 disagree: for which cell, an overlay missing, overlapping, out of order,
@@ -490,7 +490,7 @@ detached from its output box, or showing text the cell does not hold --
 what is displayed and what would be saved come apart.  Tests call it
 after every operation.
 
-* Performance
+** Performance
 
 Three tests guard against regressions, not speed:
 
@@ -504,7 +504,9 @@ not a duration, which would depend on a network.  The costs kept small
 are measured in [[file:language-server.org][Language server
 support]].
 
-* Releasing
+* Releasing and MELPA
+
+** Releasing
 
 1. *Set the version.*  On GitHub: Actions, "Set version", "Run workflow",
    with the new version as =X.Y.Z=.  It writes it everywhere the current
@@ -517,7 +519,7 @@ support]].
    starts no other workflow.  A commit message with =[skip ci]= skips
    tag pushes too, so tag a commit without it.
 
-* The package's own description
+** The package's own description
 
 =C-h P emjupy= shows the =;;; Commentary:= of =src/emjupy.el=: what
 emjupy is, what it needs, how to start -- for someone who has just
@@ -529,7 +531,7 @@ The opening paragraph is the same in the Commentary, the README and
 =docs/index.org=; keep it so.  The one-line summary is the same in
 =src/emjupy.el='s header and =src/emjupy-pkg.el=.
 
-* Submitting to MELPA
+** Submitting to MELPA
 
 The recipe lists its files: they are in =src/=, where MELPA's default
 =:files= does not look, and by name, so a development file added there
