@@ -112,13 +112,44 @@ gets a definite answer rather than a local one.")
 
 ;;;; Structures
 
-(cl-defstruct emjupy-server
+(defun emjupy--parse-base-url (base-url)
+  "Return a plist of the parts of BASE-URL, as a server is reached.
+Keys are :scheme, :ws-scheme, :host, :port and :path.  Accepts a bare
+port (\"8888\"), host:port, or an http(s) URL, with an optional base
+path that the WebSocket URL keeps too, as for a JupyterHub server at
+localhost:8888/user/alice."
+  (let* ((raw base-url)
+         (secure (string-match-p "\\`https://" raw))
+         (stripped (replace-regexp-in-string "\\`https?://" "" raw))
+         (slash (string-match-p "/" stripped))
+         (hostport (if slash (substring stripped 0 slash) stripped))
+         (path (if slash
+                   (string-trim-right (substring stripped slash) "/+")
+                 ""))
+         (parts (split-string hostport ":"))
+         (host (if (string-empty-p (or (car parts) "")) "localhost"
+                 (car parts)))
+         (port (or (cadr parts) (if secure "443" "80"))))
+    (list :scheme (if secure "https" "http")
+          :ws-scheme (if secure "wss" "ws")
+          :host host :port port :path path)))
+(cl-defstruct (emjupy-server
+               (:constructor make-emjupy-server
+                (&key base-url token host port root xsrf kernel-id
+                      files-root
+                      &aux (parts (and base-url
+                                       (emjupy--parse-base-url base-url)))
+                      (scheme (plist-get parts :scheme))
+                      (host (or host (plist-get parts :host)))
+                      (port (or port (plist-get parts :port)))
+                      (path (plist-get parts :path)))))
   "A Jupyter server emjupy has logged in to, one per address.
 BASE-URL is the address given to `emjupy-login', host:port or a URL;
-TOKEN the token sent with every request.  HOST and PORT are not used:
-the address is parsed from BASE-URL where needed.  They stay because
-their accessors and constructor keywords are public names."
-  host port token base-url
+TOKEN the token sent with every request.  The address is parsed once,
+when the server is made, into SCHEME, HOST, PORT and PATH: \"http\" or
+\"https\", the host, the port as a string, and a base path such as
+/user/alice, or \"\"."
+  host port token base-url scheme path
   ;; Absolute path of the directory this server serves, worked out from a
   ;; kernel rather than configured.  nil until a kernel has reported in.
   root

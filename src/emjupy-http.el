@@ -26,26 +26,14 @@
 ;;;; Addresses
 
 (defun emjupy--server-parts (server)
-  "Return a plist describing SERVER's base-url.
-Keys are :scheme, :ws-scheme, :host, :port and :path.  Accepts a bare
-port (\"8888\"), host:port, or an http(s) URL, with an optional base
-path that the WebSocket URL keeps too, as for a JupyterHub server at
-localhost:8888/user/alice."
-  (let* ((raw (emjupy-server-base-url server))
-         (secure (string-match-p "\\`https://" raw))
-         (stripped (replace-regexp-in-string "\\`https?://" "" raw))
-         (slash (string-match-p "/" stripped))
-         (hostport (if slash (substring stripped 0 slash) stripped))
-         (path (if slash
-                   (string-trim-right (substring stripped slash) "/+")
-                 ""))
-         (parts (split-string hostport ":"))
-         (host (if (string-empty-p (or (car parts) "")) "localhost"
-                 (car parts)))
-         (port (or (cadr parts) (if secure "443" "80"))))
-    (list :scheme (if secure "https" "http")
-          :ws-scheme (if secure "wss" "ws")
-          :host host :port port :path path)))
+  "Return a plist describing SERVER's address, from its parsed parts.
+Keys are :scheme, :ws-scheme, :host, :port and :path; the address was
+parsed once, when the server was made (see `emjupy--parse-base-url')."
+  (let ((scheme (emjupy-server-scheme server)))
+    (list :scheme scheme
+          :ws-scheme (if (equal scheme "https") "wss" "ws")
+          :host (emjupy-server-host server) :port (emjupy-server-port server)
+          :path (emjupy-server-path server))))
 
 (defun emjupy--server-host-port (server)
   "Return (HOST . PORT) parsed from SERVER's base-url."
