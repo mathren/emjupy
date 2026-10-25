@@ -3,6 +3,7 @@
         :files ("src/emjupy.el"
                 "src/emjupy-core.el"
                 "src/emjupy-terminal.el"
+                "src/emjupy-ipynb.el"
                 "src/emjupy-http.el"
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"

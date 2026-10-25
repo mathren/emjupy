@@ -32,6 +32,7 @@ above it in this table.  Tests in =test/=, the notebooks they read in
 |---------------------------+-------------------------------------------------------------|
 | =emjupy-core.el=          | structs, state, server registry, the cell at a position     |
 | =emjupy-terminal.el=      | stream text as a terminal shows it: progress bars           |
+| =emjupy-ipynb.el=         | .ipynb read and written; the .py percent format             |
 | =emjupy-http.el=          | REST transport, URL parsing, the HTTP error types           |
 | =emjupy-render.el=        | faces, colours, outlines, drawing output, text helpers      |
 | =emjupy-cells.el=         | syncing, cell editing and commands, redrawing in place      |
@@ -525,6 +526,7 @@ does not ship.  The tests, in =test/=, are not shipped.  It is kept at
         :files ("src/emjupy.el"
                 "src/emjupy-core.el"
                 "src/emjupy-terminal.el"
+                "src/emjupy-ipynb.el"
                 "src/emjupy-http.el"
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"
