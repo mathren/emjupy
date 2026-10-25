@@ -176,6 +176,9 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
 - =;;;###autoload= only on commands that make sense before emjupy is
   loaded: logging in, listing, opening, creating, the menu.
 - A question takes =y-or-n-p=: one key, =y= or =n=, to answer.
+- No advice on another package's functions, as the Elisp manual asks,
+  but in one place: Eglot's commands, which find their server from the
+  current buffer.  =emjupy-eglot.el= says why, and how it is kept narrow.
 - Every file in sections: user options first, under =;;;; Options=, then
   a =;;;;= heading per part.  Messages start =[emjupy]=.
 - A user option goes in its subject's group, defined in emjupy-core.el.
