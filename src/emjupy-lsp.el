@@ -521,15 +521,12 @@ same cells holding the same source objects build the same content."
   (emjupy--goto-shadow-section buf cell-id)
   (with-current-buffer buf (point)))
 
-(provide 'emjupy-lsp)
-;;; Eglot over the Jupyter WebSocket ----------------------------------------
+;;;; Eglot over the WebSocket
 
 ;; Eglot's commands reach the server beside the kernel through a jsonrpc
 ;; connection class of emjupy's, sending over the notebook's WebSocket.
 ;; `jsonrpc-process-connection' insists on a process, so an idle one is made and
 ;; ignored.
-
-;;;; Eglot over the WebSocket
 
 (defvar emjupy--eglot-pending nil
   "Plist for the next server to be built.
@@ -789,5 +786,7 @@ manage.  Return the server, or nil."
              (message "[emjupy] Could not attach Eglot over the WebSocket: %s"
                       (error-message-string err))
              nil)))))))
+
+(provide 'emjupy-lsp)
 
 ;;; emjupy-lsp.el ends here
