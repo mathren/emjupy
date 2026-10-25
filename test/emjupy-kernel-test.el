@@ -205,7 +205,7 @@ wrote A's output into B."
             (with-current-buffer (car pair)
               (emjupy-mode)
               (setq emjupy--buffer-notebook (cdr pair))
-              (emjupy--rerender-notebook)))
+              (emjupy--redraw-notebook)))
           (puthash "msg-a" cell-a (emjupy-kernel-pending k-a))
           ;; deliver A's frame while B is the current buffer
           (with-current-buffer buf-b
@@ -468,8 +468,9 @@ what makes a progress bar a bar rather than a thousand lines."
     (emjupy-test--with-notebook (vector c1 c2) buf nb
       (with-current-buffer buf
         (let ((full 0))
-          (cl-letf* ((real (symbol-function 'emjupy--rerender-preserving-point))
-                     ((symbol-function 'emjupy--rerender-preserving-point)
+          (cl-letf* ((real (symbol-function
+                            'emjupy--redraw-notebook-keeping-point))
+                     ((symbol-function 'emjupy--redraw-notebook-keeping-point)
                       (lambda (&rest args) (setq full (1+ full))
                         (apply real args))))
             (emjupy--append-output-to-cell c1 (emjupy-test--stream "one\n") nb)
@@ -790,9 +791,9 @@ command that edits nothing."
           (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
                     ((symbol-function 'emjupy--ws-send) #'ignore)
                     ((symbol-function 'emjupy--kernel-eval) #'ignore)
-                    ((symbol-function 'emjupy--rerender-notebook-1)
+                    ((symbol-function 'emjupy--redraw-notebook-1)
                      (let ((real (symbol-function
-                                  'emjupy--rerender-notebook-1)))
+                                  'emjupy--redraw-notebook-1)))
                        (lambda (&rest args) (setq rebuilds (1+ rebuilds))
                          (apply real args)))))
             (goto-char (overlay-start (emjupy-cell-overlay c2)))

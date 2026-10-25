@@ -56,11 +56,11 @@ in a string is not a formula."
                                   (overlays-in (point-min) (point-max)))))
             ;; off by default
             (let ((emjupy-render-latex nil))
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (should (= (length (latex-overlays)) 0)))
             ;; on: exactly one, over the markdown cell's formula
             (let ((emjupy-render-latex t))
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (let ((ovs (latex-overlays)))
                 (should (= (length ovs) 1))
                 (should (equal (buffer-substring-no-properties

@@ -191,6 +191,23 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
   Exceptions: a string long in itself -- a URL, a regexp, JSON, a
   message someone may search for -- a file's first line, a test's name.
 
+** Words for what is on screen
+
+Function names keep four verbs apart:
+
+- /draw/: put into the buffer what is not there yet -- a cell, its output,
+  a widget (=emjupy--draw-cell=);
+- /redraw/: replace what is drawn, in place (=emjupy--redraw-cell-output=,
+  =emjupy--redraw-notebook=, every cell);
+- /render/: turn data into what is drawn -- faces, an image -- touching no
+  buffer (=emjupy--render-ansi=);
+- /refresh/: fetch again what may have changed elsewhere -- on the server,
+  in the kernel, the theme (=emjupy-list-refresh=).
+
+The drawing layer is =emjupy-render.el= all the same, and two commands
+keep the names users know: =emjupy-re-render= redraws the notebook,
+=emjupy-refresh-appearance= re-reads the theme and redraws.
+
 * Makefile targets
 
 | Target               | Effect                                                                        |

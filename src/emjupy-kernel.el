@@ -103,7 +103,7 @@ as a cell run by the user does; emjupy's own requests never do."
 (defvar-local emjupy--render-timer nil
   "Timer coalescing pending output redraws in this buffer.")
 
-(defun emjupy--schedule-render (buffer)
+(defun emjupy--schedule-redraw (buffer)
   "Arrange for BUFFER to be redrawn soon, at most once per interval."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
@@ -210,9 +210,9 @@ The notebook is rebuilt instead when the buffer and the cells disagree."
     (when cells (emjupy--sync-all-cells))
     (if (and cells (emjupy--overlays-sane-p)
              (cl-every (lambda (cell)
-                         (emjupy--refresh-cell-output cell)) cells))
+                         (emjupy--redraw-cell-output cell)) cells))
         t
-      (emjupy--rerender-preserving-point))))
+      (emjupy--redraw-notebook-keeping-point))))
 
 ;;;; Who an output belongs to
 
@@ -253,7 +253,7 @@ it.  Here the outputs are one list, so the widgets are what is kept."
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (cl-pushnew cell emjupy--cells-awaiting-output))
-      (emjupy--schedule-render buf))))
+      (emjupy--schedule-redraw buf))))
 
 ;;;; Replies and input
 
@@ -343,7 +343,7 @@ would repeat its last command."
       (when (buffer-live-p buf)
         (with-current-buffer buf
           (cl-pushnew cell emjupy--cells-awaiting-output)))
-      (emjupy--schedule-render buf))))
+      (emjupy--schedule-redraw buf))))
 
 ;;;; Binary frames
 
@@ -496,7 +496,7 @@ notebook redrawn."
               ((buffer-live-p buf)))
     (emjupy--mark-done cell buf)
     (with-current-buffer buf
-      (emjupy--rerender-preserving-point))))
+      (emjupy--redraw-notebook-keeping-point))))
 
 (defun emjupy--rich-output (type content)
   "Return an output of TYPE, from CONTENT, a kernel message's content.
@@ -592,7 +592,7 @@ kernels never cross-talk."
   ;; from text that was never code.
   (let ((here (emjupy--cell-at-point)))
     (when (and here (eq (emjupy-cell-type here) 'markdown))
-      (emjupy--render-markdown-cell here)
+      (emjupy--redraw-markdown-cell here)
       (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
     (unless (emjupy--ws-live-p kernel)
@@ -611,8 +611,8 @@ kernels never cross-talk."
       ;; would move every position held in the buffer -- markers, other windows'
       ;; points -- and record an undo step for a command that edits nothing.
       (setf (emjupy-cell-outputs cell) [])
-      (unless (emjupy--refresh-cell-output cell)
-        (emjupy--rerender-notebook cell))
+      (unless (emjupy--redraw-cell-output cell)
+        (emjupy--redraw-notebook cell))
 
       ;; 3. Build execution payload
       (let* ((code (emjupy-cell-source cell))
@@ -1081,7 +1081,7 @@ nil."
       (with-current-buffer buf
         (let ((problems (emjupy--check-invariants)))
           (when problems
-            (emjupy--rerender-notebook)
+            (emjupy--redraw-notebook)
             (message "[emjupy] Buffer and cells were out of step after reconnecting; redrawn.")
             problems))))))
 

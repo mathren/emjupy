@@ -115,11 +115,11 @@ rule spans a wide frame instead of stopping short at 80 columns."
                  oh))))
     (setf (emjupy-cell-outputs cell) (vector (funcall mk) (funcall mk)))
     (let ((emjupy-deduplicate-image-outputs nil))
-      (should (= (length (emjupy--outputs-for-render
+      (should (= (length (emjupy--outputs-to-draw
                           (emjupy-cell-outputs cell)))
                  2)))
     (let ((emjupy-deduplicate-image-outputs t))
-      (should (= (length (emjupy--outputs-for-render
+      (should (= (length (emjupy--outputs-to-draw
                           (emjupy-cell-outputs cell)))
                  1)))))
 
@@ -285,7 +285,7 @@ past the outline and across the rest of the frame."
       (emjupy-test--with-notebook (vector cell) buf nb
         (with-current-buffer buf
           (let ((emjupy-box-width 40))
-            (emjupy--refresh-box-rules t)
+            (emjupy--redraw-rules t)
             (let ((ov (emjupy-cell-output-ov cell))
                   (pads 0))
               (save-excursion
@@ -331,7 +331,7 @@ newly-drawn rules."
                         col)))
             (dolist (w '(40 90 60))
               (let ((emjupy-box-width w))
-                (emjupy--refresh-box-rules t)
+                (emjupy--redraw-rules t)
                 ;; the padding tracks the width, and lands on the rule
                 (should (= (pad-col) w))))))))))
 
@@ -358,7 +358,7 @@ poked out beyond the right-hand border."
         (with-current-buffer buf
           (dolist (w '(40 90 60))
             (let ((emjupy-box-width w))
-              (emjupy--refresh-box-rules t)
+              (emjupy--redraw-rules t)
               (let* ((ov (emjupy-cell-output-ov cell))
                      (rule (1- (length (emjupy--overlay-header ov))))
                      (pads 0))

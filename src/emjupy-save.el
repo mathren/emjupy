@@ -365,7 +365,7 @@ kept aside, never deleted, in the recovery directory."
               (setf (emjupy-notebook-cells nb) (emjupy-notebook-cells restored)
                     (emjupy-notebook-metadata nb)
                     (emjupy-notebook-metadata restored))
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (set-buffer-modified-p t)
               (message "[emjupy] Unsaved changes restored; %s"
                        (substitute-command-keys "\\[emjupy-save-notebook] saves them."))))))))))

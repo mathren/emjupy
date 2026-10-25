@@ -34,7 +34,7 @@ buffer it created)."
            (emjupy-mode)
            (setq emjupy--buffer-notebook ,nb-var)
            (setf (emjupy-notebook-buffer ,nb-var) ,buf-var)
-           (emjupy--rerender-notebook)
+           (emjupy--redraw-notebook)
            ,@body)
        (let ((kill-buffer-query-functions nil))
          (when (buffer-live-p ,buf-var) (kill-buffer ,buf-var))

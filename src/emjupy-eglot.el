@@ -460,7 +460,7 @@ The notebook is re-rendered if any  Returns the number of cells updated."
         (when (> updated 0)
           (let ((nb-buf (emjupy-notebook-buffer nb)))
             (when (buffer-live-p nb-buf)
-              (with-current-buffer nb-buf (emjupy--rerender-notebook)))))))
+              (with-current-buffer nb-buf (emjupy--redraw-notebook)))))))
     updated))
 
 (defun emjupy-eglot-delegate (fn)

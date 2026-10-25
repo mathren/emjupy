@@ -88,7 +88,7 @@
       (emjupy-test--type-in-first-cell " + 2")
       (emjupy--recovery-write nb)
       (setf (emjupy-cell-source (aref (emjupy-notebook-cells nb) 0)) "x = 1")
-      (emjupy--rerender-notebook)
+      (emjupy--redraw-notebook)
       (set-buffer-modified-p nil)
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
         (emjupy--offer-recovery nb))
@@ -98,7 +98,7 @@
       ;; declined: kept aside
       (emjupy--recovery-write nb)
       (setf (emjupy-cell-source (aref (emjupy-notebook-cells nb) 0)) "x = 1")
-      (emjupy--rerender-notebook)
+      (emjupy--redraw-notebook)
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
         (emjupy--offer-recovery nb))
       (should-not (file-exists-p (emjupy--recovery-file nb)))

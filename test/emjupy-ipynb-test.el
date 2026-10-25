@@ -111,7 +111,7 @@ what the kernel sent, so the file stays faithful for other clients."
           (vector (funcall mk "execute_result") (funcall mk "display_data")))
     (emjupy-test--with-notebook (vector cell) buf nb
       ;; render collapses to one ...
-      (should (= (length (emjupy--outputs-for-render
+      (should (= (length (emjupy--outputs-to-draw
                           (emjupy-cell-outputs cell)))
                  1))
       ;; ... but the struct, and the serialized notebook, keep both

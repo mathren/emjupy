@@ -38,7 +38,7 @@ and takes the band with it."
         (should-not (emjupy-cell-output-ov cell))
         ;; output arrives
         (setf (emjupy-cell-outputs cell) (vector oh))
-        (emjupy--rerender-notebook)
+        (emjupy--redraw-notebook)
         (should (emjupy-cell-output-ov cell))
         ;; the band is painted on the output text itself now, not on the
         ;; overlay, so several kinds of output can be coloured differently
@@ -57,7 +57,7 @@ and takes the band with it."
                                        (overlay-start ov) (overlay-end ov)))))
         ;; outputs cleared: box shrinks, band goes with it
         (setf (emjupy-cell-outputs cell) [])
-        (emjupy--rerender-notebook)
+        (emjupy--redraw-notebook)
         (should-not (emjupy-cell-output-ov cell))
         (should-not (string-match-p "hello" (buffer-string)))))))
 
@@ -71,7 +71,7 @@ the notebook apart."
     (emjupy-test--with-notebook cells buf nb
       (with-current-buffer buf
         (setq buffer-undo-list nil)
-        (emjupy--rerender-notebook)
+        (emjupy--redraw-notebook)
         (should (null (delq nil buffer-undo-list)))))))
 
 ;;;; Eglot / completion-framework integration
@@ -98,7 +98,7 @@ the notebook apart."
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         (let ((emjupy-protect-non-cell-regions nil))
-          (emjupy--rerender-notebook)
+          (emjupy--redraw-notebook)
           (goto-char (overlay-end (emjupy-cell-overlay cell)))
           (should (condition-case nil (progn (insert "X") t) (error nil))))))))
 
@@ -121,7 +121,7 @@ on displaying its before-string and after-string: a stack of stray
             (emjupy-mode)
             (setq emjupy--buffer-notebook nb)
             (setf (emjupy-notebook-buffer nb) buf)
-            (emjupy--rerender-notebook)
+            (emjupy--redraw-notebook)
             (cl-flet ((emjupy-overlays ()
                         (seq-filter (lambda (o)
                                       (memq (overlay-get o 'emjupy-overlay)
@@ -132,7 +132,7 @@ on displaying its before-string and after-string: a stack of stray
               (dotimes (_ 3)
                 (setf (emjupy-notebook-cells nb) (vector (mk "a = 1")
                                                          (mk "b = 2")))
-                (emjupy--rerender-notebook))
+                (emjupy--redraw-notebook))
               (should (= (length (emjupy-overlays)) 2))
               ;; nothing collapsed at the top
               (should-not (cl-some (lambda (o) (= (overlay-start o)
@@ -215,7 +215,7 @@ the symptom unrepresentable rather than merely unlikely."
                                                            "┌"))))
           (should (= (length (strays)) 4))
           ;; anything that redraws clears them
-          (emjupy--rerender-notebook)
+          (emjupy--redraw-notebook)
           (should (= (length (strays)) 0))
           ;; and the real cells are untouched
           (should (= (length (tagged)) 2))
@@ -259,11 +259,11 @@ kept out of the history entirely."
         (buffer-enable-undo)
         (setq buffer-undo-list nil)
         ;; a redraw on its own records nothing
-        (emjupy--rerender-notebook)
+        (emjupy--redraw-notebook)
         (should (null buffer-undo-list))
         ;; nor does re-aligning the outlines
         (let ((emjupy-box-width 60))
-          (emjupy--refresh-box-rules t))
+          (emjupy--redraw-rules t))
         (should (null buffer-undo-list))
         ;; a real edit does
         (goto-char (overlay-start (emjupy-cell-overlay
@@ -320,7 +320,7 @@ different code and fixing one of them is not fixing the others."
                       bare)))
           (should (= (uncoloured) 0))
           ;; after a redraw, which is what marks the region for font-lock
-          (emjupy--rerender-notebook)
+          (emjupy--redraw-notebook)
           (should (= (uncoloured) 0))
           ;; and after font-lock has actually been over it
           (font-lock-fontify-region (point-min) (point-max))
@@ -354,7 +354,7 @@ output boxes above grow and shrink."
             (redisplay t)
             (let ((top (line-at (emjupy--visible-from (window-start w))))
                   (here (line-at (point))))
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (redisplay t)
               (should (equal (line-at (emjupy--visible-from (window-start w)))
                              top))
@@ -413,7 +413,7 @@ the bottom, at the moment someone is least expecting to be moved."
           (redisplay t)
           (let ((top (line-number-at-pos (window-start w))))
             ;; a rebuild, then undo it
-            (emjupy--rerender-notebook)
+            (emjupy--redraw-notebook)
             (setq this-command nil last-command nil)
             (ignore-errors (undo))
             (redisplay t)
@@ -447,17 +447,17 @@ same way, or the notebook would drift from its cells."
                                                         "\n")
                                 "third\nfourth\n"))
               (puthash "text" (concat (gethash "text" out) more) out)
-              (emjupy--refresh-cell-output (aref cells 0)))
+              (emjupy--redraw-cell-output (aref cells 0)))
             ;; finished: nothing new, only the label
             (setf (emjupy-cell-exec-count (aref cells 0)) 7)
-            (emjupy--refresh-cell-output (aref cells 0)))
+            (emjupy--redraw-cell-output (aref cells 0)))
           (ert-info ((format "%s: added to %d times" name appended))
             (should (= appended 4))
             (should (string-match-p "Out: 7"
                                     (emjupy--overlay-header
                                      (emjupy-cell-output-ov (aref cells 0)))))
             (let ((shown (emjupy-test--drawn)))
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (should (equal shown (emjupy-test--drawn))))))))))
 
 (ert-deftest emjupy-test-appending-declines-what-could-change-earlier-lines ()
@@ -478,11 +478,11 @@ Each can change how what came before looks; the result is still right."
                       (lambda (c) (let ((r (funcall real c)))
                                     (when r (setq appended t)) r))))
             (puthash "text" (concat (car case) (cdr case)) out)
-            (emjupy--refresh-cell-output (aref cells 0)))
+            (emjupy--redraw-cell-output (aref cells 0)))
           (ert-info ((format "%S" case))
             (should-not appended)
             (let ((shown (emjupy-test--drawn)))
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (should (equal shown (emjupy-test--drawn))))))))))
 
 (ert-deftest emjupy-test-a-redraw-measures-the-window-once ()
@@ -494,7 +494,7 @@ Measuring a window selects it; a redraw did it six times a cell."
         (cl-letf* ((real (symbol-function 'window-max-chars-per-line))
                    ((symbol-function 'window-max-chars-per-line)
                     (lambda (&rest args) (cl-incf measures) (apply real args))))
-          (emjupy--rerender-notebook))
+          (emjupy--redraw-notebook))
         ;; once for the redraw: a window showing it, or the selected one
         (should (<= measures 1))))))
 

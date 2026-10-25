@@ -235,10 +235,10 @@ ALREADY-OPEN non-nil means BUF showed it before: point stays."
   (with-current-buffer buf
     (emjupy-mode)
     ;; The notebook is set before drawing, through
-    ;; `emjupy--rerender-notebook': reopening reuses the buffer with
+    ;; `emjupy--redraw-notebook': reopening reuses the buffer with
     ;; fresh cells, and the old overlays must go with the text.
     (setq emjupy--buffer-notebook nb)
-    (emjupy--rerender-notebook)
+    (emjupy--redraw-notebook)
     ;; A freshly opened notebook starts at the top, as a file does.
     ;; One already open keeps where you were: re-opening it to get
     ;; back to what you were reading should not lose your place.

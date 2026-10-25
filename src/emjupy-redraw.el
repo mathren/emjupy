@@ -65,8 +65,8 @@ sets it, then placed as a redraw places it."
     (overlay-put out 'emjupy-header nil)
     (overlay-put out 'before-string
                  (emjupy--rule (emjupy--cell-out-label cell) "├"))
-    (emjupy--refresh-cell-header cell)
-    (emjupy--refresh-cell-footer cell)
+    (emjupy--redraw-cell-header cell)
+    (emjupy--redraw-cell-footer cell)
     (emjupy--reconcile-rules)
     t))
 
@@ -105,7 +105,7 @@ line last drawn, and no carriage return or colour escape in it."
          (drawn (and (overlayp out) (eq (overlay-buffer out) (current-buffer))
                      (overlay-get out 'emjupy-drawn)))
          (pieces (and drawn
-                      (emjupy--outputs-for-render (emjupy-cell-outputs cell))))
+                      (emjupy--outputs-to-draw (emjupy-cell-outputs cell))))
          (last-out (car (last pieces)))
          (old (nth 2 drawn))
          (new (and last-out (emjupy--mime-text (gethash "text" last-out)))))
@@ -122,7 +122,7 @@ line last drawn, and no carriage return or colour escape in it."
         (emjupy--draw-stream-gain out pieces last-out
                                   (substring new (length old)))))))
 
-(defun emjupy--refresh-cell-output (cell)
+(defun emjupy--redraw-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
 Return non-nil when that could be done; nil means the caller should
 redraw the notebook."
@@ -147,12 +147,12 @@ redraw the notebook."
                   (delete-region start end)
                   (save-excursion
                     (goto-char start)
-                    (emjupy--render-cell-output cell)
+                    (emjupy--draw-cell-output cell)
                     (setq new-end (point)))
-                  (emjupy--refresh-cell-header cell)
+                  (emjupy--redraw-cell-header cell)
                   ;; The bottom edge belongs to the last box: the output's own
                   ;; footer, or, with no output, the cell's.
-                  (emjupy--refresh-cell-footer cell)
+                  (emjupy--redraw-cell-footer cell)
                   ;; Only the box just drawn is marked: marking the whole
                   ;; notebook costs as much as all its output, on every update.
                   (when emjupy-protect-non-cell-regions
@@ -174,7 +174,7 @@ anything else looks the same at either."
                      (widest (or (overlay-get ov 'emjupy-widest) 0)))
                  (and folded-at (/= folded-at width)
                       (> widest (min folded-at width)))))
-      (emjupy--refresh-cell-output cell)
+      (emjupy--redraw-cell-output cell)
       (setq ov nil))
     (when (overlayp ov)
       ;; Walk the pad markers, one per output line, not the characters: an
@@ -190,7 +190,7 @@ anything else looks the same at either."
             (setq pos (next-single-property-change pos 'emjupy-pad
                                                    nil end))))))))
 
-(defun emjupy--refresh-box-rules (&optional force)
+(defun emjupy--redraw-rules (&optional force)
   "Redraw cell outlines at the current window width, if it changed.
 With FORCE non-nil, redraw even when the width is unchanged.  Only the
 overlay strings are rebuilt, so point, markers and undo are untouched."
@@ -236,13 +236,13 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
 The number column takes width from the page: rules drawn for the old
 width would wrap."
   (when emjupy--buffer-notebook
-    (emjupy--refresh-box-rules t)))
+    (emjupy--redraw-rules t)))
 
 (defun emjupy--window-size-changed (&optional _frame)
   "Refresh box rules in every emjupy buffer after a window size change."
   (dolist (buf (emjupy--notebook-buffers))
     (with-current-buffer buf
-      (emjupy--refresh-box-rules))))
+      (emjupy--redraw-rules))))
 
 ;;;; Redrawing cells in place
 
@@ -287,7 +287,7 @@ Its source and output box, and the newline after them."
                    (overlay-end src))))
         (cons start (min (point-max) (1+ end)))))))
 
-(defun emjupy--render-cell-incrementally (cell at)
+(defun emjupy--draw-cell-at (cell at)
   "Draw CELL at position AT, leaving the rest of the buffer alone.
 
 Returns the number of characters inserted."
@@ -299,7 +299,7 @@ Returns the number of characters inserted."
     (save-excursion
       (goto-char at)
       (let ((before (point-max)))
-        (emjupy--render-cell cell)
+        (emjupy--draw-cell cell)
         (setq inserted (- (point-max) before))))
     (emjupy--protect-non-cell-regions)
     inserted))
@@ -358,7 +358,7 @@ notebook."
             (save-excursion
               (goto-char start)
               (dolist (cell new-cells)
-                (emjupy--render-cell cell))
+                (emjupy--draw-cell cell))
               (setq new-end (point)))
             ;; Put it back where it belongs if it swallowed the new text.
             (let ((ov (and following-after
@@ -373,7 +373,7 @@ notebook."
 
 ;;;; Redrawing the notebook
 
-(defun emjupy--rerender-notebook (&optional target-cell)
+(defun emjupy--redraw-notebook (&optional target-cell)
   "Re-render this notebook, leaving point at TARGET-CELL if given.
 A call made while a render is running is dropped: re-entering would
 rebuild a half-built buffer, and the running render reads the same,
@@ -385,9 +385,9 @@ updated cells."
           ;; A target says where point ends up, not that the window should jump
           ;; to it.
           (emjupy--keeping-the-window
-           (lambda () (emjupy--rerender-notebook-1 target-cell)))
+           (lambda () (emjupy--redraw-notebook-1 target-cell)))
         (emjupy--keeping-the-view
-         (lambda () (emjupy--rerender-notebook-1 nil)))))))
+         (lambda () (emjupy--redraw-notebook-1 nil)))))))
 
 (defun emjupy--visible-from (pos)
   "Return POS, or the first visible position after it if it is hidden.
@@ -434,7 +434,7 @@ but the line being read is the same line."
   (forward-line (1- line))
   (move-to-column column))
 
-(defun emjupy--rerender-notebook-1 (&optional target-cell)
+(defun emjupy--redraw-notebook-1 (&optional target-cell)
   "Re-render every cell overlay in the current buffer.
 If TARGET-CELL is given, leave point at that cell afterwards.  The
 rebuild is not itself undone entry by entry: it records one step that
@@ -470,7 +470,7 @@ puts the cells back, so undo carries on through it."
                    ;; which selects it -- drew the rest on top of each other.
                    do (goto-char (point-max))
                    (let ((start (point)))
-                     (emjupy--render-cell cell)
+                     (emjupy--draw-cell cell)
                      (when (eq cell target-cell)
                        (setq target-start start))))
           (when target-start
@@ -546,7 +546,7 @@ copies, since other undo entries name the cells."
       ;; Held still: this runs during an undo, and a rebuild that leaves
       ;; point at the end of the buffer throws the reader to the bottom of
       ;; the notebook just as they are trying to take something back.
-      (emjupy--keeping-the-view (lambda () (emjupy--rerender-notebook-1)))
+      (emjupy--keeping-the-view (lambda () (emjupy--redraw-notebook-1)))
       ;; and the redo
       (unless (eq buffer-undo-list t)
         (push (list 'apply #'emjupy--restore-cells-snapshot now)
@@ -581,7 +581,7 @@ nothing."
 
 ;;;; Putting a redraw right
 
-(defun emjupy--rerender-preserving-point ()
+(defun emjupy--redraw-notebook-keeping-point ()
   "Re-render the notebook without disturbing where the user is typing.
 Not with TARGET-CELL, which moves point to the start of that cell."
   ;; What is on screen goes back into the cells FIRST: the redraw rebuilds the
@@ -590,7 +590,7 @@ Not with TARGET-CELL, which moves point to the start of that cell."
   (let* ((cell (emjupy--cell-at-point))
          (ov (and cell (emjupy-cell-overlay cell)))
          (offset (and ov (- (point) (overlay-start ov)))))
-    (emjupy--rerender-notebook)
+    (emjupy--redraw-notebook)
     (when-let* ((cell cell)
                 (ov (emjupy-cell-overlay cell)))
       (when (overlayp ov)
@@ -607,7 +607,7 @@ structural command synced before it started, and its cells are whole."
         (progn
           (when keep-typing (emjupy--sync-sound-cells))
           (setq emjupy--sync-refused nil)
-          (emjupy--rerender-preserving-point)
+          (emjupy--redraw-notebook-keeping-point)
           (message "[emjupy] A redraw stopped partway; the notebook was redrawn from its cells."))
       ;; Everything: this runs while an error is already unwinding, and a
       ;; second one raised here would hide the first, which is the one to see.
@@ -644,7 +644,7 @@ typing is unsynced.  The problems found are reported."
         (let ((emjupy--recovering t))
           (emjupy--sync-sound-cells)
           (setq emjupy--sync-refused nil)
-          (emjupy--rerender-preserving-point))
+          (emjupy--redraw-notebook-keeping-point))
         (message "[emjupy] The notebook was redrawn: its display had come apart from its cells (%s)."
                  (string-join problems "; "))))))
 
@@ -667,12 +667,12 @@ this puts it back without touching the notebook itself.  Edits in the
 buffer are folded in first, so nothing you have typed is lost."
   (interactive)
   (emjupy--sync-all-cells)
-  (emjupy--rerender-preserving-point)
+  (emjupy--redraw-notebook-keeping-point)
   (message "[emjupy] Redrew the notebook."))
 
-(defun emjupy--refresh-rules-timed (&rest args)
+(defun emjupy--redraw-rules-timed (&rest args)
   "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
-  (apply #'emjupy--timed "rule refresh" #'emjupy--refresh-box-rules args))
+  (apply #'emjupy--timed "rule refresh" #'emjupy--redraw-rules args))
 
 ;;;; In a notebook buffer
 
@@ -686,7 +686,7 @@ buffer-local copy would run once per buffer, each repeating the work."
             nil t)
   (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
   ;; Outlines follow the window through splits and drags.
-  (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed
+  (add-hook 'window-configuration-change-hook #'emjupy--redraw-rules-timed
             nil t))
 
 (provide 'emjupy-redraw)

@@ -243,9 +243,9 @@ that into the first cell's source, so redrawing kept it."
                         (unless fired
                           (setq fired t)
                           (with-current-buffer target
-                            (emjupy--rerender-notebook)))))
+                            (emjupy--redraw-notebook)))))
           (unwind-protect
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
             (advice-mapc (lambda (f _p) (advice-remove 'emjupy--fontify-as f))
                          'emjupy--fontify-as)))
         ;; one copy of each cell, not two
@@ -450,7 +450,7 @@ finished -- after the user had already gone back to typing."
         (undo-boundary)
         (let ((before (length buffer-undo-list)))
           (setf (emjupy-cell-exec-count cell) 7)
-          (should (emjupy--refresh-cell-header cell))
+          (should (emjupy--redraw-cell-header cell))
           ;; the header now says so, and nothing was lost
           (should (>= (length buffer-undo-list) before))
           (should (string-match-p "# note" (buffer-string))))))))
@@ -472,11 +472,11 @@ content, so those are kept, as two distinct figures must be."
                          o)))
     (let ((emjupy-deduplicate-image-outputs t))
       ;; different bytes: both drawn
-      (should (= 2 (length (emjupy--outputs-for-render
+      (should (= 2 (length (emjupy--outputs-to-draw
                             (vector (png "iVBORw0KGgoAAA=")
                                     (png "iVBORw0KGgoBBB="))))))
       ;; the same bytes: one
-      (should (= 1 (length (emjupy--outputs-for-render
+      (should (= 1 (length (emjupy--outputs-to-draw
                             (vector (png "iVBORw0KGgoAAA=")
                                     (png "iVBORw0KGgoAAA=")))))))))
 
@@ -534,7 +534,7 @@ every output type, not for progress bars."
                  (puthash "output_type" "display_data" o)
                  (puthash emjupy--widget-view-mime v d) (puthash "data" d o) o))
          (outputs (vector img view)))
-    (should (equal (emjupy--outputs-for-render outputs) (list view img)))
+    (should (equal (emjupy--outputs-to-draw outputs) (list view img)))
     ;; the cell's own order is untouched
     (should (eq (aref outputs 0) img))))
 

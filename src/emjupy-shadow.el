@@ -175,7 +175,7 @@ Opened by
         (edit-buf (current-buffer)))
     (setf (emjupy-cell-source cell) new-source)
     (with-current-buffer nb-buf
-      (emjupy--rerender-notebook cell))
+      (emjupy--redraw-notebook cell))
     (kill-buffer edit-buf)
     (message "[emjupy] Cell updated.")))
 
@@ -498,7 +498,7 @@ next time."
                     (setq updated (1+ updated)))))
     (set-buffer-modified-p nil)
     (when (and nb-buf (buffer-live-p nb-buf))
-      (with-current-buffer nb-buf (emjupy--rerender-notebook))
+      (with-current-buffer nb-buf (emjupy--redraw-notebook))
       (switch-to-buffer nb-buf))
     (message "[emjupy] %d cell%s updated." updated (if (= updated 1) "" "s"))))
 

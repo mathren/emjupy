@@ -561,7 +561,7 @@ shift.  This was the structural gap notes_undo.org described."
               (emjupy-mode)
               (setq emjupy--buffer-notebook nb)
               (setf (emjupy-notebook-buffer nb) buf)
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (buffer-enable-undo)
               (setq buffer-undo-list nil)
               ;; type into the FIRST cell, then act on the LAST one
@@ -606,7 +606,7 @@ the structural gaps notes_undo.org described."
               (emjupy-mode)
               (setq emjupy--buffer-notebook nb)
               (setf (emjupy-notebook-buffer nb) buf)
-              (emjupy--rerender-notebook)
+              (emjupy--redraw-notebook)
               (buffer-enable-undo)
               (setq buffer-undo-list nil)
               ;; type into the FIRST cell, then act further down
@@ -687,7 +687,7 @@ when operations follow one another, not in isolation."
         (emjupy-delete-cell)
         (emjupy-test--assert-invariants "after delete")
         ;; and a full redraw on top of all that
-        (emjupy--rerender-notebook)
+        (emjupy--redraw-notebook)
         (emjupy-test--assert-invariants "after redraw")))))
 
 ;;;; Undo matrix

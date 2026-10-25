@@ -52,7 +52,7 @@ should fall back to a full redraw."
                                (cl-subseq cells index))))
         (let ((following-ov (and following (emjupy-cell-overlay following)))
               (inserted 0))
-          (setq inserted (emjupy--render-cell-incrementally new-cell at))
+          (setq inserted (emjupy--draw-cell-at new-cell at))
           ;; Text inserted at an overlay's start may go into it, depending on
           ;; the Emacs version, and the next cell swallow the new one: so the
           ;; overlays are checked for overlap, and repaired.
@@ -123,7 +123,7 @@ Returns non-nil when it was done incrementally."
               (vconcat (append (cl-subseq cells 0 index)
                                (list new-cell)
                                (cl-subseq cells index))))
-        (emjupy--rerender-notebook new-cell))
+        (emjupy--redraw-notebook new-cell))
       (emjupy--goto-cell new-cell 'start))))
 
 (defun emjupy-insert-cell-below ()
@@ -158,7 +158,7 @@ separate entity, the output always travels with its cell automatically."
           (unless (and sane
                        (emjupy--redraw-cells-in-place (list above cell)
                                                       (list cell above) t))
-            (emjupy--rerender-notebook cell))
+            (emjupy--redraw-notebook cell))
           ;; The move is its own undo step, so an edit in the cell it
           ;; rewrites is recovered by undoing the move rather than lost.
           (emjupy--goto-cell cell 'start))))))
@@ -181,7 +181,7 @@ separate entity, the output always travels with its cell automatically."
           (unless (and sane
                        (emjupy--redraw-cells-in-place (list cell below)
                                                       (list below cell) t))
-            (emjupy--rerender-notebook cell))
+            (emjupy--redraw-notebook cell))
           (emjupy--goto-cell cell 'start))))))
 
 ;;;; Splitting and joining
@@ -231,7 +231,7 @@ attribute them to source that never produced them."
         (unless (emjupy--redraw-cells-in-place (list cell)
                                                (list cell new-cell)
                                                emjupy--split-was-sane)
-          (emjupy--rerender-notebook new-cell))
+          (emjupy--redraw-notebook new-cell))
         (let ((ov (emjupy-cell-overlay new-cell)))
           (when (overlayp ov) (goto-char (overlay-start ov))))
         new-cell))))
@@ -285,7 +285,7 @@ reverse, would silently reinterpret one of them."
               ;; the undo history.
               (unless (emjupy--redraw-cells-in-place (list above cell)
                                                      (list above) sane)
-                (emjupy--rerender-notebook above))
+                (emjupy--redraw-notebook above))
               ;; Leave point at the seam, where the merged-in cell begins.
               (let ((ov (emjupy-cell-overlay above)))
                 (when (overlayp ov)
@@ -335,7 +335,7 @@ moving point or guessing from a buffer position."
     ;; Only this cell changes, so only this cell is redrawn -- which also
     ;; keeps the undo history.
     (unless (emjupy--redraw-cells-in-place (list cell) (list cell))
-      (emjupy--rerender-notebook cell))
+      (emjupy--redraw-notebook cell))
     (message "[emjupy] Output %s." (if hidden "hidden" "shown"))
     hidden))
 
@@ -376,8 +376,8 @@ clearing it is not something the kernel can be asked to repeat cheaply.
             (setf (emjupy-cell-exec-count cell) nil)
             ;; Only this cell's box goes, so only this cell is redrawn, which
             ;; keeps the undo history.
-            (unless (emjupy--refresh-cell-output cell)
-              (emjupy--rerender-notebook cell))
+            (unless (emjupy--redraw-cell-output cell)
+              (emjupy--redraw-notebook cell))
             (message "[emjupy] Cleared this cell's output.")))))))
 
 (defun emjupy-clear-all-outputs ()
@@ -411,10 +411,10 @@ outputs until you save."
             ;; Each cell is redrawn on its own, keeping the undo history; if any
             ;; cannot be, the whole notebook is, rather than half each way.
             (unless (cl-every (lambda (cell)
-                                (and (emjupy--refresh-cell-header cell)
-                                     (emjupy--refresh-cell-output cell)))
+                                (and (emjupy--redraw-cell-header cell)
+                                     (emjupy--redraw-cell-output cell)))
                               cleared)
-              (emjupy--rerender-notebook)))
+              (emjupy--redraw-notebook)))
           (message "[emjupy] Cleared the output of %d cell%s."
                    with-output (if (= with-output 1) "" "s"))))))))
 
@@ -447,7 +447,7 @@ outputs until you save."
               ;; edits recorded inside it are kept for then
               (emjupy-delete-cell-at nb curr-cell)
             (setf (emjupy-notebook-cells nb) (vconcat remaining))
-            (emjupy--rerender-notebook next))
+            (emjupy--redraw-notebook next))
           ;; An entry undo can act on.  The text deletion itself is made with
           ;; recording off -- a redraw moves positions that undo entries hold
           ;; literally -- so the way back is a function, not a region.
@@ -465,7 +465,7 @@ outputs until you save."
           (user-error "No cell found at point"))
         (setf (emjupy-cell-type cell)
               (if (eq (emjupy-cell-type cell) 'code) 'markdown 'code))
-        (emjupy--rerender-notebook cell)))))
+        (emjupy--redraw-notebook cell)))))
 
 (defvar emjupy--cell-clipboard nil
   "The cell most recently copied, as a (TYPE . SOURCE) pair.
@@ -517,7 +517,7 @@ The new cell has no output and no execution count."
                 (vconcat (append (cl-subseq cells 0 at)
                                  (list new-cell)
                                  (cl-subseq cells at))))
-          (emjupy--rerender-notebook new-cell)))
+          (emjupy--redraw-notebook new-cell)))
       new-cell)))
 
 ;;;; Indentation
@@ -568,7 +568,7 @@ In a markdown cell, and outside any cell, TAB simply inserts."
         (unless (equal (car result) source)
           (let ((inhibit-read-only t))
             (setf (emjupy-cell-source cell) (car result))
-            (emjupy--rerender-notebook cell)))
+            (emjupy--redraw-notebook cell)))
         (let ((ov (emjupy-cell-overlay cell)))
           (when (overlayp ov)
             (goto-char (min (overlay-end ov) (+ (overlay-start ov)
@@ -677,7 +677,7 @@ next line, outside the code."
 
 ;;;; Appearance
 
-(defun emjupy--render-markdown-cell (cell)
+(defun emjupy--redraw-markdown-cell (cell)
   "Re-render markdown CELL including Latex.
 
 What running a markdown cell means in Jupyter: there is no code in it,
@@ -687,7 +687,7 @@ so the result is the rendered form rather than anything from a kernel."
   ;; if it was off.
   (unless emjupy-render-latex
     (setq-local emjupy-render-latex t))
-  (emjupy--rerender-notebook cell)
+  (emjupy--redraw-notebook cell)
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
       (emjupy--preview-latex-in (overlay-start ov) (overlay-end ov))))
@@ -702,7 +702,7 @@ Emacs too old for `enable-theme-functions'."
   (emjupy--sync-theme-colors)
   (dolist (buf (emjupy--notebook-buffers))
     (with-current-buffer buf
-      (emjupy--rerender-notebook))))
+      (emjupy--redraw-notebook))))
 
 (defun emjupy-toggle-latex-preview ()
   "Turn LaTeX previews in this notebook's markdown cells on or off.
@@ -711,7 +711,7 @@ Only this notebook: `emjupy-render-latex' sets it for all of them."
   (setq-local emjupy-render-latex (not emjupy-render-latex))
   (when (and emjupy-render-latex (not (emjupy--latex-available-p)))
     (message "[emjupy] No LaTeX renderer found: install latex and dvipng, or math-preview."))
-  (when emjupy--buffer-notebook (emjupy--rerender-notebook))
+  (when emjupy--buffer-notebook (emjupy--redraw-notebook))
   (message "[emjupy] LaTeX preview %s." (if emjupy-render-latex "on" "off")))
 
 (defun emjupy-report-box-geometry ()
@@ -765,7 +765,7 @@ frames and the offending lines are legible."
       (let ((buf (get-buffer-create "*emjupy traceback*")))
         (with-current-buffer buf
           (let* ((inhibit-read-only t)
-                 (coloured (emjupy--ansi-render tb)))
+                 (coloured (emjupy--render-ansi tb)))
             (erase-buffer)
             (insert coloured)
             (let ((python-indent-guess-indent-offset-verbose nil))

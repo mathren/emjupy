@@ -42,7 +42,7 @@ notebook -- such as deleting every cell after the one being edited."
             (puthash "name" "stdout" oh)
             (puthash "text" "hi\n" oh)
             (setf (emjupy-cell-outputs c3) (vector oh)))
-          (emjupy--rerender-notebook c3)
+          (emjupy--redraw-notebook c3)
           ;; undo from cell 3
           (goto-char (overlay-start (emjupy-cell-overlay c3)))
           (ignore-errors (undo))
@@ -67,7 +67,7 @@ intact -- otherwise every stray refresh would silently drop it."
           (insert "11")
           (undo-boundary)
           (emjupy--sync-all-cells)
-          (emjupy--rerender-notebook c3)   ; no textual change
+          (emjupy--redraw-notebook c3)   ; no textual change
           (goto-char (overlay-start (emjupy-cell-overlay c3)))
           (undo)
           (emjupy--sync-all-cells)
@@ -303,7 +303,7 @@ the next edit there is not saved and a cell appears to vanish."
             (emjupy-mode)
             (setq emjupy--buffer-notebook nb)
             (setf (emjupy-notebook-buffer nb) buf)
-            (emjupy--rerender-notebook)
+            (emjupy--redraw-notebook)
             (should (emjupy--overlays-sane-p))
             ;; insert between the two
             (goto-char (overlay-start (emjupy-cell-overlay c1)))
@@ -383,7 +383,7 @@ looks at."
         ;; second cycle must change nothing at all, or repeated opening and
         ;; saving would keep rewriting the notebook
         (let ((once (funcall snapshot (append (emjupy-notebook-cells nb) nil))))
-          (emjupy--rerender-notebook)
+          (emjupy--redraw-notebook)
           (emjupy-test--assert-invariants "after redraw")
           (should (emjupy--sync-all-cells))
           (should (equal (funcall snapshot
@@ -587,7 +587,7 @@ selected."
                 (with-current-buffer buf
                   (display-line-numbers-mode 1)
                   (set-window-point shown 2)
-                  (emjupy--rerender-notebook)
+                  (emjupy--redraw-notebook)
                   (should-not (emjupy--check-invariants))
                   (should (string-prefix-p "# Title" (buffer-string)))
                   (should (< (string-match "a = 1" (buffer-string))
@@ -609,10 +609,10 @@ at once; and what was typed elsewhere, not yet synced, is kept."
         ;; output changed so that it must be drawn whole: a different one
         (puthash "text" "goodbye\n"
                  (aref (emjupy-cell-outputs (aref cells 0)) 0))
-        (let ((undo (emjupy-test--fail-once 'emjupy--render-cell-output
+        (let ((undo (emjupy-test--fail-once 'emjupy--draw-cell-output
                                             "half an outp")))
           (unwind-protect
-              (should-error (emjupy--refresh-cell-output (aref cells 0)))
+              (should-error (emjupy--redraw-cell-output (aref cells 0)))
             (funcall undo)))
         (should-not (emjupy--check-invariants))
         (should (equal (emjupy-cell-source (aref cells 1)) "y = 2 + 1"))
@@ -628,7 +628,7 @@ at once; and what was typed elsewhere, not yet synced, is kept."
         (let ((new (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                      :source "z = 3"
                                      :outputs [] :metadata (make-hash-table)))
-              (undo (emjupy-test--fail-once 'emjupy--render-cell "z =")))
+              (undo (emjupy-test--fail-once 'emjupy--draw-cell "z =")))
           (unwind-protect
               (should-error (emjupy-insert-cell-at nb 1 new))
             (funcall undo)))

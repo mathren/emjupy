@@ -72,7 +72,7 @@ into place around them.
    =emjupy--fetch-notebook= (notebook), which parses it with
    =emjupy--parse-ipynb= (ipynb); draws it with
    =emjupy--draw-opened-notebook= (notebook), which turns on =emjupy-mode=
-   (mode) and calls =emjupy--rerender-notebook= (redraw); and connects
+   (mode) and calls =emjupy--redraw-notebook= (redraw); and connects
    with =emjupy--attach-bound-kernel= (notebook).
 3. =emjupy-connect-kernel= (kernel) opens the WebSocket.  A notebook
    without a kernel gets one from =emjupy--spawn-and-connect-kernel=
@@ -88,12 +88,12 @@ into place around them.
    =emjupy--rich-output= and =emjupy--error-output= (kernel), then
    =emjupy--append-output-to-cell= (kernel) merges stream text with
    =emjupy--merge-stream-output= and asks for a redraw with
-   =emjupy--schedule-render= (kernel).  A request is done only when its
+   =emjupy--schedule-redraw= (kernel).  A request is done only when its
    reply and its closing idle have both come: =emjupy--request-half-seen=
    (kernel).
 3. Drawing runs from a timer, not inside the socket callback:
    =emjupy--redraw-pending-output= (kernel) calls
-   =emjupy--refresh-cell-output= (redraw), which draws only the new text
+   =emjupy--redraw-cell-output= (redraw), which draws only the new text
    when it can, with =emjupy--append-stream-output= (redraw), and the
    cell's output box otherwise.  Escape codes in a stream -- progress
    bars -- are applied by =emjupy--terminal-apply= (terminal).

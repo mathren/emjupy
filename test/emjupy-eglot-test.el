@@ -312,7 +312,7 @@ the user's own modules stayed unresolvable however
           (emjupy-mode)
           (setq emjupy--buffer-notebook nb)
           (setf (emjupy-notebook-buffer nb) buf)
-          (emjupy--rerender-notebook)
+          (emjupy--redraw-notebook)
           (let ((emjupy-shadow-directory nil) (emjupy-remote-root nil))
             (ignore-errors (emjupy--ensure-shadow-buffer nb))
             (let ((first (buffer-local-value

@@ -134,7 +134,7 @@ not disturbed."
             (cl-loop for cell across
                      (emjupy-notebook-cells emjupy--buffer-notebook)
                      when (emjupy--cell-running-p cell)
-                     do (emjupy--refresh-cell-header cell))))))))
+                     do (emjupy--redraw-cell-header cell))))))))
 
 (defun emjupy--start-spinner ()
   "Start animating the running indicator in this buffer."
@@ -156,7 +156,7 @@ not disturbed."
     (cancel-timer emjupy--spinner-timer)
     (setq emjupy--spinner-timer nil)))
 
-(defun emjupy--refresh-cell-header (cell)
+(defun emjupy--redraw-cell-header (cell)
   "Redraw CELL's header rule in place.
 The header is an overlay `before-string', so this changes no buffer text
 and does not enter the undo history."
@@ -174,7 +174,7 @@ and does not enter the undo history."
     (cl-pushnew (emjupy-cell-id cell) emjupy--running-cells)
     ;; Draw it at once rather than on the next tick, so pressing the key
     ;; visibly does something even for a cell that finishes quickly.
-    (emjupy--refresh-cell-header cell)
+    (emjupy--redraw-cell-header cell)
     (emjupy--start-spinner)))
 
 (defun emjupy--mark-done (cell &optional buffer)
@@ -182,7 +182,7 @@ and does not enter the undo history."
   (with-current-buffer (or buffer (current-buffer))
     (setq emjupy--running-cells
           (delq (emjupy-cell-id cell) emjupy--running-cells))
-    (emjupy--refresh-cell-header cell)
+    (emjupy--redraw-cell-header cell)
     (unless emjupy--running-cells (emjupy--stop-spinner))))
 
 ;;;; Labels and rules
@@ -639,7 +639,7 @@ a stream, its text as drawn, and the width it was folded at."
      ((string= out-type "stream")
       ;; Carriage returns applied here too: a notebook saved by Jupyter
       ;; stores a progress bar as all its updates.
-      (insert (emjupy--ansi-render
+      (insert (emjupy--render-ansi
                (emjupy--collapse-carriage-returns
                 (emjupy--mime-text (gethash "text" out))))))
      ((or (string= out-type "execute_result")
@@ -651,7 +651,7 @@ a stream, its text as drawn, and the width it was folded at."
                         (gethash "ename" out) (gethash "evalue" out)))
         (when (or (vectorp traceback) (listp traceback))
           (cl-loop for line in (append traceback nil)
-                   do (insert (emjupy--ansi-render (emjupy--mime-text line))
+                   do (insert (emjupy--render-ansi (emjupy--mime-text line))
                               "\n"))))))))
 
 (defun emjupy--make-output-overlay (cell start widest pieces)
@@ -676,16 +676,16 @@ WIDEST is its widest line before folding, PIECES the outputs drawn."
     ;; they are.  An overlay face here would override all of them.
     (setf (emjupy-cell-output-ov cell) ov)))
 
-(defun emjupy--render-cell-output (cell)
+(defun emjupy--draw-cell-output (cell)
   "Insert CELL's output box at point and give it its overlay.
-Apart from `emjupy--render-cell' so output arriving redraws one box,
+Apart from `emjupy--draw-cell' so output arriving redraws one box,
 not the notebook."
   (let ((outputs (emjupy-cell-outputs cell)))
     (when (and outputs (> (length outputs) 0))
       (let ((out-start (point))
             ;; widest line as the kernel sent it, before folding
             (widest 0)
-            (pieces (emjupy--outputs-for-render outputs)))
+            (pieces (emjupy--outputs-to-draw outputs)))
         (dolist (out pieces)
           (let ((piece-start (point)))
             (emjupy--insert-output-piece out)
@@ -700,7 +700,7 @@ not the notebook."
 
 ;;;; Drawing a cell
 
-(defun emjupy--refresh-cell-footer (cell)
+(defun emjupy--redraw-cell-footer (cell)
   "Give CELL the bottom rule it should have, or none if its output has one."
   (let ((src (emjupy-cell-overlay cell))
         (out (emjupy-cell-output-ov cell))
@@ -714,7 +714,7 @@ not the notebook."
          (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
         (t (emjupy--rule nil)))))))
 
-(defun emjupy--render-cell (cell)
+(defun emjupy--draw-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
   (let* ((type (emjupy-cell-type cell))
          (source (emjupy-cell-source cell))
@@ -766,7 +766,7 @@ not the notebook."
 
     ;; 3. Output Box Overlay
     (when (and has-outputs (not (emjupy--cell-outputs-hidden-p cell)))
-      (emjupy--render-cell-output cell))
+      (emjupy--draw-cell-output cell))
 
     (insert "\n")))
 
@@ -831,7 +831,7 @@ A newline with a background paints a column past the rule."
 
 ;;;; Colour and tracebacks
 
-(defun emjupy--ansi-render (text)
+(defun emjupy--render-ansi (text)
   "Return TEXT with ANSI escapes applied as faces, or stripped.
 With `ansi-color-apply', which comes with Emacs."
   (let ((s (or text "")))
@@ -1014,7 +1014,7 @@ saved."
                            (gethash emjupy--widget-view-mime d))))))
     (append (seq-filter widget-p outputs) (seq-remove widget-p outputs))))
 
-(defun emjupy--outputs-for-render (outputs)
+(defun emjupy--outputs-to-draw (outputs)
   "Return OUTPUTS as a list, with repeated identical images dropped.
 Only images, and only against those already in the cell: two identical
 prints are two outputs."

@@ -88,7 +88,7 @@ many changes in a row cost one."
                  when (cl-some #'emjupy--widget-view-output-p
                                (append (emjupy-cell-outputs cell) nil))
                  do (cl-pushnew cell emjupy--cells-awaiting-output)))
-      (emjupy--schedule-render buf))))
+      (emjupy--schedule-redraw buf))))
 
 (defun emjupy--widget-put-buffers (state data buffers)
   "Put BUFFERS into STATE where DATA's `buffer_paths' say."
