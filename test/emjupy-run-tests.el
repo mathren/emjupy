@@ -50,19 +50,15 @@
   ;; undercover only reports under a recognised CI unless forced; forced
   ;; always, so the report is the same locally and on GitHub
   (setq undercover-force-coverage t)
-  ;; The patterns are resolved against the directory Emacs was started in,
-  ;; which is the repository root under make; absolute names avoid the
-  ;; question.  The tests and these scripts are not measured.
+  ;; Every source file is measured, found rather than listed: a list went
+  ;; stale when files were split, and unmeasured code says nothing.  Not the
+  ;; package metadata, the tests, or these scripts.  Absolute names, as the
+  ;; patterns are resolved against the directory Emacs was started in.
   (let ((src (expand-file-name "../src" (file-name-directory
                                           (or load-file-name buffer-file-name)))))
     (eval `(undercover
-            ,@(mapcar (lambda (f) (expand-file-name f src))
-                      '("emjupy-core.el" "emjupy-http.el" "emjupy-render.el"
-                        "emjupy-cells.el" "emjupy-kernel.el"
-                        "emjupy-figures.el" "emjupy-widgets.el"
-                        "emjupy-widget-page.el" "emjupy-remote.el"
-                        "emjupy-lsp.el" "emjupy-eglot.el" "emjupy-mode.el"
-                        "emjupy-notebook.el" "emjupy.el"))
+            ,@(seq-remove (lambda (f) (string-suffix-p "emjupy-pkg.el" f))
+                          (directory-files src t "\\`emjupy.*\\.el\\'"))
             (:report-format 'lcov)
             (:report-file ,report)
             (:send-report nil)))))
