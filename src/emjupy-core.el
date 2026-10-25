@@ -99,6 +99,11 @@ gets a definite answer rather than a local one.")
 ;;;; Structures
 
 (cl-defstruct emjupy-server
+  "A Jupyter server emjupy has logged in to, one per address.
+BASE-URL is the address given to `emjupy-login', host:port or a URL;
+TOKEN the token sent with every request.  HOST and PORT are not used:
+the address is parsed from BASE-URL where needed.  They stay because
+their accessors and constructor keywords are public names."
   host port token base-url
   ;; Absolute path of the directory this server serves, worked out from a
   ;; kernel rather than configured.  nil until a kernel has reported in.
@@ -115,6 +120,10 @@ gets a definite answer rather than a local one.")
   files-root)
 
 (cl-defstruct emjupy-kernel
+  "A kernel on a server, and emjupy's connection to it.
+ID is the kernel's id on SERVER; NAME its kernelspec, such as python3.
+WS is the WebSocket, PENDING a table from each request's msg_id to the
+cell it runs, until its reply and its closing idle have both come."
   id name server ws pending
   ;; Backlink to the notebook this kernel drives, so an incoming WebSocket
   ;; frame can be routed to the right buffer without consulting any global.
@@ -131,6 +140,14 @@ gets a definite answer rather than a local one.")
   (setq emjupy--next-cell-id (1+ emjupy--next-cell-id)))
 
 (cl-defstruct emjupy-cell
+  "One cell of a notebook: what is saved, and how it is drawn.
+ID is emjupy's own, a number unique in this Emacs session, never saved;
+NB-ID the cell id nbformat saves, read from the file or made when a
+notebook has none.  TYPE is \"code\", \"markdown\" or \"raw\";
+EXEC-COUNT the number shown as In: [N], or nil; SOURCE the text;
+OUTPUTS a vector of nbformat outputs; METADATA the cell's metadata.
+OVERLAY spans the cell's source in the buffer, OUTPUT-OV its output box;
+both nil until the cell is drawn."
   id type exec-count source outputs metadata overlay output-ov nb-id
   ;; Files pasted into a markdown or raw cell, by name, as nbformat keeps
   ;; them.  Carried untouched: emjupy does not show them, but a notebook
@@ -138,6 +155,11 @@ gets a definite answer rather than a local one.")
   attachments)
 
 (cl-defstruct emjupy-notebook
+  "A notebook open in a buffer.
+PATH is its path on SERVER, as the Contents API names it; KERNEL the
+`emjupy-kernel' running its code; CELLS a list of `emjupy-cell's, in
+order; METADATA the notebook's metadata.  BUFFER shows it, and
+SHADOW-BUFFER holds its code for the language server."
   path server kernel cells metadata buffer shadow-buffer
   ;; Live LSP session against the server `jupyter-lsp' runs, if any.
   lsp
