@@ -32,7 +32,7 @@ WEBSOCKET ?= $(EMJUPY_WEBSOCKET_DIR)
 LOADPATH  := -L $(SRC) -L $(TEST) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
-SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-http.el emjupy-render.el \
+SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-terminal.el emjupy-http.el emjupy-render.el \
             emjupy-cells.el emjupy-kernel.el emjupy-figures.el emjupy-widgets.el emjupy-widget-page.el emjupy-remote.el emjupy-lsp.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
 # No README in the tar: C-h P would show a web page -- badges, links --

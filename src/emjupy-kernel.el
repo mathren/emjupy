@@ -25,6 +25,7 @@
 (require 'emjupy-core)
 (require 'emjupy-http)
 (require 'emjupy-render)
+(require 'emjupy-terminal)
 (require 'emjupy-cells)
 
 ;;;; Options

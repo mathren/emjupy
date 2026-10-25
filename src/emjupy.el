@@ -55,6 +55,7 @@
 
 ;; Every file of the package, in the order its layers build on each other.
 (require 'emjupy-core)
+(require 'emjupy-terminal)
 (require 'emjupy-http)
 (require 'emjupy-render)
 (require 'emjupy-cells)
