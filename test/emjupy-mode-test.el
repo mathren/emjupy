@@ -52,7 +52,7 @@ error.  `C-c C-l' and `C-c C-u C-l' are all control characters."
               'emjupy-export-py)))
 
 (ert-deftest emjupy-test-slow-hook-reporting ()
-  "`emjupy-report-slow-hooks' names the slow hook, or says nothing.
+  "`emjupy-slow-hook-threshold' names the slow hook, or says nothing.
 
 A hang is hard to attribute from the outside; this says which of
 emjupy's per-command hooks is slow, or -- just as usefully -- that none
@@ -62,15 +62,15 @@ of them is."
                (lambda (f &rest args)
                  (when f (push (apply #'format f args) said)) nil)))
       ;; off: nothing said, and the value still comes back
-      (let ((emjupy-report-slow-hooks nil))
+      (let ((emjupy-slow-hook-threshold nil))
         (should (eq (emjupy--timed "quick" (lambda () 'value)) 'value))
         (should-not said))
       ;; on, but fast enough: still nothing
-      (let ((emjupy-report-slow-hooks 5))
+      (let ((emjupy-slow-hook-threshold 5))
         (emjupy--timed "quick" (lambda () 'value))
         (should-not said))
       ;; on and slow: named
-      (let ((emjupy-report-slow-hooks 0.01))
+      (let ((emjupy-slow-hook-threshold 0.01))
         (emjupy--timed "sluggish hook" (lambda () (sleep-for 0.05)))
         (should (cl-some (lambda (m)
                            (string-match-p "sluggish hook" m)) said))))))

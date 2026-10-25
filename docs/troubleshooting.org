@@ -17,7 +17,7 @@ there.  It takes effect at once, in notebooks already open;
 =emjupy-edit-cell-externally= still opens all the code in one buffer,
 without a server.  Set back to t, a server starts when next asked for.
 
-=emjupy-report-slow-hooks=, a number of seconds, reports per-command work
+=emjupy-slow-hook-threshold=, a number of seconds, reports per-command work
 taking longer, naming the function.
 
 If neither points anywhere, measure:

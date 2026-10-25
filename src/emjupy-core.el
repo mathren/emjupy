@@ -70,15 +70,16 @@
 
 ;;;; Options
 
-(defcustom emjupy-report-slow-hooks nil
-  "Report anything emjupy runs after a command that takes too long.
+(define-obsolete-variable-alias 'emjupy-report-slow-hooks
+  'emjupy-slow-hook-threshold "0.2")
 
-When a number, any per-command work taking more than that many seconds
-is logged with the name of the function responsible.  0.05 is a good
-starting point.  This exists because a hang is hard to attribute from
-the outside: it says which of emjupy's hooks is the slow one, or --
-just as usefully -- that none of them is, and the time is going
-somewhere else entirely."
+(defcustom emjupy-slow-hook-threshold nil
+  "Seconds after which emjupy's work after a command is reported, or nil.
+When a number, any per-command work taking longer is logged with the
+name of the function responsible; 0.05 is a good starting point.  A hang
+is hard to attribute from the outside: this says which of emjupy's hooks
+is the slow one, or -- just as usefully -- that none of them is, and the
+time is going somewhere else entirely."
   :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
   :group 'emjupy)
 
@@ -296,12 +297,12 @@ without the relevant library (very common for `emacs-nox') will make
 (defun emjupy--timed (name fn &rest args)
   "Call FN with ARGS, reporting if it takes longer than allowed.
 NAME is what gets reported."
-  (if (not (numberp emjupy-report-slow-hooks))
+  (if (not (numberp emjupy-slow-hook-threshold))
       (apply fn args)
     (let* ((start (float-time))
            (value (apply fn args))
            (elapsed (- (float-time) start)))
-      (when (> elapsed emjupy-report-slow-hooks)
+      (when (> elapsed emjupy-slow-hook-threshold)
         (message "[emjupy] %s took %.0f ms" name (* 1000 elapsed)))
       value)))
 
