@@ -30,6 +30,8 @@
   Chain with `&&`.
 - **Counting a test's calls** counts the functions it stubs with `cl-letf`:
   file a test by its subject.
+- **Coverage finds the source files** by pattern (every `src/emjupy*.el`
+  but the pkg file): a new file is measured with nothing to list.
 - **The docs name files**: "=NAME= (file)" in reading-the-code.org rots
   when code moves; `emjupy-test-the-docs-say-where-things-are` checks it.
 - **A command stops after 300 seconds**, output lost: run builds and the

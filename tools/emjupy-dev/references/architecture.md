@@ -7,7 +7,7 @@ short form, plus mechanisms that have bitten before.
 
 | File | Holds |
 |---|---|
-| `src/emjupy-core.el` | structs (server, kernel, cell, notebook), the customization groups, cell-at-position lookups, `emjupy--private-directory`, what this Emacs can display |
+| `src/emjupy-core.el` | structs (server, kernel, cell, notebook) -- a server parses its address once, `emjupy--parse-base-url` -- the customization groups, cell-at-position lookups, `emjupy--private-directory`, `emjupy--timed`, what this Emacs can display |
 | `src/emjupy-terminal.el` | stream text as a terminal shows it (`emjupy--terminal-apply`): string to string |
 | `src/emjupy-ipynb.el` | nbformat JSON read and written; the .py percent format |
 | `src/emjupy-latex.el` | LaTeX previews; org declared, loaded lazily |
@@ -24,7 +24,7 @@ short form, plus mechanisms that have bitten before.
 | `src/emjupy-lsp.el` | Eglot over the Jupyter WebSocket, shadow document text |
 | `src/emjupy-shadow.el` | the shadow file and buffer, positions, edit buffers |
 | `src/emjupy-eglot.el` | attaching Eglot to the shadow, xref, Eglot commands, completion, eldoc, diagnosis |
-| `src/emjupy-mode.el` | `emjupy-mode`, its keymap, calling each layer's `-enable` |
+| `src/emjupy-mode.el` | `emjupy-mode`, its keymap: its own setup, then each layer's `-enable`, `emjupy-eglot-completion-enable` last |
 | `src/emjupy-save.el` | saving, auto-saving, recovery copies |
 | `src/emjupy-notebook.el` | login, opening and creating, switching, export command, the menu |
 | `src/emjupy-dashboard.el` | the server dashboard |

@@ -146,6 +146,11 @@ known.
 4. If the turn ends before export, say plainly that nothing was
    delivered, what is committed where, and what remains.
 
+## This skill
+
+It lives in the repository, `tools/emjupy-dev/`: change it there, in a
+commit like any other, and `make skill` builds the .skill to install.
+
 ## Reference files
 
 - `references/architecture.md` -- files, layers, the main flows, hard
