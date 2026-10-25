@@ -11,7 +11,10 @@
 ;;; Commentary:
 
 ;; The listing of a server's notebooks, folders and kernels -- browsing,
-;; opening, creating, shutting kernels down -- and opening its files.
+;; opening, creating, shutting kernels down -- and opening its files.  One
+;; buffer per server, browsable into subdirectories, built on
+;; `tabulated-list-mode'.  Not a file manager: `d' hands the directory to
+;; Dired, over TRAMP when it is remote.
 
 ;;; Code:
 
@@ -27,7 +30,6 @@
 (require 'emjupy-notebook)
 
 (declare-function dired-goto-file "dired" (file))
-
 
 ;;;; The notebook listing
 

@@ -323,14 +323,6 @@ Returns the notebook buffer."
           (emjupy-open-notebook filename server)
         (error "Failed to write %s to server" filename)))))
 
-;; ---------------------------------------------------------------------
-;;; Server dashboard:
-
-;;; ---------------------------------------------------------------------
-;; One buffer per server: the kernels running on it and the notebooks stored on
-;; it, browsable into subdirectories.  Built on `tabulated-list-mode'.  Not a
-;; file manager: `d' hands the directory to Dired, over TRAMP when it is remote.
-
 ;;;; Exporting to Python
 
 (defvar emjupy--export-history nil
