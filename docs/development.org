@@ -49,7 +49,10 @@ above it in this table.  Tests in =test/=, the notebooks they read in
 | =emjupy-eglot.el=         | shadow buffer, Eglot integration, completion, eldoc         |
 | =emjupy-figure-window.py= | the window interactive figures open in, shipped with them   |
 | =emjupy-mode.el=          | =emjupy-mode=, its keys, its layers, mixed installs         |
-| =emjupy-notebook.el=      | login, the notebook browser, saving, the menu               |
+| =emjupy-save.el=          | saving, auto-saving, recovery copies                        |
+| =emjupy-notebook.el=      | logging in, opening and creating, switching, the menu       |
+| =emjupy-dashboard.el=     | the server dashboard: notebooks, folders, kernels           |
+| =emjupy-tramp-open.el=    | an .ipynb opened as a notebook, here or by TRAMP            |
 | =emjupy.el=               | package header, version, and requiring every file in order  |
 | =emjupy-pkg.el=           | package metadata for =make package= (MELPA makes its own)   |
 
@@ -547,7 +550,10 @@ does not ship.  The tests, in =test/=, are not shipped.  It is kept at
                 "src/emjupy-lsp.el"
                 "src/emjupy-eglot.el"
                 "src/emjupy-mode.el"
-                "src/emjupy-notebook.el"))
+                "src/emjupy-save.el"
+                "src/emjupy-notebook.el"
+                "src/emjupy-dashboard.el"
+                "src/emjupy-tramp-open.el"))
 #+end_src
 
 Before submitting:

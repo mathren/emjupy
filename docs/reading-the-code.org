@@ -44,7 +44,10 @@ per part.
 |    12 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
 |    13 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
 |    14 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
-|    15 | =emjupy-notebook.el=               | logging in, opening, saving, the menu               |
+|    15 | =emjupy-save.el=                   | saving, auto-saving, recovery copies                |
+|    16 | =emjupy-notebook.el=               | logging in, opening, switching, the menu            |
+|    17 | =emjupy-dashboard.el=              | the server dashboard                                |
+|    18 | =emjupy-tramp-open.el=             | opening an .ipynb file, here or through TRAMP       |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read

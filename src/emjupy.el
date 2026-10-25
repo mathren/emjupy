@@ -72,7 +72,10 @@
 (require 'emjupy-lsp)
 (require 'emjupy-eglot)
 (require 'emjupy-mode)
+(require 'emjupy-save)
 (require 'emjupy-notebook)
+(require 'emjupy-dashboard)
+(require 'emjupy-tramp-open)
 
 ;;;; Version
 

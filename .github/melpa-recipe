@@ -20,4 +20,7 @@
                 "src/emjupy-lsp.el"
                 "src/emjupy-eglot.el"
                 "src/emjupy-mode.el"
-                "src/emjupy-notebook.el"))
+                "src/emjupy-save.el"
+                "src/emjupy-notebook.el"
+                "src/emjupy-dashboard.el"
+                "src/emjupy-tramp-open.el"))
