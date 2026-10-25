@@ -9,6 +9,8 @@
                 "src/emjupy-http.el"
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"
+                "src/emjupy-redraw.el"
+                "src/emjupy-commands.el"
                 "src/emjupy-kernel.el"
                 "src/emjupy-figures.el"
                 "src/emjupy-widgets.el"

@@ -27,6 +27,8 @@
 (require 'emjupy-render)
 (require 'emjupy-terminal)
 (require 'emjupy-cells)
+(require 'emjupy-redraw)
+(require 'emjupy-commands)
 
 ;;;; Options
 

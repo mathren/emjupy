@@ -37,12 +37,14 @@ per part.
 |     5 | =emjupy-undo.el=                   | undo entries shifted by a redraw: read slowly       |
 |     6 | =emjupy-http.el=                   | requests, errors (=emjupy-http-error=), XSRF        |
 |     7 | =emjupy-render.el=                 | drawing a cell and its output; undo bookkeeping     |
-|     8 | =emjupy-cells.el=                  | syncing, editing commands, redrawing in place       |
-|     9 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
-|    10 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
-|    11 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
-|    12 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
-|    13 | =emjupy-notebook.el=               | logging in, opening, saving, the menu               |
+|     8 | =emjupy-cells.el=                  | syncing, and the structure checks                   |
+|     9 | =emjupy-redraw.el=                 | redraws, and the undo step: read slowly             |
+|    10 | =emjupy-commands.el=               | the commands on cells                               |
+|    11 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
+|    12 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
+|    13 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
+|    14 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
+|    15 | =emjupy-notebook.el=               | logging in, opening, saving, the menu               |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read

@@ -22,6 +22,8 @@
 (require 'emjupy-render)
 (require 'emjupy-latex)
 (require 'emjupy-cells)
+(require 'emjupy-redraw)
+(require 'emjupy-commands)
 (require 'emjupy-kernel)
 (require 'emjupy-widgets)
 (require 'emjupy-widget-page)

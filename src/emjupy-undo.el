@@ -14,7 +14,7 @@
 ;; a stretch of the buffer, the entries after it must shift and those
 ;; inside it must go, or the next undo rewrites the wrong text.  This is
 ;; that bookkeeping.  The undo step a cell command records, and its
-;; snapshot of the cells, are with the redraws, in emjupy-cells.el: undoing
+;; snapshot of the cells, are with the redraws, in emjupy-redraw.el: undoing
 ;; a step redraws the notebook, and redrawing it records a step.
 
 ;;; Code:

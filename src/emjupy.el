@@ -62,6 +62,8 @@
 (require 'emjupy-http)
 (require 'emjupy-render)
 (require 'emjupy-cells)
+(require 'emjupy-redraw)
+(require 'emjupy-commands)
 (require 'emjupy-kernel)
 (require 'emjupy-figures)
 (require 'emjupy-widgets)

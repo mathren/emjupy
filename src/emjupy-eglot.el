@@ -24,6 +24,7 @@
 (require 'emjupy-http)
 (require 'emjupy-render)
 (require 'emjupy-cells)
+(require 'emjupy-redraw)
 (require 'emjupy-lsp)
 (require 'xref)
 (require 'emjupy-kernel)

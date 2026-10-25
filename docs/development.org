@@ -37,7 +37,9 @@ above it in this table.  Tests in =test/=, the notebooks they read in
 | =emjupy-undo.el=          | undo positions kept right across redraws                    |
 | =emjupy-http.el=          | REST transport, URL parsing, the HTTP error types           |
 | =emjupy-render.el=        | faces, colours, outlines, drawing output, text helpers      |
-| =emjupy-cells.el=         | syncing, cell editing and commands, redrawing in place      |
+| =emjupy-cells.el=         | syncing the buffer back into the cells, checking it         |
+| =emjupy-redraw.el=        | redrawing in place or whole, undo steps, repair             |
+| =emjupy-commands.el=      | cell commands: editing, moving, output                      |
 | =emjupy-kernel.el=        | kernel WebSocket, execution, message routing                |
 | =emjupy-figures.el=       | opening an output on its own: plotly figures, HTML, images  |
 | =emjupy-widgets.el=       | widget controls in the buffer, and what they cause          |
@@ -91,7 +93,7 @@ things are put:
 
 - A redraw happens whole or is put right by redrawing from the cells.
   The redraws needing that -- a cell's output in place, every output on
-  a width change -- are in the cells layer, so putting one right is a
+  a width change -- are in the redraw layer, so putting one right is a
   plain call.
 - A keymap is defined whole where it is made: the output maps in the
   drawing layer, the mode's map in emjupy-mode.el, the menu in
@@ -534,6 +536,8 @@ does not ship.  The tests, in =test/=, are not shipped.  It is kept at
                 "src/emjupy-http.el"
                 "src/emjupy-render.el"
                 "src/emjupy-cells.el"
+                "src/emjupy-redraw.el"
+                "src/emjupy-commands.el"
                 "src/emjupy-kernel.el"
                 "src/emjupy-figures.el"
                 "src/emjupy-widgets.el"

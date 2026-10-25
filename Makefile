@@ -33,7 +33,7 @@ LOADPATH  := -L $(SRC) -L $(TEST) $(if $(WEBSOCKET),-L $(WEBSOCKET),)
 
 # Load order matters: each file is compiled against the ones it requires.
 SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-terminal.el emjupy-ipynb.el emjupy-latex.el emjupy-undo.el emjupy-http.el emjupy-render.el \
-            emjupy-cells.el emjupy-kernel.el emjupy-figures.el emjupy-widgets.el emjupy-widget-page.el emjupy-remote.el emjupy-lsp.el \
+            emjupy-cells.el emjupy-redraw.el emjupy-commands.el emjupy-kernel.el emjupy-figures.el emjupy-widgets.el emjupy-widget-page.el emjupy-remote.el emjupy-lsp.el \
             emjupy-eglot.el emjupy-mode.el emjupy-notebook.el emjupy.el)
 # No README in the tar: C-h P would show a web page -- badges, links --
 # before the Commentary.  MELPA leaves it out too.
