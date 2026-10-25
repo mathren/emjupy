@@ -214,6 +214,16 @@ message."
                 (list (format "Not writing %s" purpose)
                       "not a directory of your own" dir))))))
 
+;;;; What this Emacs can display
+
+(defun emjupy--image-displayable-p (type)
+  "Return non-nil if this Emacs can actually display an image of TYPE.
+Both halves matter: a tty frame can't show images at all, and a build
+without the relevant library (very common for `emacs-nox') will make
+`create-image' signal rather than degrade."
+  (and (display-graphic-p)
+       (image-type-available-p type)))
+
 ;;;; The cell at a position
 
 ;; Lookups over the cells and their overlays, nothing more: every layer

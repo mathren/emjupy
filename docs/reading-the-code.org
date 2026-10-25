@@ -33,14 +33,15 @@ per part.
 |     1 | =emjupy-core.el=                   | the structs, and which cell is at a position        |
 |     2 | =emjupy-terminal.el=               | carriage returns and escape codes, string to string |
 |     3 | =emjupy-ipynb.el=                  | nbformat JSON in and out, and the .py export text   |
-|     4 | =emjupy-http.el=                   | requests, errors (=emjupy-http-error=), XSRF        |
-|     5 | =emjupy-render.el=                 | drawing a cell and its output; undo bookkeeping     |
-|     6 | =emjupy-cells.el=                  | syncing, editing commands, redrawing in place       |
-|     7 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
-|     8 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
-|     9 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
-|    10 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
-|    11 | =emjupy-notebook.el=               | logging in, opening, saving, the menu               |
+|     4 | =emjupy-latex.el=                  | LaTeX previews, org loaded only when asked          |
+|     5 | =emjupy-http.el=                   | requests, errors (=emjupy-http-error=), XSRF        |
+|     6 | =emjupy-render.el=                 | drawing a cell and its output; undo bookkeeping     |
+|     7 | =emjupy-cells.el=                  | syncing, editing commands, redrawing in place       |
+|     8 | =emjupy-kernel.el=                 | running cells, output arriving, reconnecting        |
+|     9 | =emjupy-remote.el=                 | where a server's files are: roots, tunnels, TRAMP   |
+|    10 | =emjupy-lsp.el=, =emjupy-eglot.el= | language support                                    |
+|    11 | =emjupy-mode.el=                   | what a notebook buffer turns on, and its keys       |
+|    12 | =emjupy-notebook.el=               | logging in, opening, saving, the menu               |
 
 Figures and widgets (=emjupy-figures.el=, =emjupy-widgets.el=,
 =emjupy-widget-page.el=) sit above the kernel layer and can be read

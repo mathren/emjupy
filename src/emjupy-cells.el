@@ -22,6 +22,7 @@
 (require 'cl-lib)
 (require 'emjupy-core)
 (require 'emjupy-render)
+(require 'emjupy-latex)
 
 (defvar python-indent-guess-indent-offset-verbose)
 
