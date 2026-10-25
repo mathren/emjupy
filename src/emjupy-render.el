@@ -1077,12 +1077,46 @@ Then put every header and footer where its cell now is."
   ;; gaps are protected.
   (emjupy--reconcile-rules))
 
+;;;; Text leaving and entering the buffer
+
+(defconst emjupy--internal-text-properties
+  '(emjupy-cell emjupy-pad emjupy-overlay)
+  "Text properties that belong to this buffer and must not travel.
+`emjupy-cell' holds the cell itself: yanked elsewhere, the text would
+claim a cell it has nothing to do with.")
+
+(defun emjupy--strip-internal-properties (string)
+  "Return STRING without emjupy's internal text properties.
+Faces stay, so yanked code still looks like code."
+  (let ((copy (copy-sequence string)))
+    (remove-list-of-text-properties 0 (length copy)
+                                    emjupy--internal-text-properties copy)
+    copy))
+
+(defun emjupy--filter-buffer-substring (beg end &optional delete)
+  "Return the text between BEG and END, fit to leave this buffer.
+DELETE is passed through to `buffer-substring--filter'."
+  (emjupy--strip-internal-properties
+   (buffer-substring--filter beg end delete)))
+
 ;;;; In a notebook buffer
 
 (defun emjupy-render-enable ()
-  "Draw the current notebook in the theme's colours, and refontify edits."
+  "Draw the current notebook in the theme's colours, and refontify edits.
+Keep emjupy's own text properties out of the kill ring, both ways."
   (emjupy--sync-theme-colors)
-  (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t))
+  (add-hook 'after-change-functions #'emjupy--refontify-after-change nil t)
+  ;; Everything leaving this buffer -- kill, copy, `M-w' -- goes through
+  ;; here, so the cell struct never reaches the kill ring.
+  (setq-local filter-buffer-substring-function
+              #'emjupy--filter-buffer-substring)
+  ;; And nothing arriving carries one either, for text killed before this
+  ;; was in place or copied from a notebook in an older session.
+  (setq-local yank-excluded-properties
+              (append emjupy--internal-text-properties
+                      (if (listp yank-excluded-properties)
+                          yank-excluded-properties
+                        nil))))
 
 (provide 'emjupy-render)
 ;;; emjupy-render.el ends here

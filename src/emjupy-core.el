@@ -68,6 +68,20 @@
 ;; globals are the registry of servers and the most recently used one, a default
 ;; for commands run outside a notebook.
 
+;;;; Options
+
+(defcustom emjupy-report-slow-hooks nil
+  "Report anything emjupy runs after a command that takes too long.
+
+When a number, any per-command work taking more than that many seconds
+is logged with the name of the function responsible.  0.05 is a good
+starting point.  This exists because a hang is hard to attribute from
+the outside: it says which of emjupy's hooks is the slow one, or --
+just as usefully -- that none of them is, and the time is going
+somewhere else entirely."
+  :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
+  :group 'emjupy)
+
 ;;;; Shared state
 
 (defvar emjupy--servers (make-hash-table :test 'equal)
@@ -245,6 +259,20 @@ without the relevant library (very common for `emacs-nox') will make
 `create-image' signal rather than degrade."
   (and (display-graphic-p)
        (image-type-available-p type)))
+
+;;;; Timing a hook
+
+(defun emjupy--timed (name fn &rest args)
+  "Call FN with ARGS, reporting if it takes longer than allowed.
+NAME is what gets reported."
+  (if (not (numberp emjupy-report-slow-hooks))
+      (apply fn args)
+    (let* ((start (float-time))
+           (value (apply fn args))
+           (elapsed (- (float-time) start)))
+      (when (> elapsed emjupy-report-slow-hooks)
+        (message "[emjupy] %s took %.0f ms" name (* 1000 elapsed)))
+      value)))
 
 ;;;; The cell at a position
 

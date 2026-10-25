@@ -670,6 +670,10 @@ buffer are folded in first, so nothing you have typed is lost."
   (emjupy--rerender-preserving-point)
   (message "[emjupy] Redrew the notebook."))
 
+(defun emjupy--refresh-rules-timed (&rest args)
+  "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
+  (apply #'emjupy--timed "rule refresh" #'emjupy--refresh-box-rules args))
+
 ;;;; In a notebook buffer
 
 (defun emjupy-redraw-enable ()
@@ -680,7 +684,10 @@ The number column narrows the page, and so does a resize.
 buffer-local copy would run once per buffer, each repeating the work."
   (add-hook 'display-line-numbers-mode-hook #'emjupy--line-numbers-toggled
             nil t)
-  (add-hook 'window-size-change-functions #'emjupy--window-size-changed))
+  (add-hook 'window-size-change-functions #'emjupy--window-size-changed)
+  ;; Outlines follow the window through splits and drags.
+  (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed
+            nil t))
 
 (provide 'emjupy-redraw)
 

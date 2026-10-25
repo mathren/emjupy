@@ -33,18 +33,6 @@
 
 ;;;; Options
 
-(defcustom emjupy-report-slow-hooks nil
-  "Report anything emjupy runs after a command that takes too long.
-
-When a number, any per-command work taking more than that many seconds
-is logged with the name of the function responsible.  0.05 is a good
-starting point.  This exists because a hang is hard to attribute from
-the outside: it says which of emjupy's hooks is the slow one, or --
-just as usefully -- that none of them is, and the time is going
-somewhere else entirely."
-  :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
-  :group 'emjupy)
-
 (defcustom emjupy-electric-pairs t
   "When non-nil, pair brackets and quotes as you type in cells.
 
@@ -67,54 +55,7 @@ buffer of it does.  Set to nil to leave the buffer with
 
 ;;;; Timing hooks
 
-(defun emjupy--timed (name fn &rest args)
-  "Call FN with ARGS, reporting if it takes longer than allowed.
-NAME is what gets reported."
-  (if (not (numberp emjupy-report-slow-hooks))
-      (apply fn args)
-    (let* ((start (float-time))
-           (value (apply fn args))
-           (elapsed (- (float-time) start)))
-      (when (> elapsed emjupy-report-slow-hooks)
-        (message "[emjupy] %s took %.0f ms" name (* 1000 elapsed)))
-      value)))
-
-(defun emjupy--capf ()
-  "Completion for the cell at point, on whichever transport is available."
-  (when emjupy-language-support
-    (emjupy--timed "completion" #'emjupy--cell-completion-at-point)))
-
-(defun emjupy--eldoc (callback &rest args)
-  "Report documentation for the cell at point to CALLBACK, passing ARGS on."
-  (when emjupy-language-support
-    (apply #'emjupy--timed "eldoc" #'emjupy--cell-eldoc-function
-           callback args)))
-
-(defun emjupy--refresh-rules-timed (&rest args)
-  "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
-  (apply #'emjupy--timed "rule refresh" #'emjupy--refresh-box-rules args))
-
 ;;;; Copying text out
-
-(defconst emjupy--internal-text-properties
-  '(emjupy-cell emjupy-pad emjupy-overlay)
-  "Text properties that belong to this buffer and must not travel.
-`emjupy-cell' holds the cell itself: yanked elsewhere, the text would
-claim a cell it has nothing to do with.")
-
-(defun emjupy--strip-internal-properties (string)
-  "Return STRING without emjupy's internal text properties.
-Faces stay, so yanked code still looks like code."
-  (let ((copy (copy-sequence string)))
-    (remove-list-of-text-properties 0 (length copy)
-                                    emjupy--internal-text-properties copy)
-    copy))
-
-(defun emjupy--filter-buffer-substring (beg end &optional delete)
-  "Return the text between BEG and END, fit to leave this buffer.
-DELETE is passed through to `buffer-substring--filter'."
-  (emjupy--strip-internal-properties
-   (buffer-substring--filter beg end delete)))
 
 ;;;; Keys
 
@@ -288,26 +229,8 @@ are on the `load-path' -- remove one, or put the one you want first."
   (when emjupy-electric-pairs
     (electric-pair-local-mode 1))
   (emjupy-render-enable)
-  ;; Outlines follow the window through splits and drags.
-  (add-hook 'window-configuration-change-hook #'emjupy--refresh-rules-timed
-            nil t)
-  ;; Completion and eldoc in code cells, through the shadow buffer: over the
-  ;; Jupyter server's `jupyter-lsp' first, a local server otherwise.
-  (add-hook 'completion-at-point-functions #'emjupy--capf nil t)
-  (add-hook 'eldoc-documentation-functions #'emjupy--eldoc nil t)
   (emjupy-commands-enable)
-  ;; Everything leaving this buffer -- kill, copy, `M-w' -- goes through
-  ;; here, so the cell struct never reaches the kill ring.
-  (setq-local filter-buffer-substring-function
-              #'emjupy--filter-buffer-substring)
-  ;; And nothing arriving carries one either, for text killed before this
-  ;; was in place or copied from a notebook in an older session.
-  (setq-local yank-excluded-properties
-              (append emjupy--internal-text-properties
-                      (if (listp yank-excluded-properties)
-                          yank-excluded-properties
-                        nil)))
-  (eldoc-mode 1))
+  (emjupy-eglot-completion-enable))
 
 (provide 'emjupy-mode)
 

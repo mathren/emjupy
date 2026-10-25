@@ -696,6 +696,19 @@ the answer lives."
       (setq buffer-read-only t)
       (display-buffer (current-buffer)))))
 
+;;;; Completion and eldoc in a notebook
+
+(defun emjupy--capf ()
+  "Completion for the cell at point, on whichever transport is available."
+  (when emjupy-language-support
+    (emjupy--timed "completion" #'emjupy--cell-completion-at-point)))
+
+(defun emjupy--eldoc (callback &rest args)
+  "Report documentation for the cell at point to CALLBACK, passing ARGS on."
+  (when emjupy-language-support
+    (apply #'emjupy--timed "eldoc" #'emjupy--cell-eldoc-function
+           callback args)))
+
 ;;;; In a notebook buffer
 
 (defun emjupy-eglot-enable ()
@@ -705,6 +718,15 @@ server; and \\[xref-find-definitions] gets a backend forwarding to the
 shadow buffer, where Eglot's is."
   (add-hook 'emjupy-kernel-connected-functions #'emjupy--refresh-kernel-cwd)
   (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t))
+
+(defun emjupy-eglot-completion-enable ()
+  "Turn on completion and eldoc in the current notebook's code cells.
+They go through the shadow buffer: over the Jupyter server's
+`jupyter-lsp' first, a local server otherwise.  Turned on last, as
+`eldoc-mode' adds its own command hooks after the other layers'."
+  (add-hook 'completion-at-point-functions #'emjupy--capf nil t)
+  (add-hook 'eldoc-documentation-functions #'emjupy--eldoc nil t)
+  (eldoc-mode 1))
 
 (provide 'emjupy-eglot)
 ;;; emjupy-eglot.el ends here
