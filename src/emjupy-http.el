@@ -25,15 +25,14 @@
 
 ;;;; Addresses
 
-(defun emjupy--server-parts (&optional server)
+(defun emjupy--server-parts (server)
   "Return a plist describing SERVER's base-url.
 Keys are :scheme, :ws-scheme, :host, :port and :path.  Accepts a bare
 port (\"8888\"), host:port, or an http(s) URL, with an optional base
 path that the WebSocket URL keeps too, as for a JupyterHub server at
 localhost:8888/user/alice."
-  (let* ((server (or server emjupy--current-server))
-         (raw (emjupy-server-base-url server))
-         (secure (string-prefix-p "https" raw))
+  (let* ((raw (emjupy-server-base-url server))
+         (secure (string-match-p "\\`https://" raw))
          (stripped (replace-regexp-in-string "\\`https?://" "" raw))
          (slash (string-match-p "/" stripped))
          (hostport (if slash (substring stripped 0 slash) stripped))
@@ -48,9 +47,9 @@ localhost:8888/user/alice."
           :ws-scheme (if secure "wss" "ws")
           :host host :port port :path path)))
 
-(defun emjupy--server-host-port ()
-  "Return (HOST . PORT) parsed from the current server's base-url."
-  (let ((p (emjupy--server-parts)))
+(defun emjupy--server-host-port (server)
+  "Return (HOST . PORT) parsed from SERVER's base-url."
+  (let ((p (emjupy--server-parts server)))
     (cons (plist-get p :host) (plist-get p :port))))
 
 ;;;; The XSRF cookie
@@ -60,12 +59,19 @@ localhost:8888/user/alice."
 Only HTML pages set it, not /api.  /login first: on a server wanting
 credentials, /tree only redirects there, without a cookie.")
 
+(defun emjupy--server-root-url (server)
+  "Return SERVER's base-url as a URL, with http:// unless it has a scheme.
+Only http:// and https:// are schemes: a host named, say, httpfoo is not."
+  (let ((base-url (emjupy-server-base-url server)))
+    (if (string-match-p "\\`https?://" base-url)
+        base-url
+      (concat "http://" base-url))))
+
 (defun emjupy--harvest-xsrf (server)
   "Fetch an `_xsrf' cookie for SERVER and remember it.  Return it, or nil.
 Raw, not through `emjupy--http-request': these answer with HTML."
-  (let* ((base-url (emjupy-server-base-url server))
+  (let* ((root (emjupy--server-root-url server))
          (token (emjupy-server-token server))
-         (prefix (if (string-prefix-p "http" base-url) "" "http://"))
          (found nil))
     (cl-loop for path in emjupy--xsrf-endpoints
              until found
@@ -87,7 +93,7 @@ Raw, not through `emjupy--http-request': these answer with HTML."
                               `(("Authorization" .
                                  ,(format "token %s" token)))))
                            (buffer (url-retrieve-synchronously
-                                    (concat prefix base-url path) t nil 5)))
+                                    (concat root path) t nil 5)))
                       (when buffer
                         (with-current-buffer buffer
                           (goto-char (point-min))
@@ -106,6 +112,8 @@ Raw, not through `emjupy--http-request': these answer with HTML."
 (define-error 'emjupy-http-error "Jupyter server request failed" 'file-error)
 (define-error 'emjupy-http-status "Jupyter server refused the request"
               'emjupy-http-error)
+(define-error 'emjupy-http-xsrf "Jupyter server rejected the XSRF cookie"
+  'emjupy-http-status)
 
 ;; A type of its own, so a caller catches the failure it expects -- a missing
 ;; file, an unreachable server -- and lets the rest through.  Under
@@ -258,8 +266,7 @@ server, the difference between Emacs waiting and not."
 A write carries the XSRF token as an argument too: Tornado reads an
 `_xsrf' argument or the X-XSRFToken header.  A GET carries the time, so
 no cache answers it."
-  (let* ((base-url (emjupy-server-base-url server))
-         (separator (if (string-match-p "\\?" path) "&" "?"))
+  (let* ((separator (if (string-match-p "\\?" path) "&" "?"))
          (xsrf-arg (if (and (not (string= method "GET"))
                             (emjupy-server-xsrf server))
                        (format "%s_xsrf=%s" separator
@@ -269,16 +276,13 @@ no cache answers it."
                            (format "%s_t=%s" separator (float-time))
                          "")))
     (emjupy--http-bytes
-     (concat (if (string-prefix-p "http" base-url) "" "http://")
-             base-url path xsrf-arg cache-buster))))
+     (concat (emjupy--server-root-url server) path xsrf-arg cache-buster))))
 
-(defun emjupy--http-request (method server path &optional body
-                                    callback retrying)
-  "Send a request to SERVER and return the parsed JSON response.
-METHOD is an HTTP method string, PATH the API path, BODY an optional
-request body.  CALLBACK, if given, makes the request asynchronous.
-Reports the HTTP status on failure, and carries SERVER's XSRF cookie.
-RETRYING is for the one retry after a rejected cookie."
+(defun emjupy--http-send (method server path body callback final)
+  "Send one METHOD request for PATH, with BODY, to SERVER.
+Asynchronous if CALLBACK is given.  A request refused for its XSRF
+cookie signals `emjupy-http-xsrf', unless FINAL: then it is reported as
+any refusal is."
   ;; A write needs an XSRF cookie unless the token authenticates us, and the
   ;; REST endpoints never hand one out -- so go and get one first.
   (unless (or (string= method "GET")
@@ -307,20 +311,29 @@ RETRYING is for the one retry after a rejected cookie."
                (status (or (car response) 200))
                (json-str (cdr response)))
           (if (and (= status 403)
-                   (not retrying)
+                   (not final)
                    (let ((case-fold-search t))
                      (string-match-p "xsrf" json-str)))
-              ;; A missing or rotated cookie is recoverable: fetch a fresh one
-              ;; and try once more, rather than making the user reconnect over
-              ;; a cookie that has simply aged out.
-              (progn
-                (setf (emjupy-server-xsrf server) nil)
-                (if (emjupy--harvest-xsrf server)
-                    (emjupy--http-request method server path body callback t)
-                  (signal 'emjupy-http-status
-                          (list (format "[Jupyter HTTP %d] %s" status method)
-                                json-str))))
+              (signal 'emjupy-http-xsrf
+                      (list (format "[Jupyter HTTP %d] %s" status method)
+                            json-str))
             (emjupy--http-interpret server method path status json-str)))))))
+
+(defun emjupy--http-request (method server path &optional body callback)
+  "Send a request to SERVER and return the parsed JSON response.
+METHOD is an HTTP method string, PATH the API path, BODY an optional
+request body.  CALLBACK, if given, makes the request asynchronous.
+Reports the HTTP status on failure, and carries SERVER's XSRF cookie."
+  (condition-case err
+      (emjupy--http-send method server path body callback nil)
+    ;; A missing or rotated cookie is recoverable: fetch a fresh one and try
+    ;; once more, rather than making the user reconnect over a cookie that
+    ;; has simply aged out.
+    (emjupy-http-xsrf
+     (setf (emjupy-server-xsrf server) nil)
+     (if (emjupy--harvest-xsrf server)
+         (emjupy--http-send method server path body callback t)
+       (signal 'emjupy-http-status (cdr err))))))
 
 ;;;; WebSocket authentication
 

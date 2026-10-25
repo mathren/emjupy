@@ -9093,6 +9093,23 @@ applied, and stale bars piled up."
     (should (equal (gethash "text" out) "b\nc"))))
 
 
+
+(ert-deftest emjupy-test-a-host-named-like-a-scheme-is-a-host ()
+  "Only http:// and https:// are schemes: a host named httpfoo is a host.
+Checked by its first letters, httpfoo:8888 was taken to have a scheme,
+and asked for as httpfoo:8888/api/..., which url.el cannot fetch; and
+httpsfoo:8888 was taken to be served over TLS."
+  (should (equal (emjupy--server-root-url
+                  (make-emjupy-server :base-url "httpfoo:8888"))
+                 "http://httpfoo:8888"))
+  (should (equal (plist-get (emjupy--server-parts
+                             (make-emjupy-server :base-url "httpsfoo:8888"))
+                            :scheme)
+                 "http"))
+  (should (equal (emjupy--server-root-url
+                  (make-emjupy-server :base-url "https://hub.example.org/u/a"))
+                 "https://hub.example.org/u/a")))
+
 ;;;; The docs name what exists
 
 (defconst emjupy-test--docs-directory
