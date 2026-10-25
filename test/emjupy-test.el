@@ -9092,5 +9092,35 @@ applied, and stale bars piled up."
     (emjupy--stream-write out "" "a\rb\nc")
     (should (equal (gethash "text" out) "b\nc"))))
 
+
+;;;; The docs name what exists
+
+(defconst emjupy-test--docs-directory
+  (expand-file-name "../docs/" (file-name-directory
+                                (or load-file-name buffer-file-name)))
+  "The docs beside the tests, whose names the tests check.")
+
+(ert-deftest emjupy-test-every-name-in-the-docs-exists ()
+  "Every emjupy name the docs write as code exists.
+A function, variable, face, customization group, struct, feature, error
+or test: so a rename or a removal that leaves the docs behind -- the
+reading guide names some sixty functions -- fails here, not in a
+reader's hands."
+  (skip-unless (file-directory-p emjupy-test--docs-directory))
+  (let (unknown)
+    (dolist (f (directory-files emjupy-test--docs-directory t "\\.org\\'"))
+      (with-temp-buffer
+        (insert-file-contents f)
+        (goto-char (point-min))
+        (while (re-search-forward "[=~]\\(emjupy-[a-z0-9-]*[a-z0-9]\\)[=~]"
+                                  nil t)
+          (let ((s (intern (match-string 1))))
+            (unless (or (fboundp s) (boundp s) (facep s)
+                        (get s 'custom-group) (get s 'error-conditions)
+                        (cl-find-class s) (featurep s) (ert-test-boundp s))
+              (push (format "%s: %s" (file-name-nondirectory f) s)
+                    unknown))))))
+    (should-not (delete-dups unknown))))
+
 (provide 'emjupy-test)
 ;;; emjupy-test.el ends here
