@@ -263,7 +263,7 @@ kept out of the history entirely."
         (should (null buffer-undo-list))
         ;; nor does re-aligning the outlines
         (let ((emjupy-box-width 60))
-          (emjupy--redraw-rules t))
+          (emjupy--redraw-rules :force t))
         (should (null buffer-undo-list))
         ;; a real edit does
         (goto-char (overlay-start (emjupy-cell-overlay

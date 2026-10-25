@@ -66,7 +66,7 @@ cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
 (defvar emjupy--session-id (emjupy--uuid)
   "Unique identifier for the current Emacs session.")
 
-(defun emjupy--make-execute-request (code &optional allow-stdin)
+(cl-defun emjupy--make-execute-request (code &key allow-stdin)
   "Return a Jupyter `execute_request' payload for CODE.
 The value is a cons of the message id and the serialized message.  With
 ALLOW-STDIN, the kernel may ask for input -- `input', `getpass', pdb --
@@ -616,7 +616,7 @@ kernels never cross-talk."
 
       ;; 3. Build execution payload
       (let* ((code (emjupy-cell-source cell))
-             (req (emjupy--make-execute-request code t))
+             (req (emjupy--make-execute-request code :allow-stdin t))
              (msg-id (car req))
              (json-payload (cdr req)))
 

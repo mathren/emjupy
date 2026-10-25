@@ -311,6 +311,10 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
 
 ;; --- Keeping the rules the right width ------------------------------------
 
+(defun emjupy--footer-rule ()
+  "Return the plain rule closing a cell's box."
+  (emjupy--rule nil))
+
 (defvar-local emjupy--last-box-width nil
   "Width the visible box rules were last drawn at.")
 
@@ -661,7 +665,7 @@ WIDEST is its widest line before folding, PIECES the outputs drawn."
          ;; "├" instead of "┌": this line IS the input box's bottom
          ;; edge, continuing straight into the output box's top edge.
          (header (emjupy--rule (emjupy--cell-out-label cell) "├"))
-         (footer (emjupy--rule nil)))
+         (footer (emjupy--footer-rule)))
     (overlay-put ov 'emjupy-overlay 'output)
     ;; What a resize needs: the width the lines were folded at, and the
     ;; widest line.  Output that fits both widths is not redrawn.
@@ -712,7 +716,7 @@ not the notebook."
         ((overlayp out) "")
         ((and (> (length outputs) 0) (emjupy--cell-outputs-hidden-p cell))
          (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
-        (t (emjupy--rule nil)))))))
+        (t (emjupy--footer-rule)))))))
 
 (defun emjupy--draw-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
@@ -755,7 +759,7 @@ not the notebook."
                     (hidden (emjupy--rule
                              (emjupy--hidden-output-label cell) 'footer))
                     (has-outputs "")
-                    (t (emjupy--rule nil)))))
+                    (t (emjupy--footer-rule)))))
       (overlay-put ov 'emjupy-overlay 'cell)
       (overlay-put ov 'emjupy-header nil)
       (overlay-put ov 'before-string header)

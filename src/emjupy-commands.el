@@ -105,15 +105,16 @@ Returns non-nil when it was done incrementally."
 
 ;;;; Cell commands
 
-(defun emjupy--insert-empty-cell (below)
-  "Insert an empty code cell next to the cell at point: BELOW it, or above."
+(defun emjupy--insert-empty-cell (where)
+  "Insert an empty code cell next to the cell at point.
+WHERE is `above' or `below'."
   (emjupy--as-one-undo-step
     (emjupy--sync-all-cells)
     (let* ((nb emjupy--buffer-notebook)
            (cells (append (emjupy-notebook-cells nb) nil))
            (idx (cl-position (emjupy--cell-at-point) cells))
-           (index (cond ((null idx) (if below (length cells) 0))
-                        (below (1+ idx))
+           (index (cond ((null idx) (if (eq where 'below) (length cells) 0))
+                        ((eq where 'below) (1+ idx))
                         (t idx)))
            (new-cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
                                        :source "" :outputs []
@@ -129,12 +130,12 @@ Returns non-nil when it was done incrementally."
 (defun emjupy-insert-cell-below ()
   "Insert a new empty code cell below the cell at point."
   (interactive)
-  (emjupy--insert-empty-cell t))
+  (emjupy--insert-empty-cell 'below))
 
 (defun emjupy-insert-cell-above ()
   "Insert a new empty code cell above the cell at point."
   (interactive)
-  (emjupy--insert-empty-cell nil))
+  (emjupy--insert-empty-cell 'above))
 
 (defun emjupy-move-cell-up ()
   "Move the cell at point up, swapping it with the cell above.

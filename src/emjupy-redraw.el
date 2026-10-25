@@ -190,7 +190,7 @@ anything else looks the same at either."
             (setq pos (next-single-property-change pos 'emjupy-pad
                                                    nil end))))))))
 
-(defun emjupy--redraw-rules (&optional force)
+(cl-defun emjupy--redraw-rules (&key force)
   "Redraw cell outlines at the current window width, if it changed.
 With FORCE non-nil, redraw even when the width is unchanged.  Only the
 overlay strings are rebuilt, so point, markers and undo are untouched."
@@ -215,13 +215,15 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
                       ;; A cell with output has no footer of its own: the
                       ;; output box's header doubles as its bottom edge.
                       (overlay-put ov 'after-string
-                                   (if (overlayp out) "" (emjupy--rule nil))))
+                                   (if (overlayp out)
+                                       ""
+                                     (emjupy--footer-rule))))
                     (when (overlayp out)
                       (overlay-put out 'emjupy-header nil)
                       (overlay-put out 'before-string
                                    (emjupy--rule (emjupy--cell-out-label cell)
                                                  "├"))
-                      (overlay-put out 'after-string (emjupy--rule nil))
+                      (overlay-put out 'after-string (emjupy--footer-rule))
                       ;; The output band is padded to a column, so it has to
                       ;; be re-aligned at the new width as well.
                       (let ((inhibit-read-only t)
@@ -236,7 +238,7 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
 The number column takes width from the page: rules drawn for the old
 width would wrap."
   (when emjupy--buffer-notebook
-    (emjupy--redraw-rules t)))
+    (emjupy--redraw-rules :force t)))
 
 (defun emjupy--window-size-changed (&optional _frame)
   "Refresh box rules in every emjupy buffer after a window size change."
@@ -387,7 +389,7 @@ updated cells."
           (emjupy--keeping-the-window
            (lambda () (emjupy--redraw-notebook-1 target-cell)))
         (emjupy--keeping-the-view
-         (lambda () (emjupy--redraw-notebook-1 nil)))))))
+         (lambda () (emjupy--redraw-notebook-1)))))))
 
 (defun emjupy--visible-from (pos)
   "Return POS, or the first visible position after it if it is hidden.
@@ -640,7 +642,7 @@ typing is unsynced.  The problems found are reported."
       (setq emjupy--integrity-timer nil)
       (when-let* ((problems (and emjupy--buffer-notebook
                                  (not emjupy--recovering)
-                                 (emjupy--check-invariants t))))
+                                 (emjupy--check-invariants :structure-only t))))
         (let ((emjupy--recovering t))
           (emjupy--sync-sound-cells)
           (setq emjupy--sync-refused nil)
@@ -670,9 +672,10 @@ buffer are folded in first, so nothing you have typed is lost."
   (emjupy--redraw-notebook-keeping-point)
   (message "[emjupy] Redrew the notebook."))
 
-(defun emjupy--redraw-rules-timed (&rest args)
-  "Refresh the cell rules, reporting if it is slow.  ARGS are passed on."
-  (apply #'emjupy--timed "rule refresh" #'emjupy--redraw-rules args))
+(defun emjupy--redraw-rules-timed (&rest _)
+  "Redraw the cell rules, reporting if it is slow.
+A hook calls it; what the hook passes is not needed."
+  (emjupy--timed "rule refresh" #'emjupy--redraw-rules))
 
 ;;;; In a notebook buffer
 

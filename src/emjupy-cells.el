@@ -102,7 +102,7 @@ its text is not compared with its source."
         (max (overlay-end ov) (overlay-end out))
       (overlay-end ov))))
 
-(defun emjupy--check-invariants (&optional structure-only)
+(cl-defun emjupy--check-invariants (&key structure-only)
   "Return a list of ways this buffer and its cells disagree, or nil.
 With STRUCTURE-ONLY, whether each cell's text matches its source is not
 checked: it is false while typing has not been synced.  The invariants:

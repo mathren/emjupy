@@ -651,9 +651,9 @@ would undo the typing, so only the structure is checked."
         ;; a broken structure: the second cell's overlay over the first
         (let ((ov (emjupy-cell-overlay (aref cells 1))))
           (move-overlay ov (point-min) (overlay-end ov)))
-        (should (emjupy--check-invariants t))
+        (should (emjupy--check-invariants :structure-only t))
         (emjupy--check-integrity buf)
-        (should-not (emjupy--check-invariants t))))))
+        (should-not (emjupy--check-invariants :structure-only t))))))
 
 (provide 'emjupy-cells-test)
 

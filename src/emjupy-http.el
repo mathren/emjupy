@@ -266,7 +266,7 @@ no cache answers it."
     (emjupy--http-bytes
      (concat (emjupy--server-root-url server) path xsrf-arg cache-buster))))
 
-(defun emjupy--http-send (method server path body callback final)
+(cl-defun emjupy--http-send (method server path body callback &key final)
   "Send one METHOD request for PATH, with BODY, to SERVER.
 Asynchronous if CALLBACK is given.  A request refused for its XSRF
 cookie signals `emjupy-http-xsrf', unless FINAL: then it is reported as
@@ -313,14 +313,14 @@ METHOD is an HTTP method string, PATH the API path, BODY an optional
 request body.  CALLBACK, if given, makes the request asynchronous.
 Reports the HTTP status on failure, and carries SERVER's XSRF cookie."
   (condition-case err
-      (emjupy--http-send method server path body callback nil)
+      (emjupy--http-send method server path body callback)
     ;; A missing or rotated cookie is recoverable: fetch a fresh one and try
     ;; once more, rather than making the user reconnect over a cookie that
     ;; has simply aged out.
     (emjupy-http-xsrf
      (setf (emjupy-server-xsrf server) nil)
      (if (emjupy--harvest-xsrf server)
-         (emjupy--http-send method server path body callback t)
+         (emjupy--http-send method server path body callback :final t)
        (signal 'emjupy-http-status (cdr err))))))
 
 ;;;; WebSocket authentication
