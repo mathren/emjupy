@@ -33,3 +33,4 @@ test_notebooks/.ipynb_checkpoints/*
 # shadow files
 .emjupy*
 test_notebooks/.emjupy*
+/emjupy-dev.skill

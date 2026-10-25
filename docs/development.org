@@ -207,6 +207,7 @@ The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs 
 | =make versions=      | which Emacs this is, against the one development targets                      |
 | =make clean=         | remove =.elc= files and the tar                                               |
 | =make timestamps=    | touch every source, to force a full rebuild                                   |
+| =make skill=         | the Claude skill in =tools/emjupy-dev/=, as =emjupy-dev.skill=                |
 
 * Continuous integration
 

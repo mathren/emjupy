@@ -39,7 +39,7 @@ SOURCES = $(addprefix $(SRC)/, emjupy-core.el emjupy-terminal.el emjupy-ipynb.el
 # before the Commentary.  MELPA leaves it out too.
 PKGFILES = $(SOURCES) $(SRC)/emjupy-pkg.el $(SRC)/emjupy-figure-window.py
 
-.PHONY: all compile test check lint checkdoc package-lint docs dependency-graph coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
+.PHONY: all compile test check lint checkdoc package-lint docs skill dependency-graph coverage set-version versions check-version package install clean timestamps print-package-files recipe-check
 
 all: compile
 
@@ -164,3 +164,9 @@ timestamps:
 clean:
 	rm -f $(SRC)/*.elc *.elc $(TAR)
 	rm -rf $(PKG)
+
+# The Claude skill for developing emjupy, from tools/emjupy-dev/, as the
+# .skill file Claude installs: built, not committed.
+skill:
+	rm -f emjupy-dev.skill
+	cd tools && python3 -m zipfile -c ../emjupy-dev.skill emjupy-dev
