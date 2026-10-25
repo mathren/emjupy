@@ -542,26 +542,6 @@ different cell; afterwards the typing must still be undoable."
 
 ;;;; The undo guard
 
-(ert-deftest emjupy-test-saved-progress-bar-renders-its-last-state ()
-  "A notebook saved by Jupyter shows the bar as it ended, not every update.
-
-Jupyter stores the stream exactly as written, so the bar comes back as
-all of its updates joined by carriage returns, and none of that passes
-through the path that handles output as it arrives."
-  (let ((cell (emjupy-test--cell-like
-               'code "x"
-               (vector (emjupy-test--stream-on
-                        "stderr"
-                        "\r0it [00:00]\r1it [00:01]\r2it [00:02]\n")))))
-    (emjupy-test--with-notebook (vector cell) buf nb
-      (with-current-buffer buf
-        (let* ((ov (emjupy-cell-output-ov cell))
-               (text (buffer-substring-no-properties (overlay-start ov)
-                                                     (overlay-end ov))))
-          (should (string-match-p "2it \\[00:02\\]" text))
-          (should-not (string-match-p "0it" text))
-          (should-not (string-match-p "\r" text)))))))
-
 (ert-deftest emjupy-test-output-after-the-reply-is-kept ()
   "An output that arrives after execute_reply still reaches its cell.
 

@@ -899,16 +899,6 @@ applied, and stale bars piled up."
           (should (equal (sort (hash-table-keys out) #'string<)
                          '("name" "output_type" "text"))))))))
 
-(ert-deftest emjupy-test-terminal-codes-keep-colours-and-plain-text-as-it-was ()
-  "Colour codes survive the cursor codes around them; text without any is unchanged."
-  ;; x written over the red r is red too, as on a terminal; the line below stays
-  (should (equal (car (emjupy--terminal-apply "" "\e[31mred\e[0m\n\e[1Ax" nil))
-                 "\e[31mxed\e[0m\n"))
-  ;; no cursor codes: the carriage-return rule, as before
-  (let ((out (make-hash-table :test 'equal)))
-    (emjupy--stream-write out "" "a\rb\nc")
-    (should (equal (gethash "text" out) "b\nc"))))
-
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

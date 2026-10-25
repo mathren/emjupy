@@ -230,23 +230,6 @@ through TRAMP, where the tunnel is not."
       (should-not (emjupy--ssh-host-forwarding 9999))
       (should (= runs 2)))))
 
-(ert-deftest emjupy-test-opening-from-the-listing-builds-the-tramp-root-once ()
-  "Opening a file from the notebook listing works out its TRAMP root once."
-  (let ((built 0) (opened nil)
-        (emjupy-list--server (make-emjupy-server :base-url "box:8888"
-                                                 :token "")))
-    (cl-letf (((symbol-function 'emjupy--configured-root-for)
-               (lambda (&rest _) nil))
-              ((symbol-function 'emjupy--server-side-root-for)
-               (lambda (&rest _) "/home/me"))
-              ((symbol-function 'emjupy--tramp-root-for)
-               (lambda (&rest _) (setq built (1+ built)) "/ssh:box:/home/me"))
-              ((symbol-function 'find-file) (lambda (f &rest _)
-                                              (setq opened f))))
-      (emjupy-list-open-file "data/table.csv"))
-    (should (= built 1))
-    (should (equal opened "/ssh:box:/home/me/data/table.csv"))))
-
 (provide 'emjupy-remote-test)
 
 ;;; emjupy-remote-test.el ends here

@@ -45,40 +45,7 @@ the fix?\" can be answered without recalling how it was installed."
     (should header)
     (should (equal header emjupy-version))))
 
-(ert-deftest emjupy-test-open-puts-point-at-the-top ()
-  "A freshly opened notebook starts at the top; one already open keeps
-where you were."
-  (should (string-match-p "already-open"
-                          (with-temp-buffer
-                            (insert-file-contents
-                             (expand-file-name "emjupy-notebook.el"
-                                               (file-name-directory
-                                                (or (locate-library "emjupy-notebook")
-                                                    default-directory))))
-                            (buffer-string)))))
-
 ;;;; Performance
-
-(ert-deftest emjupy-test-opening-a-notebook-has-the-mode ()
-  "Opening a notebook does not depend on emjupy.el having been loaded.
-`emjupy-open-notebook' is autoloaded from emjupy-notebook.el, so opening
-a notebook may load that file and what it requires, and nothing else.
-The mode, and the check for a mixed installation it runs, must come with
-it.  Checked in a fresh Emacs, where nothing else is loaded."
-  (let* ((here (file-name-directory (locate-library "emjupy-notebook")))
-         (websocket (file-name-directory (locate-library "websocket")))
-         (answer (with-temp-buffer
-                   (call-process (expand-file-name invocation-name
-                                                   invocation-directory)
-                                 nil t nil "-Q" "--batch" "-L" here "-L"
-                                 websocket
-                                 "-l" "emjupy-notebook"
-                                 "--eval" "(prin1 (list (fboundp 'emjupy-mode) (fboundp 'emjupy--warn-about-strays) (featurep 'emjupy)))")
-                   (goto-char (point-max))
-                   (backward-sexp)
-                   (read (current-buffer)))))
-    ;; the mode and its check are there; emjupy.el itself was not needed
-    (should (equal answer '(t t nil)))))
 
 ;;;; The undo guard
 
@@ -112,31 +79,6 @@ would silently stop guarding a command that still exists."
     (dolist (entry emjupy-test--undo-guard-exempt)
       (should (memq (car entry) bound)))))
 
-(ert-deftest emjupy-test-listing-sorts-by-recency-within-a-kind ()
-  "Each group in the dashboard reads most recently modified first.
-
-The notebook worked on this morning is the one wanted, and alphabetical
-order buries it among however many others share its prefix.  Grouping is
-unchanged -- directories, notebooks, then other files -- because what is
-being looked for is usually known by kind."
-  (cl-flet ((entry (kind name modified)
-              (list (list :kind kind :path name :modified modified)
-                    (vector kind name modified))))
-    (let* ((rows (list (entry 'notebook "alpha.ipynb" "2026-09-25T06:00:00Z")
-                       (entry 'notebook "zulu.ipynb" "2026-09-25T09:00:00Z")
-                       (entry 'notebook "middle.ipynb" "2026-09-25T07:00:00Z")))
-           (sorted (sort (copy-sequence rows)
-                         (lambda (a b)
-                           (let ((ta (or (plist-get (car a) :modified) ""))
-                                 (tb (or (plist-get (car b) :modified) "")))
-                             (if (equal ta tb)
-                                 (string-lessp (aref (cadr a) 1)
-                                               (aref (cadr b) 1))
-                               (string-greaterp ta tb)))))))
-      ;; newest first, regardless of name
-      (should (equal (mapcar (lambda (r) (aref (cadr r) 1)) sorted)
-                     '("zulu.ipynb" "middle.ipynb" "alpha.ipynb"))))))
-
 ;;;; The docs name what exists
 
 (ert-deftest emjupy-test-every-name-in-the-docs-exists ()
@@ -160,6 +102,7 @@ reader's hands."
               (push (format "%s: %s" (file-name-nondirectory f) s)
                     unknown))))))
     (should-not (delete-dups unknown))))
+
 
 (provide 'emjupy-package-test)
 

@@ -39,6 +39,7 @@
 (require 'emjupy-save-test)
 (require 'emjupy-shadow-test)
 (require 'emjupy-tramp-open-test)
+(require 'emjupy-terminal-test)
 (require 'emjupy-undo-test)
 (require 'emjupy-widget-page-test)
 (require 'emjupy-widgets-test)

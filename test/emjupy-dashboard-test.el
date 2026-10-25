@@ -210,6 +210,50 @@ notebook or going down into a folder elsewhere."
         (should (equal emjupy-list--path ""))
         (should (= refreshed 2))))))
 
+;;;; The listing
+
+(ert-deftest emjupy-test-listing-sorts-by-recency-within-a-kind ()
+  "Each group in the dashboard reads most recently modified first.
+
+The notebook worked on this morning is the one wanted, and alphabetical
+order buries it among however many others share its prefix.  Grouping is
+unchanged -- directories, notebooks, then other files -- because what is
+being looked for is usually known by kind."
+  (cl-flet ((entry (kind name modified)
+              (list (list :kind kind :path name :modified modified)
+                    (vector kind name modified))))
+    (let* ((rows (list (entry 'notebook "alpha.ipynb" "2026-09-25T06:00:00Z")
+                       (entry 'notebook "zulu.ipynb" "2026-09-25T09:00:00Z")
+                       (entry 'notebook "middle.ipynb" "2026-09-25T07:00:00Z")))
+           (sorted (sort (copy-sequence rows)
+                         (lambda (a b)
+                           (let ((ta (or (plist-get (car a) :modified) ""))
+                                 (tb (or (plist-get (car b) :modified) "")))
+                             (if (equal ta tb)
+                                 (string-lessp (aref (cadr a) 1)
+                                               (aref (cadr b) 1))
+                               (string-greaterp ta tb)))))))
+      ;; newest first, regardless of name
+      (should (equal (mapcar (lambda (r) (aref (cadr r) 1)) sorted)
+                     '("zulu.ipynb" "middle.ipynb" "alpha.ipynb"))))))
+
+(ert-deftest emjupy-test-opening-from-the-listing-builds-the-tramp-root-once ()
+  "Opening a file from the notebook listing works out its TRAMP root once."
+  (let ((built 0) (opened nil)
+        (emjupy-list--server (make-emjupy-server :base-url "box:8888"
+                                                 :token "")))
+    (cl-letf (((symbol-function 'emjupy--configured-root-for)
+               (lambda (&rest _) nil))
+              ((symbol-function 'emjupy--server-side-root-for)
+               (lambda (&rest _) "/home/me"))
+              ((symbol-function 'emjupy--tramp-root-for)
+               (lambda (&rest _) (setq built (1+ built)) "/ssh:box:/home/me"))
+              ((symbol-function 'find-file) (lambda (f &rest _)
+                                              (setq opened f))))
+      (emjupy-list-open-file "data/table.csv"))
+    (should (= built 1))
+    (should (equal opened "/ssh:box:/home/me/data/table.csv"))))
+
 (provide 'emjupy-dashboard-test)
 
 ;;; emjupy-dashboard-test.el ends here

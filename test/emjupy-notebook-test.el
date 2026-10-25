@@ -250,6 +250,122 @@ current buffer, the title never named a notebook."
               (should (equal (emjupy--menu-title) "emjupy")))))
       (kill-buffer notebook))))
 
+;;;; Exporting to Python
+
+(ert-deftest emjupy-test-export-py-writes-through-the-contents-api ()
+  "The default export goes to the server the notebook came from, through
+the same Contents API the notebook is read through -- which is what
+makes it work for a remote kernel with no TRAMP and no configuration."
+  (cl-flet ((mk (type src)
+              (make-emjupy-cell :id (emjupy--new-cell-id) :type type :source src
+                                :outputs [] :metadata (make-hash-table))))
+    (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+           (nb (make-emjupy-notebook :cells (vector (mk 'code "x = 1"))
+                                     :path "subdir/nb.ipynb" :server server))
+           (sent nil))
+      (emjupy-test--with-notebook (emjupy-notebook-cells nb) buf nb2
+        (with-current-buffer buf
+          (setf (emjupy-notebook-path emjupy--buffer-notebook)
+                "subdir/nb.ipynb")
+          (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
+          (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                    ((symbol-function 'emjupy--http-exists-p)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'emjupy--http-request)
+                     (lambda (method _s path &optional body &rest _)
+                       (setq sent (list method path body))
+                       t)))
+            (should (equal (emjupy-export-py) "subdir/nb.py")))
+          (pcase-let ((`(,method ,path ,body) sent))
+            (should (equal method "PUT"))
+            (should (equal path "/api/contents/subdir/nb.py"))
+            (let ((parsed (json-parse-string body :object-type 'hash-table)))
+              ;; a plain file, not a notebook
+              (should (equal (gethash "type" parsed) "file"))
+              (should (equal (gethash "format" parsed) "text"))
+              (should (string-match-p "x = 1"
+                                      (gethash "content" parsed))))))))))
+
+(ert-deftest emjupy-test-export-py-refuses-to-clobber ()
+  "An existing file is not overwritten without asking."
+  (cl-flet ((mk (type src)
+              (make-emjupy-cell :id (emjupy--new-cell-id) :type type :source src
+                                :outputs [] :metadata (make-hash-table))))
+    (let ((server (make-emjupy-server :base-url "localhost:8888" :token "t")))
+      (emjupy-test--with-notebook (vector (mk 'code "x = 1")) buf nb
+        (with-current-buffer buf
+          (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+          (setf (emjupy-notebook-server emjupy--buffer-notebook) server)
+          (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                    ((symbol-function 'emjupy--http-exists-p)
+                     (lambda (&rest _) t))
+                    ((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
+                    ((symbol-function 'emjupy--http-request)
+                     (lambda (&rest _) (error "should not have written"))))
+            (should-error (emjupy-export-py) :type 'user-error)))))))
+
+(ert-deftest emjupy-test-export-py-picks-up-unsaved-edits ()
+  "Exporting syncs the buffer first, so what you see is what is written."
+  (let ((cell (make-emjupy-cell :id (emjupy--new-cell-id) :type 'code
+                                :source "x = 1"
+                                :outputs [] :metadata (make-hash-table)))
+        (written nil))
+    (emjupy-test--with-notebook (vector cell) buf nb
+      (with-current-buffer buf
+        (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
+        (setf (emjupy-notebook-server emjupy--buffer-notebook)
+              (make-emjupy-server :base-url "localhost:8888" :token "t"))
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (end-of-line)
+        (insert " + 41")
+        (cl-letf (((symbol-function 'read-string) (lambda (_p d &rest _) d))
+                  ((symbol-function 'emjupy--http-exists-p)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'emjupy--http-request)
+                   (lambda (_m _s _p &optional body &rest _)
+                     (setq written (gethash "content"
+                                            (json-parse-string
+                                             body
+                                             :object-type 'hash-table)))
+                     t)))
+          (emjupy-export-py))
+        (should (string-match-p (regexp-quote "x = 1 + 41") written))))))
+
+;;;; Opening a notebook
+
+(ert-deftest emjupy-test-open-puts-point-at-the-top ()
+  "A freshly opened notebook starts at the top; one already open keeps
+where you were."
+  (should (string-match-p "already-open"
+                          (with-temp-buffer
+                            (insert-file-contents
+                             (expand-file-name "emjupy-notebook.el"
+                                               (file-name-directory
+                                                (or (locate-library "emjupy-notebook")
+                                                    default-directory))))
+                            (buffer-string)))))
+
+(ert-deftest emjupy-test-opening-a-notebook-has-the-mode ()
+  "Opening a notebook does not depend on emjupy.el having been loaded.
+`emjupy-open-notebook' is autoloaded from emjupy-notebook.el, so opening
+a notebook may load that file and what it requires, and nothing else.
+The mode, and the check for a mixed installation it runs, must come with
+it.  Checked in a fresh Emacs, where nothing else is loaded."
+  (let* ((here (file-name-directory (locate-library "emjupy-notebook")))
+         (websocket (file-name-directory (locate-library "websocket")))
+         (answer (with-temp-buffer
+                   (call-process (expand-file-name invocation-name
+                                                   invocation-directory)
+                                 nil t nil "-Q" "--batch" "-L" here "-L"
+                                 websocket
+                                 "-l" "emjupy-notebook"
+                                 "--eval" "(prin1 (list (fboundp 'emjupy-mode) (fboundp 'emjupy--warn-about-strays) (featurep 'emjupy)))")
+                   (goto-char (point-max))
+                   (backward-sexp)
+                   (read (current-buffer)))))
+    ;; the mode and its check are there; emjupy.el itself was not needed
+    (should (equal answer '(t t nil)))))
+
 (provide 'emjupy-notebook-test)
 
 ;;; emjupy-notebook-test.el ends here
