@@ -228,6 +228,7 @@ are on the `load-path' -- remove one, or put the one you want first."
   ;; `fundamental-mode' does not.
   (when emjupy-electric-pairs
     (electric-pair-local-mode 1))
+  (emjupy-faces-enable)
   (emjupy-render-enable)
   (emjupy-commands-enable)
   (emjupy-eglot-completion-enable))

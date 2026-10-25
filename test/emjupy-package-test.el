@@ -173,6 +173,29 @@ added leaves it behind without failing anything else."
         (push f before)))
     (should-not (nreverse problems))))
 
+
+(ert-deftest emjupy-test-loading-changes-nothing ()
+  "Loading emjupy defines things and changes nothing else.
+Not Eglot's commands, nor the theme hooks: a notebook opening does that.
+Checked in a fresh Emacs, as this one has opened notebooks."
+  (let* ((emacs (expand-file-name invocation-name invocation-directory))
+         (program "(progn
+  (require 'emjupy)
+  (princ (list (seq-some (lambda (c)
+                           (advice-member-p #'emjupy--eglot-command-advice c))
+                         emjupy-eglot-delegated-commands)
+               (and (boundp 'enable-theme-functions)
+                    (memq #'emjupy--on-theme-change
+                          enable-theme-functions)))))")
+         (args (append '("-batch" "-Q")
+                       (mapcan (lambda (d) (list "-L" d))
+                               (seq-filter #'file-directory-p load-path))
+                       (list "--eval" program)))
+         (out (with-temp-buffer
+                (apply #'call-process emacs nil t nil args)
+                (buffer-string))))
+    (should (string-suffix-p "(nil nil)" (string-trim out)))))
+
 (provide 'emjupy-package-test)
 
 ;;; emjupy-package-test.el ends here

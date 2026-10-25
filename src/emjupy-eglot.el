@@ -510,8 +510,13 @@ symbol under the real cursor."
    ;; the Jupyter WebSocket with jupyter-lsp, a local process otherwise.
    (t (emjupy-eglot-delegate (lambda () (apply orig args))))))
 
+(defvar emjupy--eglot-advice-installed nil
+  "Non-nil once Eglot's commands have been advised in this session.
+The first notebook advises them; one removed by hand stays removed.")
+
 (defun emjupy-eglot-install-advice ()
   "Advise `emjupy-eglot-delegated-commands' to work inside notebooks."
+  (setq emjupy--eglot-advice-installed t)
   (dolist (cmd emjupy-eglot-delegated-commands)
     (advice-add cmd :around #'emjupy--eglot-command-advice)))
 
@@ -519,8 +524,6 @@ symbol under the real cursor."
   "Undo `emjupy-eglot-install-advice'."
   (dolist (cmd emjupy-eglot-delegated-commands)
     (advice-remove cmd #'emjupy--eglot-command-advice)))
-
-(emjupy-eglot-install-advice)
 
 ;;;; Completion and eldoc
 
@@ -726,7 +729,10 @@ the answer lives."
   "Wire language support into the current notebook buffer.
 When a kernel attaches, it is asked where it runs, for the language
 server; and \\[xref-find-definitions] gets a backend forwarding to the
-shadow buffer, where Eglot's is."
+shadow buffer, where Eglot's is.  Eglot's commands are advised to work
+here, once a session: see `emjupy-eglot-install-advice'."
+  (unless emjupy--eglot-advice-installed
+    (emjupy-eglot-install-advice))
   (add-hook 'emjupy-kernel-connected-functions #'emjupy--refresh-kernel-cwd)
   (add-hook 'xref-backend-functions #'emjupy--xref-backend nil t))
 

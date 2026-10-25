@@ -280,10 +280,15 @@ buffer's own background is never touched."
   "Re-derive emjupy's page colours after a theme is enabled or disabled."
   (emjupy--sync-theme-colors))
 
-(when (boundp 'enable-theme-functions)
-  (add-hook 'enable-theme-functions #'emjupy--on-theme-change))
-(when (boundp 'disable-theme-functions)
-  (add-hook 'disable-theme-functions #'emjupy--on-theme-change))
+;;;; In a notebook buffer
+
+(defun emjupy-faces-enable ()
+  "Follow the theme: re-derive emjupy's colours on enabling or disabling one.
+The theme hooks are global, and adding to them again does nothing."
+  (when (boundp 'enable-theme-functions)
+    (add-hook 'enable-theme-functions #'emjupy--on-theme-change))
+  (when (boundp 'disable-theme-functions)
+    (add-hook 'disable-theme-functions #'emjupy--on-theme-change)))
 
 (provide 'emjupy-faces)
 

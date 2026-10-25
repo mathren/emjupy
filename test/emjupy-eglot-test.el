@@ -188,9 +188,15 @@ reason the shadow buffer exists."
               (when (buffer-live-p shadow) (kill-buffer shadow)))))))))
 
 (ert-deftest emjupy-test-eglot-advice-installed-on-the-listed-commands ()
-  "Every command in `emjupy-eglot-delegated-commands' is actually advised."
-  (dolist (cmd emjupy-eglot-delegated-commands)
-    (should (advice-member-p #'emjupy--eglot-command-advice cmd))))
+  "With a notebook open, every listed command is advised.
+`emjupy-eglot-delegated-commands' are advised when the first notebook
+opens, not when emjupy loads."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf _nb
+    (ignore buf)
+    (dolist (cmd emjupy-eglot-delegated-commands)
+      (should (advice-member-p #'emjupy--eglot-command-advice cmd)))))
 
 (ert-deftest emjupy-test-xref-backend-only-in-notebooks ()
   "The xref backend announces itself only where there is a notebook."
