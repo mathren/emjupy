@@ -90,7 +90,7 @@ place around them.
    (cells), which draws only the new text when it can
    (=emjupy--append-stream-output=) and the cell's output box otherwise.
    Escape codes in a stream -- progress bars -- are applied by
-   =emjupy--terminal-apply= (render).
+   =emjupy--terminal-apply= (terminal).
 
 ** Editing the cells
 1. A structural command, =emjupy-split-cell= say (cells), wraps its work
@@ -100,7 +100,7 @@ place around them.
    inside =emjupy--atomic-redraw=: a redraw finishes, or the notebook is
    redrawn from its cells at once.
 3. Positions in the undo history after the change are shifted by
-   =emjupy--undo-adjust= (render), which knows every entry shape
+   =emjupy--undo-adjust= (undo), which knows every entry shape
    =buffer-undo-list= can hold.
 
 ** Saving
@@ -130,7 +130,7 @@ starts =emjupy--try-reconnect=; on reconnecting,
 server replays what they missed.
 
 ** A notebook opened through TRAMP
-=emjupy-open-this-notebook= (notebook) on a TRAMP file takes the route
+=emjupy-open-this-notebook= (tramp-open) on a TRAMP file takes the route
 from TRAMP with =emjupy--ssh-route=, finds or starts a Jupyter server
 there, opens a tunnel with =emjupy--open-tunnel=, and opens the notebook
 on it.  How a server's files are reached in general is
@@ -149,10 +149,14 @@ them deserves the slowest reading:
   sends, and which cell it belongs to.
 - =emjupy--reconcile-rules= (render): the rules drawn so line numbers
   fall on code, not on the box lines.
-- =emjupy--undo-adjust= (render) and =emjupy--as-one-undo-step= (cells):
+- =emjupy--undo-adjust= (undo) and =emjupy--as-one-undo-step= (redraw):
   undo across redraws.  A wrong position here does not fail; it
-  rewrites the wrong text.
-- =emjupy--terminal-apply= (render): a small terminal emulator, for
+  rewrites the wrong text.  They are in two files on purpose:
+  =emjupy--undo-adjust= keeps positions right for the redraws, so it is
+  below them; the undo step is with the full redraw, as undoing a step
+  redraws the notebook and a full redraw records a step -- three
+  functions calling each other, which no file boundary could split.
+- =emjupy--terminal-apply= (terminal): a small terminal emulator, for
   progress bars.
 
 * Reading with the tools

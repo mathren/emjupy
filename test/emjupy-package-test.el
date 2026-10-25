@@ -104,6 +104,33 @@ reader's hands."
     (should-not (delete-dups unknown))))
 
 
+(ert-deftest emjupy-test-the-docs-say-where-things-are ()
+  "Where the docs say a name is defined -- =NAME= (FILE) -- it is.
+The reading guide places functions in their files, and moving one
+leaves the guide behind without failing anything else."
+  (skip-unless (file-directory-p emjupy-test--docs-directory))
+  (let ((src (expand-file-name "../src/" emjupy-test--docs-directory))
+        (wrong nil))
+    (dolist (f (directory-files emjupy-test--docs-directory t "\\.org\\'"))
+      (with-temp-buffer
+        (insert-file-contents f)
+        (goto-char (point-min))
+        (while (re-search-forward
+                "=\\(emjupy-[a-z0-9-]*[a-z0-9]\\)=,? (\\([a-z-]+\\))" nil t)
+          (let* ((name (intern (match-string 1)))
+                 (claimed (concat "emjupy-" (match-string 2)))
+                 (defined (or (symbol-file name 'defun)
+                              (symbol-file name 'defvar))))
+            (when (and defined
+                       (file-exists-p (expand-file-name (concat claimed ".el")
+                                                        src))
+                       (not (equal (file-name-base defined) claimed)))
+              (push (format "%s: %s is in %s, not %s"
+                            (file-name-nondirectory f) name
+                            (file-name-base defined) claimed)
+                    wrong))))))
+    (should-not wrong)))
+
 (provide 'emjupy-package-test)
 
 ;;; emjupy-package-test.el ends here

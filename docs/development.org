@@ -101,6 +101,11 @@ things are put:
   The redraws needing that -- a cell's output in place, every output on
   a width change -- are in the redraw layer, so putting one right is a
   plain call.
+- Undo is in two files.  emjupy-undo.el keeps the positions in the undo
+  history right when a redraw moves text, and the redraws use it, so it
+  is low.  The undo step a cell command records is in emjupy-redraw.el:
+  undoing a step redraws the notebook, and a full redraw records a step,
+  so the step and the full redraw call each other and share a file.
 - A keymap is defined whole where it is made: the output maps in the
   drawing layer, the mode's map in emjupy-mode.el, the menu in
   emjupy-notebook.el.

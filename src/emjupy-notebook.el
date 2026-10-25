@@ -36,8 +36,6 @@
 (require 'emjupy-mode)
 (require 'emjupy-save)
 
-(defvar python-indent-guess-indent-offset-verbose)
-
 ;;;; Options
 
 (defcustom emjupy-default-port "8888"
