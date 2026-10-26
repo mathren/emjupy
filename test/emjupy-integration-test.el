@@ -1257,6 +1257,42 @@ It was refused, the notebook said to have no kernel."
                        (string-match-p "after the drop 7"
                                        (emjupy-int--stdout cell))))))))))
 
+(ert-deftest emjupy-int-a-dead-tunnel-is-reopened-mid-run ()
+  "A notebook's SSH tunnel dying mid-run is reopened, and nothing is lost.
+emjupy reopens the tunnel it opened, on the same port, and the server
+replays what the cell printed meanwhile.  Same settings as
+`emjupy-int-a-notebook-through-tramp-opens-on-its-machine'."
+  (let ((file (getenv "EMJUPY_TEST_SSH_NOTEBOOK"))
+        (env (getenv "EMJUPY_TEST_SSH_ENV")))
+    (unless (and file env)
+      (ert-skip "EMJUPY_TEST_SSH_NOTEBOOK and EMJUPY_TEST_SSH_ENV not set"))
+    (let* ((emjupy-language-support nil)
+           (buf (emjupy-int--open-through-tramp file env)))
+      (unwind-protect
+          (with-current-buffer buf
+            (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+            (let ((cell (seq-find (lambda (c) (eq (emjupy-cell-type c) 'code))
+                                  (emjupy-notebook-cells (emjupy--notebook)))))
+              (setf (emjupy-cell-source cell)
+                    "import time\nfor i in range(40):\n    print('t%d' % i, flush=True)\n    time.sleep(0.15)")
+              (emjupy--redraw-notebook cell)
+              (goto-char (overlay-start (emjupy-cell-overlay cell)))
+              (emjupy-execute-cell-at-point)
+              (emjupy-int--pump 2)
+              (dolist (tunnel emjupy--remote-tunnels)
+                (when (process-live-p (plist-get tunnel :process))
+                  (signal-process (plist-get tunnel :process) 'KILL)))
+              (should (emjupy-int--pump
+                       60 (lambda ()
+                            (string-match-p "t39" (emjupy-int--stdout cell)))))
+              (should (equal (mapcar (lambda (l)
+                                       (string-to-number (substring l 1)))
+                                     (split-string (emjupy-int--stdout cell)
+                                                   "\n" t))
+                             (number-sequence 0 39)))))
+        (let ((kill-buffer-query-functions nil))
+          (kill-buffer buf))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

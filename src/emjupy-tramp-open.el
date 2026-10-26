@@ -338,14 +338,8 @@ message saying so: they are not handled yet."
                            (process-live-p (plist-get tunnel :process)))
                  return (plist-get tunnel :port))
         (let* ((port (emjupy--free-port))
-               (output (generate-new-buffer (format " *emjupy tunnel %s*"
-                                                    (plist-get route :host))))
-               (process (let ((default-directory temporary-file-directory))
-                          (make-process :name "emjupy-tunnel" :buffer output
-                                        :noquery t
-                                        :command (emjupy--tunnel-command
-                                                  route
-                                                  port remote-port))))
+               (process (emjupy--start-tunnel route port remote-port))
+               (output (process-buffer process))
                (deadline (+ (float-time) 30)))
           ;; Up when something answers on the local port, or failed when ssh
           ;; exits.
@@ -365,9 +359,41 @@ message saying so: they are not handled yet."
                               (plist-get route :host))
                 (user-error "The tunnel to %s did not open: %s"
                             (plist-get route :host) said))))
-          (push (list :key key :process process :port port)
+          (push (list :key key :process process :port port
+                      :route route :remote-port remote-port)
                 emjupy--remote-tunnels)
+          ;; Should it die, reconnecting reopens it.
+          (add-hook 'emjupy-reconnect-functions #'emjupy--reopen-tunnel)
           port))))
+
+(defun emjupy--start-tunnel (route port remote-port)
+  "Start ssh forwarding local PORT to REMOTE-PORT along ROUTE.
+Return its process; what ssh says goes to its buffer."
+  (let ((default-directory temporary-file-directory))
+    (make-process :name "emjupy-tunnel"
+                  :buffer (generate-new-buffer
+                           (format " *emjupy tunnel %s*"
+                                   (plist-get route :host)))
+                  :noquery t
+                  :command (emjupy--tunnel-command route port remote-port))))
+
+(defun emjupy--reopen-tunnel (server)
+  "Reopen the tunnel SERVER is reached by, on the same port, if it died.
+Not waited for: the reconnect calling this finds it up on a later try.
+A server not reached by a tunnel of emjupy's is left alone."
+  (let ((tunnel (cl-find-if
+                 (lambda (tn)
+                   (and (equal (emjupy-server-host server) "127.0.0.1")
+                        (equal (emjupy-server-port server)
+                               (number-to-string (plist-get tn :port)))))
+                 emjupy--remote-tunnels)))
+    (when (and tunnel (not (process-live-p (plist-get tunnel :process))))
+      (message "[emjupy] Reopening the tunnel to %s..."
+               (plist-get (plist-get tunnel :route) :host))
+      (plist-put tunnel :process
+                 (emjupy--start-tunnel (plist-get tunnel :route)
+                                       (plist-get tunnel :port)
+                                       (plist-get tunnel :remote-port))))))
 
 (defun emjupy--close-tunnel-if-unused (server)
   "Close the tunnel to SERVER if no notebook it serves is open.

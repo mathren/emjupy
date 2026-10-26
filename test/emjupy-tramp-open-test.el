@@ -186,6 +186,28 @@ the kernels, it left running."
           (should-not emjupy--local-servers))
       (when (process-live-p process) (delete-process process)))))
 
+
+(ert-deftest emjupy-test-a-dead-tunnel-is-reopened-on-its-port ()
+  "A tunnel that died is started again on the port its server is reached at.
+The same port keeps the server's address good, so its kernel's
+connection, and what the server kept for it, come back.  A live tunnel,
+or another server's, is left alone."
+  (let* ((dead (make-process :name "emjupy-test-dead" :command '("true")))
+         (route '(:host "rbox" :jumps "bhost"))
+         (emjupy--remote-tunnels
+          (list (list :key "k" :process dead :port 41234
+                      :route route :remote-port 8888)))
+         (started nil))
+    (while (process-live-p dead) (accept-process-output dead 0.05))
+    (cl-letf (((symbol-function 'emjupy--start-tunnel)
+               (lambda (&rest args) (push args started) 'new-process)))
+      (emjupy--reopen-tunnel (make-emjupy-server :base-url "127.0.0.1:9999"))
+      (should-not started)
+      (emjupy--reopen-tunnel (make-emjupy-server :base-url "127.0.0.1:41234"))
+      (should (equal started (list (list route 41234 8888))))
+      (should (eq (plist-get (car emjupy--remote-tunnels) :process)
+                  'new-process)))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

@@ -912,6 +912,8 @@ sent to the kernel."
                                                          :source "x = 1"))
        buf nb
      (let ((,live-var nil) (,sent-var nil))
+       (setf (emjupy-notebook-server nb)
+             (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
        (setf (emjupy-notebook-kernel nb)
              (make-emjupy-kernel :id "k" :notebook nb
                                  :pending (make-hash-table :test 'equal)))
@@ -953,6 +955,51 @@ left the kernel being reconnected to, and everything defined in it."
                            (- (float-time) 1) "nb")
     (should-not sent)
     (should-not emjupy--runs-waiting)))
+
+
+(ert-deftest emjupy-test-reconnecting-restores-the-way-first ()
+  "Each attempt to reconnect first asks for the way to the server back.
+`emjupy-reconnect-functions' get the server, then the connection is tried:
+a tunnel reopened there is what the attempt connects through."
+  (emjupy-test--reconnecting live sent
+    (ignore sent)
+    (let ((order nil) (server (emjupy-notebook-server (emjupy--notebook))))
+      (cl-letf (((symbol-function 'emjupy-connect-kernel)
+                 (lambda (&rest _) (push 'connect order))))
+        (let ((emjupy-reconnect-functions
+               (list (lambda (s) (push (list 'restore (eq s server)) order)))))
+          (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                 (+ (float-time) 30) "nb")))
+      (should (equal (reverse order) '((restore t) connect))))))
+
+(ert-deftest emjupy-test-reconnecting-by-hand-keeps-trying ()
+  "C-c C-x C-c that cannot connect at once keeps trying, as after a drop.
+It failed with a raw \"Connection refused\" -- the way to the server, a
+tunnel, needing a moment to come back."
+  (emjupy-test--reconnecting live sent
+    (ignore sent)
+    (cancel-timer emjupy--reconnect-timer)
+    (setq emjupy--reconnect-timer nil)
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'emjupy-connect-kernel)
+                 (lambda (&rest _) (error "Connection refused")))
+                ((symbol-function 'emjupy--disconnect-kernel) #'ignore)
+                ((symbol-function 'emjupy--repair-if-scrambled) #'ignore))
+        (let ((emjupy-reconnect-functions (list (lambda (_) (setq asked t)))))
+          (emjupy-reconnect-kernel)))
+      (should asked)
+      (should (timerp emjupy--reconnect-timer)))))
+
+(ert-deftest emjupy-test-a-cell-on-a-dropped-connection-says-so ()
+  "Running a cell whose kernel's connection is down says so, not \"no kernel\".
+The kernel is there; \\[emjupy-reconnect-kernel] reaches it again."
+  (emjupy-test--reconnecting live sent
+    (ignore sent)
+    (cancel-timer emjupy--reconnect-timer)
+    (setq emjupy--reconnect-timer nil)
+    (let ((err (should-error (emjupy-execute-cell-at-point) :type 'user-error)))
+      (should (string-match-p "connection to this notebook's kernel is down"
+                              (cadr err))))))
 
 (provide 'emjupy-kernel-test)
 

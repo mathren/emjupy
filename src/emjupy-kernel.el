@@ -588,6 +588,18 @@ kernels never cross-talk."
 
 ;;;; While reconnecting
 
+(defvar emjupy-reconnect-functions nil
+  "Functions called with a server before each attempt to reconnect to it.
+A layer keeping the way to a server open -- an SSH tunnel -- restores it
+here.  Each is called with the `emjupy-server', and should not wait: the
+attempt after finds what it restored.")
+
+(defun emjupy--restore-way-to (server)
+  "Run `emjupy-reconnect-functions' for SERVER, reporting what fails."
+  (when server
+    (with-demoted-errors "[emjupy] Restoring the way to the server: %S"
+      (run-hook-with-args 'emjupy-reconnect-functions server))))
+
 (defvar-local emjupy--kept-runs nil
   "Requests running when this notebook's connection dropped, kept.
 A cons of the kernel id and a table of request id to cell, handed to the
@@ -623,6 +635,10 @@ They run when it is back, as each reads then; if it is not, they do not.")
           (setq emjupy--runs-waiting (append emjupy--runs-waiting (list cell))))
         (message "[emjupy] Reconnecting to the kernel; the cell runs when it is back.")
         (cl-return-from emjupy-execute-cell-at-point cell)))
+    (when (and kernel (emjupy-kernel-id kernel)
+               (not (emjupy--ws-live-p kernel)))
+      (user-error "The connection to this notebook's kernel is down: %s reconnects"
+                  (substitute-command-keys "\\[emjupy-reconnect-kernel]")))
     (unless (emjupy--ws-live-p kernel)
       (user-error "This notebook has no kernel! Use %s to select or start one"
                   (substitute-command-keys "\\[emjupy-connect-kernel-interactive]")))
@@ -844,6 +860,7 @@ ended as a closed connection ends them."
           ;; that does not closes, and this tries again.  Any error counts as
           ;; one more try: `websocket-open' reports a refused connection as a
           ;; plain error.
+          (emjupy--restore-way-to (emjupy-notebook-server nb))
           (condition-case nil
               (emjupy-connect-kernel nb kernel-id kernel-name)
             (error nil))))))))
@@ -1132,12 +1149,27 @@ kernel's state is intact, only Emacs's socket needs re-establishing."
     (unless (and kernel (emjupy-kernel-id kernel))
       (user-error "This notebook has no kernel to reconnect to"))
     (let ((id (emjupy-kernel-id kernel))
-          (name (emjupy-kernel-name kernel)))
+          (name (emjupy-kernel-name kernel))
+          (label (emjupy-notebook-path nb)))
       (emjupy--disconnect-kernel nb)
-      (emjupy-connect-kernel nb id name)
+      (emjupy--restore-way-to (emjupy-notebook-server nb))
+      (condition-case err
+          (emjupy-connect-kernel nb id name)
+        (error
+         ;; The way to the server may be coming back -- a tunnel reopening:
+         ;; keep trying, as after a dropped connection.
+         (unless emjupy-reconnect-window
+           (user-error "[emjupy] Could not reach the kernel's server: %s"
+                       (error-message-string err)))
+         (when (timerp emjupy--reconnect-timer)
+           (cancel-timer emjupy--reconnect-timer))
+         (setq emjupy--reconnect-timer
+               (run-with-timer 3 3 #'emjupy--try-reconnect (current-buffer)
+                               id name
+                               (+ (float-time) emjupy-reconnect-window)
+                               label))))
       (emjupy--repair-if-scrambled nb)
-      (message "[emjupy] Reconnecting %s to kernel %s..."
-               (emjupy-notebook-path nb) id))))
+      (message "[emjupy] Reconnecting %s to kernel %s..." label id))))
 
 ;;;; In a notebook buffer
 
