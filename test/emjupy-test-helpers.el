@@ -651,8 +651,10 @@ Return (ADDRESS-OR-NIL . PIECES-ASKED)."
               ((symbol-function 'run-at-time)
                (lambda (_time _repeat fn &rest args) (apply fn args)))
               ((symbol-function 'message) #'ignore))
-      (emjupy--plotly-js-fetch 'kernel file (length js) 0 nil
-                               (lambda (url) (setq address url)) 100000)
+      (emjupy--plotly-js-fetch
+       (emjupy--plotly-fetch-make :kernel 'kernel :file file :size (length js)
+                                  :callback (lambda (url) (setq address url))
+                                  :chunk 100000))
       (prog1 (cons (and address
                         (with-temp-buffer (insert-file-contents file)
                                           (buffer-string)))

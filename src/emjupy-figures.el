@@ -242,37 +242,55 @@ a server set lower than Jupyter's default.  Once per plotly version."
            (if (file-exists-p file)
                (progn (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
                       (funcall callback (concat "file://" file)))
-             (emjupy--plotly-js-fetch kernel file size 0 nil callback
-                                      emjupy--plotly-js-chunk))))))))
+             (emjupy--plotly-js-fetch
+              (emjupy--plotly-fetch-make
+               :kernel kernel :file file :size size :callback callback
+               :chunk emjupy--plotly-js-chunk)))))))))
 
-(defun emjupy--plotly-js-fetch (kernel file size from pieces callback chunk)
-  "Fetch plotly.js from KERNEL into FILE, SIZE characters, starting at FROM.
-PIECES holds what has come, newest first; CHUNK is how much to ask at a
-time.  A piece of the wrong length was cut by the server's output limit,
-and is asked again at half the size.  When all has come, the file is
-written and CALLBACK called with its address."
-  (if (>= from size)
-      (let ((coding-system-for-write 'utf-8-unix))
-        (write-region (apply #'concat (reverse pieces)) nil file nil 'quiet)
-        (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
-        (funcall callback (concat "file://" file)))
-    (message "[emjupy] Fetching plotly.js from the kernel... %d%%"
-             (/ (* 100 from) size))
-    (let ((wanted (min chunk (- size from))))
-      (emjupy--kernel-eval
-       kernel (format "print(_emjupy_js[%d:%d], end='')" from (+ from wanted))
-       (lambda (piece)
-         (cond
-          ((= (length piece) wanted)
-           ;; spaced out, as a server may count output over a few seconds
-           (run-at-time 1.0 nil #'emjupy--plotly-js-fetch kernel file size
-                        (+ from wanted) (cons piece pieces) callback chunk))
-          ((>= (/ chunk 2) emjupy--plotly-js-min-chunk)
-           (run-at-time 1.0 nil #'emjupy--plotly-js-fetch kernel file size
-                        from pieces callback (/ chunk 2)))
-          (t
-           (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
-           (message "[emjupy] plotly.js could not be fetched: the server's output limit is too low.  Set `emjupy-plotly-js' to its address or file"))))))))
+(cl-defstruct (emjupy--plotly-fetch (:constructor emjupy--plotly-fetch-make)
+                                    (:copier nil))
+  "A fetch of plotly.js from a kernel, in pieces.
+KERNEL holds it; it is written to FILE, SIZE characters, and CALLBACK
+called with the file's address.  FROM is how much has come so far,
+PIECES the pieces, newest first, and CHUNK how much is asked at a time."
+  kernel file size callback (from 0) (pieces nil) chunk)
+
+(defun emjupy--plotly-js-fetch (fetch)
+  "Ask the kernel of FETCH, an `emjupy--plotly-fetch', for the next piece.
+A piece of the wrong length was cut by the server's output limit, and is
+asked again at half the size.  When all has come, the file is written and
+the callback called with its address."
+  (let ((kernel (emjupy--plotly-fetch-kernel fetch))
+        (from (emjupy--plotly-fetch-from fetch))
+        (size (emjupy--plotly-fetch-size fetch))
+        (chunk (emjupy--plotly-fetch-chunk fetch)))
+    (if (>= from size)
+        (let ((coding-system-for-write 'utf-8-unix)
+              (file (emjupy--plotly-fetch-file fetch)))
+          (write-region (apply #'concat
+                               (reverse (emjupy--plotly-fetch-pieces fetch)))
+                        nil file nil 'quiet)
+          (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
+          (funcall (emjupy--plotly-fetch-callback fetch)
+                   (concat "file://" file)))
+      (message "[emjupy] Fetching plotly.js from the kernel... %d%%"
+               (/ (* 100 from) size))
+      (let ((wanted (min chunk (- size from))))
+        (emjupy--kernel-eval
+         kernel (format "print(_emjupy_js[%d:%d], end='')" from (+ from wanted))
+         (lambda (piece)
+           (cond
+            ((= (length piece) wanted)
+             (setf (emjupy--plotly-fetch-from fetch) (+ from wanted))
+             (push piece (emjupy--plotly-fetch-pieces fetch))
+             ;; spaced out, as a server may count output over a few seconds
+             (run-at-time 1.0 nil #'emjupy--plotly-js-fetch fetch))
+            ((>= (/ chunk 2) emjupy--plotly-js-min-chunk)
+             (setf (emjupy--plotly-fetch-chunk fetch) (/ chunk 2))
+             (run-at-time 1.0 nil #'emjupy--plotly-js-fetch fetch))
+            (t
+             (emjupy--kernel-eval kernel "del _emjupy_js" #'ignore)
+             (message "[emjupy] plotly.js could not be fetched: the server's output limit is too low.  Set `emjupy-plotly-js' to its address or file")))))))))
 
 ;;;; Images and other outputs
 

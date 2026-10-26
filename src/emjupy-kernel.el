@@ -524,33 +524,40 @@ moving a slider, is claimed through `emjupy-output-owner-functions'."
         (run-hook-with-args-until-success
          'emjupy-output-owner-functions parent-id))))
 
-(defun emjupy--apply-to-cell (cell msg-type content data parent-id
-                                   pending notebook)
-  "Apply a message of MSG-TYPE, with CONTENT, to CELL of NOTEBOOK.
-DATA is the whole message, PARENT-ID the request it answers, PENDING its
-kernel's table of requests in flight."
-  (pcase msg-type
-    ("clear_output"
-     (if (eq (gethash "wait" content) t)
-         (puthash cell t emjupy--clear-before-next-output)
-       (emjupy--clear-cell-outputs-now cell notebook)))
-    ("stream"
-     (emjupy--append-output-to-cell
-      cell (emjupy--stream-output content) notebook))
-    ;; A value returned, or rich output: a figure comes as display_data.
-    ((or "execute_result" "display_data")
-     (emjupy--append-output-to-cell
-      cell (emjupy--rich-output msg-type content) notebook))
-    ("error"
-     (emjupy--append-output-to-cell
-      cell (emjupy--error-output content) notebook))
-    (_
-     (cond
-      ;; The kernel has published everything this request will produce.
-      ((emjupy--idle-p msg-type data)
-       (emjupy--request-half-seen parent-id 'idle pending))
-      ((string= msg-type "execute_reply")
-       (emjupy--cell-replied cell content parent-id pending notebook))))))
+(defun emjupy--ws-parent-id (data)
+  "Return the msg_id of the request DATA, a kernel message, answers, or nil."
+  (let ((parent-header (gethash "parent_header" data)))
+    (when parent-header (gethash "msg_id" parent-header))))
+
+(defun emjupy--apply-to-cell (cell kernel data)
+  "Apply DATA, a message from KERNEL, to CELL, the cell it is for."
+  (let ((msg-type (gethash "msg_type" (gethash "header" data)))
+        (content (gethash "content" data))
+        (parent-id (emjupy--ws-parent-id data))
+        (pending (and kernel (emjupy-kernel-pending kernel)))
+        (notebook (and kernel (emjupy-kernel-notebook kernel))))
+    (pcase msg-type
+      ("clear_output"
+       (if (eq (gethash "wait" content) t)
+           (puthash cell t emjupy--clear-before-next-output)
+         (emjupy--clear-cell-outputs-now cell notebook)))
+      ("stream"
+       (emjupy--append-output-to-cell
+        cell (emjupy--stream-output content) notebook))
+      ;; A value returned, or rich output: a figure comes as display_data.
+      ((or "execute_result" "display_data")
+       (emjupy--append-output-to-cell
+        cell (emjupy--rich-output msg-type content) notebook))
+      ("error"
+       (emjupy--append-output-to-cell
+        cell (emjupy--error-output content) notebook))
+      (_
+       (cond
+        ;; The kernel has published everything this request will produce.
+        ((emjupy--idle-p msg-type data)
+         (emjupy--request-half-seen parent-id 'idle pending))
+        ((string= msg-type "execute_reply")
+         (emjupy--cell-replied cell content parent-id pending notebook)))))))
 
 (defun emjupy--handle-ws-message (kernel frame)
   "Handle an incoming WebSocket FRAME belonging to KERNEL.
@@ -563,10 +570,8 @@ kernels never cross-talk."
          (buffers (mapcar #'emjupy-bytes-make (cdr parts)))
          (content (gethash "content" data))
          (msg-type (gethash "msg_type" (gethash "header" data)))
-         (parent-header (gethash "parent_header" data))
-         (parent-id (when parent-header (gethash "msg_id" parent-header)))
+         (parent-id (emjupy--ws-parent-id data))
          (pending (and kernel (emjupy-kernel-pending kernel)))
-         (notebook (and kernel (emjupy-kernel-notebook kernel)))
          (cell (emjupy--ws-message-owner pending parent-id))
          (internal (when parent-id (gethash parent-id
                                             emjupy--internal-requests))))
@@ -579,8 +584,7 @@ kernels never cross-talk."
       (run-hook-with-args 'emjupy-comm-functions kernel msg-type content
                           buffers))
     (when cell
-      (emjupy--apply-to-cell cell msg-type content data parent-id pending
-                             notebook))))
+      (emjupy--apply-to-cell cell kernel data))))
 
 ;;;; Running cells
 
