@@ -30,6 +30,16 @@
   Chain with `&&`.
 - **Counting a test's calls** counts the functions it stubs with `cl-letf`:
   file a test by its subject.
+- **A side effect at load time** hides from checks that look at
+  definitions: a bare top-level call -- advising another package, adding
+  to a global hook -- is one.  `emjupy-test-loading-changes-nothing`
+  loads emjupy in a fresh Emacs to catch it; such wiring goes in an
+  `-enable` function.
+- **Re-indenting in batch** uses tabs (set `indent-tabs-mode` nil) and
+  does not know emjupy's macros' indentation: whole-file re-indent
+  rewrites thousands of correct lines.  Realign only what a change moved.
+- **Renaming a user option**: `define-obsolete-variable-alias` before the
+  new `defcustom`, so a value set under the old name carries over.
 - **Coverage finds the source files** by pattern (every `src/emjupy*.el`
   but the pkg file): a new file is measured with nothing to list.
 - **The docs name files**: "=NAME= (file)" in reading-the-code.org rots
