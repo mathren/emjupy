@@ -143,6 +143,8 @@ each, most recently modified first.  Kernels, without a time, by name."
      (emjupy--list-by-name
       (nreverse (mapcar #'emjupy--list-kernel-row (or kernels [])))))))
 
+;;;; Moving and acting in the listing
+
 (defun emjupy-list-refresh ()
   "Re-fetch this dashboard from the server."
   (interactive)
@@ -213,6 +215,8 @@ point, or descended into the directory there."
                             (format "/api/kernels/%s" id))
       (emjupy-list-refresh))))
 
+;;;; Opening files from the listing
+
 (defun emjupy-list-open-file (path)
   "Open PATH, a file on this server, the best way available.
 PATH is relative to what the server serves.  Tried in order:
@@ -276,6 +280,8 @@ one, and TRAMP already knows how to reach another machine."
                  (dired-goto-file target))
         (dired target)))))
 
+;;;; Creating a notebook
+
 (defun emjupy--blank-code-cell-json ()
   "Return the nbformat representation of one empty code cell."
   (let ((cell (make-hash-table :test 'equal)))
@@ -326,6 +332,8 @@ first act would always be to add one."
               (when (get-buffer-window buf)
                 (set-window-point (get-buffer-window buf) (point))))))))))
 
+;;;; Shutting every kernel down
+
 (defun emjupy--notebook-buffer-for (path server)
   "Return the buffer showing PATH on SERVER, or nil."
   (get-buffer (emjupy--notebook-buffer-name path server)))
@@ -345,6 +353,8 @@ first act would always be to add one."
           (emjupy-http-error
            (message "[emjupy] Kernel %s: %s" id (error-message-string err)))))
       (emjupy-list-refresh)))))
+
+;;;; The dashboard, its keys and mode
 
 (defvar emjupy-list-mode-map
   (let ((map (make-sparse-keymap)))

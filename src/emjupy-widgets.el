@@ -184,6 +184,8 @@ A widget's month counts from 0, as in JavaScript."
 ;; Each rule's test and drawing.  A drawing is called with the comm id and
 ;; the state, and returns the widget's lines.
 
+;;;; The shapes, and how each is drawn
+
 (defun emjupy--widget-container-p (s)
   "Return non-nil if S, a widget's state, has the shape of a container."
   (emjupy--widget-has s "children"))
@@ -443,6 +445,8 @@ the widget's comm id."
     (propertize (format "   %s … %s" (emjupy--widget-number (car limits))
                         (emjupy--widget-number (cdr limits)))
                 'face 'shadow)))
+
+;;;; Which shape a widget has
 
 (defvar emjupy-widget-rules
   (list

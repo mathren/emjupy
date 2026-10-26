@@ -264,6 +264,8 @@ one fails at once rather than waiting for ever."
                     (concat (plist-get route :user) "@" (plist-get route :host))
                   (plist-get route :host)))))
 
+;;;; A Jupyter server on the remote machine
+
 (defun emjupy--remote-shell (dir command)
   "Run COMMAND with sh in DIR, on DIR's machine; return what it printed.
 Signal a `file-error' with what it printed if it fails."
@@ -324,6 +326,8 @@ of them again finds it, and its kernels, as they were."
     (list :port port :token token :root_dir (directory-file-name here)
           :log log)))
 
+;;;; Tunnels
+
 (defun emjupy--open-tunnel (route remote-port)
   "Return a live tunnel's local port to REMOTE-PORT along ROUTE.
 One already open is used again.  A login that wanted a password gets a
@@ -377,6 +381,8 @@ The server itself, on the other machine, keeps running."
       (setq emjupy--remote-tunnels (delq tunnel emjupy--remote-tunnels))
       (message "[emjupy] Tunnel closed; the server on %s keeps running -- open the notebook again to get back to it."
                (emjupy-server-files-root server)))))
+
+;;;; Opening the notebook
 
 (defun emjupy--remote-server (dir jupyter route)
   "Return the Jupyter server serving DIR on its machine, started if need be.

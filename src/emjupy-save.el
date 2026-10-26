@@ -203,6 +203,8 @@ JupyterLab, or by someone else -- ask before overwriting it."
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
     (message "[emjupy] Saved %s" path)))
 
+;;;; Copies of unsaved edits
+
 (defvar-local emjupy--recovery-tick nil
   "`buffer-modified-tick' when the recovery copy was last written.")
 
@@ -292,6 +294,8 @@ said and left: the recovery copy, written first, keeps the changes."
         (file-error (message "[emjupy] Could not write a recovery copy: %s"
                              (error-message-string err)))))))
 
+;;;; Asking before closing
+
 (defun emjupy--kill-buffer-query ()
   "Ask before closing a notebook with unsaved edits.
 Return non-nil when it may be closed."
@@ -335,6 +339,8 @@ copies, written as Emacs quits."
           (?q t)
           (_ nil)))))
 
+;;;; Restoring a copy
+
 (defun emjupy--offer-recovery (nb)
   "Offer to restore unsaved edits to NB from its recovery copy.
 A copy no different from what was opened is deleted.  One declined is
@@ -377,6 +383,8 @@ kept aside, never deleted, in the recovery directory."
     (unless (file-exists-p (emjupy--recovery-file nb))
       (user-error "No recovery copy of %s" (emjupy-notebook-path nb)))
     (emjupy--offer-recovery nb)))
+
+;;;; Turning it on
 
 (defun emjupy--save-machinery-start ()
   "Start copying and saving unsaved edits, and asking before losing them.
