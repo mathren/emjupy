@@ -1237,6 +1237,26 @@ went, not the kernel."
      (let ((cell (emjupy-int--run "print(keep)" 30)))
        (should (equal (emjupy-int--stdout cell) "42\n"))))))
 
+(ert-deftest emjupy-int-fault-a-cell-run-just-after-a-drop-runs ()
+  "A cell run in the moments after a dropped connection runs once it is back.
+It was refused, the notebook said to have no kernel."
+  (emjupy-int--through-proxy
+    (emjupy-int--with-live-kernel
+     (emjupy-int--run "keep = 7" 30)
+     (with-current-buffer emjupy-int--buffer
+       (let* ((nb (emjupy--notebook))
+              (cell (aref (emjupy-notebook-cells nb) 0)))
+         (setf (emjupy-cell-source cell) "print('after the drop', keep)")
+         (emjupy--redraw-notebook cell)
+         (goto-char (overlay-start (emjupy-cell-overlay cell)))
+         (emjupy-int--proxy-say "sever")
+         (emjupy-int--pump 0.5)
+         (emjupy-execute-cell-at-point)
+         (should (emjupy-int--pump
+                  30 (lambda ()
+                       (string-match-p "after the drop 7"
+                                       (emjupy-int--stdout cell))))))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

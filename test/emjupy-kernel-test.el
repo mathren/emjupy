@@ -900,6 +900,60 @@ applied, and stale bars piled up."
           (should (equal (sort (hash-table-keys out) #'string<)
                          '("name" "output_type" "text"))))))))
 
+
+;;;; Running a cell while reconnecting
+
+(defmacro emjupy-test--reconnecting (live-var sent-var &rest body)
+  "Run BODY in a notebook whose connection is being restored.
+LIVE-VAR says whether the connection is back; SENT-VAR collects what is
+sent to the kernel."
+  (declare (indent 2))
+  `(emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                         :source "x = 1"))
+       buf nb
+     (let ((,live-var nil) (,sent-var nil))
+       (setf (emjupy-notebook-kernel nb)
+             (make-emjupy-kernel :id "k" :notebook nb
+                                 :pending (make-hash-table :test 'equal)))
+       (setq emjupy--reconnect-timer (run-at-time 3600 nil #'ignore))
+       (unwind-protect
+           (cl-letf (((symbol-function 'emjupy--ws-live-p)
+                      (lambda (&rest _) ,live-var))
+                     ((symbol-function 'emjupy--ws-send)
+                      (lambda (payload &rest _) (push payload ,sent-var)))
+                     ((symbol-function 'emjupy--ensure-kernel-width) #'ignore)
+                     ((symbol-function 'emjupy--mark-running) #'ignore))
+             (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0) 'start)
+             ,@body)
+         (when (timerp emjupy--reconnect-timer)
+           (cancel-timer emjupy--reconnect-timer))
+         (setq emjupy--reconnect-timer nil)))))
+
+(ert-deftest emjupy-test-a-cell-run-while-reconnecting-runs-once-back ()
+  "A cell run while the connection is restored runs when it is back, once.
+It said the notebook had no kernel, and to start one -- which would have
+left the kernel being reconnected to, and everything defined in it."
+  (emjupy-test--reconnecting live sent
+    (emjupy-execute-cell-at-point)
+    (emjupy-execute-cell-at-point)
+    (should (= (length emjupy--runs-waiting) 1))
+    (should-not sent)
+    (setq live t)
+    (emjupy--try-reconnect (current-buffer) "k" "python3"
+                           (+ (float-time) 30) "nb")
+    (should (= (length sent) 1))
+    (should-not emjupy--runs-waiting)))
+
+(ert-deftest emjupy-test-a-cell-run-while-reconnecting-is-dropped-if-not ()
+  "A cell waiting for a connection that does not come back does not run."
+  (emjupy-test--reconnecting live sent
+    (emjupy-execute-cell-at-point)
+    (should (= (length emjupy--runs-waiting) 1))
+    (emjupy--try-reconnect (current-buffer) "k" "python3"
+                           (- (float-time) 1) "nb")
+    (should-not sent)
+    (should-not emjupy--runs-waiting)))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

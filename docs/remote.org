@@ -145,7 +145,8 @@ If a tunnel drops, the remote kernel keeps running, and emjupy reconnects
 by itself, every few seconds for =emjupy-reconnect-window= seconds (30).
 A cell running meanwhile is not lost: the server keeps the kernel's
 messages and hands them to the same session reconnecting, so the cell
-gets everything it printed.  One whose run ended while disconnected, its
+gets everything it printed.  A cell run while it reconnects runs once
+it is back.  One whose run ended while disconnected, its
 end not kept, is ended too, its output perhaps incomplete.  If the
 connection does not return in time, the cells are ended, and
 =emjupy-reconnect-kernel= (=C-c C-x C-c=) reconnects by hand; session

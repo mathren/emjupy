@@ -586,6 +586,20 @@ kernels never cross-talk."
     (when cell
       (emjupy--apply-to-cell cell kernel data))))
 
+;;;; While reconnecting
+
+(defvar-local emjupy--kept-runs nil
+  "Requests running when this notebook's connection dropped, kept.
+A cons of the kernel id and a table of request id to cell, handed to the
+connection that replaces it.")
+
+(defvar-local emjupy--runs-waiting nil
+  "Cells run while the connection was being restored, in the order run.
+They run when it is back, as each reads then; if it is not, they do not.")
+
+(defvar-local emjupy--reconnect-timer nil
+  "Timer trying to reconnect after a dropped connection, or nil.")
+
 ;;;; Running cells
 
 (cl-defun emjupy-execute-cell-at-point ()
@@ -599,6 +613,16 @@ kernels never cross-talk."
       (emjupy--redraw-markdown-cell here)
       (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
+    ;; Reconnecting after a dropped connection: the kernel is there, and the
+    ;; cell runs on it when the connection is back.
+    (when (and (not (emjupy--ws-live-p kernel)) emjupy--reconnect-timer)
+      (let ((cell (emjupy--cell-at-point)))
+        (unless cell
+          (user-error "No cell found at point"))
+        (unless (memq cell emjupy--runs-waiting)
+          (setq emjupy--runs-waiting (append emjupy--runs-waiting (list cell))))
+        (message "[emjupy] Reconnecting to the kernel; the cell runs when it is back.")
+        (cl-return-from emjupy-execute-cell-at-point cell)))
     (unless (emjupy--ws-live-p kernel)
       (user-error "This notebook has no kernel! Use %s to select or start one"
                   (substitute-command-keys "\\[emjupy-connect-kernel-interactive]")))
@@ -720,14 +744,6 @@ is still folded where the box ends."
 
 ;;;; Reconnecting after a drop
 
-(defvar-local emjupy--kept-runs nil
-  "Requests running when this notebook's connection dropped, kept.
-A cons of the kernel id and a table of request id to cell, handed to the
-connection that replaces it.")
-
-(defvar-local emjupy--reconnect-timer nil
-  "Timer trying to reconnect after a dropped connection, or nil.")
-
 (defun emjupy--end-runs (cells buf label why)
   "End CELLS in BUF, for the notebook called LABEL, and say WHY."
   (when (buffer-live-p buf)
@@ -777,6 +793,18 @@ meanwhile to the same session."
                                  (if (cdr cells) "s" ""))
                  ""))))))
 
+(defun emjupy--run-waiting-cells (nb)
+  "Run the cells of NB run while its connection was being restored.
+In the order they were run, each as it reads now; one deleted meanwhile
+is not run."
+  (let ((cells emjupy--runs-waiting))
+    (setq emjupy--runs-waiting nil)
+    (dolist (cell cells)
+      (when (memq cell (append (emjupy-notebook-cells nb) nil))
+        (save-excursion
+          (emjupy--goto-cell cell 'start)
+          (emjupy-execute-cell-at-point))))))
+
 (defun emjupy--try-reconnect (buf kernel-id kernel-name deadline label)
   "Try to reconnect BUF's notebook to KERNEL-ID, named KERNEL-NAME, once.
 Run every few seconds after its connection dropped, until it is back or
@@ -793,7 +821,8 @@ ended as a closed connection ends them."
                (equal (emjupy-kernel-id kernel) kernel-id))
           (cancel-timer emjupy--reconnect-timer)
           (setq emjupy--reconnect-timer nil)
-          (message "[emjupy] %s: reconnected to kernel %s." label kernel-id))
+          (message "[emjupy] %s: reconnected to kernel %s." label kernel-id)
+          (emjupy--run-waiting-cells nb))
          ((> (float-time) deadline)
           (cancel-timer emjupy--reconnect-timer)
           (setq emjupy--reconnect-timer nil)
@@ -803,6 +832,10 @@ ended as a closed connection ends them."
                          (remhash id emjupy--request-halves))
                        (cdr emjupy--kept-runs)))
             (setq emjupy--kept-runs nil)
+            (when emjupy--runs-waiting
+              (message "[emjupy] %s: %d cell(s) run while reconnecting did not run."
+                       label (length emjupy--runs-waiting))
+              (setq emjupy--runs-waiting nil))
             (emjupy--end-runs cells buf label
                               (substitute-command-keys
                                "could not reconnect (\\[emjupy-reconnect-kernel] tries again)"))))
