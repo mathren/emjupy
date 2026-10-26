@@ -444,9 +444,9 @@ outputs until you save."
                ;; would lose your place.
                (next (and remaining
                           (nth (min idx (1- (length remaining))) remaining))))
-          (unless ;; undoing the delete puts this exact text back, so
-              ;; edits recorded inside it are kept for then
-              (emjupy-delete-cell-at nb curr-cell)
+          ;; Undoing the delete puts this exact text back, so edits
+          ;; recorded inside it are kept for then.
+          (unless (emjupy-delete-cell-at nb curr-cell)
             (setf (emjupy-notebook-cells nb) (vconcat remaining))
             (emjupy--redraw-notebook next))
           ;; An entry undo can act on.  The text deletion itself is made with
@@ -679,7 +679,7 @@ next line, outside the code."
 ;;;; Appearance
 
 (defun emjupy--redraw-markdown-cell (cell)
-  "Re-render markdown CELL including Latex.
+  "Redraw markdown CELL, its LaTeX included.
 
 What running a markdown cell means in Jupyter: there is no code in it,
 so the result is the rendered form rather than anything from a kernel."

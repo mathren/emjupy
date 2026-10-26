@@ -649,7 +649,7 @@ there -- so running the last cell leaves you ready to write the next
 thing rather than stranded at the bottom.
 
 Point is taken from the cell list rather than by walking the buffer: the
-executed cell may still be re-rendering as its output arrives, and
+executed cell may still be redrawing as its output arrives, and
 stepping over overlays mid-flight lands in the output box."
   (interactive)
   (let* ((cell (emjupy--cell-at-point)))

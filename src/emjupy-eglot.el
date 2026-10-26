@@ -449,7 +449,7 @@ Items pointing anywhere else, a library say, are left as they are."
 
 (defun emjupy--pull-shadow-into-cells (nb)
   "Write NB's shadow sections back into its cells.
-The notebook is re-rendered if any  Returns the number of cells updated."
+Return the number of cells updated; the notebook is redrawn if any was."
   (let ((buf (emjupy-notebook-shadow-buffer nb))
         (updated 0))
     (when (buffer-live-p buf)

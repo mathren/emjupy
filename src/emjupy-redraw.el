@@ -249,7 +249,7 @@ width would wrap."
 ;;;; Redrawing cells in place
 
 (defvar emjupy--rendering-buffers nil
-  "Buffers currently being re-rendered.
+  "Buffers currently being redrawn.
 Global: a re-entrant call comes while another buffer is current.")
 
 (defun emjupy--sweep-stray-overlays ()
@@ -376,7 +376,7 @@ notebook."
 ;;;; Redrawing the notebook
 
 (defun emjupy--redraw-notebook (&optional target-cell)
-  "Re-render this notebook, leaving point at TARGET-CELL if given.
+  "Redraw this notebook, leaving point at TARGET-CELL if given.
 A call made while a render is running is dropped: re-entering would
 rebuild a half-built buffer, and the running render reads the same,
 updated cells."
@@ -437,7 +437,7 @@ but the line being read is the same line."
   (move-to-column column))
 
 (defun emjupy--redraw-notebook-1 (&optional target-cell)
-  "Re-render every cell overlay in the current buffer.
+  "Redraw every cell overlay in the current buffer.
 If TARGET-CELL is given, leave point at that cell afterwards.  The
 rebuild is not itself undone entry by entry: it records one step that
 puts the cells back, so undo carries on through it."
@@ -584,7 +584,7 @@ nothing."
 ;;;; Putting a redraw right
 
 (defun emjupy--redraw-notebook-keeping-point ()
-  "Re-render the notebook without disturbing where the user is typing.
+  "Redraw the notebook without disturbing where the user is typing.
 Not with TARGET-CELL, which moves point to the start of that cell."
   ;; What is on screen goes back into the cells FIRST: the redraw rebuilds the
   ;; buffer from them, and anything typed since the last sync would be lost.

@@ -1000,7 +1000,7 @@ callback would leave the box silently empty."
 (defun emjupy--output-image-key (out)
   "Return a key identifying OUT's image payload, or nil if it carries none.
 The payload is hashed rather than compared directly: a figure is
-hundreds of kilobytes of base64, and this runs on every re-render."
+hundreds of kilobytes of base64, and this runs on every redraw."
   (when (hash-table-p out)
     (let ((data (gethash "data" out)))
       (when (hash-table-p data)
