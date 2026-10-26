@@ -609,6 +609,10 @@ connection that replaces it.")
   "Cells run while the connection was being restored, in the order run.
 They run when it is back, as each reads then; if it is not, they do not.")
 
+(defvar-local emjupy--server-silent nil
+  "Non-nil when the server did not answer when last asked, reconnecting.
+Said if the reconnect gives up: the server may have stopped.")
+
 (defvar-local emjupy--reconnect-timer nil
   "Timer trying to reconnect after a dropped connection, or nil.")
 
@@ -821,6 +825,54 @@ is not run."
           (emjupy--goto-cell cell 'start)
           (emjupy-execute-cell-at-point))))))
 
+(defun emjupy--check-kernel-still-there (buf server kernel-id label)
+  "Ask SERVER, without waiting, whether KERNEL-ID, BUF's kernel, is there.
+Gone -- died, or shut down -- BUF stops reconnecting at once, saying so
+for the notebook called LABEL.  No answer is noted, for the message if
+the reconnecting gives up."
+  (when server
+    (emjupy--http-request-async
+     "GET" server (concat "/api/kernels/" kernel-id) nil
+     (lambda (_)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf (setq emjupy--server-silent nil))))
+     (lambda (err)
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (if (and (eq (car err) 'emjupy-http-status)
+                    (string-match-p "HTTP 404" (format "%s" (cadr err))))
+               (emjupy--kernel-gone buf kernel-id label)
+             (setq emjupy--server-silent t))))))))
+
+(defun emjupy--kernel-gone (buf kernel-id label)
+  "Stop BUF reconnecting to KERNEL-ID, which the server no longer has.
+The cells kept for it end; those waiting to run do not run; the notebook
+called LABEL is left without a kernel, for a new one to be started."
+  (with-current-buffer buf
+    (when (timerp emjupy--reconnect-timer)
+      (cancel-timer emjupy--reconnect-timer))
+    (setq emjupy--reconnect-timer nil)
+    (let ((cells nil))
+      (when emjupy--kept-runs
+        (maphash (lambda (id cell) (push cell cells)
+                   (remhash id emjupy--request-halves))
+                 (cdr emjupy--kept-runs)))
+      (setq emjupy--kept-runs nil)
+      (when emjupy--runs-waiting
+        (message "[emjupy] %s: %d cell(s) run while reconnecting did not run."
+                 label (length emjupy--runs-waiting))
+        (setq emjupy--runs-waiting nil))
+      (let ((nb emjupy--buffer-notebook))
+        (when (and nb (emjupy-notebook-kernel nb)
+                   (equal (emjupy-kernel-id (emjupy-notebook-kernel nb))
+                          kernel-id))
+          (setf (emjupy-notebook-kernel nb) nil)))
+      (emjupy--end-runs
+       cells buf label
+       (substitute-command-keys
+        (format "kernel %s is gone from the server -- it died, or was shut down; \\[emjupy-connect-kernel-interactive] starts a new one"
+                kernel-id))))))
+
 (defun emjupy--try-reconnect (buf kernel-id kernel-name deadline label)
   "Try to reconnect BUF's notebook to KERNEL-ID, named KERNEL-NAME, once.
 Run every few seconds after its connection dropped, until it is back or
@@ -852,15 +904,20 @@ ended as a closed connection ends them."
               (message "[emjupy] %s: %d cell(s) run while reconnecting did not run."
                        label (length emjupy--runs-waiting))
               (setq emjupy--runs-waiting nil))
-            (emjupy--end-runs cells buf label
-                              (substitute-command-keys
-                               "could not reconnect (\\[emjupy-reconnect-kernel] tries again)"))))
+            (emjupy--end-runs
+             cells buf label
+             (substitute-command-keys
+              (if emjupy--server-silent
+                  "could not reconnect: the Jupyter server does not answer, and may have stopped (for a notebook opened through TRAMP, \\[emjupy-open-this-notebook] in its file starts it again)"
+                "could not reconnect (\\[emjupy-reconnect-kernel] tries again)")))))
          (t
           ;; Not waited for: a socket that comes up is found live next time; one
           ;; that does not closes, and this tries again.  Any error counts as
           ;; one more try: `websocket-open' reports a refused connection as a
           ;; plain error.
           (emjupy--restore-way-to (emjupy-notebook-server nb))
+          (emjupy--check-kernel-still-there buf (emjupy-notebook-server nb)
+                                            kernel-id label)
           (condition-case nil
               (emjupy-connect-kernel nb kernel-id kernel-name)
             (error nil))))))))

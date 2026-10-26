@@ -1001,6 +1001,48 @@ The kernel is there; \\[emjupy-reconnect-kernel] reaches it again."
       (should (string-match-p "connection to this notebook's kernel is down"
                               (cadr err))))))
 
+
+(ert-deftest emjupy-test-a-kernel-gone-from-the-server-stops-reconnecting ()
+  "A kernel the server no longer has is not reconnected to for 30 seconds.
+Asked during the reconnect, the server answers 404: the reconnecting
+stops at once, the cells waiting do not run, and the notebook is left
+without a kernel, for running a cell to say so."
+  (emjupy-test--reconnecting live sent
+    (emjupy-execute-cell-at-point)
+    (should emjupy--runs-waiting)
+    (cl-letf (((symbol-function 'emjupy-connect-kernel) #'ignore)
+              ((symbol-function 'emjupy--http-request-async)
+               (lambda (_m _s _p _b _done fail)
+                 (funcall fail '(emjupy-http-status "[Jupyter HTTP 404] GET"
+                                                    "{}")))))
+      (emjupy--try-reconnect (current-buffer) "k" "python3"
+                             (+ (float-time) 30) "nb"))
+    (should-not emjupy--reconnect-timer)
+    (should-not emjupy--runs-waiting)
+    (should-not (emjupy-notebook-kernel (emjupy--notebook)))
+    (should-not sent)))
+
+(ert-deftest emjupy-test-a-silent-server-is-said-when-reconnecting-ends ()
+  "Giving up on a server that never answered says it may have stopped.
+\"C-c C-x C-c tries again\" was all it said, and tried again for nothing."
+  (emjupy-test--reconnecting live sent
+    (ignore sent)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'emjupy-connect-kernel) #'ignore)
+                ((symbol-function 'emjupy--http-request-async)
+                 (lambda (_m _s _p _b _done fail)
+                   (funcall fail '(emjupy-http-error "Network error: no answer from"
+                                                     "127.0.0.1:1"))))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format-message fmt args) said))))
+        (emjupy--try-reconnect (current-buffer) "k" "python3"
+                               (+ (float-time) 30) "nb")
+        (emjupy--try-reconnect (current-buffer) "k" "python3"
+                               (- (float-time) 1) "nb"))
+      (should (seq-some (lambda (m) (string-match-p "does not answer" m))
+                        said)))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

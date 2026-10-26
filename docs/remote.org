@@ -153,6 +153,9 @@ end not kept, is ended too, its output perhaps incomplete.  If the
 connection does not return in time, the cells are ended, and
 =emjupy-reconnect-kernel= (=C-c C-x C-c=) reconnects by hand; session
 state survives either way.  =emjupy-reconnect-window= nil does not try.
+A kernel the server answers it no longer has -- it died, or was shut
+down -- is not waited for; a server that does not answer at all is said
+to have perhaps stopped.
 
 * Access tokens
 
