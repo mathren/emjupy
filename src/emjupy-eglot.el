@@ -353,6 +353,16 @@ Rewritten only when that machine is known to be another one."
 the shadow's remote name has none."
   (if (file-remote-p file) (expand-file-name file) (file-truename file)))
 
+(defun emjupy--shadow-point (buf line col)
+  "Return the position of LINE and COL in shadow buffer BUF.
+Nil without a LINE; never past the end of the buffer."
+  (when line
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line (1- line))
+        (min (point-max) (+ (point) col))))))
+
 (defun emjupy--xref-remap (nb items)
   "Rewrite ITEMS pointing into NB's shadow file so they point at its cells.
 Items pointing anywhere else, a library say, are left as they are."
@@ -375,12 +385,7 @@ Items pointing anywhere else, a library say, are left as they are."
                (emjupy--xref-on-the-right-machine nb item)
              (let* ((line (xref-location-line loc))
                     (col (xref-file-location-column loc))
-                    (spos (when line
-                            (with-current-buffer buf
-                              (save-excursion
-                                (goto-char (point-min))
-                                (forward-line (1- line))
-                                (min (point-max) (+ (point) col))))))
+                    (spos (emjupy--shadow-point buf line col))
                     (mapped (and spos
                                  (emjupy--shadow-position-to-cell nb spos))))
                (if (not mapped)

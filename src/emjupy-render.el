@@ -44,6 +44,25 @@ redraw, so it is better refused than silently lost."
 
 ;;;; Width
 
+(defun emjupy--line-number-columns (win)
+  "Return how many columns WIN's line numbers take, or 0 without them.
+Read from the window's buffer rather than by selecting it: Emacs reports
+the column's width for the selected window only, so for any other it is
+worked out from the last line's number."
+  (with-current-buffer (window-buffer win)
+    (if (bound-and-true-p display-line-numbers)
+        ;; Emacs's figure or the line-number column's, whichever is more:
+        ;; Emacs reports 0 until the window has been shown, and leaves out
+        ;; the gap.
+        (max (if (eq win (selected-window))
+                 (line-number-display-width)
+               0)
+             (+ 2 (max (length (number-to-string
+                                (line-number-at-pos (point-max) t)))
+                       (or (bound-and-true-p display-line-numbers-width)
+                           0))))
+      0)))
+
 (defun emjupy--window-text-width (win)
   "Return how many columns of text WIN can show without wrapping.
 Not `window-body-width', which includes the line-number column."
@@ -54,25 +73,8 @@ Not `window-body-width', which includes the line-number column."
     ;; Measured keeping point: `window-max-chars-per-line' selects WIN, which
     ;; moves point to the window's.
     (save-excursion
-      (let ((cols (window-max-chars-per-line win))
-            ;; Read from the window's buffer rather than by selecting it.
-            ;; Emacs reports the column's width for the selected window only,
-            ;; so for any other it is worked out from the last line's number.
-            (numbers (with-current-buffer (window-buffer win)
-                       (if (bound-and-true-p display-line-numbers)
-                           ;; Emacs's figure or the line-number column's,
-                           ;; whichever is more: Emacs reports 0 until the
-                           ;; window has been shown, and leaves out the gap.
-                           (max (if (eq win (selected-window))
-                                    (line-number-display-width) 0)
-                                (+ 2 (max (length (number-to-string
-                                                   (line-number-at-pos
-                                                    (point-max) t)))
-                                          (or (bound-and-true-p
-                                               display-line-numbers-width)
-                                              0))))
-                         0))))
-        (max 1 (- cols numbers))))))
+      (max 1 (- (window-max-chars-per-line win)
+                (emjupy--line-number-columns win))))))
 
 (defvar emjupy--box-width-memo nil
   "A cons holding the width worked out for the redraw in progress, or nil.
