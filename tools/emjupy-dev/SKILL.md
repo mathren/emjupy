@@ -11,8 +11,9 @@ Eglot language support through `jupyter-lsp`.  The maintainer works on
 GitHub; Claude works in a sandbox clone and delivers `git format-patch`
 mbox files the maintainer applies with `git am`.
 
-The maintainer wants brief, factual answers; critical in a
-constructive, actionable way; nothing done that was not asked for.  When
+The maintainer wants brief, factual answers: synthesis, no repetition,
+no wasted tokens; critical in a constructive, actionable way; nothing
+done that was not asked for.  When
 a request has a weak spot -- a refactor that would lose information, a
 setting that is a security risk -- say so, briefly, with the evidence.
 
@@ -47,8 +48,9 @@ before changing behaviour.  The rules that matter most:
   the compiler warn).  Otherwise a lower layer reaches up only through
   hook lists (`emjupy-*-functions`) wired when `emjupy-mode` starts.
   `tools/dependency-graph.py` must report 0 requires against the layers.
-- **Loading a file only defines things.**  Hooks are added in an
-  `-enable` function or by `emjupy-mode`, never at top level.  A keymap
+- **Loading a file only defines things.**  Hooks, advice and global
+  hooks go in the layer's `-enable` function, which `emjupy-mode` calls
+  in order; `emjupy-test-loading-changes-nothing` checks.  A keymap
   is a `defvar` whose value builds it whole --
   `(defvar MAP (let ((map (make-sparse-keymap))) (define-key map ...) map))`
   -- where it is made; never a `define-key` at top level.
@@ -58,11 +60,14 @@ before changing behaviour.  The rules that matter most:
   `emjupy--as-one-undo-step`.
 - **Nothing on the per-keystroke path touches the network or TRAMP**
   (completion, eldoc, redraws).  Remote work is asynchronous or backed off.
-- **Each layer wires its hooks in its `-enable` function**, which
-  `emjupy-mode` calls in an order that keeps each hook's order.
 - **Undo is in two files on purpose**: positions in emjupy-undo.el (low),
   the undo step with the full redraw in emjupy-redraw.el (they call each
   other).  Do not "consolidate" them.
+- **Secrets and shared machines**: a token never on a command line
+  (`JUPYTER_TOKEN`) or in a WebSocket address (`emjupy--ws-token-param`);
+  files in /tmp only through `emjupy--private-directory`; a notebook's
+  scripts run only if Jupyter trusts it (`emjupy--cell-trusted-p`); LaTeX
+  only through `emjupy--latex-process`.
 - **Tests replace functions with `cl-letf`.**  A refactor may move code
   into helpers freely, but must keep every call a test replaces, keep
   every message's text, and never `defsubst` a helper.
@@ -76,7 +81,8 @@ In short: SPDX headers; requires at the top, the compiler's declarations
 them, never mid-file; `;;;; Options` first in each file, then a `;;;;`
 heading per part; messages start `[emjupy]`; questions use `y-or-n-p`;
 `;;;###autoload` only on entry points (login, list, open, create, menu,
-version); user options in their subject's group (defined in
+version); variables at the top of a file, helper sections before their
+users; user options in their subject's group (defined in
 `emjupy-core.el`), `:safe` only for display/export ones; 80 columns,
 except long strings, regexps and messages.
 

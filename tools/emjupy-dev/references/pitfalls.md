@@ -102,3 +102,13 @@
 - Questions use `y-or-n-p`, even before destructive actions.
 - Generated files (`html-content/*.html`, the dependency graph) are not
   committed.
+- **Testbed processes die between turns**: check sshd, both servers and
+  the tunnel, each with a timeout, before a live run.
+- **Jupyter trusts by content**: a test trusting a notebook needs unique
+  cell source, or an earlier run's trust carries over.
+- **The server answers some requests 201 with no body** (trust): not an
+  error.
+- **The default face's foreground is "unspecified-fg"** on a terminal and
+  in batch: resolve a colour (`color-name-to-rgb`) before handing it on.
+- **A repeating timer keeps the interval it started with**: tick at a
+  fixed rate and read the option each tick.
