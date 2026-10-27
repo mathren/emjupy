@@ -118,10 +118,12 @@ rule too wide for a window wraps."
             (cond
              ;; Jupyter's convention: a running cell shows a marker where its
              ;; execution count will go.
-             ((emjupy--cell-running-p cell)
+             ((emjupy--cell-executing-p cell)
               (aref emjupy-running-indicator
                     (mod emjupy--spinner-frame
                          (length emjupy-running-indicator))))
+             ;; queued behind it, as Jupyter shows them
+             ((emjupy--cell-running-p cell) "*")
              ((numberp exec) (number-to-string exec))
              (t " "))
             (if (eq (emjupy-cell-type cell) 'code) "python" "markdown"))))
@@ -168,9 +170,35 @@ before it.  The overlay is BOX's companion, deleted with its rules."
     (overlay-put o property text)
     (overlay-put o 'emjupy-overlay 'rules)
     (overlay-put o 'emjupy-rules-of box)
-    (push o (overlay-get box 'emjupy-companions))))
+    (push o (overlay-get box 'emjupy-companions))
+    o))
+
+(defvar emjupy--rules-batch nil
+  "Non-nil inside `emjupy--with-rules-once': rebuilding the rules waits.")
+
+(defvar emjupy--rules-stale nil
+  "Non-nil when a rebuild of the rules was asked for inside a batch.")
+
+(defmacro emjupy--with-rules-once (&rest body)
+  "Run BODY, rebuilding the rules once at its end, however often asked.
+Each rebuild walks every box of the notebook: a redraw of several cells,
+or of a cell's header, footer and output, would otherwise walk it each
+time.  Nested, only the outermost rebuilds."
+  (declare (indent 0) (debug t))
+  `(if emjupy--rules-batch
+       (progn ,@body)
+     (let ((emjupy--rules-batch t) (emjupy--rules-stale nil))
+       (unwind-protect (progn ,@body)
+         (when emjupy--rules-stale
+           (emjupy--reconcile-rules-now))))))
 
 (defun emjupy--reconcile-rules ()
+  "Rebuild every rule now -- or, inside `emjupy--with-rules-once', at its end."
+  (if emjupy--rules-batch
+      (setq emjupy--rules-stale t)
+    (emjupy--reconcile-rules-now)))
+
+(defun emjupy--reconcile-rules-now ()
   "Draw every rule as the continuation of the content line above it.
 `display-line-numbers-mode' numbers the first screen line of each line,
 so a header drawn on a cell's first line took the code's number.  Each
@@ -189,7 +217,9 @@ buffer's structure; it rebuilds every rule."
       ;; the previous companions, all of them
       (dolist (o (overlays-in (point-min) (point-max)))
         (when (overlay-get o 'emjupy-rules-of) (delete-overlay o)))
-      (dolist (ov boxes) (overlay-put ov 'emjupy-companions nil))
+      (dolist (ov boxes)
+        (overlay-put ov 'emjupy-companions nil)
+        (overlay-put ov 'emjupy-header-carrier nil))
       (dolist (ov (append boxes (list nil)))
         (let* ((header (and ov (overlay-get ov 'emjupy-header)))
                (footer (and prev (overlay-get prev 'emjupy-footer)))
@@ -209,11 +239,14 @@ buffer's structure; it rebuilds every rule."
                ;; is hidden -- by a `display', as Emacs draws no overlay string
                ;; at a hidden position.
                ((and gap-end (< (overlay-end prev) gap-end))
-                (emjupy--hang-rules prev anchor rules 'display))
+                (let ((o (emjupy--hang-rules prev anchor rules 'display)))
+                  (when ov (overlay-put ov 'emjupy-header-carrier o))))
                ;; Followed at once by another box -- a cell by its output --
                ;; or the last box: the rules hang on its own last line.
                ((not (string-empty-p rules))
-                (emjupy--hang-rules prev anchor rules 'before-string)))))
+                (let ((o (emjupy--hang-rules prev anchor rules
+                                             'before-string)))
+                  (when ov (overlay-put ov 'emjupy-header-carrier o)))))))
            ;; the first box, or one whose line above cannot carry it
            (ov (overlay-put ov 'before-string header)
                (when prev (overlay-put prev 'after-string footer)))
@@ -314,12 +347,18 @@ box says that it is collapsed rather than absent."
 (defvar-local emjupy--spinner-timer nil
   "Timer animating the running indicator, or nil.")
 
+(defun emjupy--cell-executing-p (cell)
+  "Return non-nil if CELL is the one its kernel is executing now.
+The kernel runs cells in the order sent: of those running, the first
+sent -- the last of `emjupy--running-cells', newest first."
+  (and cell (eql (emjupy-cell-id cell) (car (last emjupy--running-cells)))))
+
 (defun emjupy--cell-running-p (cell)
   "Return non-nil if CELL is currently executing."
   (and cell (memq (emjupy-cell-id cell) emjupy--running-cells)))
 
 (defun emjupy--spinner-tick ()
-  "Advance the indicator and redraw the headers of running cells.
+  "Advance the indicator and redraw the header of the executing cell.
 Only overlay strings change, never buffer text, so typing and undo are
 not disturbed."
   (let ((buf (current-buffer)))
@@ -330,11 +369,14 @@ not disturbed."
           (setq emjupy--spinner-frame
                 (mod (1+ emjupy--spinner-frame)
                      (length emjupy-running-indicator)))
+          ;; only the executing cell moves; those queued show a still *
           (when emjupy--buffer-notebook
-            (cl-loop for cell across
-                     (emjupy-notebook-cells emjupy--buffer-notebook)
-                     when (emjupy--cell-running-p cell)
-                     do (emjupy--redraw-cell-header cell))))))))
+            (let ((cell (cl-find (car (last emjupy--running-cells))
+                                 (emjupy-notebook-cells emjupy--buffer-notebook)
+                                 :key #'emjupy-cell-id)))
+              (when cell
+                (emjupy--with-rules-once
+                  (emjupy--redraw-cell-header cell))))))))))
 
 (defun emjupy--start-spinner ()
   "Start animating the running indicator in this buffer."
@@ -356,16 +398,42 @@ not disturbed."
     (cancel-timer emjupy--spinner-timer)
     (setq emjupy--spinner-timer nil)))
 
+(defun emjupy--rehang-header (ov rule)
+  "Show RULE as OV's header in the rules it hangs with, if they are known.
+Only that one carrier's text changes: no rebuild of every rule.  Return
+non-nil if done; nil when OV has no carrier -- the first box, or rules
+not built yet."
+  (let* ((carrier (overlay-get ov 'emjupy-header-carrier))
+         (prev (and (overlayp carrier) (overlay-buffer carrier)
+                    (overlay-get carrier 'emjupy-rules-of))))
+    (when prev
+      (let* ((footer (overlay-get prev 'emjupy-footer))
+             (rules (mapconcat (lambda (r) (string-remove-suffix "\n" r))
+                               (seq-filter (lambda (r)
+                                             (and r (not (string-empty-p r))))
+                                           (list footer rule))
+                               "\n"))
+             (text (concat "\n" rules))
+             (property (if (overlay-get carrier 'display)
+                           'display
+                         'before-string)))
+        (put-text-property 0 1 'cursor t text)
+        (overlay-put ov 'emjupy-header rule)
+        (overlay-put carrier property text)
+        t))))
+
 (defun emjupy--redraw-cell-header (cell)
   "Redraw CELL's header rule in place.
-The header is an overlay `before-string', so this changes no buffer text
-and does not enter the undo history."
+The header is an overlay string, so this changes no buffer text and does
+not enter the undo history.  Where the rules carrying it are known, only
+they change; else every rule is rebuilt."
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
-      (overlay-put ov 'emjupy-header nil)
-      (overlay-put ov 'before-string
-                   (emjupy--rule (emjupy--cell-label cell) "┌"))
-      (emjupy--reconcile-rules)
+      (let ((rule (emjupy--rule (emjupy--cell-label cell) "┌")))
+        (unless (emjupy--rehang-header ov rule)
+          (overlay-put ov 'emjupy-header nil)
+          (overlay-put ov 'before-string rule)
+          (emjupy--reconcile-rules)))
       (emjupy--overlay-header ov))))
 
 (defun emjupy--mark-running (cell &optional buffer)

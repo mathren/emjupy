@@ -128,6 +128,11 @@ Return non-nil when that could be done; nil means the caller should
 redraw the notebook."
   ;; Output that only grew at its end is added to; done is done, and says
   ;; so -- nil here means "redraw the whole notebook instead".
+  (emjupy--with-rules-once
+    (emjupy--redraw-cell-output-1 cell)))
+
+(defun emjupy--redraw-cell-output-1 (cell)
+  "Redraw CELL's output box, the rules rebuilt by the caller's batch."
   (or (emjupy--append-stream-output cell)
       (let ((src (emjupy-cell-overlay cell))
             (out (emjupy-cell-output-ov cell)))

@@ -243,9 +243,12 @@ The notebook is rebuilt instead when the buffer and the cells disagree."
     ;; others, and an edit made while output was in flight would never reach its
     ;; cell.
     (when cells (emjupy--sync-all-cells))
+    ;; every cell redrawn, then the rules rebuilt once
     (if (and cells (emjupy--overlays-sane-p)
-             (cl-every (lambda (cell)
-                         (emjupy--redraw-cell-output cell)) cells))
+             (emjupy--with-rules-once
+               (cl-every (lambda (cell)
+                           (emjupy--redraw-cell-output cell))
+                         cells)))
         t
       (emjupy--redraw-notebook-keeping-point))))
 

@@ -547,6 +547,90 @@ not bound, and the line said \"M-x emjupy-open-output\"."
                               (make-hash-table))
     (should (string-match-p "C-c C-f" (buffer-string)))))
 
+
+;;;; Large notebooks: rules rebuilt once, headers in place
+
+(defun emjupy-test--rules-picture ()
+  "Every rule string shown in this buffer, with where and how."
+  (sort (delq nil
+              (mapcar (lambda (o)
+                        (let ((text (or (overlay-get o 'display)
+                                        (overlay-get o 'before-string)
+                                        (overlay-get o 'after-string))))
+                          (when (stringp text)
+                            (list (overlay-start o)
+                                  (substring-no-properties text)))))
+                      (overlays-in (point-min) (point-max))))
+        (lambda (a b) (< (car a) (car b)))))
+
+(defun emjupy-test--cells (n)
+  "N code cells, each with an output."
+  (vconcat (cl-loop for i below n collect
+                    (make-emjupy-cell
+                     :id (1+ i) :type 'code :source (format "a = %d" i)
+                     :outputs (vector (let ((o (make-hash-table :test 'equal)))
+                                        (puthash "output_type" "stream" o)
+                                        (puthash "name" "stdout" o)
+                                        (puthash "text" (format "%d\n" i) o)
+                                        o))
+                     :metadata (make-hash-table :test 'equal)))))
+
+(ert-deftest emjupy-test-a-header-changed-in-place-is-a-rebuilds-header ()
+  "A header changed in place shows exactly what a rebuild of every rule would.
+Changing one carrier's text, not walking every box, is what keeps a
+running indicator cheap in a large notebook."
+  (emjupy-test--with-notebook (emjupy-test--cells 12) buf nb
+    (let ((cell (aref (emjupy-notebook-cells nb) 6)))
+      (emjupy--mark-running cell)
+      (unwind-protect
+          (let ((in-place (emjupy-test--rules-picture)))
+            (emjupy--reconcile-rules-now)
+            (should (equal in-place (emjupy-test--rules-picture)))
+            (should (seq-some (lambda (r) (string-match-p "\\[In: " (cadr r)))
+                              in-place)))
+        (emjupy--stop-spinner)))))
+
+(ert-deftest emjupy-test-a-tick-with-many-cells-queued-is-cheap ()
+  "One running indicator tick, a hundred cells queued, costs one header.
+It redrew every running cell's header, each rebuilding every rule: with
+a long notebook all run, Emacs froze.  Only the executing cell moves;
+those queued show a still *, as in Jupyter."
+  (emjupy-test--with-notebook (emjupy-test--cells 120) buf nb
+    (let ((ids (mapcar #'emjupy-cell-id
+                       (append (emjupy-notebook-cells nb) nil))))
+      (setq emjupy--running-cells (reverse (seq-take ids 100)))
+      (unwind-protect
+          (let ((rebuilds 0) (t1 (float-time)))
+            (cl-letf* ((real (symbol-function 'emjupy--reconcile-rules-now))
+                       ((symbol-function 'emjupy--reconcile-rules-now)
+                        (lambda () (cl-incf rebuilds) (funcall real))))
+              (emjupy--spinner-tick))
+            (should (< (- (float-time) t1) 0.25))
+            (should (<= rebuilds 1))
+            (should (emjupy--cell-executing-p
+                     (aref (emjupy-notebook-cells nb) 0)))
+            (should (string-match-p "\\[In: \\*\\]"
+                                    (emjupy--cell-label
+                                     (aref (emjupy-notebook-cells nb) 50)))))
+        (setq emjupy--running-cells nil)
+        (emjupy--stop-spinner)))))
+
+(ert-deftest emjupy-test-an-output-redraw-rebuilds-the-rules-once ()
+  "Redrawing a cell's output rebuilds the rules once, not once per part."
+  (emjupy-test--with-notebook (emjupy-test--cells 12) buf nb
+    (let ((cell (aref (emjupy-notebook-cells nb) 5)) (rebuilds 0))
+      (setf (emjupy-cell-outputs cell)
+            (vector (let ((o (make-hash-table :test 'equal)))
+                      (puthash "output_type" "stream" o)
+                      (puthash "name" "stdout" o)
+                      (puthash "text" "changed\nand longer\n" o)
+                      o)))
+      (cl-letf* ((real (symbol-function 'emjupy--reconcile-rules-now))
+                 ((symbol-function 'emjupy--reconcile-rules-now)
+                  (lambda () (cl-incf rebuilds) (funcall real))))
+        (should (emjupy--redraw-cell-output cell)))
+      (should (<= rebuilds 1)))))
+
 (provide 'emjupy-render-test)
 
 ;;; emjupy-render-test.el ends here
