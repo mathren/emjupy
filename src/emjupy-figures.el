@@ -125,9 +125,12 @@ time, so a change to `emjupy-figure-window-browsers' counts at once."
 ;;;; Showing a page
 
 (defun emjupy--figures-dir ()
-  "Return the directory figure pages are written to, creating it."
-  (let ((dir (expand-file-name "emjupy-figures/" temporary-file-directory)))
-    (make-directory dir t)
+  "Return the directory figure pages are written to, the user's own.
+Made for the user alone, and checked: in a shared /tmp another user
+could make it first, to read the pages, or plant a script they load."
+  (let ((dir (expand-file-name (format "emjupy-figures-%s/" (user-login-name))
+                               temporary-file-directory)))
+    (emjupy--private-directory dir "figure pages")
     dir))
 
 (defun emjupy--xwidget-available-p ()

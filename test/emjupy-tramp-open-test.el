@@ -97,7 +97,7 @@
                                                  :jumps "bastion") 9000 8888)
                    '("ssh" "-N" "-o" "BatchMode=yes" "-o"
                    "ExitOnForwardFailure=yes"
-                   "-L" "9000:127.0.0.1:8888" "-J" "bastion" "-p" "22"
+                   "-L" "127.0.0.1:9000:127.0.0.1:8888" "-J" "bastion" "-p" "22"
                    "me@node7"))))
   ;; once TRAMP has been through a hop, it names the file without it:
   ;; the route still has it
@@ -266,6 +266,49 @@ Untitled.ipynb on two servers is two notebooks."
   (emjupy-test--remote-notebook-open 8888 8888 "b.ipynb"
     (should-not (emjupy--adopt-remote-notebook "b.ipynb" new))
     (should (eq (emjupy-notebook-server nb) old))))
+
+
+;;;; What other users of the machine cannot see
+
+(ert-deftest emjupy-test-a-local-server-has-its-token-out-of-sight ()
+  "A local server gets its token in its environment, not its command line.
+Every user of the machine can read a command line with ps, and the token
+is all that keeps them from the server."
+  (let ((command nil) (environment nil) (emjupy--local-servers nil))
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest args)
+                 (setq command (plist-get args :command)
+                       environment process-environment)
+                 (error "Stop here")))
+              ((symbol-function 'emjupy--free-port) (lambda () 9999)))
+      (ignore-errors
+        (emjupy--start-local-server temporary-file-directory "jupyter")))
+    (should command)
+    (should-not (seq-some (lambda (a) (string-match-p "token" a)) command))
+    (should (seq-some (lambda (e) (string-prefix-p "JUPYTER_TOKEN=" e))
+                      environment))))
+
+(ert-deftest emjupy-test-a-remote-server-has-its-token-and-log-out-of-sight ()
+  "A remote server gets its token in its environment, its log a folder of
+the user's own -- not a guessable name in a shared /tmp."
+  (let ((sent nil))
+    (cl-letf (((symbol-function 'emjupy--remote-free-port)
+               (lambda (&rest _) 8890))
+              ((symbol-function 'emjupy--remote-shell)
+               (lambda (_dir command) (setq sent command) "")))
+      (emjupy--start-remote-server "/ssh:rbox:/home/u/proj/"
+                                   "/env/bin/jupyter"))
+    (should (string-match-p "JUPYTER_TOKEN=[0-9a-f]+ nohup " sent))
+    (should-not (string-match-p "IdentityProvider.token" sent))
+    (should (string-match-p "chmod 700 \"\\${XDG_CACHE_HOME:-\\$HOME/.cache}/emjupy\""
+                            sent))
+    (should-not (string-match-p "/tmp/" sent))))
+
+(ert-deftest emjupy-test-two-tokens-are-not-the-same ()
+  "Tokens are 64 hex digits, and two are never the same."
+  (let ((a (emjupy--new-token)) (b (emjupy--new-token)))
+    (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'" a))
+    (should-not (equal a b))))
 
 (provide 'emjupy-tramp-open-test)
 

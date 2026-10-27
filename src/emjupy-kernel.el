@@ -912,8 +912,9 @@ the notebook called LABEL is left without a kernel, for a new one."
                  (cdr emjupy--kept-runs)))
       (setq emjupy--kept-runs nil)
       (when emjupy--runs-waiting
-        (message "[emjupy] %s: %d cell(s) run while reconnecting did not run."
-                 label (length emjupy--runs-waiting))
+        (let ((n (length emjupy--runs-waiting)))
+          (message "[emjupy] %s: %d cell%s run while reconnecting did not run."
+                   label n (if (= n 1) "" "s")))
         (setq emjupy--runs-waiting nil))
       (let* ((nb emjupy--buffer-notebook)
              (kernel (and nb (emjupy-notebook-kernel nb))))
@@ -960,8 +961,9 @@ ended as a closed connection ends them."
                        (cdr emjupy--kept-runs)))
             (setq emjupy--kept-runs nil)
             (when emjupy--runs-waiting
-              (message "[emjupy] %s: %d cell(s) run while reconnecting did not run."
-                       label (length emjupy--runs-waiting))
+              (let ((n (length emjupy--runs-waiting)))
+                (message "[emjupy] %s: %d cell%s run while reconnecting did not run."
+                         label n (if (= n 1) "" "s")))
               (setq emjupy--runs-waiting nil))
             (emjupy--end-runs
              cells buf label
@@ -1040,6 +1042,11 @@ of that session -- one with a new id, every connection did, got none."
 
 ;;;; Connecting
 
+(defvar emjupy--token-in-ws-address nil
+  "Servers, by address, whose WebSocket refused the token in a header alone.
+For them it goes in the WebSocket's address too; elsewhere not, as an
+address is what proxies and servers log.")
+
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
 KERNEL-NAME, when given, is the kernelspec name to record.
@@ -1059,12 +1066,15 @@ several notebooks -- from several servers -- stay live at once."
                          kernel-id
                          (concat "?session_id="
                                  (emjupy--ws-session-id notebook kernel-id)
-                                 (if (string-empty-p token)
+                                 (if (or (string-empty-p token)
+                                         (not (member
+                                               (emjupy-server-base-url server)
+                                               emjupy--token-in-ws-address)))
                                      ""
                                    (concat "&token="
                                            (url-hexify-string token))))))
-         ;; The token in a header too: some deployments and proxies drop the
-         ;; query string.  Shared with the language server's socket.
+         ;; The token in a header; in the address only for a server refusing
+         ;; it so.  Shared with the language server's socket.
          (headers (emjupy--websocket-auth-headers server))
          (kernel (make-emjupy-kernel
                   :id kernel-id :name kernel-name :server server
@@ -1086,8 +1096,22 @@ several notebooks -- from several servers -- stay live at once."
            :on-close (lambda (_ws)
                        (emjupy--kernel-connection-closed kernel label))
            :on-error (lambda (_ws type err)
-                       (message "[emjupy] %s WebSocket error (%s): %s" label
-                                type err))))
+                       (if (and (eq (car-safe err)
+                                    'websocket-received-error-http-response)
+                                (memq (cadr err) '(401 403))
+                                (not (string-empty-p token))
+                                (not (member (emjupy-server-base-url server)
+                                             emjupy--token-in-ws-address)))
+                           ;; Refused with the token in a header alone: the
+                           ;; next attempt, reconnecting, has it in the
+                           ;; address too.
+                           (progn
+                             (push (emjupy-server-base-url server)
+                                   emjupy--token-in-ws-address)
+                             (message "[emjupy] %s: the server wants the token in the WebSocket address; trying so"
+                                      label))
+                         (message "[emjupy] %s WebSocket error (%s): %s" label
+                                  type err)))))
     (setf (emjupy-notebook-kernel notebook) kernel)
     ;; cells kept running when the last connection dropped
     (emjupy--adopt-kept-runs kernel)
@@ -1275,7 +1299,7 @@ kernel's state is intact, only Emacs's socket needs re-establishing."
          ;; The way to the server may be coming back -- a tunnel reopening:
          ;; keep trying, as after a dropped connection.
          (unless emjupy-reconnect-window
-           (user-error "[emjupy] Could not reach the kernel's server: %s"
+           (user-error "Could not reach the kernel's server: %s"
                        (error-message-string err)))
          (when (timerp emjupy--reconnect-timer)
            (cancel-timer emjupy--reconnect-timer))

@@ -23,9 +23,10 @@
 ;;;; Server URL parsing (remote kernels reached through an SSH tunnel)
 
 (ert-deftest emjupy-test-kernel-ws-url-is-scheme-and-path-aware ()
-  "The kernel WebSocket URL must carry the scheme, the base path, and a
-url-encoded token -- and must NOT emit a bare `?token=' when there is
-no token."
+  "The kernel WebSocket URL carries the scheme and the base path.
+Not the token, which goes in a header: an address is what proxies and
+servers log.  For a server that refused the header alone, the token goes
+in the address too, url-encoded -- never as a bare `?token='."
   (let ((captured nil))
     (cl-letf (((symbol-function 'websocket-open)
                (lambda (url &rest _) (setq captured url) nil)))
@@ -37,7 +38,11 @@ no token."
         (should (string-prefix-p "wss://" captured))
         (should (string-match-p "/user/alice/api/kernels/kid/channels"
                                 captured))
-        (should (string-match-p "token=t%20o%20k" captured)))
+        (should-not (string-match-p "token=" captured))
+        (let ((emjupy--token-in-ws-address
+               (list "https://example.org:8443/user/alice")))
+          (emjupy-connect-kernel nb "kid")
+          (should (string-match-p "token=t%20o%20k" captured))))
       (let* ((server (make-emjupy-server :base-url "localhost:18888" :token ""))
              (nb (make-emjupy-notebook :path "b.ipynb" :server server)))
         (emjupy-connect-kernel nb "kid")
@@ -1103,6 +1108,25 @@ showing as running for good."
       (emjupy--check-quiet-kernels)
       (should-not asked)
       (should-not emjupy--quiet-check-timer))))
+
+
+(ert-deftest emjupy-test-a-refused-header-puts-the-token-in-the-address ()
+  "A WebSocket refused, 403, with the token in a header alone is noted.
+Its server then gets the token in the address too, from the next attempt
+on; any other error is only reported."
+  (let ((on-error nil) (emjupy--token-in-ws-address nil))
+    (cl-letf (((symbol-function 'websocket-open)
+               (lambda (_url &rest args)
+                 (setq on-error (plist-get args :on-error)) nil))
+              ((symbol-function 'message) #'ignore))
+      (let* ((server (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
+             (nb (make-emjupy-notebook :path "a.ipynb" :server server)))
+        (emjupy-connect-kernel nb "kid")
+        (funcall on-error nil 'on-open '(websocket-invalid-header "x"))
+        (should-not emjupy--token-in-ws-address)
+        (funcall on-error nil 'on-open
+                 '(websocket-received-error-http-response 403))
+        (should (equal emjupy--token-in-ws-address '("127.0.0.1:1")))))))
 
 (provide 'emjupy-kernel-test)
 

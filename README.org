@@ -60,7 +60,7 @@ your own notebooks, jump to step 4.
 3. *Start a server* in the notebook's directory, in its own terminal:
    #+begin_src bash
      cd test_notebooks
-     jupyter server --no-browser --port=8888 --IdentityProvider.token=abc
+     JUPYTER_TOKEN=abc jupyter server --no-browser --port=8888
    #+end_src
    Or on another machine, the same way, in a copy of =test_notebooks/=
    or any directory with notebooks, forwarding its port from this one:

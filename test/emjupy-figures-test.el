@@ -67,6 +67,19 @@ notice, which was written into plotly.js as if it were code."
     (should-not (car (emjupy-test--plotly-fetch
                       (make-string 200000 ?x) 10000)))))
 
+
+(ert-deftest emjupy-test-figure-pages-go-to-a-folder-of-the-users-own ()
+  "Figure pages are written to a folder of the user's own, made for them.
+A fixed /tmp/emjupy-figures/, another user could make first: to read the
+pages, or plant the plotly.js they load."
+  (let* ((temporary-file-directory (make-temp-file "emjupy-tmp" t))
+         (dir (emjupy--figures-dir)))
+    (unwind-protect
+        (progn
+          (should (string-match-p (regexp-quote (user-login-name)) dir))
+          (should (= (file-modes dir) #o700)))
+      (delete-directory temporary-file-directory t))))
+
 (provide 'emjupy-figures-test)
 
 ;;; emjupy-figures-test.el ends here

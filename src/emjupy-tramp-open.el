@@ -143,10 +143,13 @@ and is stopped when the last notebook it serves is closed."
                          (process-live-p (plist-get s :process)))
                return (plist-get s :server))
       (let* ((port (emjupy--free-port))
-             (token (secure-hash 'sha256 (format "%s%s%s" (random)
-                                                 (float-time) (emacs-pid))))
+             (token (emjupy--new-token))
              (output (generate-new-buffer (format " *emjupy server %s*" dir)))
              (default-directory dir)
+             ;; The token in the environment, which only its user can read --
+             ;; on the command line, every user of the machine could.
+             (process-environment (cons (concat "JUPYTER_TOKEN=" token)
+                                        process-environment))
              (process (make-process
                        :name "emjupy-server" :buffer output :noquery t
                        :command (append
@@ -155,7 +158,6 @@ and is stopped when the last notebook it serves is closed."
                                   "--ServerApp.ip=127.0.0.1"
                                   (format "--ServerApp.port=%d" port)
                                   "--ServerApp.port_retries=0"
-                                  (concat "--IdentityProvider.token=" token)
                                   (format "--ServerApp.root_dir=%s"
                                           (expand-file-name dir)))
                                  ;; Jupyter refuses to run as root without it
@@ -257,7 +259,8 @@ container, a method of its own -- has no tunnel to it: a `user-error'."
 BatchMode: with no terminal to type a password into, a login that wants
 one fails at once rather than waiting for ever."
   (append (list "ssh" "-N" "-o" "BatchMode=yes" "-o" "ExitOnForwardFailure=yes"
-                "-L" (format "%d:127.0.0.1:%d" local-port remote-port))
+                "-L" (format "127.0.0.1:%d:127.0.0.1:%d"
+                             local-port remote-port))
           (and (plist-get route :jumps) (list "-J" (plist-get route :jumps)))
           (and (plist-get route :port) (list "-p" (plist-get route :port)))
           (list (if (plist-get route :user)
@@ -304,6 +307,12 @@ python3 is asked if PYTHON cannot be; 0 if neither can say."
       dir (format "%s -c %s 2>/dev/null || python3 -c %s"
                   (shell-quote-argument python) ask ask)))))
 
+(defun emjupy--new-token ()
+  "Return a new token for a Jupyter server, from freshly seeded randomness."
+  (random t)
+  (secure-hash 'sha256 (format "%d %d %d %d %s %d" (random) (random) (random)
+                               (random) (float-time) (emacs-pid))))
+
 (defun emjupy--start-remote-server (dir jupyter)
   "Start JUPYTER's server in DIR, through TRAMP, and return what it serves.
 A plist like those `emjupy--remote-server-for' returns.  It is left
@@ -312,14 +321,21 @@ of them again finds it, and its kernels, as they were."
   (let* ((here (file-remote-p dir 'localname))
          (python (concat (file-name-directory jupyter) "python"))
          (port (emjupy--remote-free-port dir python))
-         (token (secure-hash 'sha256 (format "%s%s%s" (random) (float-time)
-                                             (emacs-pid))))
-         (log (format "${TMPDIR:-/tmp}/emjupy-jupyter-$(id -un)-%d.log" port)))
+         (token (emjupy--new-token))
+         ;; The log in a folder of the user's own: in a shared /tmp, under a
+         ;; name another user can guess, a link put there first would have
+         ;; the server's output overwrite a file of the user's.
+         (logs "\"${XDG_CACHE_HOME:-$HOME/.cache}/emjupy\"")
+         (log (format (concat "\"${XDG_CACHE_HOME:-$HOME/.cache}"
+                              "/emjupy/jupyter-%d.log\"")
+                      port)))
     (when (zerop port)
       (user-error "Could not find a free port on the remote machine"))
     (emjupy--remote-shell
-     dir (format "nohup %s server --no-browser --ServerApp.ip=127.0.0.1 --ServerApp.port=%d --ServerApp.port_retries=0 --IdentityProvider.token=%s --ServerApp.root_dir=%s > %s 2>&1 < /dev/null &"
-                 (shell-quote-argument jupyter) port token
+     ;; The token in the environment, not the command line, which every user
+     ;; there can read; the command itself goes over the shell's input.
+     dir (format "mkdir -p %s && chmod 700 %s && JUPYTER_TOKEN=%s nohup %s server --no-browser --ServerApp.ip=127.0.0.1 --ServerApp.port=%d --ServerApp.port_retries=0 --ServerApp.root_dir=%s > %s 2>&1 < /dev/null &"
+                 logs logs token (shell-quote-argument jupyter) port
                  (shell-quote-argument here) log))
     ;; As `jupyter server list' reports a root: without a final slash, so a
     ;; server started here and one found running give the same root.
@@ -390,10 +406,10 @@ A server not reached by a tunnel of emjupy's is left alone."
     (when (and tunnel (not (process-live-p (plist-get tunnel :process))))
       (message "[emjupy] Reopening the tunnel to %s..."
                (plist-get (plist-get tunnel :route) :host))
-      (plist-put tunnel :process
-                 (emjupy--start-tunnel (plist-get tunnel :route)
-                                       (plist-get tunnel :port)
-                                       (plist-get tunnel :remote-port))))))
+      (setf (plist-get tunnel :process)
+            (emjupy--start-tunnel (plist-get tunnel :route)
+                                  (plist-get tunnel :port)
+                                  (plist-get tunnel :remote-port))))))
 
 (defun emjupy--close-tunnel-if-unused (server)
   "Close the tunnel to SERVER if no notebook it serves is open.
@@ -505,7 +521,7 @@ saying so when the path is open from another server there."
     (if (not same)
         (progn
           (dolist (other found)
-            (message "[emjupy] %s is also open in %s, from another server on %s: another notebook as emjupy sees it, its edits there"
+            (message "[emjupy] %s is also open in %s, from another server on %s; to emjupy that is a different notebook, and its edits stay there"
                      path (buffer-name (car other))
                      (plist-get (plist-get (emjupy--tunnel-of server) :route)
                                 :host)))
@@ -526,7 +542,6 @@ saying so when the path is open from another server there."
           (when (and kernel (emjupy-kernel-id kernel)
                      (not (emjupy--ws-live-p kernel)))
             (emjupy-reconnect-kernel))))
-      (switch-to-buffer same)
       same)))
 
 ;;;###autoload
@@ -542,7 +557,9 @@ notebook it serves is closed, and with Emacs.  Through TRAMP -- over
 SSH, through any hops -- a server already serving the folder there is
 used, or one is started, and reached through a tunnel; closing the last
 notebook closes the tunnel, and leaves the server, and its kernels,
-running, to come back to."
+running, to come back to.  A notebook already open from the same machine,
+from the server on the same port there, is the same notebook: its buffer
+is reused, its edits kept."
   (interactive)
   (let ((file buffer-file-name))
     (unless (and file (string-suffix-p ".ipynb" file t))

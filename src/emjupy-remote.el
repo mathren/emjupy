@@ -177,7 +177,8 @@ machine, through TRAMP, where the tunnel is not."
   (let ((default-directory temporary-file-directory))
     (when (executable-find "ps")
       (let ((lines (split-string
-                    (shell-command-to-string "ps -eo args= 2>/dev/null")
+                    (shell-command-to-string
+                     (format "ps -U %d -o args= 2>/dev/null" (user-uid)))
                     "\n" t))
             (pattern (format "-L *\\(?:[^ :]*:\\)?%s:" port))
             (found nil))

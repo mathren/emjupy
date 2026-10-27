@@ -130,7 +130,9 @@ A fragment with its delimiters -- $...$, $$...$$, \\(...\\), \\[...\\]
 BODY may bring its delimiters or not; see `emjupy--latex-math'."
   (when (and (eq (emjupy--latex-available-p) 'org)
              (require 'org nil 'noerror))
-    (let* ((dir (expand-file-name "emjupy-latex/" temporary-file-directory))
+    (let* ((dir (expand-file-name (format "emjupy-latex-%s/" (user-login-name))
+                                  temporary-file-directory))
+           (_private (emjupy--private-directory dir "LaTeX images"))
            (fg (if (stringp emjupy-latex-foreground)
                    emjupy-latex-foreground
                  (face-attribute 'default :foreground nil t)))
