@@ -27,6 +27,7 @@
 (defvar org-format-latex-header)
 (defvar org-latex-default-packages-alist)
 (defvar org-latex-packages-alist)
+(defvar org-preview-latex-process-alist)
 
 ;;;; Options
 
@@ -79,6 +80,22 @@ A colour string is used verbatim."
   "Opening/closing math delimiter regexps, longest first.
 `$$' has to be tried before `$', or a display block reads as two empty
 inline ones.")
+
+(defconst emjupy--latex-process
+  '(dvipng :programs ("latex" "dvipng")
+           :description "dvi > png"
+           :message "you need latex and dvipng"
+           :image-input-type "dvi"
+           :image-output-type "png"
+           :image-size-adjust (1.0 . 1.0)
+           :latex-compiler
+           ("latex -no-shell-escape -interaction nonstopmode -halt-on-error -output-directory %o %f")
+           :image-converter ("dvipng -D %D -T tight -o %O %f")
+           :transparent-image-converter
+           ("dvipng -D %D -T tight -bg Transparent -o %O %f"))
+  "How a notebook's LaTeX is made an image: emjupy's, whatever Org's says.
+LaTeX runs with no shell escape: a notebook's markdown, someone else's
+perhaps, could otherwise run a program merely by being shown.")
 
 (defun emjupy--latex-fragments (start end)
   "Return math fragments between START and END as (BEG END BODY) triples.
@@ -172,8 +189,10 @@ BODY may bring its delimiters or not; see `emjupy--latex-math'."
               ;; The buffer is needed: without it org reads the :html- options
               ;; instead, black on transparent, and ignores
               ;; `emjupy-latex-scale'.
-              (org-create-formula-image (emjupy--latex-math body) file opts
-                                        (current-buffer) 'dvipng))
+              (let ((org-preview-latex-process-alist
+                     (list emjupy--latex-process)))
+                (org-create-formula-image (emjupy--latex-math body) file opts
+                                          (current-buffer) 'dvipng)))
             (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
               (create-image file 'png nil :ascent 'center)))
         ;; Everything: Org reports a failed LaTeX run as a plain error.

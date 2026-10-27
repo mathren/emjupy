@@ -80,6 +80,62 @@ pages, or plant the plotly.js they load."
           (should (= (file-modes dir) #o700)))
       (delete-directory temporary-file-directory t))))
 
+
+(defmacro emjupy-test--scripted-output (trusted &rest body)
+  "Run BODY in a notebook whose one cell has scripted HTML, TRUSTED or not.
+TRUSTED is the server's mark: t, :false, or `none' for no mark.  OPENED,
+in BODY, is the file shown, if any; DATA the output."
+  (declare (indent 1))
+  `(let* ((data (let ((d (make-hash-table :test 'equal)))
+                  (puthash "text/html" "<p>hi</p><script>alert(1)</script>" d)
+                  (puthash "text/plain" "hi" d) d))
+          (metadata (make-hash-table :test 'equal))
+          (opened nil))
+     (unless (eq ,trusted 'none) (puthash "trusted" ,trusted metadata))
+     (emjupy-test--with-notebook
+         (vector (make-emjupy-cell :id 1 :type 'code :source "x"
+                                   :metadata metadata))
+         buf nb
+       (ignore nb)
+       (cl-letf (((symbol-function 'emjupy--show-file)
+                  (lambda (f) (setq opened f)))
+                 ((symbol-function 'emjupy--write-page)
+                  (lambda (_h) "page.html"))
+                 ((symbol-function 'message) #'ignore))
+         (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0) 'start)
+         ,@body))))
+
+(ert-deftest emjupy-test-an-untrusted-notebooks-scripts-are-not-run ()
+  "Scripted HTML from a notebook Jupyter does not trust is not opened.
+As Jupyter, which runs no script of a notebook saved by someone else."
+  (emjupy-test--scripted-output :false
+    (should-error (emjupy-open-output data) :type 'user-error)
+    (should-not opened)))
+
+(ert-deftest emjupy-test-a-trusted-notebooks-scripts-are-run ()
+  "Scripted HTML from a trusted notebook, or a cell made here, opens."
+  (emjupy-test--scripted-output t
+    (emjupy-open-output data)
+    (should opened))
+  (emjupy-test--scripted-output 'none
+    (emjupy-open-output data)
+    (should opened)))
+
+(ert-deftest emjupy-test-trusting-a-notebook-asks-the-server ()
+  "Trusting asks the server to sign the notebook, and trusts its cells."
+  (emjupy-test--scripted-output :false
+    (let ((asked nil))
+      (setf (emjupy-notebook-server nb)
+            (make-emjupy-server :base-url "127.0.0.1:1")
+            (emjupy-notebook-path nb) "dir/my nb.ipynb")
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'emjupy--http-request)
+                 (lambda (method _server path &rest _)
+                   (setq asked (list method path)))))
+        (emjupy-trust-notebook))
+      (should (equal asked '("POST" "/api/contents/dir/my%20nb.ipynb/trust")))
+      (should (emjupy--cell-trusted-p (aref (emjupy-notebook-cells nb) 0))))))
+
 (provide 'emjupy-figures-test)
 
 ;;; emjupy-figures-test.el ends here

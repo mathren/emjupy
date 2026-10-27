@@ -1128,6 +1128,22 @@ on; any other error is only reported."
                  '(websocket-received-error-http-response 403))
         (should (equal emjupy--token-in-ws-address '("127.0.0.1:1")))))))
 
+
+(ert-deftest emjupy-test-a-cell-run-here-is-trusted ()
+  "A cell run is trusted from then on, as Jupyter marks a cell the user runs.
+Saved with every cell trusted, the server signs the notebook."
+  (emjupy-test--reconnecting live sent
+    (setq live t)
+    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+      (setf (emjupy-cell-metadata cell)
+            (let ((m (make-hash-table :test 'equal)))
+              (puthash "trusted" :false m)
+              m))
+      (should-not (emjupy--cell-trusted-p cell))
+      (emjupy-execute-cell-at-point)
+      (should sent)
+      (should (emjupy--cell-trusted-p cell)))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

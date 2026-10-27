@@ -694,6 +694,8 @@ Said if the reconnect gives up: the server may have stopped.")
             (remhash id emjupy--request-halves))
           (puthash msg-id cell pending))
         (emjupy--ws-send json-payload kernel)
+        ;; Its outputs from now on are the user's own.
+        (emjupy--mark-cell-trusted cell)
         ;; Quiet from now on, it is asked after on the server.
         (setf (emjupy-kernel-heard kernel) (float-time))
         (emjupy--watch-quiet-kernels)

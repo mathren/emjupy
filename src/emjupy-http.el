@@ -146,8 +146,12 @@ came back.  Apart from the request, so it is tested without a server."
    ;; 204 No Content: there is nothing to say, and saying nothing is the
    ;; answer.  Interrupting a kernel replies this way, and parsing it as
    ;; JSON reported a syntax error for a request that had succeeded.
-   ((= status 204) nil)
-   ;; An empty success that is not 204 is what a forwarded port gives with
+   ;; Done, with nothing to say: 204, or 201 with no body, as trusting a
+   ;; notebook answers.
+   ((or (= status 204)
+        (and (= status 201) (string-empty-p (string-trim (or body "")))))
+    nil)
+   ;; Any other empty success is what a forwarded port gives with
    ;; nothing listening: blame the tunnel, not the JSON.
    ((string-empty-p (string-trim (or body "")))
     (signal 'emjupy-http-error

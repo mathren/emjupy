@@ -250,6 +250,29 @@ in Customize as changed outside it."
           (should-not (buffer-local-value 'emjupy-render-latex a)))
       (kill-buffer a) (kill-buffer b))))
 
+
+(ert-deftest emjupy-test-latex-runs-without-shell-escape-whatever-org-says ()
+  "A notebook's LaTeX runs with no shell escape, whatever Org is set to.
+Someone else's notebook could otherwise run a program merely by being
+shown; emjupy's own way of making the image, not the user's Org's."
+  (skip-unless (require 'org nil t))
+  (let ((seen nil)
+        (org-preview-latex-process-alist
+         '((dvipng :latex-compiler ("latex -shell-escape %f")))))
+    (cl-letf (((symbol-function 'emjupy--latex-available-p) (lambda () 'org))
+              ((symbol-function 'org-create-formula-image)
+               (lambda (&rest _)
+                 (setq seen
+                       (plist-get (cdr (assq 'dvipng
+                                             org-preview-latex-process-alist))
+                                  :latex-compiler)))))
+      (let ((temporary-file-directory (make-temp-file "emjupy-tmp" t)))
+        (unwind-protect (with-temp-buffer (emjupy--latex-image "$x^2$"))
+          (delete-directory temporary-file-directory t))))
+    (should seen)
+    (should (string-match-p "-no-shell-escape" (car seen)))
+    (should-not (string-match-p " -shell-escape" (car seen)))))
+
 (provide 'emjupy-latex-test)
 
 ;;; emjupy-latex-test.el ends here

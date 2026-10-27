@@ -91,6 +91,7 @@ Dired -- are in [[file:usage.org::*Server dashboard][Using a notebook]].
 | =emjupy-open-notebook=      | Open a notebook by path on a given server        |
 | =emjupy-list-notebooks=     | Prompt with the server's notebook list           |
 | =emjupy-create-notebook=    | Create a new blank notebook on the server        |
+| =emjupy-trust-notebook=     | Trust it, as Jupyter does: its scripts then run  |
 | =emjupy-refresh-appearance= | Re-derive page colours from the theme and redraw |
 
 Completion (=M-TAB=) and eldoc need no =emjupy= binding: they are wired into

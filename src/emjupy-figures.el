@@ -345,6 +345,12 @@ and a notebook is a file people share."
                   (let ((cell (emjupy--cell-at-point-including-output)))
                     (and cell (emjupy--openable-data cell))))))
     (unless data (user-error "No output here that can be opened"))
+    (let ((cell (emjupy--cell-at-point-including-output)))
+      ;; As Jupyter: a notebook it does not trust does not run its scripts.
+      (when (and (emjupy--scripted-html data) cell
+                 (not (emjupy--cell-trusted-p cell)))
+        (user-error "This output is from a notebook Jupyter does not trust, so its scripts are not run; %s trusts it"
+                    (substitute-command-keys "\\[emjupy-trust-notebook]"))))
     (let ((plotly (gethash emjupy--plotly-mime data))
           (html (emjupy--scripted-html data))
           (image (cl-loop for (mime . type) in emjupy--image-mime-types

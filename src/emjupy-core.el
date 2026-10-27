@@ -220,6 +220,25 @@ SHADOW-BUFFER holds its code for the language server."
   ;; what a save checks, so as not to overwrite changes made elsewhere.
   last-modified)
 
+;;;; Trust, as Jupyter decides it
+
+(defun emjupy--cell-trusted-p (cell)
+  "Return non-nil if Jupyter trusts CELL's outputs to run their scripts.
+The server marks each code cell of a notebook it hands over, checking the
+notebook's signature: one saved by someone else, or edited outside
+Jupyter, is not trusted.  A cell with no mark was made here, and one run
+here holds the user's own output: both are trusted."
+  (let ((metadata (emjupy-cell-metadata cell)))
+    (not (and (hash-table-p metadata)
+              (eq (gethash "trusted" metadata) :false)))))
+
+(defun emjupy--mark-cell-trusted (cell)
+  "Mark CELL trusted: run here, its outputs are the user's own.
+Saved with every cell so marked, the server signs the notebook."
+  (unless (hash-table-p (emjupy-cell-metadata cell))
+    (setf (emjupy-cell-metadata cell) (make-hash-table :test 'equal)))
+  (puthash "trusted" t (emjupy-cell-metadata cell)))
+
 ;;;; Lookups
 
 (defun emjupy--intern-server (base-url token)

@@ -230,6 +230,9 @@ or else a new Firefox window or a Chromium app window, in the order
 names another program; =emjupy-figure-viewer= can choose the browser, or
 an xwidget inside Emacs -- see [[file:limitations.org][Known limitations]] for why that is not the
 default.  Opening is always asked for: it runs the notebook's JavaScript.
+As in Jupyter, a notebook Jupyter does not trust -- saved by someone
+else, or edited outside Jupyter -- does not run its outputs' scripts;
+=M-x emjupy-trust-notebook= trusts it, and a cell run is trusted.
 
 #+CAPTION: Opening a plotly figure, and rotating it.
 #+ATTR_HTML: :width 100%

@@ -1370,6 +1370,61 @@ moved onto the new tunnel, connected, its kernel's state there."
           (dolist (b (delete-dups (list buf again)))
             (when (buffer-live-p b) (kill-buffer b))))))))
 
+(ert-deftest emjupy-int-an-untrusted-notebook-is-trusted-through-the-server ()
+  "A notebook saved elsewhere, a script in its output, is trusted as Jupyter.
+Unsigned, the server marks its cell untrusted, and the output does not
+open; trusted, the server signs it, and marks it trusted from then on."
+  (emjupy-int--skip-unless-live)
+  (let* ((server emjupy--current-server)
+         (path (format "emjupy-int-trust-%d.ipynb" (random 100000)))
+         (out (let ((o (make-hash-table :test 'equal))
+                    (d (make-hash-table :test 'equal)))
+                (puthash "text/html" "<p>x</p><script>1</script>" d)
+                (puthash "text/plain" "x" d)
+                (puthash "output_type" "display_data" o)
+                (puthash "data" d o)
+                (puthash "metadata" (make-hash-table) o)
+                o))
+         (cell (let ((c (make-hash-table :test 'equal)))
+                 (puthash "cell_type" "code" c) (puthash "id" "c1" c)
+                 ;; Unique: Jupyter trusts by content, what it once trusted
+                 ;; trusted under any name.
+                 (puthash "source" (format "x = %d" (random 1000000000)) c)
+                 (puthash "metadata" (make-hash-table) c)
+                 (puthash "outputs" (vector out) c)
+                 (puthash "execution_count" 1 c) c))
+         (content (let ((n (make-hash-table :test 'equal)))
+                    (puthash "cells" (vector cell) n)
+                    (puthash "metadata" (make-hash-table) n)
+                    (puthash "nbformat" 4 n) (puthash "nbformat_minor" 5 n) n))
+         (payload (let ((p (make-hash-table :test 'equal)))
+                    (puthash "type" "notebook" p) (puthash "format" "json" p)
+                    (puthash "content" content p) p))
+         (open (lambda () (emjupy-open-notebook path server)))
+         (first-cell (lambda (buf)
+                       (aref (emjupy-notebook-cells
+                              (buffer-local-value 'emjupy--buffer-notebook buf))
+                             0)))
+         (kill (lambda (buf) (let ((kill-buffer-query-functions nil))
+                               (kill-buffer buf))))
+         (buf nil))
+    (emjupy--http-request "PUT" server (emjupy--contents-path path)
+                          (json-serialize payload))
+    (setq buf (funcall open))
+    (should-not (emjupy--cell-trusted-p (funcall first-cell buf)))
+    (with-current-buffer buf
+      (emjupy--goto-cell (funcall first-cell buf) 'start)
+      (should-error (emjupy-open-output (emjupy--openable-data
+                                         (funcall first-cell buf)))
+                    :type 'user-error)
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (emjupy-trust-notebook)))
+    (funcall kill buf)
+    (setq buf (funcall open))
+    (unwind-protect
+        (should (emjupy--cell-trusted-p (funcall first-cell buf)))
+      (funcall kill buf))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

@@ -333,6 +333,21 @@ Returns the notebook buffer."
   (let ((path (or (emjupy-notebook-path nb) "notebook.ipynb")))
     (concat (file-name-sans-extension path) ".py")))
 
+(defun emjupy-trust-notebook ()
+  "Trust this notebook, as Jupyter's Trust Notebook does.
+Its outputs' HTML and JavaScript then run when opened.  The server signs
+it, so it is trusted wherever Jupyter opens it from that server; asks
+first, as a notebook is a file people share."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (path (emjupy-notebook-path nb)))
+    (when (y-or-n-p (format "Trust %s, and run the scripts its outputs carry when they are opened? "
+                            path))
+      (emjupy--http-request "POST" (emjupy-notebook-server nb)
+                            (concat (emjupy--contents-path path) "/trust"))
+      (mapc #'emjupy--mark-cell-trusted (emjupy-notebook-cells nb))
+      (message "[emjupy] %s is trusted." path))))
+
 (defun emjupy-export-py (&optional local)
   "Export this notebook as a plain Python file in percent format.
 
