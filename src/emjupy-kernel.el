@@ -628,6 +628,24 @@ kernels never cross-talk."
 
 ;;;; Connecting
 
+(defun emjupy--guard-refused-socket (ws)
+  "Keep a refused WS's leftovers from raising errors.
+Its handshake refused, websocket.el goes on to read the server's error
+page as frames, and answers a ping found there on the closed connection:
+an error in the process's filter.  Errors of a socket marked refused are
+dropped; any other's are raised as they were."
+  (when-let* (((websocket-p ws))
+              (conn (websocket-conn ws))
+              ((processp conn))
+              (filter (process-filter conn)))
+    (set-process-filter
+     conn (lambda (process output)
+            (condition-case err
+                (funcall filter process output)
+              (error
+               (unless (eq (websocket-client-data ws) 'refused)
+                 (signal (car err) (cdr err)))))))))
+
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
 KERNEL-NAME, when given, is the kernelspec name to record.
@@ -662,14 +680,30 @@ several notebooks -- from several servers -- stay live at once."
           (websocket-open
            ws-url
            :custom-header-alist headers
-           :on-message (lambda (_ws frame)
-                         (emjupy--handle-ws-message kernel frame))
-           :on-open (lambda (_ws)
-                      (message "[emjupy] %s connected to kernel %s" label
-                               kernel-id))
+           ;; A socket the server refused is never open: websocket.el, its
+           ;; handshake refused, still calls `on-open', then reads the error
+           ;; page as frames.
+           :on-message (lambda (ws frame)
+                         (unless (eq (websocket-client-data ws) 'refused)
+                           (emjupy--handle-ws-message kernel frame)))
+           :on-open (lambda (ws)
+                      (unless (eq (websocket-client-data ws) 'refused)
+                        (message "[emjupy] %s connected to kernel %s" label
+                                 kernel-id)))
            :on-close (lambda (_ws)
                        (emjupy--kernel-connection-closed kernel label))
-           :on-error (lambda (_ws type err)
+           :on-error (lambda (ws type err)
+                       ;; Its handshake refused -- the kernel gone, a server
+                       ;; restarted -- the socket is closed, and the
+                       ;; reconnecting asks the server what became of it.
+                       (when (and (websocket-p ws)
+                                  (eq (car-safe err)
+                                      'websocket-received-error-http-response))
+                         (setf (websocket-client-data ws) 'refused)
+                         ;; Dropped, not closed: closing writes a frame to a
+                         ;; connection the server has shut.
+                         (when (process-live-p (websocket-conn ws))
+                           (delete-process (websocket-conn ws))))
                        ;; Refused with the token in a header alone: the next
                        ;; attempt, reconnecting, has it in the address too.
                        (if (emjupy--note-ws-refusal server err)
@@ -677,6 +711,7 @@ several notebooks -- from several servers -- stay live at once."
                                     label)
                          (message "[emjupy] %s WebSocket error (%s): %s" label
                                   type err)))))
+    (emjupy--guard-refused-socket (emjupy-kernel-ws kernel))
     (setf (emjupy-notebook-kernel notebook) kernel)
     ;; cells kept running when the last connection dropped
     (emjupy--adopt-kept-runs kernel)

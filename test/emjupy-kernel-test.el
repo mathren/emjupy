@@ -1144,6 +1144,39 @@ Saved with every cell trusted, the server signs the notebook."
       (should sent)
       (should (emjupy--cell-trusted-p cell)))))
 
+
+(ert-deftest emjupy-test-a-refused-handshake-is-never-open ()
+  "A WebSocket the server refuses -- a kernel gone, a server restarted -- is
+never taken as open.  websocket.el, the handshake refused, still called
+`on-open', and read the server's error page as messages: emjupy said
+\"connected\", and errors followed."
+  (let* ((handlers nil) (handled nil) (said nil)
+         (conn (start-process "emjupy-test-conn" nil "sleep" "30"))
+         (ws (websocket-inner-create :conn conn :url "ws://x"
+                                     :ready-state 'connecting)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'websocket-open)
+                   (lambda (_url &rest args) (setq handlers args) ws))
+                  ((symbol-function 'emjupy--handle-ws-message)
+                   (lambda (&rest _) (setq handled t)))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (push (apply #'format fmt args) said))))
+          (let* ((server (make-emjupy-server :base-url "127.0.0.1:1"
+                                            :token "t"))
+                 (nb (make-emjupy-notebook :path "a.ipynb" :server server)))
+            (emjupy-connect-kernel nb "gone-kernel")
+            (funcall (plist-get handlers :on-error) ws 'on-open
+                     '(websocket-received-error-http-response 404))
+            (funcall (plist-get handlers :on-open) ws)
+            (funcall (plist-get handlers :on-message) ws "<html>404</html>")
+            (should (eq (websocket-client-data ws) 'refused))
+            (should-not (process-live-p conn))
+            (should-not handled)
+            (should-not (seq-some (lambda (m) (string-match-p "connected to kernel" m))
+                                  said))))
+      (when (process-live-p conn) (delete-process conn)))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

@@ -1425,6 +1425,35 @@ open; trusted, the server signs it, and marks it trusted from then on."
         (should (emjupy--cell-trusted-p (funcall first-cell buf)))
       (funcall kill buf))))
 
+(ert-deftest emjupy-int-a-kernel-the-server-lacks-is-said-gone ()
+  "Connecting to a kernel the server does not have -- as after a restart --
+is never taken as connected: the server's refusal is seen, and the
+notebook is told its kernel is gone."
+  (emjupy-int--skip-unless-live)
+  (let* ((said nil)
+         (buf (emjupy-int--open-with-kernel
+               emjupy--current-server
+               (format "emjupy-int-gone-%d.ipynb" (random 100000)))))
+    (unwind-protect
+        (with-current-buffer buf
+          (let ((nb (emjupy--notebook)))
+            (cl-letf* ((real (symbol-function 'message))
+                       ((symbol-function 'message)
+                        (lambda (fmt &rest args)
+                          (when (stringp fmt)
+                            (push (apply #'format-message fmt args) said))
+                          (apply real fmt args))))
+              (emjupy--disconnect-kernel nb)
+              (emjupy-connect-kernel nb "00000000-0000-0000-0000-000000000000")
+              (should (emjupy-int--pump
+                       15 (lambda () (null (emjupy-notebook-kernel nb))))))
+            (should (seq-some (lambda (m) (string-match-p "is gone from the server" m))
+                              said))
+            (should-not (seq-some (lambda (m)
+                                    (string-match-p "connected to kernel 00000000" m))
+                                  said))))
+      (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the
