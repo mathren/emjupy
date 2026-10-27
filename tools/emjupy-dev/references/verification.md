@@ -18,6 +18,7 @@ EMACS=/opt/emacs301/bin/emacs
 git clone --depth 1 https://github.com/ahyatt/emacs-websocket ~/vendor/websocket
 export EMJUPY_WEBSOCKET_DIR=~/vendor/websocket
 # Python for live tests: server, kernel, language server, and tooling
+apt-get install -y -q texlive-latex-base dvipng   # LaTeX previews: the render test skips without
 python3 -m venv /opt/jenv && /opt/jenv/bin/pip install -q \
   jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]' \
   matplotlib plotly ipywidgets anywidget tqdm nbformat nbstripout

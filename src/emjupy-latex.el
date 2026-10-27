@@ -142,6 +142,15 @@ A fragment with its delimiters -- $...$, $$...$$, \\(...\\), \\[...\\]
       fragment
     (concat "$" fragment "$")))
 
+(defun emjupy--latex-colour (colour)
+  "Return COLOUR if Emacs can say what it is, else black.
+Org makes the colour numbers, and fails on a name it cannot resolve: the
+default face's foreground is \"unspecified-fg\" on a terminal, and in
+batch, and a name given in an option may be misspelt."
+  (if (and (stringp colour) (color-name-to-rgb colour))
+      colour
+    "Black"))
+
 (defun emjupy--latex-image (body)
   "Render BODY, a LaTeX math fragment, to an image spec, or nil.
 BODY may bring its delimiters or not; see `emjupy--latex-math'."
@@ -150,9 +159,10 @@ BODY may bring its delimiters or not; see `emjupy--latex-math'."
     (let* ((dir (expand-file-name (format "emjupy-latex-%s/" (user-login-name))
                                   temporary-file-directory))
            (_private (emjupy--private-directory dir "LaTeX images"))
-           (fg (if (stringp emjupy-latex-foreground)
-                   emjupy-latex-foreground
-                 (face-attribute 'default :foreground nil t)))
+           (fg (emjupy--latex-colour
+                (if (stringp emjupy-latex-foreground)
+                    emjupy-latex-foreground
+                  (face-attribute 'default :foreground nil t))))
            ;; The colour is part of the cache key.  Without it a formula
            ;; rendered under one theme would be served back unchanged after
            ;; switching to another -- black glyphs on a dark background.
@@ -174,13 +184,11 @@ BODY may bring its delimiters or not; see `emjupy--latex-math'."
                     "\\pagestyle{empty}"))
            (opts (copy-sequence org-format-latex-options)))
       (setq opts (plist-put opts :scale emjupy-latex-scale))
-      (when (and fg (stringp fg))
-        (setq opts (plist-put opts :foreground fg)))
+      (setq opts (plist-put opts :foreground fg))
       ;; Transparent: given a buffer, org would bake the theme's background into
       ;; the image, wrong on anything else.  The foreground carries the
       ;; contrast.
       (setq opts (plist-put opts :background "Transparent"))
-      (make-directory dir t)
       (condition-case err
           (progn
             ;; Cached by content hash: dragging a slider over a notebook full

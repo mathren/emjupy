@@ -273,6 +273,34 @@ shown; emjupy's own way of making the image, not the user's Org's."
     (should (string-match-p "-no-shell-escape" (car seen)))
     (should-not (string-match-p " -shell-escape" (car seen)))))
 
+
+(ert-deftest emjupy-test-latex-gets-a-colour-org-can-resolve ()
+  "The colour handed to Org is one Emacs can resolve, else black.
+On a terminal, and in batch, the default face's foreground is
+\"unspecified-fg\": Org failed on it, \"Not enough arguments for format
+string\", and no formula rendered."
+  (should (equal (emjupy--latex-colour "unspecified-fg") "Black"))
+  (should (equal (emjupy--latex-colour "no-such-colour-at-all") "Black"))
+  (should (equal (emjupy--latex-colour nil) "Black"))
+  (when (color-name-to-rgb "#ff0000")
+    (should (equal (emjupy--latex-colour "#ff0000") "#ff0000"))))
+
+(ert-deftest emjupy-test-a-formula-renders-to-an-image ()
+  "With latex and dvipng there, a formula is rendered, into the user's folder.
+Nothing tested this end to end, and a formula had stopped rendering."
+  (skip-unless (and (executable-find "latex") (executable-find "dvipng")
+                    (require 'org nil t)))
+  (let* ((temporary-file-directory (make-temp-file "emjupy-tmp" t))
+         (dir (expand-file-name (format "emjupy-latex-%s/" (user-login-name))
+                                temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'emjupy--latex-available-p)
+                     (lambda () 'org)))
+            (with-temp-buffer (emjupy--latex-image "$x^2 + \\alpha$")))
+          (should (directory-files dir nil "\\.png\\'")))
+      (delete-directory temporary-file-directory t))))
+
 (provide 'emjupy-latex-test)
 
 ;;; emjupy-latex-test.el ends here
