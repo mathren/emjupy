@@ -526,15 +526,18 @@ is done: a large answer comes in several messages."
 (defun emjupy--cell-replied (cell content id pending notebook)
   "Finish CELL's run, its request ID answered by an execute_reply.
 CONTENT is the reply's content; PENDING the kernel's table of requests;
-NOTEBOOK the cell's.  The count is set, the cell marked done, and the
-notebook redrawn."
+NOTEBOOK the cell's.  The count is set, the cell marked done, and its
+output redrawn -- the notebook only if that cannot be done in place:
+redrawing it on every reply, a notebook run whole was redrawn once per
+cell."
   (setf (emjupy-cell-exec-count cell) (gethash "execution_count" content))
   (emjupy--request-half-seen id 'reply pending)
   (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook)))
               ((buffer-live-p buf)))
     (emjupy--mark-done cell buf)
     (with-current-buffer buf
-      (emjupy--redraw-notebook-keeping-point))))
+      (unless (emjupy--redraw-cell-output cell)
+        (emjupy--redraw-notebook-keeping-point)))))
 
 (defun emjupy--rich-output (type content)
   "Return an output of TYPE, from CONTENT, a kernel message's content.

@@ -631,6 +631,28 @@ those queued show a still *, as in Jupyter."
         (should (emjupy--redraw-cell-output cell)))
       (should (<= rebuilds 1)))))
 
+
+(ert-deftest emjupy-test-a-reply-redraws-its-cell-not-the-notebook ()
+  "A cell's reply redraws that cell, not the notebook.
+Each reply redrew the whole notebook: a notebook of N cells, run whole,
+was redrawn N times, slower with each cell added."
+  (emjupy-test--with-notebook (emjupy-test--cells 120) buf nb
+    (let* ((cell (aref (emjupy-notebook-cells nb) 60))
+           (pending (make-hash-table :test 'equal))
+           (whole 0)
+           (content (let ((h (make-hash-table :test 'equal)))
+                      (puthash "execution_count" 7 h) h)))
+      (puthash "m1" cell pending)
+      (emjupy--mark-running cell)
+      (cl-letf* ((real (symbol-function 'emjupy--redraw-notebook))
+                 ((symbol-function 'emjupy--redraw-notebook)
+                  (lambda (&rest args) (cl-incf whole) (apply real args))))
+        (emjupy--cell-replied cell content "m1" pending nb))
+      (should (= whole 0))
+      (should (string-match-p "\\[In: 7\\]"
+                              (emjupy--overlay-header
+                               (emjupy-cell-overlay cell)))))))
+
 (provide 'emjupy-render-test)
 
 ;;; emjupy-render-test.el ends here
