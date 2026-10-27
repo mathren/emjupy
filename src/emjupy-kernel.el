@@ -1013,12 +1013,18 @@ the run ended while disconnected, and the cell is ended too."
   "Settle IDS, requests KERNEL adopted after a drop: end them if it is idle.
 They ended unseen, while the connection was down.  Only these: a run
 sent since may have finished on the kernel with its output still on the
-way, and ending it would lose that output."
+way, and ending it would lose that output.  A kernel heard from lately
+is working through them -- idle a moment between two queued cells --
+and is asked again later."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb)))
          (pending (emjupy-kernel-pending kernel))
          (left (and (hash-table-p pending)
                     (seq-filter (lambda (id) (gethash id pending)) ids))))
+    (when (and (buffer-live-p buf) left
+               (< (- (float-time) (or (emjupy-kernel-heard kernel) 0)) 3))
+      (run-with-timer 4 nil #'emjupy--settle-adopted-runs kernel ids)
+      (setq left nil))
     (when (and (buffer-live-p buf) left)
       (let ((state (condition-case nil
                        (gethash "execution_state"

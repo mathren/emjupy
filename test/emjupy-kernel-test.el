@@ -1177,6 +1177,39 @@ never taken as open.  websocket.el, the handshake refused, still called
                                   said))))
       (when (process-live-p conn) (delete-process conn)))))
 
+
+(ert-deftest emjupy-test-adopted-runs-are-not-ended-while-the-kernel-works ()
+  "Runs adopted after a drop are not ended while their kernel is heard from.
+A kernel working through queued cells is idle a moment between two: one
+look at it then ended every run still queued, and their output, coming
+after, was dropped -- a long notebook cut off mid-run lost its last
+cells.  Quiet and idle, the runs end."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf nb
+    (let* ((pending (make-hash-table :test 'equal))
+           (kernel (make-emjupy-kernel :id "k" :notebook nb :pending pending))
+           (later nil) (ended nil))
+      (puthash "m1" (aref (emjupy-notebook-cells nb) 0) pending)
+      (setf (emjupy-notebook-kernel nb) kernel
+            (emjupy-notebook-server nb) (make-emjupy-server :base-url "127.0.0.1:1"))
+      (cl-letf (((symbol-function 'emjupy--http-request)
+                 (lambda (&rest _) (let ((h (make-hash-table :test 'equal)))
+                                     (puthash "execution_state" "idle" h) h)))
+                ((symbol-function 'run-with-timer)
+                 (lambda (&rest _) (setq later t)))
+                ((symbol-function 'emjupy--end-runs)
+                 (lambda (&rest _) (setq ended t))))
+        (setf (emjupy-kernel-heard kernel) (float-time))
+        (emjupy--settle-adopted-runs kernel '("m1"))
+        (should later)
+        (should-not ended)
+        (should (gethash "m1" pending))
+        (setf (emjupy-kernel-heard kernel) (- (float-time) 30))
+        (emjupy--settle-adopted-runs kernel '("m1"))
+        (should ended)
+        (should-not (gethash "m1" pending))))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here
