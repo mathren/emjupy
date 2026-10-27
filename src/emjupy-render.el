@@ -105,89 +105,11 @@ rule too wide for a window wraps."
            ;; Leave a margin so the rule cannot run past the right edge.
            (- (apply #'min widths) (max 0 emjupy-box-right-margin))))))
 
-;;;; The running indicator
+;;;; Labels and rules
 
-(defvar-local emjupy--running-cells nil
-  "Ids of cells currently executing in this buffer.")
-
-(defvar-local emjupy--spinner-timer nil
-  "Timer animating the running indicator, or nil.")
-
+;; The frame the running indicator, below, has reached: the label draws it.
 (defvar-local emjupy--spinner-frame 0
   "Index into `emjupy-running-indicator'.")
-
-(defun emjupy--cell-running-p (cell)
-  "Return non-nil if CELL is currently executing."
-  (and cell (memq (emjupy-cell-id cell) emjupy--running-cells)))
-
-(defun emjupy--spinner-tick ()
-  "Advance the indicator and redraw the headers of running cells.
-Only overlay strings change, never buffer text, so typing and undo are
-not disturbed."
-  (let ((buf (current-buffer)))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (if (not emjupy--running-cells)
-            (emjupy--stop-spinner)
-          (setq emjupy--spinner-frame
-                (mod (1+ emjupy--spinner-frame)
-                     (length emjupy-running-indicator)))
-          (when emjupy--buffer-notebook
-            (cl-loop for cell across
-                     (emjupy-notebook-cells emjupy--buffer-notebook)
-                     when (emjupy--cell-running-p cell)
-                     do (emjupy--redraw-cell-header cell))))))))
-
-(defun emjupy--start-spinner ()
-  "Start animating the running indicator in this buffer."
-  (unless (or emjupy--spinner-timer (< (length emjupy-running-indicator) 2))
-    (setq emjupy--spinner-timer
-          (run-with-timer emjupy-running-indicator-interval
-                          emjupy-running-indicator-interval
-                          #'emjupy--spinner-tick-in (current-buffer)))))
-
-(defun emjupy--spinner-tick-in (buffer)
-  "Run `emjupy--spinner-tick' inside BUFFER if it is still alive."
-  (if (buffer-live-p buffer)
-      (with-current-buffer buffer (emjupy--spinner-tick))
-    (emjupy--stop-spinner)))
-
-(defun emjupy--stop-spinner ()
-  "Stop the running indicator in this buffer."
-  (when emjupy--spinner-timer
-    (cancel-timer emjupy--spinner-timer)
-    (setq emjupy--spinner-timer nil)))
-
-(defun emjupy--redraw-cell-header (cell)
-  "Redraw CELL's header rule in place.
-The header is an overlay `before-string', so this changes no buffer text
-and does not enter the undo history."
-  (let ((ov (emjupy-cell-overlay cell)))
-    (when (overlayp ov)
-      (overlay-put ov 'emjupy-header nil)
-      (overlay-put ov 'before-string
-                   (emjupy--rule (emjupy--cell-label cell) "┌"))
-      (emjupy--reconcile-rules)
-      (emjupy--overlay-header ov))))
-
-(defun emjupy--mark-running (cell &optional buffer)
-  "Mark CELL as executing in BUFFER, and start the indicator."
-  (with-current-buffer (or buffer (current-buffer))
-    (cl-pushnew (emjupy-cell-id cell) emjupy--running-cells)
-    ;; Draw it at once rather than on the next tick, so pressing the key
-    ;; visibly does something even for a cell that finishes quickly.
-    (emjupy--redraw-cell-header cell)
-    (emjupy--start-spinner)))
-
-(defun emjupy--mark-done (cell &optional buffer)
-  "Mark CELL as no longer executing in BUFFER."
-  (with-current-buffer (or buffer (current-buffer))
-    (setq emjupy--running-cells
-          (delq (emjupy-cell-id cell) emjupy--running-cells))
-    (emjupy--redraw-cell-header cell)
-    (unless emjupy--running-cells (emjupy--stop-spinner))))
-
-;;;; Labels and rules
 
 (defun emjupy--cell-label (cell)
   "Return the header label for CELL's input box."
@@ -384,6 +306,85 @@ box says that it is collapsed rather than absent."
 ;; the LaTeX written. org renders it, needing LaTeX and no other package;
 ;; math-preview is used if it is what there is.
 
+;;;; The running indicator
+
+(defvar-local emjupy--running-cells nil
+  "Ids of cells currently executing in this buffer.")
+
+(defvar-local emjupy--spinner-timer nil
+  "Timer animating the running indicator, or nil.")
+
+(defun emjupy--cell-running-p (cell)
+  "Return non-nil if CELL is currently executing."
+  (and cell (memq (emjupy-cell-id cell) emjupy--running-cells)))
+
+(defun emjupy--spinner-tick ()
+  "Advance the indicator and redraw the headers of running cells.
+Only overlay strings change, never buffer text, so typing and undo are
+not disturbed."
+  (let ((buf (current-buffer)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (if (not emjupy--running-cells)
+            (emjupy--stop-spinner)
+          (setq emjupy--spinner-frame
+                (mod (1+ emjupy--spinner-frame)
+                     (length emjupy-running-indicator)))
+          (when emjupy--buffer-notebook
+            (cl-loop for cell across
+                     (emjupy-notebook-cells emjupy--buffer-notebook)
+                     when (emjupy--cell-running-p cell)
+                     do (emjupy--redraw-cell-header cell))))))))
+
+(defun emjupy--start-spinner ()
+  "Start animating the running indicator in this buffer."
+  (unless (or emjupy--spinner-timer (< (length emjupy-running-indicator) 2))
+    (setq emjupy--spinner-timer
+          (run-with-timer emjupy-running-indicator-interval
+                          emjupy-running-indicator-interval
+                          #'emjupy--spinner-tick-in (current-buffer)))))
+
+(defun emjupy--spinner-tick-in (buffer)
+  "Run `emjupy--spinner-tick' inside BUFFER if it is still alive."
+  (if (buffer-live-p buffer)
+      (with-current-buffer buffer (emjupy--spinner-tick))
+    (emjupy--stop-spinner)))
+
+(defun emjupy--stop-spinner ()
+  "Stop the running indicator in this buffer."
+  (when emjupy--spinner-timer
+    (cancel-timer emjupy--spinner-timer)
+    (setq emjupy--spinner-timer nil)))
+
+(defun emjupy--redraw-cell-header (cell)
+  "Redraw CELL's header rule in place.
+The header is an overlay `before-string', so this changes no buffer text
+and does not enter the undo history."
+  (let ((ov (emjupy-cell-overlay cell)))
+    (when (overlayp ov)
+      (overlay-put ov 'emjupy-header nil)
+      (overlay-put ov 'before-string
+                   (emjupy--rule (emjupy--cell-label cell) "┌"))
+      (emjupy--reconcile-rules)
+      (emjupy--overlay-header ov))))
+
+(defun emjupy--mark-running (cell &optional buffer)
+  "Mark CELL as executing in BUFFER, and start the indicator."
+  (with-current-buffer (or buffer (current-buffer))
+    (cl-pushnew (emjupy-cell-id cell) emjupy--running-cells)
+    ;; Draw it at once rather than on the next tick, so pressing the key
+    ;; visibly does something even for a cell that finishes quickly.
+    (emjupy--redraw-cell-header cell)
+    (emjupy--start-spinner)))
+
+(defun emjupy--mark-done (cell &optional buffer)
+  "Mark CELL as no longer executing in BUFFER."
+  (with-current-buffer (or buffer (current-buffer))
+    (setq emjupy--running-cells
+          (delq (emjupy-cell-id cell) emjupy--running-cells))
+    (emjupy--redraw-cell-header cell)
+    (unless emjupy--running-cells (emjupy--stop-spinner))))
+
 ;;;; Fontifying source
 
 (defun emjupy--markdown-fontify-fallback ()
@@ -568,6 +569,277 @@ click on it knows the cell."
            'help-echo "mouse-1: show this output")
      glyph)
     (concat glyph rest)))
+
+;;;; MIME types
+
+(defconst emjupy--widget-view-mime "application/vnd.jupyter.widget-view+json"
+  "MIME type of an output that shows a widget.")
+
+(defconst emjupy--image-mime-types
+  '(("image/png"     . png)
+    ("image/jpeg"    . jpeg)
+    ("image/gif"     . gif)
+    ("image/svg+xml" . svg))
+  "MIME types emjupy can render inline, in preference order.
+Maps each to the Emacs image type used to display it.")
+
+(defun emjupy--mime-text (value)
+  "Return VALUE as a string.
+nbformat stores multi-line payloads as one string or a list of lines,
+depending on where the JSON came from."
+  (cond
+   ((null value) "")
+   ((stringp value) value)
+   ((vectorp value) (mapconcat #'identity (append value nil) ""))
+   ((listp value) (mapconcat #'identity value ""))
+   (t (format "%s" value))))
+
+(defun emjupy--pad-output-lines (start end face)
+  "Fill every line between START and END out to the cell's right border.
+FACE is the background the filler carries.  A stretch space aligned to
+`emjupy--box-width' stops at the border, where `:extend' would run to
+the window's edge."
+  (let ((width (emjupy--box-width)))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (end-of-line)
+        (let ((eol (min (point) end)))
+          (goto-char eol)
+          (insert (propertize " "
+                              'emjupy-pad t
+                              'face face
+                              ;; Also as `font-lock-face': font-lock removes
+                              ;; `face' from what it refontifies, and leaves
+                              ;; `font-lock-face' alone.
+                              'font-lock-face face
+                              ;; Ends where the rule does: WIDTH characters, and
+                              ;; a stretch to :align-to WIDTH covers the same.
+                              'display `(space :align-to ,width)))
+          (setq end (+ end 1)))
+        (forward-line 1)))
+    end))
+
+(defun emjupy--unface-newlines (start end)
+  "Remove the output background from the newlines between START and END.
+A newline with a background paints a column past the rule."
+  (save-excursion
+    (goto-char start)
+    (while (< (point) end)
+      (end-of-line)
+      (when (and (< (point) end) (eq (char-after) ?\n))
+        (remove-text-properties (point) (1+ (point))
+                                '(face nil font-lock-face nil)))
+      (forward-line 1))))
+
+;;;; Images, once each
+
+(defun emjupy--output-image-key (out)
+  "Return a key identifying OUT's image payload, or nil if it carries none.
+The payload is hashed rather than compared directly: a figure is
+hundreds of kilobytes of base64, and this runs on every redraw."
+  (when (hash-table-p out)
+    (let ((data (gethash "data" out)))
+      (when (hash-table-p data)
+        (cl-loop for (mime . _type) in emjupy--image-mime-types
+                 for payload = (gethash mime data)
+                 when payload
+                 return (cons mime (md5 (emjupy--mime-text payload))))))))
+
+(defun emjupy--widgets-first (outputs)
+  "Return OUTPUTS with the ones showing widgets first, otherwise in order.
+An `interact' sends its figure before its controls; controls go above,
+where a notebook puts them.  Only the drawing changes, not the order
+saved."
+  (let ((widget-p (lambda (o)
+                    (let ((d (and (hash-table-p o) (gethash "data" o))))
+                      (and (hash-table-p d)
+                           (gethash emjupy--widget-view-mime d))))))
+    (append (seq-filter widget-p outputs) (seq-remove widget-p outputs))))
+
+(defun emjupy--outputs-to-draw (outputs)
+  "Return OUTPUTS as a list, with repeated identical images dropped.
+Only images, and only against those already in the cell: two identical
+prints are two outputs."
+  (let ((all (emjupy--widgets-first (append (or outputs []) nil))))
+    (if (not emjupy-deduplicate-image-outputs)
+        all
+      (let ((seen (make-hash-table :test 'equal))
+            (acc nil))
+        (dolist (out all (nreverse acc))
+          (let ((key (emjupy--output-image-key out)))
+            (cond
+             ((null key) (push out acc))
+             ((gethash key seen) nil)   ; same picture again -- skip
+             (t (puthash key t seen)
+                (push out acc)))))))))
+
+(defun emjupy--render-image-output (payload &optional type)
+  "Convert PAYLOAD output into an Emacs image object of TYPE (default png).
+Bitmap MIME payloads arrive base64-encoded; `image/svg+xml' arrives as
+literal markup and must not be decoded."
+  (let* ((type (or type 'png))
+         (image-data (if (eq type 'svg)
+                         (emjupy--mime-text payload)
+                       (base64-decode-string (emjupy--mime-text payload)))))
+    (create-image image-data type t)))
+
+;;;; Rich output
+
+(defvar emjupy-widget-view-functions nil
+  "Function returning the text that shows a widget, or nil.
+Called with the widget's model id.  Set by the layer that knows about
+widgets; nil, or a nil return, shows the output's `text/plain' instead.")
+
+(defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
+  "MIME type of a plotly figure, sent as its JSON specification.")
+
+(defun emjupy--scripted-html (data)
+  "Return the `text/html' of DATA if it has a script in it, or nil.
+Only that needs opening elsewhere: HTML without a script -- a pandas
+table -- says the same in its `text/plain', which is shown instead."
+  (let ((html (and data (gethash "text/html" data))))
+    (when html
+      (let ((text (emjupy--mime-text html)))
+        (and (string-match-p "<script" text) text)))))
+
+(defvar emjupy-output-button-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") 'emjupy-open-output-at-point)
+    (define-key map [mouse-1] 'emjupy-open-output-at-point)
+    map)
+  "Keymap on the line that stands for an interactive output.")
+
+(defun emjupy--insert-open-line (what size data)
+  "Insert a line standing for an output that is opened elsewhere.
+WHAT names it, SIZE is its size in bytes, and DATA is its MIME bundle,
+kept on the line so that opening it opens this one."
+  (insert (propertize
+           (format "▶ %s (%s) -- %s, or click, to open it\n"
+                   what (file-size-human-readable size)
+                   (substitute-command-keys "\\<emjupy-mode-map>\\[emjupy-open-output]"))
+           'face 'link 'mouse-face 'highlight
+           'help-echo "Open this output in a window of its own"
+           'keymap emjupy-output-button-map
+           'emjupy-output-data data)))
+
+(defun emjupy--insert-rich-output (data)
+  "Insert the best available representation of the DATA MIME bundle at point.
+An inline image where this Emacs can show one, otherwise the bundle's
+`text/plain' and a note -- `create-image' failing inside a WebSocket
+callback would leave the box silently empty."
+  (let* ((image (cl-loop for (mime . type) in emjupy--image-mime-types
+                         for payload = (and data (gethash mime data))
+                         when payload return (list mime type payload)))
+         (text (and data (gethash "text/plain" data)))
+         (plotly (and data (gethash emjupy--plotly-mime data)))
+         (widget (let ((view (and data
+                                  (gethash emjupy--widget-view-mime data))))
+                   (and view (run-hook-with-args-until-success
+                              'emjupy-widget-view-functions
+                              (gethash "model_id" view)))))
+         (scripted (and (not plotly) (emjupy--scripted-html data))))
+    (cond
+     ;; A widget the layer above knows how to show: its controls.
+     (widget (insert widget))
+     ;; A figure that draws itself in JavaScript: there is nothing to draw
+     ;; here, so a line says what it is and opens it.  Nothing runs until
+     ;; asked -- opening it runs the notebook's JavaScript.
+     (plotly
+      (emjupy--insert-open-line "Interactive plotly figure"
+                                (length (json-serialize plotly)) data))
+     (scripted
+      (when text (insert (emjupy--mime-text text) "\n"))
+      (emjupy--insert-open-line "Interactive HTML output"
+                                (length scripted) data))
+     ;; Figures shown on their own, not in the notebook, when so asked.
+     ((and image (not emjupy-inline-figures)
+           (emjupy--image-displayable-p (nth 1 image)))
+      (emjupy--insert-open-line (format "Figure (%s)"
+                                        (upcase (symbol-name (nth 1 image))))
+                                (length (nth 2 image)) data))
+     ((and image (emjupy--image-displayable-p (nth 1 image)))
+      (condition-case err
+          (progn (insert-image (emjupy--render-image-output (nth 2 image)
+                                                            (nth 1 image)))
+                 (insert "\n"))
+        ;; Everything: the image is the notebook's data, which may be
+        ;; anything, and what Emacs makes of bad data is a plain error.
+        (error
+         (insert (format "[emjupy: could not render %s: %s]\n"
+                         (nth 0 image) (error-message-string err)))
+         (when text (insert (emjupy--mime-text text) "\n")))))
+     (image
+      (when text (insert (emjupy--mime-text text) "\n"))
+      (insert (propertize
+               (format "[emjupy: %s output (%d bytes) not shown -- this Emacs has no %s image support]\n"
+                       (nth 0 image) (length (nth 2 image)) (nth 1 image))
+               'face 'shadow)))
+     (text (insert (emjupy--mime-text text) "\n"))
+     ;; Some bundle we don't know how to show at all: say so rather than
+     ;; rendering an empty box.
+     (data
+      (let ((mimes (cl-loop for k being the hash-keys of data collect k)))
+        (when mimes
+          (insert (propertize (format "[emjupy: unsupported output types: %s]\n"
+                                      (string-join mimes ", "))
+                              'face 'shadow))))))))
+
+;;;; Colour and tracebacks
+
+(defun emjupy--render-ansi (text)
+  "Return TEXT with ANSI escapes applied as faces, or stripped.
+With `ansi-color-apply', which comes with Emacs."
+  (let ((s (or text "")))
+    (if (not emjupy-render-ansi-colors)
+        (replace-regexp-in-string "\033\\[[0-9;]*m" "" s)
+      (let ((coloured (ansi-color-apply s)))
+        ;; `ansi-color-apply' sets `font-lock-face', honoured only with
+        ;; font-lock on; emjupy uses plain `face', so the colours are moved
+        ;; there.
+        (let ((pos 0) (len (length coloured)))
+          (while (< pos len)
+            (let ((next (or (next-single-property-change
+                             pos 'font-lock-face coloured) len))
+                  (val (get-text-property pos 'font-lock-face coloured)))
+              (when val (put-text-property pos next 'face val coloured))
+              (setq pos next))))
+        coloured))))
+
+(defun emjupy--cell-traceback (cell)
+  "Return CELL's traceback as a string, or nil if it has no error output."
+  (let (found)
+    (cl-loop for out across (or (emjupy-cell-outputs cell) [])
+             until found
+             do (when (and (hash-table-p out)
+                           (equal (gethash "output_type" out) "error"))
+                  (let ((tb (gethash "traceback" out)))
+                    (setq found
+                          (cond
+                           ((stringp tb) tb)
+                           ((or (vectorp tb) (listp tb))
+                            (mapconcat #'emjupy--mime-text (append tb nil)
+                                       "\n"))
+                           (t (format "%s: %s"
+                                      (gethash "ename" out)
+                                      (gethash "evalue" out))))))))
+    found))
+
+(defun emjupy--output-face (out)
+  "Return the background face for output OUT, or nil to leave it bare.
+Images have their own: a tinted band round a white figure reads as a
+frame.  stderr that is not a traceback is a warning -- warnings,
+logging and progress bars go there."
+  (let ((type (gethash "output_type" out)))
+    (cond
+     ((equal type "error") 'emjupy-output-error)
+     ((and (equal type "stream")
+           (equal (gethash "name" out) "stderr"))
+      'emjupy-output-warning)
+     ((and (member type '("display_data" "execute_result"))
+           (emjupy--output-image-key out))
+      'emjupy-output-image)
+     (t 'emjupy-output))))
 
 ;;;; Drawing output
 
@@ -775,277 +1047,6 @@ not the notebook."
       (emjupy--draw-cell-output cell))
 
     (insert "\n")))
-
-;;;; MIME types
-
-(defconst emjupy--image-mime-types
-  '(("image/png"     . png)
-    ("image/jpeg"    . jpeg)
-    ("image/gif"     . gif)
-    ("image/svg+xml" . svg))
-  "MIME types emjupy can render inline, in preference order.
-Maps each to the Emacs image type used to display it.")
-
-(defun emjupy--mime-text (value)
-  "Return VALUE as a string.
-nbformat stores multi-line payloads as one string or a list of lines,
-depending on where the JSON came from."
-  (cond
-   ((null value) "")
-   ((stringp value) value)
-   ((vectorp value) (mapconcat #'identity (append value nil) ""))
-   ((listp value) (mapconcat #'identity value ""))
-   (t (format "%s" value))))
-
-(defun emjupy--pad-output-lines (start end face)
-  "Fill every line between START and END out to the cell's right border.
-FACE is the background the filler carries.  A stretch space aligned to
-`emjupy--box-width' stops at the border, where `:extend' would run to
-the window's edge."
-  (let ((width (emjupy--box-width)))
-    (save-excursion
-      (goto-char start)
-      (while (< (point) end)
-        (end-of-line)
-        (let ((eol (min (point) end)))
-          (goto-char eol)
-          (insert (propertize " "
-                              'emjupy-pad t
-                              'face face
-                              ;; Also as `font-lock-face': font-lock removes
-                              ;; `face' from what it refontifies, and leaves
-                              ;; `font-lock-face' alone.
-                              'font-lock-face face
-                              ;; Ends where the rule does: WIDTH characters, and
-                              ;; a stretch to :align-to WIDTH covers the same.
-                              'display `(space :align-to ,width)))
-          (setq end (+ end 1)))
-        (forward-line 1)))
-    end))
-
-(defun emjupy--unface-newlines (start end)
-  "Remove the output background from the newlines between START and END.
-A newline with a background paints a column past the rule."
-  (save-excursion
-    (goto-char start)
-    (while (< (point) end)
-      (end-of-line)
-      (when (and (< (point) end) (eq (char-after) ?\n))
-        (remove-text-properties (point) (1+ (point))
-                                '(face nil font-lock-face nil)))
-      (forward-line 1))))
-
-;;;; Colour and tracebacks
-
-(defun emjupy--render-ansi (text)
-  "Return TEXT with ANSI escapes applied as faces, or stripped.
-With `ansi-color-apply', which comes with Emacs."
-  (let ((s (or text "")))
-    (if (not emjupy-render-ansi-colors)
-        (replace-regexp-in-string "\033\\[[0-9;]*m" "" s)
-      (let ((coloured (ansi-color-apply s)))
-        ;; `ansi-color-apply' sets `font-lock-face', honoured only with
-        ;; font-lock on; emjupy uses plain `face', so the colours are moved
-        ;; there.
-        (let ((pos 0) (len (length coloured)))
-          (while (< pos len)
-            (let ((next (or (next-single-property-change
-                             pos 'font-lock-face coloured) len))
-                  (val (get-text-property pos 'font-lock-face coloured)))
-              (when val (put-text-property pos next 'face val coloured))
-              (setq pos next))))
-        coloured))))
-
-(defun emjupy--cell-traceback (cell)
-  "Return CELL's traceback as a string, or nil if it has no error output."
-  (let (found)
-    (cl-loop for out across (or (emjupy-cell-outputs cell) [])
-             until found
-             do (when (and (hash-table-p out)
-                           (equal (gethash "output_type" out) "error"))
-                  (let ((tb (gethash "traceback" out)))
-                    (setq found
-                          (cond
-                           ((stringp tb) tb)
-                           ((or (vectorp tb) (listp tb))
-                            (mapconcat #'emjupy--mime-text (append tb nil)
-                                       "\n"))
-                           (t (format "%s: %s"
-                                      (gethash "ename" out)
-                                      (gethash "evalue" out))))))))
-    found))
-
-(defun emjupy--output-face (out)
-  "Return the background face for output OUT, or nil to leave it bare.
-Images have their own: a tinted band round a white figure reads as a
-frame.  stderr that is not a traceback is a warning -- warnings,
-logging and progress bars go there."
-  (let ((type (gethash "output_type" out)))
-    (cond
-     ((equal type "error") 'emjupy-output-error)
-     ((and (equal type "stream")
-           (equal (gethash "name" out) "stderr"))
-      'emjupy-output-warning)
-     ((and (member type '("display_data" "execute_result"))
-           (emjupy--output-image-key out))
-      'emjupy-output-image)
-     (t 'emjupy-output))))
-
-;;;; Rich output
-
-(defconst emjupy--widget-view-mime "application/vnd.jupyter.widget-view+json"
-  "MIME type of an output that shows a widget.")
-
-(defvar emjupy-widget-view-functions nil
-  "Function returning the text that shows a widget, or nil.
-Called with the widget's model id.  Set by the layer that knows about
-widgets; nil, or a nil return, shows the output's `text/plain' instead.")
-
-(defconst emjupy--plotly-mime "application/vnd.plotly.v1+json"
-  "MIME type of a plotly figure, sent as its JSON specification.")
-
-(defun emjupy--scripted-html (data)
-  "Return the `text/html' of DATA if it has a script in it, or nil.
-Only that needs opening elsewhere: HTML without a script -- a pandas
-table -- says the same in its `text/plain', which is shown instead."
-  (let ((html (and data (gethash "text/html" data))))
-    (when html
-      (let ((text (emjupy--mime-text html)))
-        (and (string-match-p "<script" text) text)))))
-
-(defvar emjupy-output-button-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") 'emjupy-open-output-at-point)
-    (define-key map [mouse-1] 'emjupy-open-output-at-point)
-    map)
-  "Keymap on the line that stands for an interactive output.")
-
-(defun emjupy--insert-open-line (what size data)
-  "Insert a line standing for an output that is opened elsewhere.
-WHAT names it, SIZE is its size in bytes, and DATA is its MIME bundle,
-kept on the line so that opening it opens this one."
-  (insert (propertize
-           (format "▶ %s (%s) -- %s, or click, to open it\n"
-                   what (file-size-human-readable size)
-                   (substitute-command-keys "\\<emjupy-mode-map>\\[emjupy-open-output]"))
-           'face 'link 'mouse-face 'highlight
-           'help-echo "Open this output in a window of its own"
-           'keymap emjupy-output-button-map
-           'emjupy-output-data data)))
-
-(defun emjupy--insert-rich-output (data)
-  "Insert the best available representation of the DATA MIME bundle at point.
-An inline image where this Emacs can show one, otherwise the bundle's
-`text/plain' and a note -- `create-image' failing inside a WebSocket
-callback would leave the box silently empty."
-  (let* ((image (cl-loop for (mime . type) in emjupy--image-mime-types
-                         for payload = (and data (gethash mime data))
-                         when payload return (list mime type payload)))
-         (text (and data (gethash "text/plain" data)))
-         (plotly (and data (gethash emjupy--plotly-mime data)))
-         (widget (let ((view (and data
-                                  (gethash emjupy--widget-view-mime data))))
-                   (and view (run-hook-with-args-until-success
-                              'emjupy-widget-view-functions
-                              (gethash "model_id" view)))))
-         (scripted (and (not plotly) (emjupy--scripted-html data))))
-    (cond
-     ;; A widget the layer above knows how to show: its controls.
-     (widget (insert widget))
-     ;; A figure that draws itself in JavaScript: there is nothing to draw
-     ;; here, so a line says what it is and opens it.  Nothing runs until
-     ;; asked -- opening it runs the notebook's JavaScript.
-     (plotly
-      (emjupy--insert-open-line "Interactive plotly figure"
-                                (length (json-serialize plotly)) data))
-     (scripted
-      (when text (insert (emjupy--mime-text text) "\n"))
-      (emjupy--insert-open-line "Interactive HTML output"
-                                (length scripted) data))
-     ;; Figures shown on their own, not in the notebook, when so asked.
-     ((and image (not emjupy-inline-figures)
-           (emjupy--image-displayable-p (nth 1 image)))
-      (emjupy--insert-open-line (format "Figure (%s)"
-                                        (upcase (symbol-name (nth 1 image))))
-                                (length (nth 2 image)) data))
-     ((and image (emjupy--image-displayable-p (nth 1 image)))
-      (condition-case err
-          (progn (insert-image (emjupy--render-image-output (nth 2 image)
-                                                            (nth 1 image)))
-                 (insert "\n"))
-        ;; Everything: the image is the notebook's data, which may be
-        ;; anything, and what Emacs makes of bad data is a plain error.
-        (error
-         (insert (format "[emjupy: could not render %s: %s]\n"
-                         (nth 0 image) (error-message-string err)))
-         (when text (insert (emjupy--mime-text text) "\n")))))
-     (image
-      (when text (insert (emjupy--mime-text text) "\n"))
-      (insert (propertize
-               (format "[emjupy: %s output (%d bytes) not shown -- this Emacs has no %s image support]\n"
-                       (nth 0 image) (length (nth 2 image)) (nth 1 image))
-               'face 'shadow)))
-     (text (insert (emjupy--mime-text text) "\n"))
-     ;; Some bundle we don't know how to show at all: say so rather than
-     ;; rendering an empty box.
-     (data
-      (let ((mimes (cl-loop for k being the hash-keys of data collect k)))
-        (when mimes
-          (insert (propertize (format "[emjupy: unsupported output types: %s]\n"
-                                      (string-join mimes ", "))
-                              'face 'shadow))))))))
-
-;;;; Images, once each
-
-(defun emjupy--output-image-key (out)
-  "Return a key identifying OUT's image payload, or nil if it carries none.
-The payload is hashed rather than compared directly: a figure is
-hundreds of kilobytes of base64, and this runs on every redraw."
-  (when (hash-table-p out)
-    (let ((data (gethash "data" out)))
-      (when (hash-table-p data)
-        (cl-loop for (mime . _type) in emjupy--image-mime-types
-                 for payload = (gethash mime data)
-                 when payload
-                 return (cons mime (md5 (emjupy--mime-text payload))))))))
-
-(defun emjupy--widgets-first (outputs)
-  "Return OUTPUTS with the ones showing widgets first, otherwise in order.
-An `interact' sends its figure before its controls; controls go above,
-where a notebook puts them.  Only the drawing changes, not the order
-saved."
-  (let ((widget-p (lambda (o)
-                    (let ((d (and (hash-table-p o) (gethash "data" o))))
-                      (and (hash-table-p d)
-                           (gethash emjupy--widget-view-mime d))))))
-    (append (seq-filter widget-p outputs) (seq-remove widget-p outputs))))
-
-(defun emjupy--outputs-to-draw (outputs)
-  "Return OUTPUTS as a list, with repeated identical images dropped.
-Only images, and only against those already in the cell: two identical
-prints are two outputs."
-  (let ((all (emjupy--widgets-first (append (or outputs []) nil))))
-    (if (not emjupy-deduplicate-image-outputs)
-        all
-      (let ((seen (make-hash-table :test 'equal))
-            (acc nil))
-        (dolist (out all (nreverse acc))
-          (let ((key (emjupy--output-image-key out)))
-            (cond
-             ((null key) (push out acc))
-             ((gethash key seen) nil)   ; same picture again -- skip
-             (t (puthash key t seen)
-                (push out acc)))))))))
-
-(defun emjupy--render-image-output (payload &optional type)
-  "Convert PAYLOAD output into an Emacs image object of TYPE (default png).
-Bitmap MIME payloads arrive base64-encoded; `image/svg+xml' arrives as
-literal markup and must not be decoded."
-  (let* ((type (or type 'png))
-         (image-data (if (eq type 'svg)
-                         (emjupy--mime-text payload)
-                       (base64-decode-string (emjupy--mime-text payload)))))
-    (create-image image-data type t)))
 
 ;;;; Read-only regions
 
