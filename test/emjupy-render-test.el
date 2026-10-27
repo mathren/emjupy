@@ -600,12 +600,17 @@ those queued show a still *, as in Jupyter."
                        (append (emjupy-notebook-cells nb) nil))))
       (setq emjupy--running-cells (reverse (seq-take ids 100)))
       (unwind-protect
-          (let ((rebuilds 0) (t1 (float-time)))
+          ;; Counted, not timed: a tick's cost must not grow with the queue,
+          ;; on any machine -- instrumented for coverage too.
+          (let ((rebuilds 0) (headers 0))
             (cl-letf* ((real (symbol-function 'emjupy--reconcile-rules-now))
                        ((symbol-function 'emjupy--reconcile-rules-now)
-                        (lambda () (cl-incf rebuilds) (funcall real))))
+                        (lambda () (cl-incf rebuilds) (funcall real)))
+                       (header (symbol-function 'emjupy--redraw-cell-header))
+                       ((symbol-function 'emjupy--redraw-cell-header)
+                        (lambda (c) (cl-incf headers) (funcall header c))))
               (emjupy--spinner-tick))
-            (should (< (- (float-time) t1) 0.25))
+            (should (= headers 1))
             (should (<= rebuilds 1))
             (should (emjupy--cell-executing-p
                      (aref (emjupy-notebook-cells nb) 0)))
