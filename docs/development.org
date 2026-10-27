@@ -31,18 +31,18 @@ the notebooks they read in =test_notebooks/=.
 
 | File                      | Contains                                                    |
 |---------------------------+-------------------------------------------------------------|
-| =emjupy-core.el=          | structs, state, server registry, the cell at a position     |
+| =emjupy-core.el=          | structs, a parsed address, trust, the cell at a position    |
 | =emjupy-terminal.el=      | stream text as a terminal shows it: progress bars           |
 | =emjupy-ipynb.el=         | .ipynb read and written; the .py percent format             |
 | =emjupy-latex.el=         | LaTeX in markdown cells, drawn as images                    |
 | =emjupy-undo.el=          | undo positions kept right across redraws                    |
 | =emjupy-faces.el=         | appearance options, faces, theme colours                    |
-| =emjupy-http.el=          | REST transport, URL parsing, the HTTP error types           |
+| =emjupy-http.el=          | REST transport, WebSocket auth, the HTTP error types        |
 | =emjupy-render.el=        | faces, colours, outlines, drawing output, text helpers      |
 | =emjupy-cells.el=         | syncing the buffer back into the cells, checking it         |
 | =emjupy-redraw.el=        | redrawing in place or whole, undo steps, repair             |
 | =emjupy-commands.el=      | cell commands: editing, moving, output                      |
-| =emjupy-kernel.el=        | kernel WebSocket, execution, message routing                |
+| =emjupy-kernel.el=        | kernel WebSocket, execution, reconnecting, kernel checks    |
 | =emjupy-figures.el=       | opening an output on its own: plotly figures, HTML, images  |
 | =emjupy-widgets.el=       | widget controls in the buffer, and what they cause          |
 | =emjupy-widget-page.el=   | widgets that draw themselves, live in a page, through Emacs |
@@ -55,7 +55,7 @@ the notebooks they read in =test_notebooks/=.
 | =emjupy-save.el=          | saving, auto-saving, recovery copies                        |
 | =emjupy-notebook.el=      | logging in, opening and creating, switching, the menu       |
 | =emjupy-dashboard.el=     | the server dashboard: notebooks, folders, kernels           |
-| =emjupy-tramp-open.el=    | an .ipynb opened as a notebook, here or by TRAMP            |
+| =emjupy-tramp-open.el=    | an .ipynb opened as a notebook, here or by TRAMP; tunnels   |
 | =emjupy.el=               | package header, version, and requiring every file in order  |
 | =emjupy-pkg.el=           | package metadata for =make package= (MELPA makes its own)   |
 

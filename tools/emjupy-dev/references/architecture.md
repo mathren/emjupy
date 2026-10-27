@@ -10,16 +10,16 @@ short form, plus mechanisms that have bitten before.
 | `src/emjupy-core.el` | structs (server, kernel, cell, notebook) -- a server parses its address once, `emjupy--parse-base-url` -- the customization groups, cell-at-position lookups, `emjupy--private-directory`, `emjupy--timed`, what this Emacs can display |
 | `src/emjupy-terminal.el` | stream text as a terminal shows it (`emjupy--terminal-apply`): string to string |
 | `src/emjupy-ipynb.el` | nbformat JSON read and written; the .py percent format |
-| `src/emjupy-latex.el` | LaTeX previews; org declared, loaded lazily |
+| `src/emjupy-latex.el` | LaTeX previews, by emjupy's own process (`emjupy--latex-process`: no shell escape) into a private folder; org declared, loaded lazily |
 | `src/emjupy-undo.el` | undo positions shifted by a redraw (`emjupy--undo-adjust`) |
 | `src/emjupy-faces.el` | appearance options, faces, theme colours |
-| `src/emjupy-http.el` | REST requests, `emjupy--server-root-url`, errors (`emjupy-http-error`, `-status`, `-xsrf`) |
+| `src/emjupy-http.el` | REST requests, `emjupy--server-root-url`, errors (`emjupy-http-error`, `-status`, `-xsrf`); a WebSocket's token in a header (`emjupy--ws-token-param`, `emjupy--note-ws-refusal`) |
 | `src/emjupy-render.el` | drawing a cell and its output, rules, fontifying |
 | `src/emjupy-cells.el` | syncing the buffer back into the cells, structure checks, `emjupy-cells-enable` |
 | `src/emjupy-redraw.el` | every redraw (`emjupy--atomic-redraw`), the undo step (`emjupy--as-one-undo-step`), repair after a redraw |
 | `src/emjupy-commands.el` | the commands on cells |
-| `src/emjupy-kernel.el` | WebSocket, execution, `emjupy--handle-ws-message`, reconnecting |
-| `src/emjupy-figures.el`, `src/emjupy-widgets.el`, `src/emjupy-widget-page.el` | outputs opened apart; widgets |
+| `src/emjupy-kernel.el` | WebSocket, execution, `emjupy--handle-ws-message`; reconnecting (`emjupy-reconnect-functions`, cells run meanwhile held); asking the server whether a kernel is still there, quiet ones every `emjupy-kernel-check-interval` |
+| `src/emjupy-figures.el`, `src/emjupy-widgets.el`, `src/emjupy-widget-page.el` | outputs opened apart, into a private folder -- an untrusted notebook's scripts not run (`emjupy--cell-trusted-p`, in core); widgets |
 | `src/emjupy-remote.el` | server roots, SSH tunnel hosts, TRAMP names |
 | `src/emjupy-lsp.el` | Eglot over the Jupyter WebSocket, shadow document text |
 | `src/emjupy-shadow.el` | the shadow file and buffer, positions, edit buffers |
@@ -28,7 +28,7 @@ short form, plus mechanisms that have bitten before.
 | `src/emjupy-save.el` | saving, auto-saving, recovery copies |
 | `src/emjupy-notebook.el` | login, opening and creating, switching, export command, the menu |
 | `src/emjupy-dashboard.el` | the server dashboard |
-| `src/emjupy-tramp-open.el` | an .ipynb opened as a notebook, here or through TRAMP (`emjupy-open-this-notebook`) |
+| `src/emjupy-tramp-open.el` | an .ipynb opened as a notebook, here or through TRAMP (`emjupy-open-this-notebook`); servers started with the token in `JUPYTER_TOKEN`; tunnels, reopened when they die; the same machine, port and path the same notebook |
 | `src/emjupy.el` | package header, version, requiring everything |
 | `src/quicktry.el` | try-it harness the README points to; not shipped |
 | `test/emjupy-FILE-test.el` | the unit tests of src/emjupy-FILE.el; `emjupy-package-test.el` for the package as a whole, the docs' names and file references |

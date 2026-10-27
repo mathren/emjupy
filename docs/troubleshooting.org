@@ -49,6 +49,9 @@ If the cell is not really still working, the kernel likely died -- out of
 memory, or the code exited -- and the server restarted it without telling
 the notebook.  =C-c C-x C-c= reconnects to the new kernel and ends the
 run; the old kernel's state is gone.  Why, in [[file:limitations.org][Known limitations]].
+A kernel shut down from elsewhere, or culled, is noticed by itself: after
+=emjupy-kernel-check-interval= seconds (30) of quiet, the cell ends and
+the notebook says the kernel is gone.
 
 * "emjupy is loaded from two places"
 

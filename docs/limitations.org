@@ -28,7 +28,10 @@ A kernel dying while a cell runs -- out of memory, or the code exiting
 -- is restarted by the server, which tells the notebook's connection
 nothing: the cell goes on showing as running.  =C-c C-x C-c= reconnects
 to the new kernel and ends the run; the dead kernel's variables are gone.
-A dropped connection, by contrast, is noticed, and its cells ended.
+A dropped connection, by contrast, is noticed: its running cells are
+kept, and get what they printed once it is back.  A kernel shut down or
+culled, its connection left open, is noticed too, after
+=emjupy-kernel-check-interval= seconds (30) with nothing from it.
 
 * Language features need the language server beside the kernel
 
