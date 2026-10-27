@@ -1293,6 +1293,34 @@ replays what the cell printed meanwhile.  Same settings as
         (let ((kill-buffer-query-functions nil))
           (kill-buffer buf))))))
 
+(ert-deftest emjupy-int-a-kernel-shut-down-elsewhere-ends-its-cell ()
+  "A kernel shut down by someone else, mid-cell, its connection left open.
+The server keeps the WebSocket open, so nothing drops; asked after once
+quiet, the kernel is gone: the cell ends, and the notebook is left
+without a kernel.  In its own notebook, so the shared kernel lives on."
+  (emjupy-int--skip-unless-live)
+  (let* ((emjupy-kernel-check-interval 2)
+         (emjupy-language-support nil)
+         (buf (emjupy-int--open-with-kernel
+               emjupy--current-server
+               (format "emjupy-int-shutdown-%d.ipynb" (random 100000)))))
+    (unwind-protect
+        (with-current-buffer buf
+          (let* ((nb (emjupy--notebook))
+                 (cell (aref (emjupy-notebook-cells nb) 0))
+                 (id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
+            (setf (emjupy-cell-source cell) "import time\ntime.sleep(20)")
+            (emjupy--redraw-notebook cell)
+            (goto-char (overlay-start (emjupy-cell-overlay cell)))
+            (emjupy-execute-cell-at-point)
+            (emjupy-int--pump 1)
+            (emjupy--http-request "DELETE" (emjupy-notebook-server nb)
+                                  (concat "/api/kernels/" id))
+            (should (emjupy-int--pump
+                     12 (lambda () (null (emjupy-notebook-kernel nb)))))))
+      (let ((kill-buffer-query-functions nil))
+        (kill-buffer buf)))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

@@ -176,7 +176,10 @@ cell it runs, until its reply and its closing idle have both come."
   notebook
   ;; Non-nil once emjupy closes the socket itself: its closing is then no
   ;; drop to recover from.
-  closing)
+  closing
+  ;; When a message last came from it, as `float-time': a kernel quiet too
+  ;; long while running a cell is asked after on the server.
+  heard)
 
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")

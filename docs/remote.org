@@ -155,7 +155,10 @@ connection does not return in time, the cells are ended, and
 state survives either way.  =emjupy-reconnect-window= nil does not try.
 A kernel the server answers it no longer has -- it died, or was shut
 down -- is not waited for; a server that does not answer at all is said
-to have perhaps stopped.
+to have perhaps stopped.  A kernel shut down or culled while a cell runs
+on it, its connection left open, is noticed too: after
+=emjupy-kernel-check-interval= seconds (30) with nothing from it, emjupy
+asks the server; nil never asks.
 
 * Access tokens
 

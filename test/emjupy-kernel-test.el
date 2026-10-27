@@ -1043,6 +1043,67 @@ without a kernel, for running a cell to say so."
       (should (seq-some (lambda (m) (string-match-p "does not answer" m))
                         said)))))
 
+
+;;;; A kernel quiet while running a cell
+
+(defmacro emjupy-test--running-quietly (quiet answer &rest body)
+  "Run BODY with a cell running on a kernel heard from QUIET seconds ago.
+ANSWER is how the server answers being asked after the kernel: `gone'
+or `there'.  ASKED, in BODY, says whether it was asked."
+  (declare (indent 2))
+  `(emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                         :source "x = 1"))
+       buf nb
+     (let* ((cell (aref (emjupy-notebook-cells nb) 0))
+            (pending (make-hash-table :test 'equal))
+            (kernel (make-emjupy-kernel :id "k" :notebook nb :pending pending
+                                        :heard (- (float-time) ,quiet)))
+            (asked nil) (emjupy--quiet-check-timer nil))
+       (puthash "m1" cell pending)
+       (setf (emjupy-notebook-server nb)
+             (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
+       (setf (emjupy-notebook-kernel nb) kernel)
+       (cl-letf (((symbol-function 'emjupy--notebook-buffers)
+                  (lambda () (list buf)))
+                 ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                 ((symbol-function 'emjupy--disconnect-kernel) #'ignore)
+                 ((symbol-function 'emjupy--http-request-async)
+                  (lambda (_m _s _p _b done fail)
+                    (setq asked t)
+                    (if (eq ,answer 'gone)
+                        (funcall fail '(emjupy-http-status
+                                        "[Jupyter HTTP 404] GET" "{}"))
+                      (funcall done nil)))))
+         ,@body))))
+
+(ert-deftest emjupy-test-a-quiet-kernel-gone-ends-its-cell ()
+  "A kernel quiet past the interval, gone from the server, ends its cell.
+Shut down or culled while its connection stayed open, it left the cell
+showing as running for good."
+  (let ((emjupy-kernel-check-interval 30))
+    (emjupy-test--running-quietly 40 'gone
+      (emjupy--check-quiet-kernels)
+      (should asked)
+      (should-not (emjupy-notebook-kernel nb))
+      (should (= (hash-table-count pending) 0)))))
+
+(ert-deftest emjupy-test-a-kernel-heard-lately-is-not-asked-after ()
+  "A kernel heard from within the interval is not asked after."
+  (let ((emjupy-kernel-check-interval 30))
+    (emjupy-test--running-quietly 5 'gone
+      (emjupy--check-quiet-kernels)
+      (should-not asked)
+      (should (emjupy-notebook-kernel nb)))))
+
+(ert-deftest emjupy-test-no-kernel-is-asked-after-with-the-check-off ()
+  "`emjupy-kernel-check-interval' nil asks after none, and stops its timer."
+  (let ((emjupy-kernel-check-interval nil))
+    (emjupy-test--running-quietly 600 'gone
+      (setq emjupy--quiet-check-timer (run-at-time 3600 nil #'ignore))
+      (emjupy--check-quiet-kernels)
+      (should-not asked)
+      (should-not emjupy--quiet-check-timer))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

@@ -53,6 +53,17 @@ cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
   :type '(choice (const :tag "Do not try" nil) number)
   :group 'emjupy-kernels)
 
+(defcustom emjupy-kernel-check-interval 30
+  "Seconds a kernel running a cell may be quiet before emjupy asks after it.
+After that long with nothing from the kernel while a cell runs, emjupy
+asks the server, without waiting, whether the kernel is still there.  A
+kernel shut down or culled while its connection stays open would leave
+the cell showing as running; gone, its cells end and the notebook is left
+without a kernel.  nil never asks."
+  :type '(choice (const :tag "Never" nil) number)
+  :safe (lambda (v) (or (null v) (and (numberp v) (> v 0))))
+  :group 'emjupy-kernels)
+
 ;;;; Messages
 
 (defun emjupy--uuid ()
@@ -572,7 +583,9 @@ kernels never cross-talk."
          (msg-type (gethash "msg_type" (gethash "header" data)))
          (parent-id (emjupy--ws-parent-id data))
          (pending (and kernel (emjupy-kernel-pending kernel)))
-         (cell (emjupy--ws-message-owner pending parent-id))
+         (cell (progn (when kernel
+                        (setf (emjupy-kernel-heard kernel) (float-time)))
+                      (emjupy--ws-message-owner pending parent-id)))
          (internal (when parent-id (gethash parent-id
                                             emjupy--internal-requests))))
     ;; The kernel waiting on the user: a cell asked for input.
@@ -681,6 +694,9 @@ Said if the reconnect gives up: the server may have stopped.")
             (remhash id emjupy--request-halves))
           (puthash msg-id cell pending))
         (emjupy--ws-send json-payload kernel)
+        ;; Quiet from now on, it is asked after on the server.
+        (setf (emjupy-kernel-heard kernel) (float-time))
+        (emjupy--watch-quiet-kernels)
         ;; Show that it is running.  Long cells otherwise look identical to
         ;; cells that were never run: an empty box and no execution count.
         (emjupy--mark-running cell)))))
@@ -844,10 +860,47 @@ the reconnecting gives up."
                (emjupy--kernel-gone buf kernel-id label)
              (setq emjupy--server-silent t))))))))
 
+(defvar emjupy--quiet-check-timer nil
+  "The timer asking after quiet kernels, while a cell runs anywhere.")
+
+(defun emjupy--watch-quiet-kernels ()
+  "Have kernels running cells asked after, should they go quiet.
+The timer ticks every 5 seconds, each tick reading
+`emjupy-kernel-check-interval' as it is then: set while a cell runs, it
+counts at once."
+  (when (and emjupy-kernel-check-interval
+             (not (timerp emjupy--quiet-check-timer)))
+    (setq emjupy--quiet-check-timer
+          (run-with-timer 5 5 #'emjupy--check-quiet-kernels))))
+
+(defun emjupy--check-quiet-kernels ()
+  "Ask the server after each kernel running a cell, quiet for too long.
+Quiet means nothing from it for `emjupy-kernel-check-interval' seconds.
+The timer calling this stops once no cell runs anywhere."
+  (let ((running nil))
+    (dolist (buf (emjupy--notebook-buffers))
+      (let* ((nb (buffer-local-value 'emjupy--buffer-notebook buf))
+             (kernel (and nb (emjupy-notebook-kernel nb)))
+             (pending (and kernel (emjupy-kernel-pending kernel))))
+        (when (and (hash-table-p pending) (> (hash-table-count pending) 0)
+                   (emjupy--ws-live-p kernel))
+          (setq running t)
+          (when (and emjupy-kernel-check-interval
+                     (>= (- (float-time) (or (emjupy-kernel-heard kernel) 0))
+                         emjupy-kernel-check-interval))
+            (emjupy--check-kernel-still-there buf (emjupy-notebook-server nb)
+                                              (emjupy-kernel-id kernel)
+                                              (emjupy-notebook-path nb))))))
+    (unless (and running emjupy-kernel-check-interval)
+      (when (timerp emjupy--quiet-check-timer)
+        (cancel-timer emjupy--quiet-check-timer))
+      (setq emjupy--quiet-check-timer nil))))
+
 (defun emjupy--kernel-gone (buf kernel-id label)
-  "Stop BUF reconnecting to KERNEL-ID, which the server no longer has.
-The cells kept for it end; those waiting to run do not run; the notebook
-called LABEL is left without a kernel, for a new one to be started."
+  "Let BUF go of KERNEL-ID, which the server no longer has.
+Reconnecting to it stops; the cells running on it, or kept for it, end;
+those waiting to run do not run; its connection, if open, closes; and
+the notebook called LABEL is left without a kernel, for a new one."
   (with-current-buffer buf
     (when (timerp emjupy--reconnect-timer)
       (cancel-timer emjupy--reconnect-timer))
@@ -862,10 +915,16 @@ called LABEL is left without a kernel, for a new one to be started."
         (message "[emjupy] %s: %d cell(s) run while reconnecting did not run."
                  label (length emjupy--runs-waiting))
         (setq emjupy--runs-waiting nil))
-      (let ((nb emjupy--buffer-notebook))
-        (when (and nb (emjupy-notebook-kernel nb)
-                   (equal (emjupy-kernel-id (emjupy-notebook-kernel nb))
-                          kernel-id))
+      (let* ((nb emjupy--buffer-notebook)
+             (kernel (and nb (emjupy-notebook-kernel nb))))
+        (when (and kernel (equal (emjupy-kernel-id kernel) kernel-id))
+          (let ((pending (emjupy-kernel-pending kernel)))
+            (when (hash-table-p pending)
+              (maphash (lambda (id cell) (push cell cells)
+                         (remhash id emjupy--request-halves))
+                       pending)
+              (clrhash pending)))
+          (emjupy--disconnect-kernel nb)
           (setf (emjupy-notebook-kernel nb) nil)))
       (emjupy--end-runs
        cells buf label
