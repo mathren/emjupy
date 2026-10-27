@@ -119,13 +119,29 @@ the notebook.  Nothing here ever opens it."
     (should (equal (emjupy--lsp-document-uri nb)
                    "file:///srv/project/analysis.emjupy.py"))))
 
-(ert-deftest emjupy-test-lsp-url-carries-the-token ()
-  "The WebSocket URL is the Jupyter server's own, with its token."
+(ert-deftest emjupy-test-lsp-url-carries-the-token-only-if-refused ()
+  "The WebSocket URL is the Jupyter server's own; the token goes in a header.
+In the address only for a server refusing it so, as an address is what
+proxies and servers log."
   (let ((server (make-emjupy-server :base-url "localhost:9999"
-                                    :token "sekrit")))
+                                    :token "sekrit"))
+        (emjupy--token-in-ws-address nil))
     (let ((url (emjupy--lsp-url server)))
       (should (string-prefix-p "ws://localhost:9999/lsp/ws/pylsp" url))
-      (should (string-match-p "token=sekrit" url)))))
+      (should-not (string-match-p "token=" url)))
+    (let ((emjupy--token-in-ws-address '("localhost:9999")))
+      (should (string-match-p "token=sekrit" (emjupy--lsp-url server))))))
+
+(ert-deftest emjupy-test-lsp-socket-notes-a-refused-header ()
+  "A language server WebSocket refused, 403, notes its server, and reports."
+  (let* ((server (make-emjupy-server :base-url "localhost:9999" :token "t"))
+         (emjupy--token-in-ws-address nil)
+         (emjupy--lsp-last-failure nil))
+    (cl-letf (((symbol-function 'message) #'ignore))
+      (funcall (emjupy--lsp-error-handler server) nil 'on-open
+               '(websocket-received-error-http-response 403)))
+    (should (equal emjupy--token-in-ws-address '("localhost:9999")))
+    (should emjupy--lsp-last-failure)))
 
 (ert-deftest emjupy-test-lsp-edits-are-applied-back-to-front ()
   "Edits are applied from the end, or each one moves the next.

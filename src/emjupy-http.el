@@ -329,6 +329,35 @@ Reports the HTTP status on failure, and carries SERVER's XSRF cookie."
 
 ;;;; WebSocket authentication
 
+(defvar emjupy--token-in-ws-address nil
+  "Servers, by address, whose WebSocket refused the token in a header alone.
+For them it goes in a WebSocket's address too; elsewhere not, as an
+address is what proxies and servers log.")
+
+(defun emjupy--ws-token-param (server separator)
+  "Return the token part of a WebSocket address to SERVER, or \"\".
+SEPARATOR, \"?\" or \"&\", starts it.  Empty but for a server that
+refused the token in a header alone."
+  (let ((token (emjupy-server-token server)))
+    (if (and token (not (string-empty-p token))
+             (member (emjupy-server-base-url server)
+                     emjupy--token-in-ws-address))
+        (concat separator "token=" (url-hexify-string token))
+      "")))
+
+(defun emjupy--note-ws-refusal (server err)
+  "Note SERVER's refusal of a WebSocket token in a header alone, from ERR.
+Return non-nil if noted now: its next WebSocket has the token in its
+address too."
+  (let ((token (emjupy-server-token server)))
+    (when (and (eq (car-safe err) 'websocket-received-error-http-response)
+               (memq (cadr err) '(401 403))
+               token (not (string-empty-p token))
+               (not (member (emjupy-server-base-url server)
+                            emjupy--token-in-ws-address)))
+      (push (emjupy-server-base-url server) emjupy--token-in-ws-address)
+      t)))
+
 (defun emjupy--websocket-auth-headers (server)
   "Return the headers a WebSocket to SERVER should carry.
 The token in a header, which is accepted where a query string may not

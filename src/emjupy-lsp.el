@@ -97,17 +97,23 @@ settings from elsewhere and would rather not be told."
 ;; --- transport --------------------------------------------------------------
 
 (defun emjupy--lsp-url (server)
-  "Return the `jupyter-lsp' WebSocket URL on SERVER."
+  "Return the `jupyter-lsp' WebSocket URL on SERVER.
+The token goes in a header, in the address only for a server refusing
+it so (`emjupy--ws-token-param')."
   (let* ((parts (emjupy--server-parts server))
-         (scheme (if (equal (plist-get parts :scheme) "https") "wss" "ws"))
-         (token (emjupy-server-token server)))
+         (scheme (if (equal (plist-get parts :scheme) "https") "wss" "ws")))
     (format "%s://%s:%s%s/lsp/ws/%s%s"
             scheme (plist-get parts :host) (plist-get parts :port)
             (or (plist-get parts :path) "")
             emjupy-lsp-server
-            (if (and token (not (string-empty-p token)))
-                (concat "?token=" (url-hexify-string token))
-              ""))))
+            (emjupy--ws-token-param server "?"))))
+
+(defun emjupy--lsp-error-handler (server)
+  "Return the error handler of a language server WebSocket to SERVER.
+It notes a refusal of the token in a header alone, and reports."
+  (lambda (ws type err)
+    (emjupy--note-ws-refusal server err)
+    (emjupy--lsp-socket-error ws type err)))
 
 (defun emjupy--lsp-handle (session frame)
   "Record the message in FRAME against SESSION.
@@ -190,10 +196,11 @@ and the answer collected on the first request that needs it."
           (setf (emjupy-lsp-ws session)
                 (websocket-open
                  (emjupy--lsp-url server)
+                 :custom-header-alist (emjupy--websocket-auth-headers server)
                  :on-message (lambda (_ws frame)
                                (emjupy--lsp-handle session frame))
                  :on-close (lambda (_ws) (setf (emjupy-lsp-ready session) nil))
-                 :on-error #'emjupy--lsp-socket-error))
+                 :on-error (emjupy--lsp-error-handler server)))
           session)
       ;; Everything: `websocket-open' reports a failed connection as a
       ;; plain error.  What failed is then asked of the server and said.
@@ -725,7 +732,7 @@ A failure is explained, and recorded for `emjupy-lsp-diagnose'."
                       ;; replaced by the Eglot connection made from it,
                       ;; which takes the socket over
                       :on-message (lambda (_ws _frame) nil)
-                      :on-error #'emjupy--lsp-socket-error)
+                      :on-error (emjupy--lsp-error-handler server))
     ;; Everything: `websocket-open' reports a failed connection as a plain
     ;; error.
     (error (emjupy--lsp-explain-failure server)

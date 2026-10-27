@@ -749,14 +749,16 @@ directory they are working in, so it stays out of their listings."
 (ert-deftest emjupy-test-diagnose-does-not-print-the-token ()
   "The language server report is safe to paste.
 
-It prints the WebSocket URL, which carries the token."
+It prints the WebSocket URL, which carries the token for a server that
+refused it in a header: redacted then."
   (let ((cell (emjupy-test--cell-like 'code "x = 1")))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         (setf (emjupy-notebook-server emjupy--buffer-notebook)
               (make-emjupy-server :base-url "localhost:9999" :token "s3cret"))
         (cl-letf (((symbol-function 'display-buffer) #'ignore))
-          (emjupy-lsp-diagnose))
+          (let ((emjupy--token-in-ws-address '("localhost:9999")))
+            (emjupy-lsp-diagnose)))
         (with-current-buffer "*emjupy language server*"
           (should-not (string-match-p "s3cret" (buffer-string)))
           (should (string-match-p "<redacted>" (buffer-string)))

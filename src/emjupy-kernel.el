@@ -1044,11 +1044,6 @@ of that session -- one with a new id, every connection did, got none."
 
 ;;;; Connecting
 
-(defvar emjupy--token-in-ws-address nil
-  "Servers, by address, whose WebSocket refused the token in a header alone.
-For them it goes in the WebSocket's address too; elsewhere not, as an
-address is what proxies and servers log.")
-
 (defun emjupy-connect-kernel (notebook kernel-id &optional kernel-name)
   "Attach NOTEBOOK to KERNEL-ID on its own server, over its own WebSocket.
 KERNEL-NAME, when given, is the kernelspec name to record.
@@ -1056,7 +1051,6 @@ Returns the `emjupy-kernel'.  Each notebook keeps its own kernel, so
 several notebooks -- from several servers -- stay live at once."
   (let* ((server (emjupy-notebook-server notebook))
          (parts (emjupy--server-parts server))
-         (token (or (emjupy-server-token server) ""))
          ;; https:// servers require wss://, and any base path (proxy or
          ;; JupyterHub prefix) has to be kept -- rebuilding the URL from
          ;; host+port alone silently drops both.
@@ -1068,13 +1062,7 @@ several notebooks -- from several servers -- stay live at once."
                          kernel-id
                          (concat "?session_id="
                                  (emjupy--ws-session-id notebook kernel-id)
-                                 (if (or (string-empty-p token)
-                                         (not (member
-                                               (emjupy-server-base-url server)
-                                               emjupy--token-in-ws-address)))
-                                     ""
-                                   (concat "&token="
-                                           (url-hexify-string token))))))
+                                 (emjupy--ws-token-param server "&"))))
          ;; The token in a header; in the address only for a server refusing
          ;; it so.  Shared with the language server's socket.
          (headers (emjupy--websocket-auth-headers server))
@@ -1098,20 +1086,11 @@ several notebooks -- from several servers -- stay live at once."
            :on-close (lambda (_ws)
                        (emjupy--kernel-connection-closed kernel label))
            :on-error (lambda (_ws type err)
-                       (if (and (eq (car-safe err)
-                                    'websocket-received-error-http-response)
-                                (memq (cadr err) '(401 403))
-                                (not (string-empty-p token))
-                                (not (member (emjupy-server-base-url server)
-                                             emjupy--token-in-ws-address)))
-                           ;; Refused with the token in a header alone: the
-                           ;; next attempt, reconnecting, has it in the
-                           ;; address too.
-                           (progn
-                             (push (emjupy-server-base-url server)
-                                   emjupy--token-in-ws-address)
-                             (message "[emjupy] %s: the server wants the token in the WebSocket address; trying so"
-                                      label))
+                       ;; Refused with the token in a header alone: the next
+                       ;; attempt, reconnecting, has it in the address too.
+                       (if (emjupy--note-ws-refusal server err)
+                           (message "[emjupy] %s: the server wants the token in the WebSocket address; trying so"
+                                    label)
                          (message "[emjupy] %s WebSocket error (%s): %s" label
                                   type err)))))
     (setf (emjupy-notebook-kernel notebook) kernel)
