@@ -37,6 +37,9 @@ server needs one SSH tunnel and nothing started on the far side.
   widgets that draw themselves -- and a widget's page talks back through
   the *bridge*, a WebSocket server in Emacs, not to the Jupyter server.
 
+Which file holds what, and the graph of their dependencies, are in
+[[file:reading-the-code.org][Reading the code]].
+
 ** The shadow buffer
 
 A notebook is not valid Python but JSON holding cells: *n* Python

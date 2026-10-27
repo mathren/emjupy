@@ -24,40 +24,14 @@ is the target.
 
 * Source layout
 
-Sources in =src/=, bottom layer first; each file requires only files
-above it in this table.  Tests in =test/=: the unit tests of each file
-in =emjupy-FILE-test.el=, what they share in =emjupy-test-helpers.el=;
-the notebooks they read in =test_notebooks/=.
-
-| File                      | Contains                                                    |
-|---------------------------+-------------------------------------------------------------|
-| =emjupy-core.el=          | structs, a parsed address, trust, the cell at a position    |
-| =emjupy-terminal.el=      | stream text as a terminal shows it: progress bars           |
-| =emjupy-ipynb.el=         | .ipynb read and written; the .py percent format             |
-| =emjupy-latex.el=         | LaTeX in markdown cells, drawn as images                    |
-| =emjupy-undo.el=          | undo positions kept right across redraws                    |
-| =emjupy-faces.el=         | appearance options, faces, theme colours                    |
-| =emjupy-http.el=          | REST transport, WebSocket auth, the HTTP error types        |
-| =emjupy-render.el=        | faces, colours, outlines, drawing output, text helpers      |
-| =emjupy-cells.el=         | syncing the buffer back into the cells, checking it         |
-| =emjupy-redraw.el=        | redrawing in place or whole, undo steps, repair             |
-| =emjupy-commands.el=      | cell commands: editing, moving, output                      |
-| =emjupy-kernel.el=        | kernel WebSocket, execution, reconnecting, kernel checks    |
-| =emjupy-figures.el=       | opening an output on its own: plotly figures, HTML, images  |
-| =emjupy-widgets.el=       | widget controls in the buffer, and what they cause          |
-| =emjupy-widget-page.el=   | widgets that draw themselves, live in a page, through Emacs |
-| =emjupy-remote.el=        | where a server's files live: roots, SSH tunnels, TRAMP      |
-| =emjupy-lsp.el=           | language-server WebSocket transport, shadow document text   |
-| =emjupy-shadow.el=        | the shadow buffer, positions, edit buffers                  |
-| =emjupy-eglot.el=         | shadow buffer, Eglot integration, completion, eldoc         |
-| =emjupy-figure-window.py= | the window interactive figures open in, shipped with them   |
-| =emjupy-mode.el=          | =emjupy-mode=, its keys, its layers, mixed installs         |
-| =emjupy-save.el=          | saving, auto-saving, recovery copies                        |
-| =emjupy-notebook.el=      | logging in, opening and creating, switching, the menu       |
-| =emjupy-dashboard.el=     | the server dashboard: notebooks, folders, kernels           |
-| =emjupy-tramp-open.el=    | an .ipynb opened as a notebook, here or by TRAMP; tunnels   |
-| =emjupy.el=               | package header, version, and requiring every file in order  |
-| =emjupy-pkg.el=           | package metadata for =make package= (MELPA makes its own)   |
+Sources in =src/=, a layer to a file, each requiring only those below
+it: [[file:reading-the-code.org][Reading the code]] lists them in that order, with what each holds,
+and draws the graph of their requires.  =emjupy-pkg.el= is the package
+metadata for =make package= (MELPA makes its own);
+=emjupy-figure-window.py= the window interactive figures open in,
+shipped with them.  Tests in =test/=: the
+unit tests of each file in =emjupy-FILE-test.el=, what they share in
+=emjupy-test-helpers.el=; the notebooks they read in =test_notebooks/=.
 
 * Code rules
 
@@ -71,13 +45,10 @@ emjupy's own functions.  Each file requires the files whose functions it
 uses, and only those; each loads on its own -- =(require 'emjupy-lsp)=
 in a fresh Emacs works -- which is what makes this checkable.
 
-The graph is drawn from the code by =tools/dependency-graph.py= when the
-site is built (=make dependency-graph= draws it alone), each file above
-those it requires.  Lines a longer path implies are left out;
-=dependencies.dot= has every require, for Graphviz.
-
-#+CAPTION: Dependency graph of the =emjupy= package.
-[[file:dependencies.svg]]
+The graph of these requires is in [[file:reading-the-code.org][Reading the code]], drawn from the
+code by =tools/dependency-graph.py= when the site is built (=make
+dependency-graph= draws it alone); =dependencies.dot= has every require,
+for Graphviz.
 
 A lower layer tells a higher one something happened by running a hook:
 

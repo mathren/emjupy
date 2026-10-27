@@ -32,7 +32,7 @@ one section per part.
 
 | Order | File                    | Read for                                          |
 |-------+-------------------------+---------------------------------------------------|
-|     1 | =emjupy-core.el=        | the structs, a server's parsed address, lookups   |
+|     1 | =emjupy-core.el=        | the structs, a parsed address, trust, lookups     |
 |     2 | =emjupy-terminal.el=    | escape codes and carriage returns, string in, out |
 |     3 | =emjupy-ipynb.el=       | nbformat JSON read and written, the .py export    |
 |     4 | =emjupy-latex.el=       | LaTeX previews, org loaded only when asked        |
@@ -57,6 +57,12 @@ one section per part.
 |    23 | =emjupy-dashboard.el=   | the server dashboard                              |
 |    24 | =emjupy-tramp-open.el=  | an .ipynb opened as a notebook, or by TRAMP       |
 |    25 | =emjupy.el=             | the package: version, everything required         |
+
+The same layers, drawn from the code's requires, each file above those
+it requires; lines a longer path implies are left out:
+
+#+CAPTION: Dependency graph of the =emjupy= package.
+[[file:dependencies.svg]]
 
 * The main flows
 
@@ -182,8 +188,8 @@ them deserves the slowest reading:
   whether the buffer and the cells agree; =emjupy-report-box-geometry=
   the widths drawn at; =emjupy-lsp-diagnose= which language server
   answers and why; =emjupy-version= what is loaded, from where.
-- *The dependency graph:* =make dependency-graph= draws it from the
-  requires, into =html-content/=.
+- *The dependency graph*, above: =make dependency-graph= redraws it from
+  the requires, into =html-content/=.
 
 * Reviewing a change
 
