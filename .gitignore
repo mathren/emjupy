@@ -34,3 +34,4 @@ test_notebooks/.ipynb_checkpoints/*
 .emjupy*
 test_notebooks/.emjupy*
 /emjupy-dev.skill
+__pycache__/
