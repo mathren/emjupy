@@ -208,6 +208,65 @@ or another server's, is left alone."
       (should (eq (plist-get (car emjupy--remote-tunnels) :process)
                   'new-process)))))
 
+
+;;;; The same notebook, reached through another tunnel
+
+(defmacro emjupy-test--remote-notebook-open (old-port new-port path &rest body)
+  "Run BODY with a notebook buffer for PATH from a tunnel to rbox port OLD-PORT.
+NEW, in BODY, is a server through a fresh tunnel to rbox port NEW-PORT;
+BUF the open notebook's buffer, NB its notebook."
+  (declare (indent 3))
+  `(emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                         :source "x = 1"))
+       buf nb
+     (let* ((old (make-emjupy-server :base-url "127.0.0.1:40001" :token "t"))
+            (new (make-emjupy-server :base-url "127.0.0.1:40002" :token "t"))
+            (route '(:host "rbox" :jumps "bhost"))
+            (emjupy--remote-tunnels
+             (list (list :key "a" :process nil :port 40001 :route route
+                         :remote-port ,old-port :server old)
+                   (list :key "b" :process nil :port 40002 :route route
+                         :remote-port ,new-port :server new)))
+            (reconnected nil))
+       (setf (emjupy-notebook-server nb) old
+             (emjupy-notebook-path nb) "a.ipynb")
+       (cl-letf (((symbol-function 'emjupy--notebook-buffers)
+                  (lambda () (list buf)))
+                 ((symbol-function 'emjupy-reconnect-kernel)
+                  (lambda () (setq reconnected t)))
+                 ((symbol-function 'switch-to-buffer) #'ignore))
+         (ignore ,path)
+         ,@body))))
+
+(ert-deftest emjupy-test-the-same-remote-notebook-is-reached-again-not-twice ()
+  "The same machine, port and path: the buffer open is moved, not doubled.
+Opening it again, through a new tunnel, made a second buffer, the first
+left stranded with its edits."
+  (emjupy-test--remote-notebook-open 8888 8888 "a.ipynb"
+    (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+    (should (eq (emjupy--adopt-remote-notebook "a.ipynb" new) buf))
+    (should (eq (emjupy-notebook-server nb) new))
+    (should reconnected)
+    (should (= (length emjupy--remote-tunnels) 1))))
+
+(ert-deftest emjupy-test-the-same-path-on-another-port-is-another-notebook ()
+  "The same path from a server on another port opens apart, and says so.
+Untitled.ipynb on two servers is two notebooks."
+  (emjupy-test--remote-notebook-open 8888 8890 "a.ipynb"
+    (let ((said nil))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format fmt args) said))))
+        (should-not (emjupy--adopt-remote-notebook "a.ipynb" new)))
+      (should (eq (emjupy-notebook-server nb) old))
+      (should (seq-some (lambda (m) (string-match-p "also open" m)) said)))))
+
+(ert-deftest emjupy-test-another-path-on-the-same-server-is-another-notebook ()
+  "Another path on the same server is another notebook: nothing moves."
+  (emjupy-test--remote-notebook-open 8888 8888 "b.ipynb"
+    (should-not (emjupy--adopt-remote-notebook "b.ipynb" new))
+    (should (eq (emjupy-notebook-server nb) old))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

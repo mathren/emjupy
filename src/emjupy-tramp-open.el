@@ -468,6 +468,67 @@ and opens the notebook on it.  Return the notebook\\='s buffer."
     (emjupy--bind-server-kernel server)
     (list server (file-relative-name (file-remote-p file 'localname) root))))
 
+(defun emjupy--tunnel-of (server)
+  "Return the record of the tunnel SERVER is reached through, or nil."
+  (cl-find server emjupy--remote-tunnels
+           :key (lambda (tunnel) (plist-get tunnel :server))))
+
+(defun emjupy--remote-notebooks-of (path server)
+  "Return the buffers showing PATH from another tunnel to SERVER's machine.
+Each as (BUFFER . SAME), SAME non-nil when its tunnel reaches the same
+port there as SERVER's: then it is the same notebook, on the same
+server, reached another way.  The same path on another port is on
+another server, and may be another notebook."
+  (let ((tunnel (emjupy--tunnel-of server)) (found nil))
+    (when tunnel
+      (dolist (buf (emjupy--notebook-buffers))
+        (let* ((nb (buffer-local-value 'emjupy--buffer-notebook buf))
+               (old (and nb (emjupy-notebook-server nb)))
+               (old-tunnel (and old (not (eq old server))
+                                (emjupy--tunnel-of old))))
+          (when (and old-tunnel (equal (emjupy-notebook-path nb) path)
+                     (equal (plist-get (plist-get old-tunnel :route) :host)
+                            (plist-get (plist-get tunnel :route) :host)))
+            (push (cons buf (equal (plist-get old-tunnel :remote-port)
+                                   (plist-get tunnel :remote-port)))
+                  found)))))
+    found))
+
+(defun emjupy--adopt-remote-notebook (path server)
+  "Move the buffer already showing PATH on SERVER's server onto SERVER.
+The same machine, port and path: the same notebook, reached through
+another tunnel.  Its cells and unsaved edits stay; its kernel is
+reconnected if its connection is down.  Return the buffer, or nil --
+saying so when the path is open from another server there."
+  (let* ((found (emjupy--remote-notebooks-of path server))
+         (same (car (cl-find-if #'cdr found))))
+    (if (not same)
+        (progn
+          (dolist (other found)
+            (message "[emjupy] %s is also open in %s, from another server on %s: another notebook as emjupy sees it, its edits there"
+                     path (buffer-name (car other))
+                     (plist-get (plist-get (emjupy--tunnel-of server) :route)
+                                :host)))
+          nil)
+      (with-current-buffer same
+        (let* ((nb emjupy--buffer-notebook)
+               (old-tunnel (emjupy--tunnel-of (emjupy-notebook-server nb)))
+               (kernel (emjupy-notebook-kernel nb)))
+          (when old-tunnel
+            (when (process-live-p (plist-get old-tunnel :process))
+              (delete-process (plist-get old-tunnel :process)))
+            (setq emjupy--remote-tunnels
+                  (delq old-tunnel emjupy--remote-tunnels)))
+          (setf (emjupy-notebook-server nb) server)
+          (rename-buffer (emjupy--notebook-buffer-name path server) t)
+          (message "[emjupy] %s: already open, from the same server; reached again"
+                   path)
+          (when (and kernel (emjupy-kernel-id kernel)
+                     (not (emjupy--ws-live-p kernel)))
+            (emjupy-reconnect-kernel))))
+      (switch-to-buffer same)
+      same)))
+
 ;;;###autoload
 (defun emjupy-open-this-notebook ()
   "Open the .ipynb file this buffer visits as a notebook, on its machine.
@@ -505,7 +566,10 @@ running, to come back to."
            (server (car opened))
            (text (current-buffer))
            (window (selected-window))
-           (notebook (emjupy-open-notebook (cadr opened) server)))
+           (notebook (or (and remote
+                              (emjupy--adopt-remote-notebook (cadr opened)
+                                                             server))
+                         (emjupy-open-notebook (cadr opened) server))))
       (setq emjupy--current-server server)
       (when (buffer-live-p notebook)
         (with-current-buffer notebook

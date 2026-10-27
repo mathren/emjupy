@@ -1321,6 +1321,55 @@ without a kernel.  In its own notebook, so the shared kernel lives on."
       (let ((kill-buffer-query-functions nil))
         (kill-buffer buf)))))
 
+(ert-deftest emjupy-int-a-notebook-reopened-through-a-new-tunnel-is-the-same ()
+  "Opening a TRAMP notebook again through a new tunnel gives back its buffer.
+The same machine, port and path are the same notebook: its buffer is
+moved onto the new tunnel, connected, its kernel's state there."
+  (let ((file (getenv "EMJUPY_TEST_SSH_NOTEBOOK"))
+        (env (getenv "EMJUPY_TEST_SSH_ENV")))
+    (unless (and file env)
+      (ert-skip "EMJUPY_TEST_SSH_NOTEBOOK and EMJUPY_TEST_SSH_ENV not set"))
+    (let* ((emjupy-language-support nil)
+           (buf (emjupy-int--open-through-tramp file env))
+           (again nil))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+              (let ((cell (seq-find (lambda (c)
+                                      (eq (emjupy-cell-type c) 'code))
+                                    (emjupy-notebook-cells
+                                     (emjupy--notebook)))))
+                (setf (emjupy-cell-source cell) "kept = 41 + 1")
+                (emjupy--redraw-notebook cell)
+                (goto-char (overlay-start (emjupy-cell-overlay cell)))
+                (emjupy-execute-cell-at-point)
+                (emjupy-int--pump
+                 10 (lambda () (numberp (emjupy-cell-exec-count cell))))))
+            (dolist (tunnel emjupy--remote-tunnels)
+              (when (process-live-p (plist-get tunnel :process))
+                (signal-process (plist-get tunnel :process) 'KILL)))
+            (emjupy-int--pump 0.5)
+            (setq again (emjupy-int--open-through-tramp file env))
+            (should (eq again buf))
+            (with-current-buffer buf
+              (should (emjupy-int--pump 30 (lambda () (emjupy--ws-live-p))))
+              (let ((cell (seq-find (lambda (c)
+                                      (eq (emjupy-cell-type c) 'code))
+                                    (emjupy-notebook-cells
+                                     (emjupy--notebook)))))
+                (setf (emjupy-cell-source cell) "print('kept is', kept)")
+                (emjupy--redraw-notebook cell)
+                (goto-char (overlay-start (emjupy-cell-overlay cell)))
+                (emjupy-execute-cell-at-point)
+                (should (emjupy-int--pump
+                         20 (lambda ()
+                              (string-match-p "kept is 42"
+                                              (emjupy-int--stdout cell))))))))
+        (let ((kill-buffer-query-functions nil))
+          (dolist (b (delete-dups (list buf again)))
+            (when (buffer-live-p b) (kill-buffer b))))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

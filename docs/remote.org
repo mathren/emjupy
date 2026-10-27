@@ -144,7 +144,10 @@ so two servers' =analysis.ipynb= do not clobber each other.
 If a tunnel drops, the remote kernel keeps running, and emjupy reconnects
 by itself, every few seconds for =emjupy-reconnect-window= seconds (30).
 A tunnel emjupy opened itself, for a notebook opened through TRAMP, it
-opens again, on the same port.
+opens again, on the same port.  Opened again through a new tunnel, a notebook on
+the same machine, from the server on the same port there, is the same
+notebook: its buffer is reached again, its edits kept.  The same path
+from a server on another port is another notebook, opened apart.
 A cell running meanwhile is not lost: the server keeps the kernel's
 messages and hands them to the same session reconnecting, so the cell
 gets everything it printed.  A cell run while it reconnects runs once
