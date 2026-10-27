@@ -17,6 +17,9 @@ v=$("$EMACS" -batch -Q --eval '(princ emacs-version)' 2>/dev/null)
 case "$v" in 30.*|3[1-9].*) ;; *) echo "check.sh: Emacs $v; emjupy needs 30.1 or later -- set EMACS"; exit 2;; esac
 : "${EMJUPY_WEBSOCKET_DIR:?set EMJUPY_WEBSOCKET_DIR to a websocket.el checkout}"
 export EMJUPY_WEBSOCKET_DIR
+# A UTF-8 locale, as a user's terminal: format-message then curls quotes,
+# which tests matching messages must allow for.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 status=0
 make -s clean >/dev/null 2>&1
 make compile EMACS="$EMACS" > /tmp/check-compile.log 2>&1; s=$?

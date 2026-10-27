@@ -112,3 +112,6 @@
   in batch: resolve a colour (`color-name-to-rgb`) before handing it on.
 - **A repeating timer keeps the interval it started with**: tick at a
   fixed rate and read the option each tick.
+- **Quotes in messages follow the locale**: `format-message` -- behind
+  `message`, `error`, `user-error` -- turns ' into ’ in UTF-8.  Match
+  messages with `.` for an apostrophe; `check.sh` runs in UTF-8.

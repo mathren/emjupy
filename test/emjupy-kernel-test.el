@@ -1003,7 +1003,8 @@ The kernel is there; \\[emjupy-reconnect-kernel] reaches it again."
     (cancel-timer emjupy--reconnect-timer)
     (setq emjupy--reconnect-timer nil)
     (let ((err (should-error (emjupy-execute-cell-at-point) :type 'user-error)))
-      (should (string-match-p "connection to this notebook's kernel is down"
+      ;; ' or ', as `format-message' quotes it in the locale
+      (should (string-match-p "connection to this notebook.s kernel is down"
                               (cadr err))))))
 
 
