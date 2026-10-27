@@ -1,4 +1,4 @@
-;;; emjupy-cells.el --- Cell editing operations for emjupy  -*- lexical-binding: t; -*-
+;;; emjupy-cells.el --- The buffer synced into the cells, and checked  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 
@@ -12,10 +12,10 @@
 
 ;;; Commentary:
 
-;; Syncing buffer text back into cell structs, the cell-level editing
-;; commands -- insert, delete, move, split, merge, change type, navigation
-;; -- and the commands that act on a cell's display: hiding and showing its
-;; output, rendering markdown and LaTeX, showing a traceback.
+;; Syncing buffer text back into the cell structs -- the cells are the
+;; notebook, the buffer a drawing of them -- and checking the two agree.
+;; The commands on cells are in emjupy-commands.el; drawing is in
+;; emjupy-render.el, redrawing in emjupy-redraw.el.
 
 ;;; Code:
 

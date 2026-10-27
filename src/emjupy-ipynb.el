@@ -12,7 +12,8 @@
 
 ;; A notebook as nbformat v4 JSON, read and written, and as a Python file
 ;; in the percent format Jupytext, VS Code and Spyder read.  No buffer, no
-;; server: the commands that save and export are in emjupy-notebook.el.
+;; server: saving is in emjupy-save.el, the export command in
+;; emjupy-notebook.el.
 
 ;;; Code:
 

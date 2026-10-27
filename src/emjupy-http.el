@@ -1,4 +1,4 @@
-;;; emjupy-http.el --- HTTP transport and server URL parsing for emjupy  -*- lexical-binding: t; -*-
+;;; emjupy-http.el --- HTTP transport, and what WebSockets share with it  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 
@@ -12,9 +12,11 @@
 
 ;;; Commentary:
 
-;; The REST half of the Jupyter transport, plus the URL parsing shared with
-;; the WebSocket layer.  Handles per-server XSRF cookies and base paths, so
-;; a server behind an ssh tunnel or a reverse proxy works unchanged.
+;; The REST half of the Jupyter transport, and what the WebSockets share
+;; with it: a server's address, and its token, sent in a header.  Handles
+;; per-server XSRF cookies and base paths, so a server behind an ssh tunnel
+;; or a reverse proxy works unchanged.  A server's address is parsed once,
+;; in emjupy-core.el.
 
 ;;; Code:
 

@@ -1,4 +1,4 @@
-;;; emjupy-notebook.el --- Notebook session management and .ipynb I/O for emjupy  -*- lexical-binding: t; -*-
+;;; emjupy-notebook.el --- Logging in; opening, creating and switching notebooks  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 
@@ -12,8 +12,9 @@
 
 ;;; Commentary:
 
-;; Logging in to a server, listing, opening and creating notebooks, and reading
-;; and writing nbformat v4.
+;; Logging in to a server; listing, opening, creating and switching
+;; notebooks; exporting one to Python; trusting one; and the menu.  Reading
+;; and writing nbformat is in emjupy-ipynb.el, saving in emjupy-save.el.
 ;;
 ;; One port, one kernel: `emjupy-login' adopts the kernel already running behind
 ;; a tunnel, so opening a notebook lands in the live session.

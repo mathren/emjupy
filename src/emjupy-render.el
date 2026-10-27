@@ -1,4 +1,4 @@
-;;; emjupy-render.el --- Buffer rendering, faces and cell outlines for emjupy  -*- lexical-binding: t; -*-
+;;; emjupy-render.el --- Drawing a notebook: cells, outputs, outlines  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Mathieu Renzo
 
@@ -12,10 +12,10 @@
 
 ;;; Commentary:
 
-;; Everything that puts pixels on the screen: the theme-derived page
-;; colours, the box-drawing outlines (which track the window width),
-;; syntax highlighting for code and markdown cells, and the overlay
-;; rendering of cells and their outputs.
+;; Drawing a notebook: the box-drawing outlines (which track the window
+;; width), syntax highlighting for code and markdown cells, and the
+;; overlays of cells and their outputs.  The faces and the theme-derived
+;; colours are in emjupy-faces.el; redrawing is in emjupy-redraw.el.
 
 ;;; Code:
 
