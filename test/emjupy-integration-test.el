@@ -1788,6 +1788,27 @@ its variable evaluated there and what that variable holds shown."
             (emjupy-debug-continue))
         (emjupy-debug-mode -1)))))
 
+(ert-deftest emjupy-int-the-mode-line-follows-the-kernel ()
+  "The mode line shows the server's port, and the kernel busy, then idle."
+  (emjupy-int--with-file-notebook "import time; time.sleep(1.5)"
+    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+          (port (plist-get (emjupy--server-parts emjupy--current-server)
+                           :port)))
+      (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+      (should (emjupy-int--pump
+               60 (lambda () (string-match-p "idle"
+                                             (emjupy--mode-line-status)))))
+      (should (string-match-p (format ":%s\\]" port)
+                              (emjupy--mode-line-status)))
+      (emjupy--goto-cell cell 'beginning)
+      (emjupy-execute-cell-at-point)
+      (should (emjupy-int--pump
+               10 (lambda () (string-match-p "busy"
+                                             (emjupy--mode-line-status)))))
+      (should (emjupy-int--pump
+               20 (lambda () (string-match-p "idle"
+                                             (emjupy--mode-line-status))))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

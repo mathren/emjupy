@@ -209,9 +209,37 @@ are on the `load-path' -- remove one, or put the one you want first."
 
 ;;;; The mode
 
+(defun emjupy--mode-line-status ()
+  "What the kernel is doing, and the port of its server, for the mode line.
+The kernel's own word -- idle, busy, starting -- or what emjupy knows:
+no kernel, disconnected, reconnecting."
+  (let* ((nb emjupy--buffer-notebook)
+         (kernel (and nb (emjupy-notebook-kernel nb)))
+         (server (and nb (emjupy-notebook-server nb)))
+         (parts (and server (emjupy--server-parts server)))
+         (state (cond ((not kernel) "no kernel")
+                      (emjupy--reconnect-timer "reconnecting")
+                      ((not (emjupy--ws-live-p kernel)) "disconnected")
+                      (t (or (emjupy-kernel-state kernel) "connecting")))))
+    (format "[%s%s]"
+            (propertize state 'face
+                        (pcase state
+                          ("idle" nil)
+                          ((or "busy" "starting" "connecting" "reconnecting")
+                           'warning)
+                          ("no kernel" 'shadow)
+                          (_ 'error)))
+            (cond ((plist-get parts :port)
+                   (format " :%s" (plist-get parts :port)))
+                  ((plist-get parts :host)
+                   (format " %s" (plist-get parts :host)))
+                  (t "")))))
+
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
   (emjupy--warn-about-strays)
+  ;; The kernel's state and the server's port beside the mode's name.
+  (setq mode-name '("emjupy" (:eval (emjupy--mode-line-status))))
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
   (emjupy--adopt-language-settings)

@@ -656,6 +656,12 @@ kernels never cross-talk."
                       (emjupy--ws-message-owner pending parent-id)))
          (internal (when parent-id (gethash parent-id
                                             emjupy--internal-requests))))
+    ;; What it is doing, for the mode line: any status, whoever's request.
+    (when (and kernel (equal msg-type "status"))
+      (let ((state (gethash "execution_state" content)))
+        (unless (equal state (emjupy-kernel-state kernel))
+          (setf (emjupy-kernel-state kernel) state)
+          (emjupy--kernel-told kernel))))
     ;; The kernel waiting on the user: a cell asked for input.
     (when (equal msg-type "input_request")
       (emjupy--input-requested kernel data))
@@ -730,6 +736,7 @@ several notebooks -- from several servers -- stay live at once."
                          (unless (eq (websocket-client-data ws) 'refused)
                            (emjupy--handle-ws-message kernel frame)))
            :on-open (lambda (ws)
+                      (emjupy--kernel-told kernel)
                       (unless (eq (websocket-client-data ws) 'refused)
                         (message "[emjupy] %s connected to kernel %s" label
                                  kernel-id)))
@@ -862,6 +869,13 @@ attaching two notebooks to one kernel makes them share state."
 
 ;;;; The connection
 
+(defun emjupy--kernel-told (kernel)
+  "Have the mode line of KERNEL's notebook show what it is doing now."
+  (let ((buf (and kernel (emjupy-kernel-notebook kernel)
+                  (emjupy-notebook-buffer (emjupy-kernel-notebook kernel)))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf (force-mode-line-update)))))
+
 (defun emjupy--ws-live-p (&optional kernel)
   "Return non-nil when KERNEL (default this buffer's) has a usable socket."
   (let* ((kernel (or kernel (emjupy--kernel)))
@@ -929,6 +943,12 @@ is still folded where the box ends."
              "")))
 
 (defun emjupy--kernel-connection-closed (kernel label)
+  "Note that KERNEL's connection closed, LABEL naming its notebook.
+Recovers as below, then says so in the mode line: reconnecting, or not."
+  (emjupy--kernel-connection-closed-1 kernel label)
+  (emjupy--kernel-told kernel))
+
+(defun emjupy--kernel-connection-closed-1 (kernel label)
   "The WebSocket to KERNEL, for the notebook called LABEL, has closed.
 Closed by emjupy, or with reconnecting off, cells still running on it
 are ended.  Dropped, they keep running and emjupy reconnects for
@@ -1153,7 +1173,9 @@ the notebook called LABEL is left without a kernel, for a new one."
        cells buf label
        (substitute-command-keys
         (format "kernel %s is gone from the server -- it died, or was shut down; \\[emjupy-connect-kernel-interactive] starts a new one"
-                kernel-id))))))
+                kernel-id)))))
+  (when (buffer-live-p buf)
+    (with-current-buffer buf (force-mode-line-update))))
 
 (defvar emjupy--quiet-check-timer nil
   "The timer asking after quiet kernels, while a cell runs anywhere.")

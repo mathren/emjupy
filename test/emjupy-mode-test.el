@@ -211,6 +211,58 @@ showed keys as \"M-x ...\" and widgets as text."
       (should (equal (emjupy--stray-modules)
                      '((emjupy-mode . "/elsewhere/emjupy-mode.elc")))))))
 
+
+;;;; The mode line
+
+(defmacro emjupy-test--mode-line (&rest body)
+  "Run BODY in a notebook on a server at port 8888; LIVE stubs the socket."
+  (declare (indent 0))
+  `(emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                         :source "x"))
+       buf nb
+     (let ((live nil))
+       (setf (emjupy-notebook-server nb)
+             (make-emjupy-server :base-url "127.0.0.1:8888" :token "t"))
+       (cl-letf (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) live)))
+         ,@body))))
+
+(ert-deftest emjupy-test-the-mode-line-says-what-the-kernel-does ()
+  "The mode line shows the kernel's state, or emjupy's, and the port."
+  (emjupy-test--mode-line
+    (should (equal (emjupy--mode-line-status) "[no kernel :8888]"))
+    (let ((kernel (make-emjupy-kernel :id "k" :notebook nb)))
+      (setf (emjupy-notebook-kernel nb) kernel)
+      (should (equal (emjupy--mode-line-status) "[disconnected :8888]"))
+      (setq live t)
+      (should (equal (emjupy--mode-line-status) "[connecting :8888]"))
+      (setf (emjupy-kernel-state kernel) "idle")
+      (should (equal (emjupy--mode-line-status) "[idle :8888]"))
+      (setf (emjupy-kernel-state kernel) "busy")
+      (let ((shown (emjupy--mode-line-status)))
+        (should (equal shown "[busy :8888]"))
+        (should (eq (get-text-property 1 'face shown) 'warning)))
+      (let ((emjupy--reconnect-timer t))
+        (should (equal (emjupy--mode-line-status) "[reconnecting :8888]")))
+      ;; What the mode line draws: batch Emacs draws none to look at.
+      (should (equal mode-name
+                     '("emjupy" (:eval (emjupy--mode-line-status))))))))
+
+(ert-deftest emjupy-test-a-status-message-sets-the-kernels-state ()
+  "The kernel's status messages, whoever's request, set what it is doing."
+  (emjupy-test--mode-line
+    (let ((kernel (make-emjupy-kernel :id "k" :notebook nb
+                                      :pending (make-hash-table :test 'equal)))
+          (msg (make-hash-table :test 'equal))
+          (header (make-hash-table :test 'equal))
+          (content (make-hash-table :test 'equal)))
+      (puthash "msg_type" "status" header)
+      (puthash "execution_state" "busy" content)
+      (puthash "header" header msg)
+      (puthash "parent_header" (make-hash-table) msg)
+      (puthash "content" content msg)
+      (emjupy--handle-ws-message kernel (json-serialize msg))
+      (should (equal (emjupy-kernel-state kernel) "busy")))))
+
 (provide 'emjupy-mode-test)
 
 ;;; emjupy-mode-test.el ends here

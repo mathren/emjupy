@@ -35,6 +35,10 @@ files -- a tunnelled server looks like localhost -- so tell =emjupy=:
 
 * Editing while a cell runs
 
+The mode line shows what the kernel is doing and the port of its
+server, =emjupy[busy :8888]=: idle, busy or starting, as the kernel says,
+or no kernel, disconnected, reconnecting.
+
 The cell running shows a cycling marker where its count goes, =[In: |]=,
 and the cells queued behind it a still =[In: *]=, as in Jupyter.
 =emjupy-running-indicator= sets the frames; a one-element vector like

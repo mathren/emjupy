@@ -115,3 +115,6 @@
 - **Quotes in messages follow the locale**: `format-message` -- behind
   `message`, `error`, `user-error` -- turns ' into ’ in UTF-8.  Match
   messages with `.` for an apostrophe; `check.sh` runs in UTF-8.
+- **Batch Emacs renders no mode line**: `format-mode-line` returns "" for
+  anything.  Test the construct and what its `:eval` returns; to see it
+  drawn, run `emacs -nw` under `script -qc` and write the result to a file.
