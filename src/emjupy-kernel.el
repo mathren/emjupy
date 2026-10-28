@@ -1225,27 +1225,65 @@ The timer calling this stops once no cell runs anywhere."
         ;; cells that were never run: an empty box and no execution count.
         (emjupy--mark-running cell)))))
 
-(defun emjupy-execute-cell-and-goto-next ()
+(defun emjupy-execute-cell-and-goto-next (&optional n)
   "Execute the cell at point, then move to the start of the next cell.
+With a numeric prefix N, do so N times: \\[universal-argument] 5
+\\[emjupy-execute-cell-and-goto-next] runs five cells.
 
 If this is the last cell, a new empty one is made below and point goes
 there -- so running the last cell leaves you ready to write the next
-thing rather than stranded at the bottom.
+thing rather than stranded at the bottom.  With N, only after the last
+of them: running past the end stops there.
 
 Point is taken from the cell list rather than by walking the buffer: the
 executed cell may still be redrawing as its output arrives, and
 stepping over overlays mid-flight lands in the output box."
+  (interactive "p")
+  (catch 'end
+    (dotimes (i (max 1 (or n 1)))
+      (let* ((cell (emjupy--cell-at-point)))
+        (unless cell (user-error "Point is not in a cell"))
+        (emjupy-execute-cell-at-point)
+        (let* ((nb (emjupy--notebook))
+               (cells (append (emjupy-notebook-cells nb) nil))
+               (idx (cl-position cell cells))
+               (next (and idx (nth (1+ idx) cells))))
+          (cond ((and next (overlayp (emjupy-cell-overlay next)))
+                 (goto-char (overlay-start (emjupy-cell-overlay next))))
+                ((= i (1- (max 1 (or n 1))))
+                 (emjupy-insert-cell-below))
+                (t (throw 'end nil))))))))
+
+(defun emjupy--run-cells (cells)
+  "Run CELLS in order, as each would be run from its own place.
+Raw cells are left alone, as Jupyter does; markdown ones are rendered.
+Point stays where it was."
+  (save-excursion
+    (dolist (cell cells)
+      (unless (eq (emjupy-cell-type cell) 'raw)
+        (emjupy--goto-cell cell 'start)
+        (emjupy-execute-cell-at-point)))))
+
+(defun emjupy-run-all-cells ()
+  "Run every cell of the notebook, top to bottom, as JupyterLab's Run All."
   (interactive)
-  (let* ((cell (emjupy--cell-at-point)))
-    (unless cell (user-error "Point is not in a cell"))
-    (emjupy-execute-cell-at-point)
-    (let* ((nb (emjupy--notebook))
-           (cells (append (emjupy-notebook-cells nb) nil))
-           (idx (cl-position cell cells))
-           (next (and idx (nth (1+ idx) cells))))
-      (if (and next (overlayp (emjupy-cell-overlay next)))
-          (goto-char (overlay-start (emjupy-cell-overlay next)))
-        (emjupy-insert-cell-below)))))
+  (emjupy--run-cells (append (emjupy-notebook-cells (emjupy--notebook)) nil)))
+
+(defun emjupy-run-cells-above ()
+  "Run every cell above the one at point, not it, as JupyterLab does."
+  (interactive)
+  (let* ((cell (or (emjupy--cell-at-point)
+                   (user-error "Point is not in a cell")))
+         (cells (append (emjupy-notebook-cells (emjupy--notebook)) nil)))
+    (emjupy--run-cells (seq-take cells (cl-position cell cells)))))
+
+(defun emjupy-run-cells-below ()
+  "Run the cell at point and every one below it, as JupyterLab does."
+  (interactive)
+  (let* ((cell (or (emjupy--cell-at-point)
+                   (user-error "Point is not in a cell")))
+         (cells (append (emjupy-notebook-cells (emjupy--notebook)) nil)))
+    (emjupy--run-cells (nthcdr (cl-position cell cells) cells))))
 
 ;; Everything touching a live WebSocket goes through these two functions, each
 ;; for one kernel: a stale value gets a plain "no kernel" rather than an error

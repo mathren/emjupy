@@ -458,6 +458,9 @@ this buffer."
    ["Run"
     ("c" "this cell, then move on" emjupy-execute-cell-and-goto-next)
     ("e" "this cell, stay here" emjupy-execute-cell-at-point)
+    ("A" "all cells" emjupy-run-all-cells)
+    ("{" "all above this one" emjupy-run-cells-above)
+    ("}" "this one and all below" emjupy-run-cells-below)
     ("z" "interrupt the kernel" emjupy-interrupt-kernel)
     ("$" "show the last traceback" emjupy-show-traceback)]
    ["Cells"

@@ -1211,6 +1211,62 @@ cells.  Quiet and idle, the runs end."
         (should ended)
         (should-not (gethash "m1" pending))))))
 
+
+;;;; Running several cells
+
+(defmacro emjupy-test--five-cells (&rest body)
+  "Run BODY in a notebook of five cells, the second raw.
+RAN, in BODY, lists the ids of the cells run, in order."
+  (declare (indent 0))
+  `(emjupy-test--with-notebook
+       (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1")
+               (make-emjupy-cell :id 2 :type 'raw :source "raw")
+               (make-emjupy-cell :id 3 :type 'markdown :source "# m")
+               (make-emjupy-cell :id 4 :type 'code :source "b = 2")
+               (make-emjupy-cell :id 5 :type 'code :source "c = 3"))
+       buf nb
+     (let ((ran nil))
+       (cl-letf (((symbol-function 'emjupy-execute-cell-at-point)
+                  (lambda ()
+                    (push (emjupy-cell-id (emjupy--cell-at-point)) ran))))
+         (cl-flet ((at (id) (emjupy--goto-cell
+                             (cl-find id (emjupy-notebook-cells nb)
+                                      :key #'emjupy-cell-id)
+                             'start))
+                   (ran () (reverse ran)))
+           ,@body)))))
+
+(ert-deftest emjupy-test-run-all-above-and-below ()
+  "Run all, all above, all below: as JupyterLab, raw cells left alone.
+Above leaves out the cell at point; below starts with it; point stays."
+  (emjupy-test--five-cells
+    (at 4)
+    (let ((here (point)))
+      (emjupy-run-all-cells)
+      (should (equal (ran) '(1 3 4 5)))
+      (should (= (point) here)))
+    (setq ran nil) (at 4) (emjupy-run-cells-above)
+    (should (equal (ran) '(1 3)))
+    (setq ran nil) (at 4) (emjupy-run-cells-below)
+    (should (equal (ran) '(4 5)))))
+
+(ert-deftest emjupy-test-a-prefix-runs-that-many-cells ()
+  "C-u N C-c C-c runs N cells, each moving on to the next.
+Past the end it stops there; reaching it exactly, it makes the new cell
+running the last one always makes."
+  (emjupy-test--five-cells
+    (at 1)
+    (emjupy-execute-cell-and-goto-next 2)
+    (should (equal (ran) '(1 2)))
+    (should (= (emjupy-cell-id (emjupy--cell-at-point)) 3))
+    (setq ran nil) (at 1)
+    (emjupy-execute-cell-and-goto-next 10)
+    (should (equal (ran) '(1 2 3 4 5)))
+    (should (= (length (emjupy-notebook-cells nb)) 5))
+    (setq ran nil) (at 1)
+    (emjupy-execute-cell-and-goto-next 5)
+    (should (= (length (emjupy-notebook-cells nb)) 6))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

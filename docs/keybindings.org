@@ -92,6 +92,9 @@ Dired -- are in [[file:usage.org::*Server dashboard][Using a notebook]].
 | =emjupy-list-notebooks=     | Prompt with the server's notebook list           |
 | =emjupy-create-notebook=    | Create a new blank notebook on the server        |
 | =emjupy-trust-notebook=     | Trust it, as Jupyter does: its scripts then run  |
+| =emjupy-run-all-cells=      | Run every cell, in order, as JupyterLab          |
+| =emjupy-run-cells-above=    | Run the cells above this one                     |
+| =emjupy-run-cells-below=    | Run this cell and those below                    |
 | =emjupy-refresh-appearance= | Re-derive page colours from the theme and redraw |
 
 Completion (=M-TAB=) and eldoc need no =emjupy= binding: they are wired into

@@ -35,10 +35,22 @@ files -- a tunnelled server looks like localhost -- so tell =emjupy=:
 
 * Editing while a cell runs
 
-A running cell shows a cycling marker where its count goes, =[In: |]=.
+The cell running shows a cycling marker where its count goes, =[In: |]=,
+and the cells queued behind it a still =[In: *]=, as in Jupyter.
 =emjupy-running-indicator= sets the frames; a one-element vector like
 =["*"]= gives Jupyter's static marker.  Only overlay strings change, never
 buffer text, so typing and undo are undisturbed.
+
+To run several cells: a numeric prefix runs that many, moving on after
+each -- =C-u 5 C-c C-c= -- and =C-x z= repeats it.  =emjupy-run-all-cells=,
+=emjupy-run-cells-above= (not the cell at point) and
+=emjupy-run-cells-below= (from it) run as JupyterLab's commands of those
+names do, raw cells left alone; in the menu, =A=, ={= and =}=.  Each
+cell is queued, and runs in the order sent.
+
+A hidden output is not drawn at all: a cell with a large output hidden,
+with =C-c C-o=, costs nothing to draw, and the notebook keeps it hidden when
+saved, as Jupyter does.
 
 Edit anywhere while a cell runs: output is drawn only into its own cell's
 box, leaving text typed meanwhile, and point, as they are.
