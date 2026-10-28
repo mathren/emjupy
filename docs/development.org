@@ -126,40 +126,31 @@ Every file starts with the same header.  A Lisp file:
 The licence is given by its SPDX identifier alone.  Python, shell and the
 Makefile carry the copyright and SPDX lines as comments, after any =#!=.
 
-The code follows the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs Lisp style guide]]:
+The code follows the Elisp manual's [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Tips.html][Tips and Conventions]] and the
+[[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs Lisp style guide]]: requires and compiler declarations at the top,
+Emacs's own indentation, =#'= for a function passed, =when= and =unless=
+for one branch, a docstring for every variable with a value, no code
+commented out, lines of 80 columns.  Beyond them, emjupy's own:
 
-- Requires at the top, in one block, with the declarations for the
-  compiler -- =declare-function=, a =defvar= for another package's
-  variable -- right after them.  An optional or heavy library --
-  =xwidget=, =org= for LaTeX -- is required in the function needing it,
-  and declared at the top, with a comment saying why.
-- Loading a file only defines things: hooks are added when =emjupy-mode=
-  starts, the mixed-installation check runs when the first notebook
-  opens.  A keymap is a =defvar= whose value builds it, bindings and all
-  -- =(defvar MAP (let ((map (make-sparse-keymap))) (define-key map ...)
-  map))= -- never a =define-key= at top level.
-- Emacs's own indentation, quoted data lists aligned as data; spaces, no
-  trailing whitespace, no closing parentheses on a line of their own.
-- =#'= for a function passed as an argument; =when= and =unless= for one
-  branch; a docstring for every variable defined with a value; =;;;;=
-  for a section heading.
-- No code left commented out: it is in the history.
+- Loading a file only defines things: hooks go in a layer's =-enable=
+  function, which =emjupy-mode= calls.  An optional or heavy library --
+  =xwidget=, =org= for LaTeX -- is required where it is needed, and
+  declared at the top with a comment saying why.
+- A keymap is a =defvar= whose value builds it whole, never a
+  =define-key= at top level.
 - =;;;###autoload= only on commands that make sense before emjupy is
   loaded: logging in, listing, opening, creating, the menu.
-- A question takes =y-or-n-p=: one key, =y= or =n=, to answer.
-- No advice on another package's functions, as the Elisp manual asks,
-  but in one place: Eglot's commands, which find their server from the
-  current buffer.  =emjupy-eglot.el= says why, and how it is kept narrow.
+- A question takes =y-or-n-p=.
+- No advice on another package's functions, but on Eglot's commands:
+  =emjupy-eglot.el= says why.
 - Every file in sections: user options first, under =;;;; Options=, then
   a =;;;;= heading per part.  Messages start =[emjupy]=.
-- A user option goes in its subject's group, defined in emjupy-core.el.
-  It is =:safe= only if it changes nothing but how a notebook looks or is
+- A user option goes in its subject's group, defined in emjupy-core.el,
+  and is =:safe= only if it changes nothing but how a notebook looks or is
   exported: never one that runs a program, loads code, or reaches a file
   or host.
-- Comments say why, briefly; how the code came to be is in the history.
-- Lines of 80 columns at most.  A long call breaks between arguments, or
-  puts them below its name; a deep expression is better bound to a name.
-  Exceptions: a string long in itself -- a URL, a regexp, JSON, a
+- Comments say why, briefly.
+- Past 80 columns only a string long in itself -- a URL, a regexp, JSON, a
   message someone may search for -- a file's first line, a test's name.
 
 ** Words for what is on screen
@@ -385,6 +376,9 @@ of the local fallback need a server on this machine's =PATH= (=pylsp=,
 
 =test/emjupy-robustness-test.el= holds tests making their own inputs.
 They run with =make test=, and catch what hand-written tests miss.
+
+Faults found by fuzzing a running notebook that are not yet fixed are
+[[https://github.com/mathren/emjupy/issues][issues on GitHub]].
 
 | Test            | What it tries                                            |
 |-----------------+----------------------------------------------------------|

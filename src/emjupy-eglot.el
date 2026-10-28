@@ -493,16 +493,11 @@ eldoc already went through the shadow buffer; everything else did not."
                                                          "s")))
       updated)))
 
-;; Eglot's commands are advised, though the Elisp manual asks a package not
-;; to advise another's functions.  Eglot finds its server from the current
-;; buffer, and a notebook's is attached to its hidden shadow buffer, not to
-;; the notebook; Eglot offers no way to run a command through another
-;; buffer.  Remapping the keys in `emjupy-mode-map' would leave M-x, and keys
-;; bound elsewhere, failing with "No current JSON-RPC connection".  So the
-;; advice is kept narrow: it acts only in a notebook buffer, running the
-;; command unchanged anywhere else; it covers only the commands in
-;; `emjupy-eglot-delegated-commands'; and `emjupy-eglot-remove-advice' takes
-;; it off.
+;; Eglot's commands are advised, against the manual's advice for packages:
+;; Eglot finds its server from the current buffer -- for a notebook, its
+;; shadow buffer -- with no way to act through another, and remapping keys
+;; would leave M-x failing.  Narrow: in notebook buffers only, on
+;; `emjupy-eglot-delegated-commands' only; `emjupy-eglot-remove-advice'.
 
 (defun emjupy--eglot-command-advice (orig &rest args)
   "Around-advice running ORIG with ARGS in the shadow buffer, in notebooks.

@@ -241,7 +241,7 @@ numbered, so the page is the same each time it is built."
              :base-directory "./docs/"
              :publishing-directory "./html-content"
              :recursive nil
-             :exclude "README.org\\|LICENSE\\|\\.gitignore\\|\\*.tar\\|\\Makefile\\|\\.dir-locals.el\\|fuzz-findings.org"
+             :exclude "README.org\\|LICENSE\\|\\.gitignore\\|\\*.tar\\|\\Makefile\\|\\.dir-locals.el"
              :publishing-function 'org-html-publish-to-html
              :html-doctype "html5"
              :language "en"

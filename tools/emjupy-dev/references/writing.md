@@ -42,8 +42,8 @@ history.
   option and link; cut history and sentences restating a table.  Check
   with `scripts/orgkeep.py`, review each report (adjacent `=spans=`
   produce false ones), build the site and run the link check.
-- `docs/fuzz-findings.org` is a log: fixed findings keep what fixed them,
-  how it was checked, how to reproduce, what it was.
+- No logs in `docs/`: a fault found and not fixed is a GitHub issue; one
+  fixed is in its commit and test.
 
 ## Commit messages
 
