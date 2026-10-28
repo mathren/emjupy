@@ -1454,6 +1454,114 @@ notebook is told its kernel is gone."
                                   said))))
       (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
 
+(ert-deftest emjupy-int-cells-run-while-one-runs-keep-their-order ()
+  "Cells run while a slow one runs are queued and run in the order sent.
+As in Jupyter: the kernel runs them in that order, execution counts rise
+with it, each cell gets its own output in order -- a loop's figures
+between its labels -- and a queued cell shows [In: *] meanwhile."
+  (emjupy-int--skip-unless-live)
+  (let* ((server emjupy--current-server)
+         (path (format "emjupy-int-order-%d.ipynb" (random 100000)))
+         (sources
+          (append
+           (list "import time\nimport matplotlib.pyplot as plt\norder = []"
+                 "order.append('slow')\nfor i in range(6):\n    print('slow', i, flush=True)\n    time.sleep(0.3)")
+           (cl-loop for k below 4 collect
+                    (format "order.append('f%d')\nfor j in range(3):\n    print('f%d-%%d' %% j, flush=True)\n    plt.figure(figsize=(2, 1)); plt.plot([j, %d]); plt.show()" k k k))
+           (cl-loop for k below 8 collect
+                    (format "order.append('q%d')\nprint('q%d', sum(range(%d)))" k k (* k 1000)))
+           (list "print(order)")))
+         (last-cell (1- (length sources)))
+         (sent (let ((rest (number-sequence 2 (1- last-cell))) (shuffled nil))
+                 (random "emjupy-order")
+                 (while rest
+                   (let ((pick (nth (random (length rest)) rest)))
+                     (push pick shuffled) (setq rest (delete pick rest))))
+                 (append '(1) shuffled (list last-cell))))
+         (n 0)
+         (notebook
+          `((cells . ,(vconcat
+                       (mapcar (lambda (src)
+                                 `((cell_type . "code")
+                                   (id . ,(format "c%d" (cl-incf n)))
+                                   (source . ,src)
+                                   (metadata . ,(make-hash-table))
+                                   (outputs . [])
+                                   (execution_count . nil)))
+                               sources)))
+            (metadata . ,(make-hash-table))
+            (nbformat . 4) (nbformat_minor . 5)))
+         (buf nil))
+    (emjupy--http-request "PUT" server (emjupy--contents-path path)
+                          (json-encode `((type . "notebook") (format . "json")
+                                         (content . ,notebook))))
+    (setq buf (emjupy-open-notebook path server))
+    (unwind-protect
+        (with-current-buffer buf
+          (let* ((nb (emjupy--notebook))
+                 (cells (emjupy-notebook-cells nb))
+                 (run (lambda (i)
+                        (emjupy--goto-cell (aref cells i) 'start)
+                        (emjupy-execute-cell-at-point)))
+                 (done (lambda (i)
+                         (and (numberp (emjupy-cell-exec-count (aref cells i)))
+                              (not (memq (emjupy-cell-id (aref cells i))
+                                         emjupy--running-cells))))))
+            (emjupy--spawn-and-connect-kernel nb)
+            (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+            (funcall run 0)
+            (should (emjupy-int--pump 60 (lambda () (funcall done 0))))
+            (funcall run 1)
+            (emjupy-int--pump 0.3)
+            (dolist (i (cdr sent)) (funcall run i))
+            (emjupy-int--pump 0.3)
+            (should (string-match-p "\\[In: \\*\\]"
+                                    (emjupy--cell-label
+                                     (aref cells (car (last sent 2))))))
+            (should (emjupy-int--pump
+                     90 (lambda () (cl-every done sent))))
+            (let ((tag (lambda (i)
+                         (cond ((= i 1) "slow")
+                               ((< i 6) (format "f%d" (- i 2)))
+                               (t (format "q%d" (- i 6))))))
+                  (ran (butlast sent)))
+              ;; the kernel ran them in the order sent
+              (should (equal (string-trim (emjupy-int--stdout
+                                           (aref cells last-cell)))
+                             (format "[%s]"
+                                     (mapconcat
+                                      (lambda (i)
+                                        (format "'%s'" (funcall tag i)))
+                                      ran ", "))))
+              ;; their counts rise in that order
+              (let ((counts (mapcar (lambda (i)
+                                      (emjupy-cell-exec-count (aref cells i)))
+                                    sent)))
+                (should (equal counts (sort (copy-sequence counts) #'<))))
+              ;; the slow cell has all its lines; each loop its figures in order
+              (should (equal (split-string (emjupy-int--stdout (aref cells 1))
+                                           "\n" t)
+                             (mapcar (lambda (i) (format "slow %d" i))
+                                     (number-sequence 0 5))))
+              (dolist (i (number-sequence 2 5))
+                (should (equal (mapcar (lambda (o)
+                                         (if (equal (gethash "output_type" o)
+                                                    "stream")
+                                             (string-trim
+                                              (emjupy--mime-text
+                                               (gethash "text" o)))
+                                           (and (gethash "image/png"
+                                                         (gethash "data" o))
+                                                'figure)))
+                                       (append (emjupy-cell-outputs
+                                                (aref cells i))
+                                               nil))
+                               (cl-loop for j below 3
+                                        append (list (format "%s-%d"
+                                                             (funcall tag i) j)
+                                                     'figure))))))))
+      (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the
