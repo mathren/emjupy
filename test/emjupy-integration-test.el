@@ -1563,7 +1563,9 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
       (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
 (defun emjupy-int--file-notebook (source)
   "Make a fresh notebook whose one code cell holds SOURCE; return its path."
-  (let ((path (format "emjupy-int-file-%d.ipynb" (random 1000000))))
+  ;; Unique across runs: a rename refuses a name a run before left there.
+  (let ((path (format "emjupy-int-file-%s-%d.ipynb"
+                      (format-time-string "%s%3N") (emacs-pid))))
     (emjupy--http-request
      "PUT" emjupy--current-server (emjupy--contents-path path)
      (json-encode
@@ -1595,7 +1597,11 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
            (with-current-buffer buf
              (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
                ,@body))
-         (when (buffer-live-p buf) (kill-buffer buf))))))
+         (when (buffer-live-p buf) (kill-buffer buf))
+         ;; its file goes too, under whatever name it ended with
+         (ignore-errors
+           (emjupy--http-request "DELETE" emjupy--current-server
+                                 (emjupy--contents-path path)))))))
 
 (defun emjupy-int--retype (text)
   "Make the first cell of this notebook hold TEXT, unsaved."
@@ -1632,16 +1638,23 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
       (should (equal (emjupy-int--saved-source renamed) "y = 2"))
       (should (equal (emjupy-notebook-path (emjupy--notebook)) other))
       ;; duplicate: a copy beside it, opened in a buffer of its own
-      (let ((copy (emjupy-duplicate-notebook)))
+      (let ((copy (emjupy-duplicate-notebook))
+            (copy-path nil))
         (unwind-protect
             (with-current-buffer copy
-              (should-not (equal (emjupy-notebook-path (emjupy--notebook))
-                                 other))
+              (setq copy-path (emjupy-notebook-path (emjupy--notebook)))
+              (should-not (equal copy-path other))
               (should (equal (emjupy-cell-source
                               (aref (emjupy-notebook-cells (emjupy--notebook))
                                     0))
                              "y = 3")))
-          (kill-buffer copy))))))
+          (kill-buffer copy)
+          ;; what it made goes: a run after would trip on it
+          (dolist (made (list renamed other copy-path))
+            (when made
+              (ignore-errors
+                (emjupy--http-request "DELETE" emjupy--current-server
+                                      (emjupy--contents-path made))))))))))
 
 (ert-deftest emjupy-int-a-cell-shows-how-long-it-ran ()
   "A cell run shows how long it took beside its count, kept as JupyterLab
