@@ -101,5 +101,92 @@ configurationDone once in a session; with the mode off, nothing."
         (should (string-match-p "ipykernel 6" (cadr err))))
       (should-not emjupy-debug-mode))))
 
+
+(ert-deftest emjupy-test-a-breakpoint-with-a-condition ()
+  "A prefix asks for a condition, sent with the breakpoint's line; asked on
+a breakpoint there, it changes its condition, not removes it."
+  (emjupy-test--debugging
+      `(("dumpCell" . ,(emjupy--debug-object "sourcePath" "/tmp/k/1.py")))
+    (emjupy-test--line cell 3)
+    (emjupy-debug-toggle-breakpoint "b > 1")
+    (emjupy-debug-toggle-breakpoint "b > 5")
+    (should (= (length emjupy--debug-breakpoints) 1))
+    (setq emjupy-debug-mode t
+          emjupy--debug-paths (make-hash-table :test 'equal))
+    (emjupy--debug-before-execute cell)
+    (let ((b (aref (gethash "breakpoints" (cdr (nth 1 (asked)))) 0)))
+      (should (= (gethash "line" b) 3))
+      (should (equal (gethash "condition" b) "b > 5")))))
+
+(ert-deftest emjupy-test-stopping-on-exceptions ()
+  "When to stop on an exception: sent at once if debugging, else kept and
+sent when debugging starts."
+  (emjupy-test--debugging nil
+    (emjupy-debug-break-on-exceptions '("raised"))
+    (should-not asked)
+    (emjupy-debug-mode 1)
+    (should (member "setExceptionBreakpoints" (mapcar #'car (asked))))
+    (setq asked nil)
+    (emjupy-debug-break-on-exceptions '("uncaught"))
+    (should (equal (append (gethash "filters" (cdr (car asked))) nil)
+                   '("uncaught")))
+    (setq emjupy-debug-mode nil)))
+
+(ert-deftest emjupy-test-choosing-a-frame ()
+  "Choosing a frame makes it the one evaluated in, its line marked."
+  (emjupy-test--debugging nil
+    (let ((inner (emjupy--debug-object "id" 1 "name" "inner" "line" 4
+                                       "source" (emjupy--debug-object
+                                                 "path" "/tmp/k/1.py")))
+          (outer (emjupy--debug-object "id" 2 "name" "outer" "line" 2
+                                       "source" (emjupy--debug-object
+                                                 "path" "/tmp/k/1.py"))))
+      (setq emjupy--debug-paths (make-hash-table :test 'equal)
+            emjupy--debug-stopped (cons 9 1)
+            emjupy--debug-frames (list inner outer))
+      (puthash "/tmp/k/1.py" cell emjupy--debug-paths)
+      (emjupy-debug-frame outer)
+      (should (equal emjupy--debug-stopped '(9 . 2)))
+      (should (equal (string-trim (buffer-substring
+                                   (overlay-start emjupy--debug-arrow)
+                                   (overlay-end emjupy--debug-arrow)))
+                     "b = a + 1")))))
+
+(ert-deftest emjupy-test-a-variable-shows-what-it-holds ()
+  "A variable holding others has a button: pressed, they show; again, hide."
+  (let ((replies (list (cons 1 (vector (emjupy--debug-object
+                                        "name" "d" "value" "{'a': 1}"
+                                        "variablesReference" 2)))
+                       (cons 2 (vector (emjupy--debug-object
+                                        "name" "'a'" "value" "1"
+                                        "variablesReference" 0))))))
+    (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                          :source "x"))
+        buf nb
+      (cl-letf (((symbol-function 'emjupy--debug-request)
+                 (lambda (command &optional arguments)
+                   (if (equal command "scopes")
+                       (emjupy--debug-object
+                        "scopes" (vector (emjupy--debug-object
+                                          "name" "Locals"
+                                          "variablesReference" 1)))
+                     (emjupy--debug-object
+                      "variables"
+                      (cdr (assoc (gethash "variablesReference" arguments)
+                                  replies))))))
+                ((symbol-function 'display-buffer) #'ignore))
+        (setq emjupy--debug-stopped '(1 . 1))
+        (emjupy-debug-variables)
+        (with-current-buffer "*emjupy variables*"
+          (goto-char (point-min))
+          (search-forward "+ d = {'a': 1}")
+          (let ((button (button-at (match-beginning 0))))
+            (button-activate button)
+            (should (string-match-p "- d = .*\n +'a' = 1" (buffer-string)))
+            (button-activate (save-excursion (goto-char (point-min))
+                                             (search-forward "- d")
+                                             (button-at (match-beginning 0))))
+            (should-not (string-match-p "'a' = 1" (buffer-string)))))))))
+
 (provide 'emjupy-debug-test)
 ;;; emjupy-debug-test.el ends here

@@ -1712,6 +1712,82 @@ end of the cell."
             (should (equal (string-trim (emjupy-int--stdout cell)) "6")))
         (emjupy-debug-mode -1)))))
 
+(defun emjupy-int--debug-start (cell)
+  "Start debugging this notebook's kernel, CELL's notebook, once it is up."
+  (ignore cell)
+  (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+  (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+  (emjupy-debug-mode 1))
+
+(defun emjupy-int--debug-said (thunk)
+  "Run THUNK; return what it said with `message', newest first."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) said))))
+      (funcall thunk))
+    said))
+
+(ert-deftest emjupy-int-the-debugger-stops-only-when-the-condition-holds ()
+  "A breakpoint with a condition stops only when it is true."
+  (emjupy-int--with-file-notebook
+      "total = 0\nfor i in range(5):\n    total += i\nprint(total)"
+    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+      (emjupy-int--debug-start cell)
+      (unwind-protect
+          (progn
+            (emjupy--goto-cell cell 'beginning)
+            (forward-line 2)
+            (emjupy-debug-toggle-breakpoint "i == 3")
+            (emjupy-execute-cell-at-point)
+            (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
+            (should (equal (car (emjupy-int--debug-said
+                                 (lambda () (emjupy-debug-evaluate "i"))))
+                           "3"))
+            (emjupy-debug-continue)
+            (should (emjupy-int--pump
+                     20 (lambda () (numberp (emjupy-cell-exec-count cell)))))
+            (should (equal (string-trim (emjupy-int--stdout cell)) "10")))
+        (emjupy-debug-mode -1)))))
+
+(ert-deftest emjupy-int-the-debugger-on-an-exception-frames-and-nesting ()
+  "Stopped on a raised exception: its message said; the outer frame chosen,
+its variable evaluated there and what that variable holds shown."
+  (emjupy-int--with-file-notebook
+      "def inner(d):\n    raise ValueError('boom')\ndef outer():\n    data = {'a': {'b': 1}}\n    inner(data)\nouter()"
+    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+          (said nil))
+      (emjupy-int--debug-start cell)
+      (unwind-protect
+          (progn
+            (emjupy-debug-break-on-exceptions '("raised"))
+            (emjupy--goto-cell cell 'beginning)
+            (setq said (emjupy-int--debug-said
+                        (lambda ()
+                          (emjupy-execute-cell-at-point)
+                          (emjupy-int--pump 20 (lambda () emjupy--debug-arrow))
+                          (emjupy-int--pump 1))))
+            (should emjupy--debug-arrow)
+            (should (seq-some (lambda (m) (string-match-p "exception: boom" m))
+                              said))
+            (let ((outer (seq-find (lambda (f)
+                                     (equal (gethash "name" f) "outer"))
+                                   emjupy--debug-frames)))
+              (should outer)
+              (emjupy-debug-frame outer))
+            (should (equal (car (emjupy-int--debug-said
+                                 (lambda () (emjupy-debug-evaluate "data"))))
+                           "{'a': {'b': 1}}"))
+            (cl-letf (((symbol-function 'display-buffer) #'ignore))
+              (emjupy-debug-variables))
+            (with-current-buffer "*emjupy variables*"
+              (goto-char (point-min))
+              (search-forward "+ data = ")
+              (button-activate (button-at (match-beginning 0)))
+              (should (string-match-p "'a' = {'b': 1}" (buffer-string))))
+            (emjupy-debug-continue))
+        (emjupy-debug-mode -1)))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

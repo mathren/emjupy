@@ -74,7 +74,13 @@ touched.
 =C-c C-d b= sets a breakpoint on a line of a code cell, and running the
 cell stops there, the line marked.  Then =n= runs that line, =s= steps
 in, =o= out, =c= goes on, =e= evaluates an expression there and =v=
-shows the variables, each after =C-c C-d=.  The kernel must be able to
+shows the variables, each after =C-c C-d=; in that list, a variable
+holding others -- a dict, a list, an object -- has a =+= that shows them.
+=C-u C-c C-d b= sets a breakpoint that stops only when a condition, in
+Python, holds.  =C-c C-d x= chooses when to stop on an exception: never,
+when not caught, when not caught in your own code, or whenever raised.
+Stopped, =C-c C-d f= chooses a frame of the stack: evaluating and the
+variables are then of it.  The kernel must be able to
 debug: ipykernel 6 or later, with debugpy.  Stopped, a cell holds the
 kernel: other cells run wait for it, as in JupyterLab.
 

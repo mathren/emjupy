@@ -58,16 +58,19 @@ send.
 
 * The debugger (=C-c C-d=)
 
-| Key         | Command                          | Effect                                         |
-|-------------+----------------------------------+------------------------------------------------|
-| =C-c C-d d= | =emjupy-debug-mode=              | Start or stop debugging this notebook's kernel |
-| =C-c C-d b= | =emjupy-debug-toggle-breakpoint= | Set or remove a breakpoint on this line        |
-| =C-c C-d n= | =emjupy-debug-next=              | Run the line stopped at                        |
-| =C-c C-d s= | =emjupy-debug-step-in=           | Step into the call on this line                |
-| =C-c C-d o= | =emjupy-debug-step-out=          | Run on out of this function                    |
-| =C-c C-d c= | =emjupy-debug-continue=          | Go on to the next breakpoint                   |
-| =C-c C-d e= | =emjupy-debug-evaluate=          | Evaluate an expression where it stopped        |
-| =C-c C-d v= | =emjupy-debug-variables=         | Show the variables where it stopped            |
+| Key             | Command                            | Effect                                         |
+|-----------------+------------------------------------+------------------------------------------------|
+| =C-c C-d d=     | =emjupy-debug-mode=                | Start or stop debugging this notebook's kernel |
+| =C-c C-d b=     | =emjupy-debug-toggle-breakpoint=   | Set or remove a breakpoint on this line        |
+| =C-u C-c C-d b= | =emjupy-debug-toggle-breakpoint=   | One that stops when a condition holds          |
+| =C-c C-d x=     | =emjupy-debug-break-on-exceptions= | When to stop on an exception                   |
+| =C-c C-d f=     | =emjupy-debug-frame=               | Choose a frame of the stack stopped in         |
+| =C-c C-d n=     | =emjupy-debug-next=                | Run the line stopped at                        |
+| =C-c C-d s=     | =emjupy-debug-step-in=             | Step into the call on this line                |
+| =C-c C-d o=     | =emjupy-debug-step-out=            | Run on out of this function                    |
+| =C-c C-d c=     | =emjupy-debug-continue=            | Go on to the next breakpoint                   |
+| =C-c C-d e=     | =emjupy-debug-evaluate=            | Evaluate an expression where it stopped        |
+| =C-c C-d v=     | =emjupy-debug-variables=           | Show the variables where it stopped            |
 
 With =repeat-mode= on, =n=, =s=, =o= and =c= repeat without the prefix.
 

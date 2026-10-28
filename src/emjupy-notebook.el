@@ -591,6 +591,8 @@ this buffer."
    ["Debugger"
     ("x d" "start or stop debugging" emjupy-debug-mode)
     ("x b" "breakpoint on this line" emjupy-debug-toggle-breakpoint)
+    ("x x" "stop on exceptions" emjupy-debug-break-on-exceptions)
+    ("x f" "choose a frame" emjupy-debug-frame)
     ("x n" "next line" emjupy-debug-next)
     ("x s" "step in" emjupy-debug-step-in)
     ("x o" "step out" emjupy-debug-step-out)

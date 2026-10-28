@@ -58,6 +58,13 @@
 (defvar-local emjupy--debug-arrow nil
   "The overlay marking the line stopped at.")
 
+(defvar-local emjupy--debug-frames nil
+  "The frames of the stack stopped in, innermost first.")
+
+(defvar-local emjupy--debug-exceptions nil
+  "The exception filters to stop on, as debugpy names them.
+None, or one of \"raised\", \"uncaught\" and \"userUnhandled\".")
+
 ;;;; The mode
 
 (defvar-keymap emjupy-debug-map
@@ -66,6 +73,8 @@
            emjupy-debug-continue)
   "d" #'emjupy-debug-mode
   "b" #'emjupy-debug-toggle-breakpoint
+  "x" #'emjupy-debug-break-on-exceptions
+  "f" #'emjupy-debug-frame
   "n" #'emjupy-debug-next
   "s" #'emjupy-debug-step-in
   "o" #'emjupy-debug-step-out
@@ -88,6 +97,7 @@ debugpy."
               "clientID" "emacs" "adapterID" "python" "pathFormat" "path"
               "linesStartAt1" t "columnsStartAt1" t))
             (emjupy--debug-request "attach")
+            (emjupy--debug-send-exceptions)
             (setq emjupy--debug-paths (make-hash-table :test 'equal)
                   emjupy--debug-configured nil
                   emjupy--debug-stopped nil)
@@ -156,37 +166,61 @@ the process filter, so that it can ask the debugger in turn."
 
 ;;;; Breakpoints
 
-(defun emjupy--debug-cell-lines (cell)
-  "The lines of CELL, from 1, that have a breakpoint."
+(defun emjupy--debug-cell-breakpoints (cell)
+  "Return CELL's breakpoints, as the debugger takes them.
+Each is its line, from 1, and its condition if it has one."
   (let ((start (overlay-start (emjupy-cell-overlay cell))))
     (cl-loop for o in emjupy--debug-breakpoints
              when (eq (emjupy--debug-cell-at (overlay-start o)) cell)
-             collect (1+ (count-lines start (overlay-start o))))))
+             collect (let ((b (emjupy--debug-object
+                               "line" (1+ (count-lines start
+                                                       (overlay-start o)))))
+                           (condition (overlay-get o 'emjupy-condition)))
+                       (when condition (puthash "condition" condition b))
+                       b))))
 
 (defun emjupy--debug-cell-at (pos)
   "The cell at POS, or nil."
   (save-excursion (goto-char pos) (emjupy--cell-at-point)))
 
-(defun emjupy-debug-toggle-breakpoint ()
-  "Set a breakpoint on this line of a code cell, or remove the one there."
-  (interactive)
+(defun emjupy-debug-toggle-breakpoint (&optional condition)
+  "Set a breakpoint on this line of a code cell, or remove the one there.
+With a prefix argument, ask for a CONDITION, a Python expression: the
+breakpoint, new or the one there, stops only when it is true."
+  (interactive
+   (list (and current-prefix-arg
+              (read-string "Stop when (Python): "))))
   (let ((cell (emjupy--cell-at-point))
         (here (line-beginning-position)))
     (unless (and cell (eq (emjupy-cell-type cell) 'code))
       (user-error "Breakpoints go in code cells"))
     (let ((there (cl-find here emjupy--debug-breakpoints
                           :key #'overlay-start)))
-      (if there
-          (progn (delete-overlay there)
-                 (setq emjupy--debug-breakpoints
-                       (delq there emjupy--debug-breakpoints)))
+      (cond
+       ((and there condition)
+        (emjupy--debug-set-condition there condition))
+       (there
+        (delete-overlay there)
+        (setq emjupy--debug-breakpoints
+              (delq there emjupy--debug-breakpoints)))
+       (t
         (let ((o (make-overlay here here nil t nil)))
           (overlay-put o 'before-string
                        (propertize "*" 'display
                                    '(left-fringe filled-square
                                                  emjupy-debug-breakpoint)))
           (overlay-put o 'emjupy-breakpoint t)
-          (push o emjupy--debug-breakpoints))))))
+          (emjupy--debug-set-condition o condition)
+          (push o emjupy--debug-breakpoints)))))))
+
+(defun emjupy--debug-set-condition (breakpoint condition)
+  "Give BREAKPOINT, an overlay, CONDITION; an empty one or nil, none."
+  (let ((condition (and condition (not (string-empty-p condition))
+                        condition)))
+    (overlay-put breakpoint 'emjupy-condition condition)
+    (overlay-put breakpoint 'help-echo
+                 (if condition (format "Breakpoint, when %s" condition)
+                   "Breakpoint"))))
 
 (defun emjupy--debug-before-execute (cell)
   "Make the debugger know CELL, about to run, and its breakpoints.
@@ -202,13 +236,35 @@ anew each time it may have changed."
        "setBreakpoints"
        (emjupy--debug-object
         "source" (emjupy--debug-object "path" path)
-        "breakpoints" (vconcat (mapcar (lambda (line)
-                                         (emjupy--debug-object "line" line))
-                                       (emjupy--debug-cell-lines cell)))
+        "breakpoints" (vconcat (emjupy--debug-cell-breakpoints cell))
         "sourceModified" :false))
       (unless emjupy--debug-configured
         (emjupy--debug-request "configurationDone")
         (setq emjupy--debug-configured t)))))
+
+(defconst emjupy--debug-exception-choices
+  '(("never" . nil)
+    ("when not caught" . ("uncaught"))
+    ("when not caught in your code" . ("userUnhandled"))
+    ("when raised, even if caught" . ("raised")))
+  "Choices of when to stop on an exception, and debugpy's filters for each.")
+
+(defun emjupy-debug-break-on-exceptions (filters)
+  "Choose when the debugger stops on an exception: FILTERS, debugpy's.
+Never, when not caught, when not caught in your own code, or whenever
+raised -- as JupyterLab offers."
+  (interactive
+   (list (cdr (assoc (completing-read "Stop on an exception: "
+                                      emjupy--debug-exception-choices nil t)
+                     emjupy--debug-exception-choices))))
+  (setq emjupy--debug-exceptions filters)
+  (when emjupy-debug-mode (emjupy--debug-send-exceptions)))
+
+(defun emjupy--debug-send-exceptions ()
+  "Tell the debugger when to stop on an exception."
+  (emjupy--debug-request "setExceptionBreakpoints"
+                         (emjupy--debug-object
+                          "filters" (vconcat emjupy--debug-exceptions))))
 
 ;;;; Stopping and going on
 
@@ -225,8 +281,17 @@ anew each time it may have changed."
                                   (emjupy--debug-object "threadId" thread))))
                 (top (and (> (length frames) 0) (aref frames 0))))
            (when top
-             (setq emjupy--debug-stopped (cons thread (gethash "id" top)))
-             (emjupy--debug-show top))))
+             (setq emjupy--debug-stopped (cons thread (gethash "id" top))
+                   emjupy--debug-frames (append frames nil))
+             (emjupy--debug-show top)
+             (when (equal (gethash "reason" (gethash "body" content))
+                          "exception")
+               (message "[emjupy] Stopped on an exception: %s"
+                        (gethash "description"
+                                 (emjupy--debug-request
+                                  "exceptionInfo"
+                                  (emjupy--debug-object
+                                   "threadId" thread))))))))
         ("continued" (emjupy--debug-clear-arrow))
         ((or "terminated" "exited") (emjupy-debug-mode -1))))))
 
@@ -262,7 +327,7 @@ anew each time it may have changed."
   "Send COMMAND -- continue, next, stepIn, stepOut -- to the stopped thread."
   (unless emjupy--debug-stopped (user-error "The debugger is not stopped"))
   (let ((thread (car emjupy--debug-stopped)))
-    (setq emjupy--debug-stopped nil)
+    (setq emjupy--debug-stopped nil emjupy--debug-frames nil)
     (emjupy--debug-clear-arrow)
     (emjupy--debug-request command (emjupy--debug-object "threadId" thread))))
 
@@ -276,6 +341,21 @@ anew each time it may have changed."
        (emjupy--debug-go "stepOut"))
 
 ;;;; Looking around
+
+(defun emjupy-debug-frame (frame)
+  "Choose FRAME of the stack stopped in, and mark its line.
+Evaluating and the variables are then of it."
+  (interactive
+   (progn
+     (unless emjupy--debug-frames (user-error "The debugger is not stopped"))
+     (let* ((names (mapcar (lambda (f)
+                             (cons (format "%s, line %d" (gethash "name" f)
+                                           (gethash "line" f))
+                                   f))
+                           emjupy--debug-frames)))
+       (list (cdr (assoc (completing-read "Frame: " names nil t) names))))))
+  (setcdr emjupy--debug-stopped (gethash "id" frame))
+  (emjupy--debug-show frame))
 
 (defun emjupy-debug-evaluate (expression)
   "Evaluate EXPRESSION in the frame stopped at, and show its value."
@@ -293,12 +373,68 @@ anew each time it may have changed."
                            "frameId" (cdr emjupy--debug-stopped)
                            "context" "repl")))))
 
+(defvar-local emjupy--debug-notebook nil
+  "In the variables buffer: the notebook buffer whose debugger it shows.")
+
+(defun emjupy--debug-children (notebook reference)
+  "Return the variables under REFERENCE, from NOTEBOOK's debugger."
+  (with-current-buffer notebook
+    (append (gethash "variables"
+                     (emjupy--debug-request
+                      "variables" (emjupy--debug-object
+                                   "variablesReference" reference)))
+            nil)))
+
+(defun emjupy--debug-insert-variable (v depth)
+  "Insert variable V at DEPTH; one with children gets a button to show them."
+  (insert (make-string (* 2 depth) ?\s))
+  (let ((reference (gethash "variablesReference" v)))
+    (if (and (integerp reference) (> reference 0))
+        (insert-text-button "+" 'action #'emjupy--debug-expand
+                            'emjupy-reference reference 'emjupy-depth depth
+                            'follow-link t 'help-echo "Show what it holds")
+      (insert " ")))
+  (insert (format " %s = %s\n" (gethash "name" v) (gethash "value" v))))
+
+(defun emjupy--debug-expand (button)
+  "Toggle the display of the children of BUTTON's variable."
+  (let ((inhibit-read-only t)
+        (depth (button-get button 'emjupy-depth))
+        (shown (button-get button 'emjupy-shown)))
+    (save-excursion
+      ;; from the button's own line, wherever point is: a click is anywhere
+      (goto-char (button-start button))
+      (if shown
+          (progn (delete-region (car shown) (cdr shown))
+                 (button-put button 'emjupy-shown nil)
+                 (set-marker (car shown) nil) (set-marker (cdr shown) nil)
+                 (emjupy--debug-relabel button "+"))
+        (forward-line 1)
+        (let ((start (point-marker)))
+          (dolist (v (emjupy--debug-children
+                      emjupy--debug-notebook
+                      (button-get button 'emjupy-reference)))
+            (emjupy--debug-insert-variable v (1+ depth)))
+          (button-put button 'emjupy-shown (cons start (point-marker)))
+          (emjupy--debug-relabel button "-"))))))
+
+(defun emjupy--debug-relabel (button label)
+  "Make BUTTON read LABEL."
+  (save-excursion
+    (goto-char (button-start button))
+    (let ((props (text-properties-at (point))))
+      (delete-char 1)
+      (insert (apply #'propertize label props)))))
+
 (defun emjupy-debug-variables ()
-  "Show the variables of the frame stopped at, local ones first."
+  "Show the variables of the frame stopped at, local ones first.
+One that holds others -- a dict, a list, an object -- has a button
+showing them."
   (interactive)
   (unless emjupy--debug-stopped (user-error "The debugger is not stopped"))
   ;; Asked here, in the notebook: its kernel is this buffer's.
-  (let* ((scopes (append (gethash "scopes"
+  (let* ((notebook (current-buffer))
+         (scopes (append (gethash "scopes"
                                   (emjupy--debug-request
                                    "scopes" (emjupy--debug-object
                                              "frameId"
@@ -306,27 +442,21 @@ anew each time it may have changed."
                          nil))
          (listed (mapcar (lambda (scope)
                            (cons (gethash "name" scope)
-                                 (append (gethash
-                                          "variables"
-                                          (emjupy--debug-request
-                                           "variables"
-                                           (emjupy--debug-object
-                                            "variablesReference"
-                                            (gethash "variablesReference"
-                                                     scope))))
-                                         nil)))
+                                 (emjupy--debug-children
+                                  notebook
+                                  (gethash "variablesReference" scope))))
                          scopes))
          (buf (get-buffer-create "*emjupy variables*")))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
+        (special-mode)
+        (setq emjupy--debug-notebook notebook)
         (dolist (scope listed)
           (insert (propertize (car scope) 'face 'bold) "\n")
           (dolist (v (cdr scope))
-            (insert (format "  %s = %s\n" (gethash "name" v)
-                            (gethash "value" v)))))
-        (goto-char (point-min))
-        (special-mode)))
+            (emjupy--debug-insert-variable v 1)))
+        (goto-char (point-min))))
     (display-buffer buf)))
 
 (defun emjupy-debug-enable ()
