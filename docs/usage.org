@@ -68,6 +68,16 @@ If the display looks wrong, =C-c C-x C-l= (=emjupy-re-render=) rebuilds it
 from the cells, keeping pending edits; the notebook on the server is not
 touched.
 
+* Debugging
+
+=C-c C-d d= debugs the notebook's kernel, as JupyterLab's debugger does:
+=C-c C-d b= sets a breakpoint on a line of a code cell, and running the
+cell stops there, the line marked.  Then =n= runs that line, =s= steps
+in, =o= out, =c= goes on, =e= evaluates an expression there and =v=
+shows the variables, each after =C-c C-d=.  The kernel must be able to
+debug: ipykernel 6 or later, with debugpy.  Stopped, a cell holds the
+kernel: other cells run wait for it, as in JupyterLab.
+
 * Editable regions
 
 Only cell source is editable.  Rules, gutters and output boxes are

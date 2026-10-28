@@ -66,6 +66,7 @@
 (require 'emjupy-redraw)
 (require 'emjupy-commands)
 (require 'emjupy-kernel)
+(require 'emjupy-debug)
 (require 'emjupy-figures)
 (require 'emjupy-widgets)
 (require 'emjupy-widget-page)

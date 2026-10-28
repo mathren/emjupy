@@ -588,6 +588,15 @@ this buffer."
     ("C" "reconnect the kernel" emjupy-reconnect-kernel)
     ("K" "choose a kernel" emjupy-connect-kernel-interactive)
     ("?" "what is going on" emjupy-status)]
+   ["Debugger"
+    ("x d" "start or stop debugging" emjupy-debug-mode)
+    ("x b" "breakpoint on this line" emjupy-debug-toggle-breakpoint)
+    ("x n" "next line" emjupy-debug-next)
+    ("x s" "step in" emjupy-debug-step-in)
+    ("x o" "step out" emjupy-debug-step-out)
+    ("x c" "continue" emjupy-debug-continue)
+    ("x e" "evaluate here" emjupy-debug-evaluate)
+    ("x v" "variables here" emjupy-debug-variables)]
    ["Language server"
     ("d" "diagnose it" emjupy-lsp-diagnose)
     ("v" "which emjupy is this" emjupy-version)]])

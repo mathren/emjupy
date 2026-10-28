@@ -44,19 +44,20 @@ one section per part.
 |    10 | =emjupy-redraw.el=      | every redraw, and the undo step: read slowly      |
 |    11 | =emjupy-commands.el=    | the commands on cells                             |
 |    12 | =emjupy-kernel.el=      | running cells, output arriving, reconnecting      |
-|    13 | =emjupy-figures.el=     | outputs opened in a window of their own           |
-|    14 | =emjupy-widgets.el=     | ipywidgets as controls in the buffer              |
-|    15 | =emjupy-widget-page.el= | widgets that draw themselves, in a page           |
-|    16 | =emjupy-remote.el=      | where a server's files are: roots, tunnels, TRAMP |
-|    17 | =emjupy-lsp.el=         | Eglot over the Jupyter WebSocket                  |
-|    18 | =emjupy-shadow.el=      | the shadow buffer, and positions in it            |
-|    19 | =emjupy-eglot.el=       | Eglot on the shadow; completion, eldoc, M-.       |
-|    20 | =emjupy-mode.el=        | the mode, its keys, each layer turned on          |
-|    21 | =emjupy-save.el=        | saving, auto-saving, recovery copies              |
-|    22 | =emjupy-notebook.el=    | logging in, opening, switching, the menu          |
-|    23 | =emjupy-dashboard.el=   | the server dashboard                              |
-|    24 | =emjupy-tramp-open.el=  | an .ipynb opened as a notebook, or by TRAMP       |
-|    25 | =emjupy.el=             | the package: version, everything required         |
+|    13 | =emjupy-debug.el=       | the debugger: breakpoints, stepping, variables    |
+|    14 | =emjupy-figures.el=     | outputs opened in a window of their own           |
+|    15 | =emjupy-widgets.el=     | ipywidgets as controls in the buffer              |
+|    16 | =emjupy-widget-page.el= | widgets that draw themselves, in a page           |
+|    17 | =emjupy-remote.el=      | where a server's files are: roots, tunnels, TRAMP |
+|    18 | =emjupy-lsp.el=         | Eglot over the Jupyter WebSocket                  |
+|    19 | =emjupy-shadow.el=      | the shadow buffer, and positions in it            |
+|    20 | =emjupy-eglot.el=       | Eglot on the shadow; completion, eldoc, M-.       |
+|    21 | =emjupy-mode.el=        | the mode, its keys, each layer turned on          |
+|    22 | =emjupy-save.el=        | saving, auto-saving, recovery copies              |
+|    23 | =emjupy-notebook.el=    | logging in, opening, switching, the menu          |
+|    24 | =emjupy-dashboard.el=   | the server dashboard                              |
+|    25 | =emjupy-tramp-open.el=  | an .ipynb opened as a notebook, or by TRAMP       |
+|    26 | =emjupy.el=             | the package: version, everything required         |
 
 The same layers, drawn from the code's requires, each file above those
 it requires; lines a longer path implies are left out:

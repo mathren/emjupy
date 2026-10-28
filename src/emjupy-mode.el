@@ -25,6 +25,7 @@
 (require 'emjupy-redraw)
 (require 'emjupy-commands)
 (require 'emjupy-kernel)
+(require 'emjupy-debug)
 (require 'emjupy-widgets)
 (require 'emjupy-widget-page)
 (require 'emjupy-lsp)
@@ -80,6 +81,7 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
     (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
+    (define-key map (kbd "C-c C-d")     emjupy-debug-map)
     ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
     (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
     (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
@@ -219,6 +221,7 @@ are on the `load-path' -- remove one, or put the one you want first."
   ;; connections after the cells layer stops its checks.
   (emjupy-eglot-enable)
   (emjupy-kernel-enable)
+  (emjupy-debug-enable)
   (emjupy-shadow-enable)
   (emjupy-cells-enable)
   (emjupy-widgets-enable)

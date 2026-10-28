@@ -96,6 +96,8 @@ your own notebooks, jump to step 4.
 - resilient to connection drops (remote kernel keeps running,
   reconnect Emacs)
 - toggle hide/show output without re-running cells
+- a debugger, as JupyterLab's: breakpoints in cells, stepping,
+  variables
 - interactive plotly figures open in a window of their own; =ipywidgets=
   controls work in the buffer, and widgets that draw themselves open in
   a live page

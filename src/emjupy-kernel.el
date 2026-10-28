@@ -74,6 +74,13 @@ without a kernel.  nil never asks."
 
 ;;;; Connection state
 
+(defvar emjupy-debug-functions nil
+  "Functions called with KERNEL, MSG-TYPE and DATA for the debugger's messages.
+debug_reply and debug_event: the debugger, a layer above, hears them so.")
+
+(defvar emjupy-before-execute-functions nil
+  "Functions called with the cell about to run, synced, before it is sent.")
+
 (defvar emjupy-reconnect-functions nil
   "Functions called with a server before each attempt to reconnect to it.
 A layer keeping the way to a server open -- an SSH tunnel -- restores it
@@ -654,6 +661,8 @@ kernels never cross-talk."
       (emjupy--input-requested kernel data))
     (when internal
       (emjupy--internal-reply parent-id internal msg-type data))
+    (when (member msg-type '("debug_reply" "debug_event"))
+      (run-hook-with-args 'emjupy-debug-functions kernel msg-type data))
     (when (member msg-type '("comm_open" "comm_msg" "comm_close"))
       (run-hook-with-args 'emjupy-comm-functions kernel msg-type content
                           buffers))
@@ -968,7 +977,7 @@ is not run."
     (dolist (cell cells)
       (when (memq cell (append (emjupy-notebook-cells nb) nil))
         (save-excursion
-          (emjupy--goto-cell cell 'start)
+          (emjupy--goto-cell cell 'beginning)
           (emjupy-execute-cell-at-point))))))
 
 ;; The reconnect loop -- connecting sets a close handler, which starts the
@@ -1220,6 +1229,7 @@ The timer calling this stops once no cell runs anywhere."
       ;; 1.  Sync ALL cells: the code sent is read from the cell, and a fallback
       ;; redraw rebuilds the notebook from the cells.
       (emjupy--sync-all-cells)
+      (run-hook-with-args 'emjupy-before-execute-functions cell)
 
       ;; 2.  Clear the previous output, in place as C-c C-l does: a full redraw
       ;; would move every position held in the buffer -- markers, other windows'
@@ -1293,7 +1303,7 @@ Point stays where it was."
   (save-excursion
     (dolist (cell cells)
       (unless (eq (emjupy-cell-type cell) 'raw)
-        (emjupy--goto-cell cell 'start)
+        (emjupy--goto-cell cell 'beginning)
         (emjupy-execute-cell-at-point)))))
 
 (defun emjupy-run-all-cells ()

@@ -1650,7 +1650,7 @@ keeps it: under \"execution\" in the saved notebook."
     (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
       (emjupy--spawn-and-connect-kernel (emjupy--notebook))
       (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
-      (emjupy--goto-cell cell 'start)
+      (emjupy--goto-cell cell 'beginning)
       (emjupy-execute-cell-at-point)
       (should (emjupy-int--pump
                30 (lambda () (numberp (emjupy-cell-exec-count cell)))))
@@ -1666,6 +1666,51 @@ keeps it: under \"execution\" in the saved notebook."
              (saved (aref (gethash "cells" (gethash "content" model)) 0)))
         (should (gethash "shell.execute_reply"
                          (gethash "execution" (gethash "metadata" saved))))))))
+
+(ert-deftest emjupy-int-the-debugger-stops-steps-and-shows ()
+  "A breakpoint stops the cell there; variables, evaluation, stepping work.
+JupyterLab's debugger, through the kernel: the cell's line marked, its
+variables and an expression read in the frame, a step, and on to the
+end of the cell."
+  (emjupy-int--with-file-notebook "a = 1\nb = a + 1\nc = b * 3\nprint(c)"
+    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+          (said nil))
+      (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+      (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+      (emjupy-debug-mode 1)
+      (unwind-protect
+          (progn
+            (emjupy--goto-cell cell 'beginning)
+            (forward-line 2)
+            (emjupy-debug-toggle-breakpoint)
+            (emjupy--goto-cell cell 'beginning)
+            (emjupy-execute-cell-at-point)
+            (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
+            (should (equal (string-trim
+                            (buffer-substring
+                             (overlay-start emjupy--debug-arrow)
+                             (overlay-end emjupy--debug-arrow)))
+                           "c = b * 3"))
+            (emjupy-debug-variables)
+            (with-current-buffer "*emjupy variables*"
+              (should (string-match-p "a = 1" (buffer-string)))
+              (should (string-match-p "b = 2" (buffer-string))))
+            (cl-letf (((symbol-function 'message)
+                       (lambda (fmt &rest args)
+                         (push (apply #'format fmt args) said))))
+              (emjupy-debug-evaluate "b*10"))
+            (should (equal (car said) "20"))
+            (emjupy-debug-next)
+            (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
+            (should (string-match-p "print(c)"
+                                    (buffer-substring
+                                     (overlay-start emjupy--debug-arrow)
+                                     (overlay-end emjupy--debug-arrow))))
+            (emjupy-debug-continue)
+            (should (emjupy-int--pump
+                     20 (lambda () (numberp (emjupy-cell-exec-count cell)))))
+            (should (equal (string-trim (emjupy-int--stdout cell)) "6")))
+        (emjupy-debug-mode -1)))))
 
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
