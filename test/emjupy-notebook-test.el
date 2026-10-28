@@ -366,6 +366,63 @@ it.  Checked in a fresh Emacs, where nothing else is loaded."
     ;; the mode and its check are there; emjupy.el itself was not needed
     (should (equal answer '(t t nil)))))
 
+
+;;;; Large outputs, hidden on opening
+
+(defun emjupy-test--stream-outputs (n lines)
+  "N stream outputs of LINES lines each."
+  (vconcat (cl-loop repeat n collect
+                    (let ((o (make-hash-table :test 'equal)))
+                      (puthash "output_type" "stream" o)
+                      (puthash "name" "stdout" o)
+                      (puthash "text" (mapconcat #'number-to-string
+                                                 (number-sequence 1 lines) "\n")
+                               o)
+                      o))))
+
+(ert-deftest emjupy-test-large-is-past-jupyters-limits ()
+  "Large: more outputs than JupyterLab draws, or text past 100 lines."
+  (cl-flet ((large (n lines)
+              (emjupy--cell-outputs-large-p
+               (make-emjupy-cell
+                :outputs (emjupy-test--stream-outputs n lines)))))
+    (should-not (large 50 1))
+    (should (large 51 1))
+    (should-not (large 1 100))
+    (should (large 1 101))
+    (let ((emjupy-large-output-count nil) (emjupy-large-output-lines nil))
+      (should-not (large 500 5000)))))
+
+(ert-deftest emjupy-test-a-large-output-is-hidden-on-opening-not-marked ()
+  "Opening a notebook hides a large output, for drawing only.
+The notebook's metadata gets no mark -- saved, the file is as it was --
+and \\[emjupy-toggle-cell-output] shows it."
+  (let* ((big (make-emjupy-cell :id 1 :type 'code :source "big"
+                                :outputs (emjupy-test--stream-outputs 1 300)
+                                :metadata (make-hash-table :test 'equal)))
+         (small (make-emjupy-cell :id 2 :type 'code :source "small"
+                                  :outputs (emjupy-test--stream-outputs 1 3)
+                                  :metadata (make-hash-table :test 'equal)))
+         (nb (make-emjupy-notebook
+              :path "a.ipynb" :cells (vector big small)
+              :server (make-emjupy-server :base-url "127.0.0.1:1" :token "t")))
+         (buf (generate-new-buffer "*emjupy-test-large*")))
+    (setf (emjupy-notebook-buffer nb) buf)
+    (unwind-protect
+        (progn
+          (emjupy--draw-opened-notebook nb buf nil)
+          (with-current-buffer buf
+            (should (emjupy-cell-size-hidden big))
+            (should-not (emjupy-cell-size-hidden small))
+            (should-not (string-match-p "\n299\n" (buffer-string)))
+            (should (string-match-p ", large"
+                                    (emjupy--hidden-output-label big)))
+            (should-not (gethash "jupyter" (emjupy-cell-metadata big)))
+            (emjupy-toggle-output-of-cell big)
+            (should-not (emjupy--cell-outputs-hidden-p big))
+            (should-not (gethash "jupyter" (emjupy-cell-metadata big)))))
+      (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+
 (provide 'emjupy-notebook-test)
 
 ;;; emjupy-notebook-test.el ends here

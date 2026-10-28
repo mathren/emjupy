@@ -592,10 +592,29 @@ the character before it."
 
 Kept in the cell's own metadata under the key Jupyter uses, so the state
 survives saving and means the same thing to other front ends."
-  (let* ((meta (emjupy-cell-metadata cell))
-         (jupyter (and (hash-table-p meta) (gethash "jupyter" meta))))
-    (and (hash-table-p jupyter)
-         (eq (gethash "outputs_hidden" jupyter) t))))
+  (or (emjupy-cell-size-hidden cell)
+      (let* ((meta (emjupy-cell-metadata cell))
+             (jupyter (and (hash-table-p meta) (gethash "jupyter" meta))))
+        (and (hash-table-p jupyter)
+             (eq (gethash "outputs_hidden" jupyter) t)))))
+
+(defun emjupy--cell-outputs-large-p (cell)
+  "Return non-nil if CELL's outputs are large enough to hide on opening.
+More of them than `emjupy-large-output-count', or more lines of text --
+streams, plain text, tracebacks -- than `emjupy-large-output-lines'."
+  (let ((outputs (append (emjupy-cell-outputs cell) nil)))
+    (or (and emjupy-large-output-count
+             (> (length outputs) emjupy-large-output-count))
+        (and emjupy-large-output-lines
+             (> (cl-loop for o in outputs
+                         for data = (gethash "data" o)
+                         for text = (or (gethash "text" o)
+                                        (and (hash-table-p data)
+                                             (gethash "text/plain" data))
+                                        (gethash "traceback" o))
+                         when text
+                         sum (1+ (cl-count ?\n (emjupy--mime-text text))))
+                emjupy-large-output-lines)))))
 
 (defun emjupy--set-cell-outputs-hidden (cell hidden)
   "Record in CELL's metadata whether its output is HIDDEN."
@@ -628,7 +647,8 @@ click on it knows the cell."
   (let* ((outputs (or (emjupy-cell-outputs cell) []))
          (n (length outputs))
          (glyph (copy-sequence emjupy-hidden-output-glyph))
-         (rest (format " %d output%s hidden" n (if (= n 1) "" "s"))))
+         (rest (format " %d output%s hidden%s" n (if (= n 1) "" "s")
+                       (if (emjupy-cell-size-hidden cell) ", large" ""))))
     (add-text-properties
      0 (length glyph)
      (list 'emjupy-toggle-cell (emjupy-cell-id cell)

@@ -1561,6 +1561,87 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
                                                              (funcall tag i) j)
                                                      'figure))))))))
       (let ((kill-buffer-query-functions nil)) (kill-buffer buf)))))
+(defun emjupy-int--file-notebook (source)
+  "Make a fresh notebook whose one code cell holds SOURCE; return its path."
+  (let ((path (format "emjupy-int-file-%d.ipynb" (random 1000000))))
+    (emjupy--http-request
+     "PUT" emjupy--current-server (emjupy--contents-path path)
+     (json-encode
+      `((type . "notebook") (format . "json")
+        (content . ((cells . [((cell_type . "code") (id . "c1")
+                                (source . ,source)
+                                (metadata . ,(make-hash-table))
+                                (outputs . []) (execution_count . nil))])
+                    (metadata . ,(make-hash-table))
+                    (nbformat . 4) (nbformat_minor . 5))))))
+    path))
+
+(defun emjupy-int--saved-source (path)
+  "The first cell's source in the notebook at PATH, as the server has it."
+  (let ((model (emjupy--http-request
+                "GET" emjupy--current-server (emjupy--contents-path path))))
+    (emjupy--mime-text
+     (gethash "source" (aref (gethash "cells" (gethash "content" model)) 0)))))
+
+(defmacro emjupy-int--with-file-notebook (source &rest body)
+  "Run BODY in a fresh notebook holding SOURCE; PATH and BUF are bound."
+  (declare (indent 1))
+  `(progn
+     (emjupy-int--skip-unless-live)
+     (let* ((path (emjupy-int--file-notebook ,source))
+            (buf (emjupy-open-notebook path emjupy--current-server))
+            (kill-buffer-query-functions nil))
+       (unwind-protect
+           (with-current-buffer buf
+             (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+               ,@body))
+         (when (buffer-live-p buf) (kill-buffer buf))))))
+
+(defun emjupy-int--retype (text)
+  "Make the first cell of this notebook hold TEXT, unsaved."
+  (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+    (setf (emjupy-cell-source cell) text)
+    (emjupy--redraw-notebook cell)))
+
+(ert-deftest emjupy-int-revert-to-the-checkpoint-a-save-made ()
+  "Saving makes a checkpoint; reverting to it brings the saved notebook back."
+  (emjupy-int--with-file-notebook "x = 1"
+    (emjupy-save-notebook)
+    (emjupy-int--retype "x = 2  # not saved")
+    (emjupy-revert-to-checkpoint)
+    (should (equal (emjupy-cell-source
+                    (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+                   "x = 1"))))
+
+(ert-deftest emjupy-int-rename-save-as-and-duplicate ()
+  "Rename, save as and duplicate a notebook, as JupyterLab does."
+  (emjupy-int--with-file-notebook "y = 1"
+    (let ((renamed (concat "renamed-" path))
+          (other (concat "other-" path)))
+      ;; rename: the file moves, the buffer follows, saving writes there
+      (emjupy-rename-notebook renamed)
+      (should-not (emjupy--http-exists-p emjupy--current-server path))
+      (should (emjupy--http-exists-p emjupy--current-server renamed))
+      (emjupy-int--retype "y = 2")
+      (emjupy-save-notebook)
+      (should (equal (emjupy-int--saved-source renamed) "y = 2"))
+      ;; save as: a new file, the old one as it was
+      (emjupy-int--retype "y = 3")
+      (emjupy-save-notebook-as other)
+      (should (equal (emjupy-int--saved-source other) "y = 3"))
+      (should (equal (emjupy-int--saved-source renamed) "y = 2"))
+      (should (equal (emjupy-notebook-path (emjupy--notebook)) other))
+      ;; duplicate: a copy beside it, opened in a buffer of its own
+      (let ((copy (emjupy-duplicate-notebook)))
+        (unwind-protect
+            (with-current-buffer copy
+              (should-not (equal (emjupy-notebook-path (emjupy--notebook))
+                                 other))
+              (should (equal (emjupy-cell-source
+                              (aref (emjupy-notebook-cells (emjupy--notebook))
+                                    0))
+                             "y = 3")))
+          (kill-buffer copy))))))
 
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.

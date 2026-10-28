@@ -50,7 +50,11 @@ cell is queued, and runs in the order sent.
 
 A hidden output is not drawn at all: a cell with a large output hidden,
 with =C-c C-o=, costs nothing to draw, and the notebook keeps it hidden when
-saved, as Jupyter does.
+saved, as Jupyter does.  Opening a notebook, an output past what Jupyter
+draws whole -- more than =emjupy-large-output-count= outputs (50, as
+JupyterLab), or =emjupy-large-output-lines= lines (100, where the Jupyter
+Notebook scrolls) -- is hidden for drawing only, its label saying
+/large/: the file is unchanged, and =C-c C-o= shows it.
 
 Edit anywhere while a cell runs: output is drawn only into its own cell's
 box, leaving text typed meanwhile, and point, as they are.
@@ -227,6 +231,12 @@ Closing a notebook with unsaved edits asks whether to save them, keep
 them in the recovery copy, or discard them; quitting Emacs offers to save
 each.  Opening a notebook already open with unsaved edits shows it as it
 is, rather than fetching it again.
+
+=emjupy-rename-notebook=, =emjupy-save-notebook-as= and
+=emjupy-duplicate-notebook= do as JupyterLab's commands of those names,
+on the server; in the menu, =N=, =W= and =D=.  =C-x C-s= also makes a
+checkpoint, as JupyterLab's save does, and =emjupy-revert-to-checkpoint=
+(=V=) goes back to it, asking first.
 
 * Interactive output
 

@@ -332,7 +332,10 @@ moving point or guessing from a buffer position."
   (when (zerop (length (or (emjupy-cell-outputs cell) [])))
     (user-error "This cell has no output to hide"))
   (let ((hidden (not (emjupy--cell-outputs-hidden-p cell))))
-    (emjupy--set-cell-outputs-hidden cell hidden)
+    ;; Hidden for its size, it is shown: the notebook's mark is untouched.
+    (if (emjupy-cell-size-hidden cell)
+        (setf (emjupy-cell-size-hidden cell) nil)
+      (emjupy--set-cell-outputs-hidden cell hidden))
     ;; Only this cell changes, so only this cell is redrawn -- which also
     ;; keeps the undo history.
     (unless (emjupy--redraw-cells-in-place (list cell) (list cell))

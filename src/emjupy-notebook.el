@@ -239,6 +239,11 @@ ALREADY-OPEN non-nil means BUF showed it before: point stays."
     ;; `emjupy--redraw-notebook': reopening reuses the buffer with
     ;; fresh cells, and the old overlays must go with the text.
     (setq emjupy--buffer-notebook nb)
+    ;; Large outputs are hidden, for drawing only: Jupyter scrolls or cuts
+    ;; them, and drawn, they make the notebook slow.
+    (cl-loop for cell across (emjupy-notebook-cells nb)
+             do (setf (emjupy-cell-size-hidden cell)
+                      (emjupy--cell-outputs-large-p cell)))
     (emjupy--redraw-notebook)
     ;; A freshly opened notebook starts at the top, as a file does.
     ;; One already open keeps where you were: re-opening it to get
@@ -348,6 +353,83 @@ first, as a notebook is a file people share."
                             (concat (emjupy--contents-path path) "/trust"))
       (mapc #'emjupy--mark-cell-trusted (emjupy-notebook-cells nb))
       (message "[emjupy] %s is trusted." path))))
+
+(defun emjupy--json-body (&rest pairs)
+  "Return PAIRS, a plist of keys and values, as a JSON object string."
+  (let ((h (make-hash-table :test 'equal)))
+    (while pairs (puthash (pop pairs) (pop pairs) h))
+    (json-serialize h)))
+
+(defun emjupy--follow-notebook (nb path)
+  "Have NB, and its buffer, be the notebook at PATH on its server now."
+  (setf (emjupy-notebook-path nb) path)
+  (with-current-buffer (emjupy-notebook-buffer nb)
+    (rename-buffer (emjupy--notebook-buffer-name path
+                                                 (emjupy-notebook-server nb))
+                   t)))
+
+(defun emjupy-rename-notebook (new-path)
+  "Rename this notebook, on its server, to NEW-PATH.
+Unsaved changes stay here, saved under the new name."
+  (interactive
+   (list (read-string "Rename notebook to: "
+                      (emjupy-notebook-path (emjupy--notebook)))))
+  (let* ((nb (emjupy--notebook)) (old (emjupy-notebook-path nb)))
+    (emjupy--http-request "PATCH" (emjupy-notebook-server nb)
+                          (emjupy--contents-path old)
+                          (emjupy--json-body "path" new-path))
+    (emjupy--follow-notebook nb new-path)
+    (message "[emjupy] Renamed %s to %s" old new-path)))
+
+(defun emjupy-save-notebook-as (new-path)
+  "Save this notebook as NEW-PATH on its server, and go on with that one.
+The file it was is left as it was last saved, as JupyterLab's Save As."
+  (interactive
+   (list (read-string "Save notebook as: "
+                      (emjupy-notebook-path (emjupy--notebook)))))
+  (let ((nb (emjupy--notebook)))
+    (when (and (emjupy--http-exists-p (emjupy-notebook-server nb) new-path)
+               (not (y-or-n-p (format "%s exists.  Overwrite it? "
+                                      new-path))))
+      (user-error "Not saved"))
+    (emjupy--follow-notebook nb new-path)
+    (emjupy--save-to-server nb t)
+    (message "[emjupy] Saved as %s" new-path)))
+
+(defun emjupy-duplicate-notebook ()
+  "Make a copy of this notebook's file beside it, on its server, and open it.
+The copy is of the file as last saved, as JupyterLab's Duplicate."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (path (emjupy-notebook-path nb))
+         (model (emjupy--http-request
+                 "POST" server
+                 (emjupy--contents-path (or (file-name-directory path) ""))
+                 (emjupy--json-body "copy_from" path))))
+    (emjupy-open-notebook (gethash "path" model) server)))
+
+(defun emjupy-revert-to-checkpoint ()
+  "Revert this notebook to its checkpoint on the server, made when saved.
+What has changed since, saved or not, is lost: asks first."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (server (emjupy-notebook-server nb))
+         (path (emjupy-notebook-path nb))
+         (address (concat (emjupy--contents-path path) "/checkpoints"))
+         (latest (car (last (append (emjupy--http-request
+                                     "GET" server address)
+                                    nil)))))
+    (unless latest
+      (user-error "No checkpoint: one is made when the notebook is saved"))
+    (when (y-or-n-p (format "Revert %s to its checkpoint of %s, losing changes since? "
+                            path (gethash "last_modified" latest)))
+      (emjupy--http-request "POST" server
+                            (concat address "/" (gethash "id" latest)))
+      (with-current-buffer (emjupy-notebook-buffer nb)
+        (set-buffer-modified-p nil))
+      (emjupy-open-notebook path server)
+      (message "[emjupy] %s reverted to its checkpoint" path))))
 
 (defun emjupy-export-py (&optional local)
   "Export this notebook as a plain Python file in percent format.
@@ -493,6 +575,10 @@ this buffer."
     ("S" "save to the server" emjupy-save-notebook)
     ("B" "switch notebook" emjupy-switch-notebook)
     ("X" "export as .py" emjupy-export-py)
+    ("N" "rename" emjupy-rename-notebook)
+    ("W" "save as" emjupy-save-notebook-as)
+    ("D" "duplicate" emjupy-duplicate-notebook)
+    ("V" "revert to the checkpoint" emjupy-revert-to-checkpoint)
     ("'" "edit this cell in a buffer" emjupy-edit-cell-externally)]]
   ;; A row of its own: four groups side by side came to some 120 columns,
   ;; so in an ordinary frame the last column wrapped mid-word.

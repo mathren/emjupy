@@ -1216,8 +1216,9 @@ The timer calling this stops once no cell runs anywhere."
             (remhash id emjupy--request-halves))
           (puthash msg-id cell pending))
         (emjupy--ws-send json-payload kernel)
-        ;; Its outputs from now on are the user's own.
+        ;; Its outputs from now on are the user's own, and drawn.
         (emjupy--mark-cell-trusted cell)
+        (setf (emjupy-cell-size-hidden cell) nil)
         ;; Quiet from now on, it is asked after on the server.
         (setf (emjupy-kernel-heard kernel) (float-time))
         (emjupy--watch-quiet-kernels)

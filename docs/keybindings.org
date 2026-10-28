@@ -95,6 +95,10 @@ Dired -- are in [[file:usage.org::*Server dashboard][Using a notebook]].
 | =emjupy-run-all-cells=      | Run every cell, in order, as JupyterLab          |
 | =emjupy-run-cells-above=    | Run the cells above this one                     |
 | =emjupy-run-cells-below=    | Run this cell and those below                    |
+| =emjupy-rename-notebook=    | Rename the notebook on the server                |
+| =emjupy-save-notebook-as=   | Save as another notebook, and go on there        |
+| =emjupy-duplicate-notebook= | Copy the notebook beside it, and open it         |
+| =emjupy-revert-to-checkpoint=| Go back to the checkpoint saving made            |
 | =emjupy-refresh-appearance= | Re-derive page colours from the theme and redraw |
 
 Completion (=M-TAB=) and eldoc need no =emjupy= binding: they are wired into

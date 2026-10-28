@@ -24,6 +24,25 @@
 
 ;;;; Options
 
+(defcustom emjupy-large-output-count 50
+  "Outputs a cell may have before, opening a notebook, they are hidden.
+JupyterLab draws at most 50 of a cell's outputs.  Hidden for drawing
+only, not marked in the notebook; \\[emjupy-toggle-cell-output] shows
+them.  nil never hides for this."
+  :type '(choice (const :tag "Never" nil) natnum)
+  :safe (lambda (v) (or (null v) (natnump v)))
+  :group 'emjupy-appearance)
+
+(defcustom emjupy-large-output-lines 100
+  "Lines of text a cell's output may have before it is hidden on opening.
+The Jupyter Notebook scrolls an output past 100 lines; a large output,
+drawn, makes a notebook slow to open and to redraw.  Hidden for drawing
+only, not marked in the notebook; \\[emjupy-toggle-cell-output] shows
+it.  nil never hides for this."
+  :type '(choice (const :tag "Never" nil) natnum)
+  :safe (lambda (v) (or (null v) (natnump v)))
+  :group 'emjupy-appearance)
+
 (defcustom emjupy-output-color 'auto
   "Background behind ordinary cell output.
 

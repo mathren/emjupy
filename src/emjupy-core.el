@@ -201,7 +201,10 @@ both nil until the cell is drawn."
   ;; Files pasted into a markdown or raw cell, by name, as nbformat keeps
   ;; them.  Carried untouched: emjupy does not show them, but a notebook
   ;; saved without them has lost the images its markdown refers to.
-  attachments)
+  attachments
+  ;; Non-nil when its output is hidden for its size, on opening: for
+  ;; drawing only, not in the metadata, so the file is unchanged.
+  size-hidden)
 
 (cl-defstruct emjupy-notebook
   "A notebook open in a buffer.
