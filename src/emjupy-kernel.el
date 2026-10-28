@@ -53,6 +53,14 @@ cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
   :type '(choice (const :tag "Do not try" nil) number)
   :group 'emjupy-kernels)
 
+(defcustom emjupy-record-execution-time t
+  "Non-nil to record when each cell runs in its metadata, as JupyterLab can.
+The times go under \"execution\", JupyterLab's keys, and a cell's border
+shows how long it last ran.  Saved with the notebook: nil leaves files as
+they were, and shows only times recorded elsewhere."
+  :type 'boolean
+  :group 'emjupy-kernels)
+
 (defcustom emjupy-kernel-check-interval 30
   "Seconds a kernel running a cell may be quiet before emjupy asks after it.
 After that long with nothing from the kernel while a cell runs, emjupy
@@ -570,6 +578,27 @@ moving a slider, is claimed through `emjupy-output-owner-functions'."
   (let ((parent-header (gethash "parent_header" data)))
     (when parent-header (gethash "msg_id" parent-header))))
 
+(defun emjupy--record-execution-time (cell msg-type data)
+  "Record in CELL's metadata the time of DATA, a message of MSG-TYPE.
+JupyterLab's keys, the kernel's own time from the message header; a run
+starting anew, its times from before go."
+  (let ((key (pcase msg-type
+               ("execute_input" "iopub.execute_input")
+               ("execute_reply" "shell.execute_reply")
+               ("status" (pcase (gethash "execution_state"
+                                         (gethash "content" data))
+                           ("busy" "iopub.status.busy")
+                           ("idle" "iopub.status.idle")))))
+        (date (gethash "date" (gethash "header" data))))
+    (when (and key (stringp date))
+      (unless (hash-table-p (emjupy-cell-metadata cell))
+        (setf (emjupy-cell-metadata cell) (make-hash-table :test 'equal)))
+      (let ((times (gethash "execution" (emjupy-cell-metadata cell))))
+        (when (or (not (hash-table-p times)) (equal key "iopub.status.busy"))
+          (setq times (make-hash-table :test 'equal))
+          (puthash "execution" times (emjupy-cell-metadata cell)))
+        (puthash key date times)))))
+
 (defun emjupy--apply-to-cell (cell kernel data)
   "Apply DATA, a message from KERNEL, to CELL, the cell it is for."
   (let ((msg-type (gethash "msg_type" (gethash "header" data)))
@@ -577,6 +606,8 @@ moving a slider, is claimed through `emjupy-output-owner-functions'."
         (parent-id (emjupy--ws-parent-id data))
         (pending (and kernel (emjupy-kernel-pending kernel)))
         (notebook (and kernel (emjupy-kernel-notebook kernel))))
+    (when emjupy-record-execution-time
+      (emjupy--record-execution-time cell msg-type data))
     (pcase msg-type
       ("clear_output"
        (if (eq (gethash "wait" content) t)

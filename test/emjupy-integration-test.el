@@ -1643,6 +1643,30 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
                              "y = 3")))
           (kill-buffer copy))))))
 
+(ert-deftest emjupy-int-a-cell-shows-how-long-it-ran ()
+  "A cell run shows how long it took beside its count, kept as JupyterLab
+keeps it: under \"execution\" in the saved notebook."
+  (emjupy-int--with-file-notebook "import time; time.sleep(0.4)"
+    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+      (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+      (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+      (emjupy--goto-cell cell 'start)
+      (emjupy-execute-cell-at-point)
+      (should (emjupy-int--pump
+               30 (lambda () (numberp (emjupy-cell-exec-count cell)))))
+      (emjupy-int--pump 0.5)
+      (let ((seconds (emjupy--cell-execution-seconds cell)))
+        (should (and seconds (< 0.35 seconds 3))))
+      (should (string-match-p "\\] [0-9.]+ m?s python"
+                              (emjupy--overlay-header
+                               (emjupy-cell-overlay cell))))
+      (emjupy-save-notebook)
+      (let* ((model (emjupy--http-request "GET" emjupy--current-server
+                                          (emjupy--contents-path path)))
+             (saved (aref (gethash "cells" (gethash "content" model)) 0)))
+        (should (gethash "shell.execute_reply"
+                         (gethash "execution" (gethash "metadata" saved))))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

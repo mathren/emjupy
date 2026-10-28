@@ -693,6 +693,16 @@ screen pyte -- a terminal emulator -- showed, trailing blanks dropped.")
                                 (or load-file-name buffer-file-name)))
   "The docs beside the tests, whose names the tests check.")
 
+
+(defun emjupy-test--timed-cell (start end)
+  "A code cell run once, its metadata with START and END as JupyterLab's."
+  (let ((times (make-hash-table :test 'equal))
+        (meta (make-hash-table :test 'equal)))
+    (when start (puthash "iopub.execute_input" start times))
+    (when end (puthash "shell.execute_reply" end times))
+    (puthash "execution" times meta)
+    (make-emjupy-cell :id 1 :type 'code :exec-count 7 :metadata meta)))
+
 (provide 'emjupy-test-helpers)
 
 ;;; emjupy-test-helpers.el ends here

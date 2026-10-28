@@ -23,6 +23,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'iso8601)
 
 (defgroup emjupy nil
   "Minimal Jupyter Notebook editor."
@@ -241,6 +242,32 @@ Saved with every cell so marked, the server signs the notebook."
   (unless (hash-table-p (emjupy-cell-metadata cell))
     (setf (emjupy-cell-metadata cell) (make-hash-table :test 'equal)))
   (puthash "trusted" t (emjupy-cell-metadata cell)))
+
+;;;; Execution time, as JupyterLab records it
+
+(defun emjupy--cell-execution-seconds (cell)
+  "Return how long CELL last ran, in seconds, from its metadata, or nil.
+JupyterLab, recording timing, keeps the times under \"execution\":
+from \"iopub.execute_input\" to \"shell.execute_reply\"."
+  (let* ((meta (emjupy-cell-metadata cell))
+         (times (and (hash-table-p meta) (gethash "execution" meta)))
+         (start (and (hash-table-p times)
+                     (gethash "iopub.execute_input" times)))
+         (end (and (hash-table-p times) (gethash "shell.execute_reply" times))))
+    (when (and (stringp start) (stringp end))
+      (ignore-errors
+        (let ((seconds (- (float-time (encode-time (iso8601-parse end t)))
+                          (float-time (encode-time (iso8601-parse start t))))))
+          (and (>= seconds 0) seconds))))))
+
+(defun emjupy--format-duration (seconds)
+  "Return SECONDS as a short duration: 85 ms, 1.2 s, 3m 05s, 1h 02m."
+  (cond ((< seconds 1) (format "%d ms" (round (* 1000 seconds))))
+        ((< seconds 60) (format "%.1f s" seconds))
+        ((< seconds 3600) (format "%dm %02ds" (floor seconds 60)
+                                  (mod (floor seconds) 60)))
+        (t (format "%dh %02dm" (floor seconds 3600)
+                   (mod (floor seconds 60) 60)))))
 
 ;;;; Lookups
 

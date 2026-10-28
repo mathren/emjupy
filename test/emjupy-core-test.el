@@ -634,6 +634,26 @@ is, ending the rules' last screen line."
           (should (save-excursion (goto-char next) (bolp)))
           (should-not (invisible-p next)))))))
 
+
+(ert-deftest emjupy-test-execution-seconds-from-metadata ()
+  "How long a cell ran, from JupyterLab's keys, fractions of seconds kept."
+  (should (= (emjupy--cell-execution-seconds
+              (emjupy-test--timed-cell "2026-10-28T05:16:41.123456Z"
+                                       "2026-10-28T05:16:42.373456+00:00"))
+             1.25))
+  (should-not (emjupy--cell-execution-seconds
+               (emjupy-test--timed-cell "2026-10-28T05:16:41Z" nil)))
+  (should-not (emjupy--cell-execution-seconds
+               (emjupy-test--timed-cell "2026-10-28T05:16:42Z"
+                                        "2026-10-28T05:16:41Z"))))
+
+(ert-deftest emjupy-test-durations-read-short ()
+  "A duration in the unit that reads best."
+  (should (equal (emjupy--format-duration 0.085) "85 ms"))
+  (should (equal (emjupy--format-duration 1.4) "1.4 s"))
+  (should (equal (emjupy--format-duration 185) "3m 05s"))
+  (should (equal (emjupy--format-duration 3725) "1h 02m")))
+
 (provide 'emjupy-core-test)
 
 ;;; emjupy-core-test.el ends here

@@ -41,6 +41,11 @@ and the cells queued behind it a still =[In: *]=, as in Jupyter.
 =["*"]= gives Jupyter's static marker.  Only overlay strings change, never
 buffer text, so typing and undo are undisturbed.
 
+A cell that has run shows how long it took beside its count --
+=[In: 7] 1.4 s= -- read from its metadata as JupyterLab records timing: times
+recorded there show too.  =emjupy-record-execution-time= (on) records
+them when emjupy runs a cell; nil leaves notebooks' metadata as it was.
+
 To run several cells: a numeric prefix runs that many, moving on after
 each -- =C-u 5 C-c C-c= -- and =C-x z= repeats it.  =emjupy-run-all-cells=,
 =emjupy-run-cells-above= (not the cell at point) and

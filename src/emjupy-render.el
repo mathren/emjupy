@@ -114,7 +114,7 @@ rule too wide for a window wraps."
 (defun emjupy--cell-label (cell)
   "Return the header label for CELL's input box."
   (let ((exec (emjupy-cell-exec-count cell)))
-    (format "[In: %s] %s"
+    (format "[In: %s]%s %s"
             (cond
              ;; Jupyter's convention: a running cell shows a marker where its
              ;; execution count will go.
@@ -126,6 +126,11 @@ rule too wide for a window wraps."
              ((emjupy--cell-running-p cell) "*")
              ((numberp exec) (number-to-string exec))
              (t " "))
+            ;; how long it last ran, beside its count
+            (let ((seconds (and (numberp exec)
+                                (not (emjupy--cell-running-p cell))
+                                (emjupy--cell-execution-seconds cell))))
+              (if seconds (concat " " (emjupy--format-duration seconds)) ""))
             (if (eq (emjupy-cell-type cell) 'code) "python" "markdown"))))
 
 (defun emjupy--cell-out-label (cell)

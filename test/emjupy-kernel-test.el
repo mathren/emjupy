@@ -1267,6 +1267,44 @@ running the last one always makes."
     (emjupy-execute-cell-and-goto-next 5)
     (should (= (length (emjupy-notebook-cells nb)) 6))))
 
+
+(defun emjupy-test--message (type date &optional state)
+  "A message of TYPE from the kernel at DATE; status messages with STATE."
+  (let ((header (make-hash-table :test 'equal))
+        (content (make-hash-table :test 'equal))
+        (data (make-hash-table :test 'equal)))
+    (puthash "msg_type" type header)
+    (puthash "date" date header)
+    (when state (puthash "execution_state" state content))
+    (puthash "header" header data)
+    (puthash "content" content data)
+    data))
+
+(ert-deftest emjupy-test-a-run-is-timed-as-jupyterlab-does ()
+  "Running a cell records the kernel's times under JupyterLab's keys.
+A new run starts afresh; with the option off, nothing is written."
+  (let ((cell (make-emjupy-cell :id 1 :type 'code))
+        (emjupy-record-execution-time t))
+    (dolist (m (list (emjupy-test--message "status" "T0" "busy")
+                     (emjupy-test--message "execute_input" "T1")
+                     (emjupy-test--message "execute_reply" "T2")))
+      (emjupy--record-execution-time
+       cell (gethash "msg_type" (gethash "header" m)) m))
+    (let ((times (gethash "execution" (emjupy-cell-metadata cell))))
+      (should (equal (gethash "iopub.status.busy" times) "T0"))
+      (should (equal (gethash "iopub.execute_input" times) "T1"))
+      (should (equal (gethash "shell.execute_reply" times) "T2")))
+    (let ((m (emjupy-test--message "status" "T3" "busy")))
+      (emjupy--record-execution-time cell "status" m))
+    (should-not (gethash "shell.execute_reply"
+                         (gethash "execution" (emjupy-cell-metadata cell))))
+    (let ((other (make-emjupy-cell :id 2 :type 'code))
+          (emjupy-record-execution-time nil)
+          (m (emjupy-test--message "execute_input" "T1")))
+      (cl-letf (((symbol-function 'emjupy--ws-parent-id) #'ignore))
+        (ignore-errors (emjupy--apply-to-cell other nil m)))
+      (should-not (emjupy-cell-metadata other)))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

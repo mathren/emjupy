@@ -658,6 +658,15 @@ was redrawn N times, slower with each cell added."
                               (emjupy--overlay-header
                                (emjupy-cell-overlay cell)))))))
 
+
+(ert-deftest emjupy-test-the-border-shows-how-long-a-cell-ran ()
+  "Beside its count, how long the cell last ran; not while it runs."
+  (let ((cell (emjupy-test--timed-cell "2026-10-28T05:16:41.0Z"
+                                       "2026-10-28T05:16:42.4Z")))
+    (should (equal (emjupy--cell-label cell) "[In: 7] 1.4 s python"))
+    (let ((emjupy--running-cells (list 1)))
+      (should-not (string-match-p " s python" (emjupy--cell-label cell))))))
+
 (provide 'emjupy-render-test)
 
 ;;; emjupy-render-test.el ends here
