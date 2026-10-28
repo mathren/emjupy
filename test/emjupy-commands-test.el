@@ -862,6 +862,36 @@ to re-highlight, and does not run the hook."
                   (should (equal (get-text-property (match-beginning 0) 'face)
                                  '(emjupy-output))))))))))))
 
+
+(ert-deftest emjupy-test-moving-a-cell-keeps-point-where-it-was-in-it ()
+  "Moving a cell up or down leaves point at the same place in its code.
+It went to the end of the code: \\='start, which `emjupy--goto-cell'
+takes for the end."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "first = 1")
+              (make-emjupy-cell :id 2 :type 'code
+                                :source "second = 2\nmore = 3"))
+      buf nb
+    (let ((cell (aref (emjupy-notebook-cells nb) 1)))
+      (emjupy--goto-cell cell 'beginning)
+      (forward-char 3)
+      (emjupy-move-cell-up)
+      (should (eq (emjupy--cell-at-point) cell))
+      (should (looking-at "ond = 2"))
+      (emjupy-move-cell-down)
+      (should (eq (emjupy--cell-at-point) cell))
+      (should (looking-at "ond = 2")))))
+
+(ert-deftest emjupy-test-deleting-a-cell-goes-to-the-next-ones-start ()
+  "Deleting a cell puts point at the start of the next, as Jupyter selects it."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "gone = 1")
+              (make-emjupy-cell :id 2 :type 'code :source "next = 2\nmore = 3"))
+      buf nb
+    (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0) 'beginning)
+    (emjupy-delete-cell)
+    (should (looking-at "next = 2"))))
+
 (provide 'emjupy-commands-test)
 
 ;;; emjupy-commands-test.el ends here

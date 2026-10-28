@@ -125,7 +125,7 @@ WHERE is `above' or `below'."
                                (list new-cell)
                                (cl-subseq cells index))))
         (emjupy--redraw-notebook new-cell))
-      (emjupy--goto-cell new-cell 'start))))
+      (emjupy--goto-cell new-cell 'beginning))))
 
 (defun emjupy-insert-cell-below ()
   "Insert a new empty code cell below the cell at point."
@@ -146,6 +146,8 @@ separate entity, the output always travels with its cell automatically."
     (emjupy--sync-all-cells)
     (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
            (cell (emjupy--cell-at-point))
+           ;; where point is in it, kept: moving it is not moving in it
+           (offset (if cell (emjupy--cell-offset cell) 0))
            (idx (cl-position cell cells)))
       (if (or (not idx) (= idx 0))
           (message "[emjupy] Cell is already at the top.")
@@ -162,7 +164,7 @@ separate entity, the output always travels with its cell automatically."
             (emjupy--redraw-notebook cell))
           ;; The move is its own undo step, so an edit in the cell it
           ;; rewrites is recovered by undoing the move rather than lost.
-          (emjupy--goto-cell cell 'start))))))
+          (emjupy--goto-cell-offset cell offset))))))
 
 (defun emjupy-move-cell-down ()
   "Move the cell at point down, swapping it with the cell below."
@@ -171,6 +173,8 @@ separate entity, the output always travels with its cell automatically."
     (emjupy--sync-all-cells)
     (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
            (cell (emjupy--cell-at-point))
+           ;; where point is in it, kept: moving it is not moving in it
+           (offset (if cell (emjupy--cell-offset cell) 0))
            (idx (cl-position cell cells)))
       (if (or (not idx) (= idx (1- (length cells))))
           (message "[emjupy] Cell is already at the bottom.")
@@ -183,7 +187,7 @@ separate entity, the output always travels with its cell automatically."
                        (emjupy--redraw-cells-in-place (list cell below)
                                                       (list below cell) t))
             (emjupy--redraw-notebook cell))
-          (emjupy--goto-cell cell 'start))))))
+          (emjupy--goto-cell-offset cell offset))))))
 
 ;;;; Splitting and joining
 
@@ -456,7 +460,7 @@ outputs until you save."
           ;; recording off -- a redraw moves positions that undo entries hold
           ;; literally -- so the way back is a function, not a region.
           (when (and next (overlayp (emjupy-cell-overlay next)))
-            (emjupy--goto-cell next 'start)))))))
+            (emjupy--goto-cell next 'beginning)))))))
 
 (defun emjupy-cycle-cell-type ()
   "Cycle the cell at point between `code' and `markdown'."
@@ -634,6 +638,19 @@ next line, outside the code."
                  (min (overlay-end ov)
                       (+ (overlay-start ov)
                          (length (or (emjupy-cell-source cell) ""))))))))
+
+(defun emjupy--cell-offset (cell)
+  "Point's offset into CELL's source, or 0 if point is not in it."
+  (let ((ov (emjupy-cell-overlay cell)))
+    (if (and (overlayp ov) (<= (overlay-start ov) (point) (overlay-end ov)))
+        (- (point) (overlay-start ov))
+      0)))
+
+(defun emjupy--goto-cell-offset (cell offset)
+  "Put point OFFSET characters into CELL's source, at most at its end."
+  (emjupy--goto-cell cell 'beginning)
+  (goto-char (min (+ (point) offset)
+                  (save-excursion (emjupy--goto-cell cell 'end) (point)))))
 
 (defun emjupy-beginning-of-previous-cell ()
   "Move point to the start of the previous cell."
