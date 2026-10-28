@@ -56,6 +56,16 @@ cannot send Shift-RET at all; and =DEL= is registered under both of its
 spellings, since keyboards and terminals disagree about which they
 send.
 
+* The outline
+
+| Key       | Command      | Effect                                                 |
+|-----------+--------------+--------------------------------------------------------|
+| =C-c C-q= | =emjupy-toc= | Show the outline panel beside the notebook, or hide it |
+| =M-g i=   | =imenu=      | Go to a heading by name                                |
+
+In the panel: =RET= or a click goes to a heading, =n= and =p= move between
+them, =g= draws it anew, =q= hides it.
+
 * The debugger (=C-c C-d=)
 
 | Key             | Command                            | Effect                                         |

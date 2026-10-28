@@ -20,6 +20,7 @@ short form, plus mechanisms that have bitten before.
 | `src/emjupy-commands.el` | the commands on cells |
 | `src/emjupy-kernel.el` | WebSocket, execution, `emjupy--handle-ws-message`; reconnecting (`emjupy-reconnect-functions`, cells run meanwhile held); asking the server whether a kernel is still there, quiet ones every `emjupy-kernel-check-interval` |
 | `src/emjupy-debug.el` | the debugger: DAP in debug_request on the control channel; dumpCell names a cell's file, breakpoints set there before each run (`emjupy-before-execute-functions`); events through `emjupy-debug-functions`, handled from a timer |
+| `src/emjupy-toc.el` | the outline: markdown headings (`emjupy--toc-headings`, from the buffer text, fences skipped) for imenu, and a side panel toggled by `emjupy-toc`, following edits and point only while open |
 | `src/emjupy-figures.el`, `src/emjupy-widgets.el`, `src/emjupy-widget-page.el` | outputs opened apart, into a private folder -- an untrusted notebook's scripts not run (`emjupy--cell-trusted-p`, in core); widgets |
 | `src/emjupy-remote.el` | server roots, SSH tunnel hosts, TRAMP names |
 | `src/emjupy-lsp.el` | Eglot over the Jupyter WebSocket, shadow document text |

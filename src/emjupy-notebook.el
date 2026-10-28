@@ -575,6 +575,7 @@ this buffer."
     ("S" "save to the server" emjupy-save-notebook)
     ("B" "switch notebook" emjupy-switch-notebook)
     ("X" "export as .py" emjupy-export-py)
+    ("O" "outline, beside" emjupy-toc)
     ("N" "rename" emjupy-rename-notebook)
     ("W" "save as" emjupy-save-notebook-as)
     ("D" "duplicate" emjupy-duplicate-notebook)

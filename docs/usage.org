@@ -72,6 +72,15 @@ If the display looks wrong, =C-c C-x C-l= (=emjupy-re-render=) rebuilds it
 from the cells, keeping pending edits; the notebook on the server is not
 touched.
 
+* The outline
+
+The headings of the markdown cells make the notebook's outline, as
+JupyterLab's table of contents.  =M-g i= goes to one by name -- imenu,
+so any tool built on it works too.  =C-c C-q= shows the outline in a
+panel beside the notebook, and hides it: off until asked for, it marks
+the heading point is under, follows edits, and a heading in it is a
+button to go there.  =emjupy-toc-width= sets its width.
+
 * Debugging
 
 =C-c C-d d= debugs the notebook's kernel, as JupyterLab's debugger does:

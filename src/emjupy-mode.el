@@ -26,6 +26,7 @@
 (require 'emjupy-commands)
 (require 'emjupy-kernel)
 (require 'emjupy-debug)
+(require 'emjupy-toc)
 (require 'emjupy-widgets)
 (require 'emjupy-widget-page)
 (require 'emjupy-lsp)
@@ -82,6 +83,7 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
     (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
     (define-key map (kbd "C-c C-d")     emjupy-debug-map)
+    (define-key map (kbd "C-c C-q")     #'emjupy-toc)
     ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
     (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
     (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
@@ -250,6 +252,7 @@ no kernel, disconnected, reconnecting."
   (emjupy-eglot-enable)
   (emjupy-kernel-enable)
   (emjupy-debug-enable)
+  (emjupy-toc-enable)
   (emjupy-shadow-enable)
   (emjupy-cells-enable)
   (emjupy-widgets-enable)

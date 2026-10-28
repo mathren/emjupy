@@ -30,6 +30,7 @@
 (require 'emjupy-ipynb-test)
 (require 'emjupy-kernel-test)
 (require 'emjupy-debug-test)
+(require 'emjupy-toc-test)
 (require 'emjupy-latex-test)
 (require 'emjupy-lsp-test)
 (require 'emjupy-mode-test)
