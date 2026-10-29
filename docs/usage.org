@@ -4,7 +4,9 @@
 
 How a notebook behaves once it is open.
 
-* Server dashboard
+* Opening notebooks
+
+** Server dashboard
 
 =M-x emjupy-server-dashboard= (also =emjupy-notebook-list=) opens one buffer
 per server: the kernels running on it and the notebooks stored on it,
@@ -33,158 +35,7 @@ files -- a tunnelled server looks like localhost -- so tell =emjupy=:
         ("localhost:9999" . "/ssh:box:/srv/nb")))
 #+end_src
 
-* Editing while a cell runs
-
-The mode line shows what the kernel is doing and the port of its
-server, =emjupy[busy :8888]=: idle, busy or starting, as the kernel says,
-or no kernel, disconnected, reconnecting.
-
-The cell running shows a cycling marker where its count goes, =[In: |]=,
-and the cells queued behind it a still =[In: *]=, as in Jupyter.
-=emjupy-running-indicator= sets the frames; a one-element vector like
-=["*"]= gives Jupyter's static marker.  Only overlay strings change, never
-buffer text, so typing and undo are undisturbed.
-
-A cell that has run shows how long it took beside its count --
-=[In: 7] 1.4 s= -- read from its metadata as JupyterLab records timing: times
-recorded there show too.  =emjupy-record-execution-time= (on) records
-them when emjupy runs a cell; nil leaves notebooks' metadata as it was.
-
-To run several cells: a numeric prefix runs that many, moving on after
-each -- =C-u 5 C-c C-c= -- and =C-x z= repeats it.  =emjupy-run-all-cells=,
-=emjupy-run-cells-above= (not the cell at point) and
-=emjupy-run-cells-below= (from it) run as JupyterLab's commands of those
-names do, raw cells left alone; in the menu, =A=, ={= and =}=.  Each
-cell is queued, and runs in the order sent.
-
-A hidden output is not drawn at all: a cell with a large output hidden,
-with =C-c C-o=, costs nothing to draw, and the notebook keeps it hidden when
-saved, as Jupyter does.  Opening a notebook, an output past what Jupyter
-draws whole -- more than =emjupy-large-output-count= outputs (50, as
-JupyterLab), or =emjupy-large-output-lines= lines (100, where the Jupyter
-Notebook scrolls) -- is hidden for drawing only, its label saying
-/large/: the file is unchanged, and =C-c C-o= shows it.  With a region,
-=C-c C-o= hides the output of every cell the region touches, or shows it
-if all is hidden.
-
-=C-c C-i= hides a code cell's code, and its output with it, as Jupyter's
-"collapse input" does: the cell becomes one line -- =▸=, its count, how
-many lines are hidden -- and =C-c C-i= there, or a click on =▸=, shows it
-again.  With a region, it hides every code cell the region touches, or
-shows them if all are hidden.  The
-notebook keeps it hidden when saved, as Jupyter marks it, and hidden
-code is not typed into by mistake.
-
-Edit anywhere while a cell runs: output is drawn only into its own cell's
-box, leaving text typed meanwhile, and point, as they are.
-
-If the display looks wrong, =C-c C-x C-l= (=emjupy-re-render=) rebuilds it
-from the cells, keeping pending edits; the notebook on the server is not
-touched.
-
-* The outline
-
-The headings of the markdown cells make the notebook's outline, as
-JupyterLab's table of contents.  =M-g i= goes to one by name -- imenu,
-so any tool built on it works too.  =C-c C-q= shows the outline in a
-panel beside the notebook, and hides it: off until asked for, it marks
-the heading point is under, follows edits, and a heading in it is a
-button to go there.  =emjupy-toc-width= sets its width.
-
-* Debugging
-
-=C-c C-d d= debugs the notebook's kernel, as JupyterLab's debugger does:
-=C-c C-d b= sets a breakpoint on a line of a code cell, and running the
-cell stops there, the line marked.  Then =n= runs that line, =s= steps
-in, =o= out, =c= goes on, =e= evaluates an expression there and =v=
-shows the variables, each after =C-c C-d=; in that list, a variable
-holding others -- a dict, a list, an object -- has a =+= that shows them.
-=C-u C-c C-d b= sets a breakpoint that stops only when a condition, in
-Python, holds.  =C-c C-d x= chooses when to stop on an exception: never,
-when not caught, when not caught in your own code, or whenever raised.
-Stopped, =C-c C-d f= chooses a frame of the stack: evaluating and the
-variables are then of it.  The kernel must be able to
-debug: ipykernel 6 or later, with debugpy.  Stopped, a cell holds the
-kernel: other cells run wait for it, as in JupyterLab.
-
-* Editable regions
-
-Only cell source is editable.  Rules, gutters and output boxes are
-read-only: text there belongs to no cell, and would vanish at the next
-redraw.  The end of a cell's last line and the start of the next cell are
-within cells, so editing at the boundaries works.  Set
-=emjupy-protect-non-cell-regions= to nil to disable this.
-
-* Indentation, tracebacks, and finding your own code
-
-=TAB= indents as =python-mode= would, the cell as context, and cycles
-through the alternatives on repeat: after =def f():= the next line may be
-the body or back at the outer level.
-
-=C-$= opens the cell's full traceback in its own buffer, with Python
-highlighting and the kernel's colours, where the output box squeezes a
-deep stack into a few lines.
-
-=M-.= on a function from your own modules needs the language server to
-read the notebook's code as a file in the notebook's directory, since it
-resolves =import mylib= relative to the file.  Kernels start through a
-Jupyter /session/ bound to the notebook, so in its directory; emjupy asks
-the kernel where it runs, and shows the server the code as a file there.
-Nothing needs configuring, for a kernel here or elsewhere, provided the
-language server runs beside the kernel; see [[file:language-server.org][Language server support]].
-
-* Files emjupy writes
-
-For a notebook on this machine, emjupy keeps a hidden file beside it,
-named after server and notebook -- for =test.ipynb= on =localhost:8888=,
-=.emjupy_localhost_8888__test.ipynb.py=: the notebook's code as one
-Python file for the language server, written when language support
-starts.  Safe to delete, rebuilt when needed; add =.emjupy_*= to a
-project's =.gitignore=.  Nothing else is written there: no lock or
-auto-save file.  =emjupy-shadow-beside-notebook= nil keeps it in a
-temporary directory instead, or =emjupy-shadow-directory= chooses one --
-losing, without a language server beside the kernel, =M-.= into your own
-modules.
-
-For a kernel elsewhere it goes to a temporary directory here, nothing
-written on the remote: =/tmp/emjupy-shadow-USER/= on most systems,
-readable by you alone, as it holds the notebook's code.
-
-A notebook with unsaved edits is also copied to =emjupy-recovery-directory=
-until saved -- see [[*Saving, and not losing work][Saving, and not losing work]].  Those copies are
-readable by you alone; delete them when no longer wanted.
-
-* Hiding output
-
-=C-c C-o= collapses the output of the cell at point, and restores it.  A
-collapsed cell's bottom rule is marked:
-
-: └─ ▼ 3 outputs hidden ─────────────────────────────┘
-
-=mouse-1= on the triangle, the only live part, shows the output again (in
-a terminal, with =xterm-mouse-mode=; the key works either way).  Nothing
-is discarded: restoring is a redraw, not a re-run.  The state is kept at
-=metadata.jupyter.outputs_hidden=, as Jupyter keeps it, so it is saved
-and means the same in other front ends.
-
-* Clearing output
-
-=C-c C-l= discards the output of the cell at point; =C-c C-u C-l= that of
-the whole notebook, asking first.  Both clear the execution count too --
-=[In: 4]= by an empty box would claim a run since -- and touch only the
-buffer: the server keeps the outputs until you save.
-Clearing everything before a commit keeps =.ipynb= diffs readable.
-
-* Output rendering
-
-Output is redrawn at most once per =emjupy-output-render-interval=
-seconds (0.15), however many messages arrive, and only in its own cell: a
-progress bar sends a message per iteration, and a cell of figures takes
-tens of milliseconds to draw.  =M-x emjupy-flush-output= forces a pending
-redraw.  Stream output continues its output, as in Jupyter: a thousand
-printed lines are one output.
-
-* Opening an .ipynb file you are looking at as text
+** Opening an .ipynb file you are looking at as text
 
 Opened with =find-file=, a notebook is its JSON.  =M-x
 emjupy-open-this-notebook= opens it as a notebook instead, in the same
@@ -203,7 +54,7 @@ window, on a kernel of its own on this machine:
 The environment needs =jupyter-server= and =ipykernel=.  Unsaved edits to
 the text are saved first, or the command stops: it reads the file.
 
-** A notebook on another machine, opened through TRAMP
+*** A notebook on another machine, opened through TRAMP
 
 The same command works on an =.ipynb= opened through TRAMP over SSH --
 =/ssh:cluster:/home/you/project/analysis.ipynb= -- however many hops, as
@@ -237,7 +88,30 @@ EIN binds =C-c C-o=:
   (keymap-set js-json-mode-map "C-c C-o" #'emjupy-open-this-notebook))
 #+end_src
 
-* A cell asking for input
+* Running cells
+
+The cell running shows a cycling marker where its count goes, =[In: |]=,
+and those queued behind it a still =[In: *]=, as in Jupyter;
+=emjupy-running-indicator= sets the frames, =["*"]= Jupyter's still one.  Once run, a cell shows how
+long it took, =[In: 7] 1.4 s=, from its metadata as JupyterLab records
+timing; =emjupy-record-execution-time= (on) records it.  The mode line
+shows what the kernel is doing and its server's port,
+=emjupy[busy :8888]=: idle, busy or starting, or no kernel, disconnected,
+reconnecting.
+
+=C-c C-c= runs the cell at point and moves on; with a region, every cell
+the region touches.  A numeric prefix runs that many, =C-u 5 C-c C-c=,
+and =C-x z= repeats it.  =emjupy-run-all-cells=, =emjupy-run-cells-above=
+(not the cell at point) and =emjupy-run-cells-below= (from it) do as
+JupyterLab's of those names.  Cells are queued, and run in the order
+sent; a raw cell is not run.
+
+=emjupy-restart-kernel-and-run-all= and
+=emjupy-restart-kernel-and-clear-outputs= restart first, asking;
+=emjupy-shutdown-kernel= shuts the kernel down.  In the menu: =A=, ={=,
+=}=, =Q=, =Z=, =Y=.
+
+** A cell asking for input
 
 A cell calling =input()=, =getpass=, =pdb= or =breakpoint()= asks in the
 minibuffer, the prompt naming the notebook.  A password is neither shown
@@ -245,46 +119,115 @@ nor kept; other answers are, for =M-p= -- the last pdb command, say.
 =C-g= at the prompt interrupts the kernel: the cell stops with a
 =KeyboardInterrupt=.
 
-* Saving, and not losing work
+** Relative paths in cells
 
-=C-x C-s= saves the notebook to its server.  It is also saved
-automatically, as Jupyter does: every =emjupy-autosave-interval= seconds
-(120) of a notebook with unsaved edits, when Emacs is idle, without
-Emacs waiting -- remotely that is two round trips and an upload.  What is
-saved is the notebook as the save started; later edits wait for the next.
-=C-x C-s= does wait, after letting an automatic save under way finish.
+A cell's working directory is the notebook's folder, as in Jupyter:
+=open("data.csv")= finds the file beside the notebook.
 
-A save never overwrites a copy changed elsewhere -- from JupyterLab, or by
-someone else -- since it was opened: =C-x C-s= asks first, and automatic
-saving stops, saying so, until a save by hand.
+* Editing
 
-Unsaved edits are never only in the buffer.  A few seconds after a
-change, when idle, and as Emacs quits, the notebook is copied to
-=emjupy-recovery-directory= (=/tmp/emjupy-recovery-USER/= by default):
-local, so written with the tunnel down or the server gone; a save
-deletes it.  Opening the notebook again, after a crash say, offers to
-restore it, as does =M-x emjupy-recover-notebook=; a copy declined is set
-aside in that directory, not deleted.
+** Editing while a cell runs
+Edit anywhere while a cell runs: output is drawn only into its own cell's
+box, leaving text typed meanwhile, and point, as they are.  Only overlay
+strings change for the running marker, never buffer text, so typing and
+undo are undisturbed.
 
-=/tmp= is often emptied on restart: for copies that outlive the machine,
-set =emjupy-recovery-directory= under your home, such as
-=~/.emacs.d/emjupy-recovery/=.  Copies are written only into a directory
-you own that is not a symbolic link.
+If the display looks wrong, =C-c C-x C-l= (=emjupy-re-render=) rebuilds it
+from the cells, keeping pending edits; the notebook on the server is not
+touched.
 
-Closing a notebook with unsaved edits asks whether to save them, keep
-them in the recovery copy, or discard them; quitting Emacs offers to save
-each.  Opening a notebook already open with unsaved edits shows it as it
-is, rather than fetching it again.
+** Editable regions
 
-=emjupy-rename-notebook=, =emjupy-save-notebook-as= and
-=emjupy-duplicate-notebook= do as JupyterLab's commands of those names,
-on the server; in the menu, =N=, =W= and =D=.  =C-x C-s= also makes a
-checkpoint, as JupyterLab's save does, and =emjupy-revert-to-checkpoint=
-(=V=) goes back to it, asking first.
+Only cell source is editable.  Rules, gutters and output boxes are
+read-only: text there belongs to no cell, and would vanish at the next
+redraw.  The end of a cell's last line and the start of the next cell are
+within cells, so editing at the boundaries works.  Set
+=emjupy-protect-non-cell-regions= to nil to disable this.
 
-* Interactive output
+** Indentation, tracebacks, and finding your own code
 
-** Figures
+=TAB= indents as =python-mode= would, the cell as context, and cycles
+through the alternatives on repeat: after =def f():= the next line may be
+the body or back at the outer level.
+
+=C-$= opens the cell's full traceback in its own buffer, with Python
+highlighting and the kernel's colours, where the output box squeezes a
+deep stack into a few lines.
+
+=M-.= on a function from your own modules needs the language server to
+read the notebook's code as a file in the notebook's directory, since it
+resolves =import mylib= relative to the file.  Kernels start through a
+Jupyter /session/ bound to the notebook, so in its directory; emjupy asks
+the kernel where it runs, and shows the server the code as a file there.
+Nothing needs configuring, for a kernel here or elsewhere, provided the
+language server runs beside the kernel; see [[file:language-server.org][Language server support]].
+
+** Copying between cells
+
+Text copied out of a cell keeps its faces but none of emjupy's
+properties: =emjupy-cell= holds the cell itself, and pasted elsewhere
+would claim a cell it has nothing to do with.  A kill reaching past the
+end of a cell is refused, but Emacs copies before deleting, so =C-y=
+still has the text.
+
+** Markdown highlighting
+
+Markdown cells are highlighted with no external package: headings,
+emphasis, inline code and fences, links, list markers, blockquotes.
+=markdown-mode= or =markdown-ts-mode=, MELPA packages =emjupy= does not
+depend on, is used when installed.
+
+* Output
+
+** Output rendering
+
+Output is redrawn at most once per =emjupy-output-render-interval=
+seconds (0.15), however many messages arrive, and only in its own cell: a
+progress bar sends a message per iteration, and a cell of figures takes
+tens of milliseconds to draw.  =M-x emjupy-flush-output= forces a pending
+redraw.  Stream output continues its output, as in Jupyter: a thousand
+printed lines are one output.
+
+** Hiding output
+
+=C-c C-o= collapses the output of the cell at point, and restores it.  A
+collapsed cell's bottom rule is marked:
+
+: └─ ▼ 3 outputs hidden ─────────────────────────────┘
+
+=mouse-1= on the triangle, the only live part, shows the output again (in
+a terminal, with =xterm-mouse-mode=; the key works either way).  Nothing
+is discarded: restoring is a redraw, not a re-run.  The state is kept at
+=metadata.jupyter.outputs_hidden=, as Jupyter keeps it, so it is saved
+and means the same in other front ends.
+
+A hidden output is not drawn at all, so a large one hidden costs nothing.
+Opening a notebook, an output past what Jupyter draws whole -- more than
+=emjupy-large-output-count= outputs (50, as JupyterLab), or
+=emjupy-large-output-lines= lines (100, where the Jupyter Notebook
+scrolls) -- is hidden for drawing only, labelled /large/; the file is
+unchanged, and =C-c C-o= shows it.
+
+=C-c C-i= hides a code cell's code, and its output with it, as Jupyter's
+"collapse input": the cell becomes one line -- =▸=, its count, how many
+lines are hidden -- and =C-c C-i= there, or a click on =▸=, shows it.  It
+is kept at =metadata.jupyter.source_hidden=, and hidden code is not typed
+into by mistake.
+
+With a region, =C-c C-o= and =C-c C-i= act on every cell it touches:
+hiding, or showing if all are hidden.
+
+** Clearing output
+
+=C-c C-l= discards the output of the cell at point; =C-c C-u C-l= that of
+the whole notebook, asking first.  Both clear the execution count too --
+=[In: 4]= by an empty box would claim a run since -- and touch only the
+buffer: the server keeps the outputs until you save.
+Clearing everything before a commit keeps =.ipynb= diffs readable.
+
+** Interactive output
+
+*** Figures
 
 A figure that draws itself in JavaScript -- plotly, bokeh -- shows as a
 line saying what it is.  =C-c C-f= there, a click, or =RET= opens it in a
@@ -315,22 +258,21 @@ the server's limit is set low -- and later ones none, as it is kept.
 for a figure too small at cell width.  With =emjupy-inline-figures= nil,
 figures are not drawn inline, but as a line opened the same way.
 
-** Widgets
+*** Widgets
 
 =ipywidgets= controls show as controls.  An =interact= slider reads
 =frequency ◀ 3 ▶   1 … 10=: =<left>= and =<right>= anywhere on it step it,
-the arrows can be clicked, and =RET= on the value asks for one.  Moving it
-redraws the figure in place.
+the arrows can be clicked, =RET= on the value asks for one, and the
+figure redraws in place.
 
 A widget is drawn from the shape of its state, not its type: a number
 with bounds and a step is stepped (=◀ 3 ▶=), without a step a bar; two
-numbers a range; option labels chosen from (=a ▾=); true or false a box
-to toggle (=[x]=); an unbounded value edited in brackets (=[text]=); a
-button clicked (=[ Press ]=); a box draws what it holds.  So 49 of
-ipywidgets' 50 widgets show without emjupy naming them, and a new one
-with a familiar shape does too.  =RET= or a click uses a control; the
-minibuffer asks for what the value is: a number within bounds, text, a
-password, a list, a date or time, a colour.
+numbers a range; options a choice (=a ▾=); true or false a box (=[x]=);
+an unbounded value a field (=[text]=); a button (=[ Press ]=); a box what
+it holds.  So 49 of ipywidgets' 50 widgets show without emjupy naming
+them, and a new one of a familiar shape too.  =RET= or a click uses a
+control; the minibuffer asks for the value: a number within bounds, text,
+a password, a list, a date or time, a colour.
 
 #+CAPTION: An interact slider, stepped from 3 to 6.
 #+ATTR_HTML: :width 70%
@@ -343,19 +285,14 @@ files and sends them.
 
 A widget that draws itself in JavaScript -- plotly's =FigureWidget=, a
 map, an anywidget -- shows as a line, =▶ Interactive widget: FigureWidget
-(anywidget)=, and opens live in a page of its own, in the figure window:
-changes there reach the kernel, and back.  The page talks to Emacs,
-which relays over its kernel connection: no token, and it works through a
-tunnel.
+(anywidget)=, and opens live in a page of its own, in the figure window,
+changes going to the kernel and back.  Emacs relays them over its kernel
+connection: no token, and it works through a tunnel.  Its code comes
+from the kernel -- widget packages leave a copy for the classic notebook
+-- or else from a CDN, as does the widget manager; =emjupy-widget-scripts=
+names local copies, for a machine offline.  A gamepad is shown by name.
 
-Its code is asked of the kernel -- widget packages leave a copy for the
-classic notebook, matching their version, offline; one with none is
-fetched from a CDN.  The widget manager comes from a CDN;
-=emjupy-widget-scripts= names local copies, for a machine offline.
-
-Not drawn: a gamepad, shown by name.
-
-* Progress bars
+** Progress bars
 
 A progress bar redraws itself with a carriage return; emjupy collapses
 those as a terminal does, the bar one line in its latest state.  Bars that
@@ -370,7 +307,7 @@ a loop finishing faster shows exactly two, 0% with the bar blank and
 Each stream keeps its own line: a bar on stderr redraws in place while a
 =print= in the same loop, on stdout, goes below it.
 
-* Wide output
+** Wide output
 
 No output line is drawn wider than the cell.  The kernel is told the
 width in =COLUMNS= when it attaches, before a cell runs if it changed,
@@ -380,32 +317,91 @@ Wider output -- a long log line, a table, a program ignoring =COLUMNS= --
 is broken where the cell ends.  Only the drawing: the saved notebook
 holds the original lines, and a resize redraws them at the new width.
 
-* ANSI colour in output
+** ANSI colour in output
 
 ANSI escapes, from =termcolor=, =rich= or =colorama=, become real colours,
 not =\\033[33m=; =emjupy-render-ansi-colors= nil strips them.
 
-* Markdown highlighting
+* The outline
 
-Markdown cells are highlighted with no external package: headings,
-emphasis, inline code and fences, links, list markers, blockquotes.
-=markdown-mode= or =markdown-ts-mode=, MELPA packages =emjupy= does not
-depend on, is used when installed.
+The headings of the markdown cells make the notebook's outline, as
+JupyterLab's table of contents.  =M-g i= goes to one by name -- imenu,
+so any tool built on it works too.  =C-c C-q= shows the outline in a
+panel beside the notebook, and hides it: off until asked for, it marks
+the heading point is under, follows edits, and a heading in it is a
+button to go there.  =emjupy-toc-width= sets its width.
 
-* Copying between cells
+* Debugging
 
-Text copied out of a cell keeps its faces but none of emjupy's
-properties: =emjupy-cell= holds the cell itself, and pasted elsewhere
-would claim a cell it has nothing to do with.  A kill reaching past the
-end of a cell is refused, but Emacs copies before deleting, so =C-y=
-still has the text.
+=C-c C-d d= debugs the notebook's kernel, as JupyterLab's debugger does:
+=C-c C-d b= sets a breakpoint on a line of a code cell, and running the
+cell stops there, the line marked.  Then =n= runs that line, =s= steps
+in, =o= out, =c= goes on, =e= evaluates an expression there and =v=
+shows the variables, each after =C-c C-d=; in that list, a variable
+holding others -- a dict, a list, an object -- has a =+= that shows them.
+=C-u C-c C-d b= sets a breakpoint that stops only when a condition, in
+Python, holds.  =C-c C-d x= chooses when to stop on an exception: never,
+when not caught, when not caught in your own code, or whenever raised.
+Stopped, =C-c C-d f= chooses a frame of the stack: evaluating and the
+variables are then of it.  The kernel must be able to
+debug: ipykernel 6 or later, with debugpy.  Stopped, a cell holds the
+kernel: other cells run wait for it, as in JupyterLab.
 
-* Relative paths in cells
+* Saving and files
 
-A cell's working directory is the notebook's folder, as in Jupyter:
-=open("data.csv")= finds the file beside the notebook.
+** Saving, and not losing work
 
-* Exporting to a plain =.py=
+=C-x C-s= saves the notebook to its server, and makes a checkpoint, as
+JupyterLab's save; =emjupy-revert-to-checkpoint= (=V=) goes back to it,
+asking first.  A notebook with unsaved edits is also saved every
+=emjupy-autosave-interval= seconds (120), when Emacs is idle, without
+Emacs waiting; edits made meanwhile wait for the next save.  =C-x C-s=
+lets an automatic save under way finish first.
+
+A save never overwrites a copy changed elsewhere since it was opened --
+from JupyterLab, or by someone else: =C-x C-s= asks first, and automatic
+saving stops, saying so, until a save by hand.
+
+Unsaved edits are copied, a few seconds after a change and as Emacs
+quits, to =emjupy-recovery-directory= (=/tmp/emjupy-recovery-USER/=):
+local, so written with the tunnel down or the server gone, and deleted
+by a save.  Opening the notebook again offers to restore it, as does
+=M-x emjupy-recover-notebook=; a copy declined is set aside, not deleted.
+=/tmp= is often emptied on restart: for copies that outlive it, set the
+directory under your home.  Copies go only into a directory you own that
+is not a symbolic link.
+
+Closing a notebook with unsaved edits asks whether to save them, keep
+them in the recovery copy, or discard them; quitting Emacs offers to save
+each.  A notebook opened again with unsaved edits is shown as it is, not
+fetched anew.
+
+=emjupy-rename-notebook=, =emjupy-save-notebook-as= and
+=emjupy-duplicate-notebook= do as JupyterLab's commands of those names,
+on the server; in the menu, =N=, =W= and =D=.
+
+** Files emjupy writes
+
+For a notebook on this machine, emjupy keeps a hidden file beside it,
+named after server and notebook -- for =test.ipynb= on =localhost:8888=,
+=.emjupy_localhost_8888__test.ipynb.py=: the notebook's code as one
+Python file for the language server, written when language support
+starts.  Safe to delete, rebuilt when needed; add =.emjupy_*= to a
+project's =.gitignore=.  Nothing else is written there: no lock or
+auto-save file.  =emjupy-shadow-beside-notebook= nil keeps it in a
+temporary directory instead, or =emjupy-shadow-directory= chooses one --
+losing, without a language server beside the kernel, =M-.= into your own
+modules.
+
+For a kernel elsewhere it goes to a temporary directory here, nothing
+written on the remote: =/tmp/emjupy-shadow-USER/= on most systems,
+readable by you alone, as it holds the notebook's code.
+
+A notebook with unsaved edits is also copied to =emjupy-recovery-directory=
+until saved -- see [[*Saving, and not losing work][Saving, and not losing work]].  Those copies are
+readable by you alone; delete them when no longer wanted.
+
+** Exporting to a plain =.py=
 
 =C-c C-x C-e= (=emjupy-export-py=) writes the notebook as Python in
 percent format: =# %%= before each code cell, markdown cells as
@@ -420,7 +416,16 @@ asking.  =emjupy-export-markdown-cells= nil exports code only.  It is not
 the shadow buffer, whose markers carry emjupy's internal cell ids and
 which holds no markdown.
 
-* Which version am I running?
+* Settings
+
+=M-x customize-group RET emjupy= lists the options by subject:
+appearance, editing, kernels, figures, the language server, remote
+servers, and saving.  Those changing only how a notebook looks or is
+exported -- colours, widths, LaTeX, inline figures, exporting markdown --
+may be set per project in =.dir-locals.el= without Emacs asking; those
+running programs or reaching files and hosts ask first.
+
+** Which version am I running?
 
 =M-x emjupy-version= reports the version, where the code was loaded from
 and, in a checkout, the revision; in a notebook buffer, the kernel's
@@ -435,11 +440,3 @@ kernel cwd /home/you/project; language server beside the kernel
 elsewhere, =M-.= will not find your own modules.  See
 [[file:language-server.org][Language server support]].
 
-* Settings
-
-=M-x customize-group RET emjupy= lists the options by subject:
-appearance, editing, kernels, figures, the language server, remote
-servers, and saving.  Those changing only how a notebook looks or is
-exported -- colours, widths, LaTeX, inline figures, exporting markdown --
-may be set per project in =.dir-locals.el= without Emacs asking; those
-running programs or reaching files and hosts ask first.
