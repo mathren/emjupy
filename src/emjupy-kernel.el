@@ -1464,10 +1464,16 @@ Other open notebooks, and their kernels, are untouched."
       ;; Old in-flight requests will never get a reply from the restarted
       ;; kernel process, so drop them rather than leave them pending forever.
       (emjupy--disconnect-kernel nb)
-      (emjupy--http-request "POST" server (format "/api/kernels/%s/restart"
-                                                  kernel-id))
       (message "[emjupy] Kernel %s restarting..." kernel-id)
-      (emjupy-connect-kernel nb kernel-id name))))
+      ;; Not waited for: the server restarts the kernel before answering,
+      ;; half a second and more, and Emacs was held for it.  The mode line
+      ;; says restarting; connected again once it is done.
+      (emjupy--http-request-async
+       "POST" server (format "/api/kernels/%s/restart" kernel-id) nil
+       (lambda (_) (emjupy-connect-kernel nb kernel-id name))
+       (lambda (err)
+         (message "[emjupy] Kernel %s did not restart: %s"
+                  kernel-id (error-message-string err)))))))
 
 (defun emjupy--kernel-or-say (nb)
   "Return NB's kernel, or say how to have one."
