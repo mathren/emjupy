@@ -65,6 +65,14 @@ JupyterLab), or =emjupy-large-output-lines= lines (100, where the Jupyter
 Notebook scrolls) -- is hidden for drawing only, its label saying
 /large/: the file is unchanged, and =C-c C-o= shows it.
 
+=C-c C-i= hides a code cell's code, and its output with it, as Jupyter's
+"collapse input" does: the cell becomes one line -- =▸=, its count, how
+many lines are hidden -- and =C-c C-i= there, or a click on =▸=, shows it
+again.  With a region, it hides every code cell the region touches, or
+shows them if all are hidden.  The
+notebook keeps it hidden when saved, as Jupyter marks it, and hidden
+code is not typed into by mistake.
+
 Edit anywhere while a cell runs: output is drawn only into its own cell's
 box, leaving text typed meanwhile, and point, as they are.
 

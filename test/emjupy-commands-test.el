@@ -892,6 +892,142 @@ takes for the end."
     (emjupy-delete-cell)
     (should (looking-at "next = 2"))))
 
+
+;;;; Hiding a cell's code
+
+(defmacro emjupy-test--hideable (&rest body)
+  "Run BODY in three code cells, the second with output; CELLS bound."
+  (declare (indent 0))
+  `(emjupy-test--with-notebook
+       (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1\nb = 2"
+                                 :exec-count 1
+                                 :metadata (make-hash-table :test 'equal))
+               (make-emjupy-cell :id 2 :type 'code :source "c = 3"
+                                 :exec-count 2
+                                 :outputs (vector (let ((o (make-hash-table
+                                                            :test 'equal)))
+                                                    (puthash "output_type"
+                                                             "stream" o)
+                                                    (puthash "name" "stdout" o)
+                                                    (puthash "text" "3\n" o)
+                                                    o))
+                                 :metadata (make-hash-table :test 'equal))
+               (make-emjupy-cell :id 3 :type 'code :source "d = 4"
+                                 :metadata (make-hash-table :test 'equal)))
+       buf nb
+     (let ((cells (emjupy-notebook-cells nb)))
+       ,@body)))
+
+(defun emjupy-test--hidden-line (cell)
+  "The overlay showing CELL's hidden code, or nil."
+  (let ((ov (emjupy-cell-overlay cell)))
+    (cl-find-if (lambda (o) (overlay-get o 'emjupy-hidden-code))
+                (overlays-in (overlay-start ov) (overlay-end ov)))))
+
+(ert-deftest emjupy-test-hiding-a-cells-code-and-its-output ()
+  "Hidden, a cell is one line in its code's place, marked as Jupyter does;
+its output goes with it; point leaves it."
+  (emjupy-test--hideable
+    (let ((cell (aref cells 1)))
+      (emjupy--goto-cell cell 'beginning)
+      (emjupy-toggle-cell-code)
+      (should (emjupy--cell-source-hidden-p cell))
+      (should (eq (gethash "source_hidden"
+                           (gethash "jupyter" (emjupy-cell-metadata cell)))
+                  t))
+      (let ((line (emjupy-test--hidden-line cell)))
+        (should line)
+        (should (string-match-p "▸ \\[In: 2\\] python, 1 line of code hidden, and its output"
+                                (overlay-get line 'display))))
+      (should-not (overlayp (emjupy-cell-output-ov cell)))
+      ;; on its line still: pressed again, it shows
+      (should (eq (emjupy--cell-at-point) cell)))))
+
+(ert-deftest emjupy-test-the-code-key-toggles ()
+  "C-c C-i on a hidden cell's line shows it, as C-c C-o does output."
+  (emjupy-test--hideable
+    (let ((cell (aref cells 1)))
+      (emjupy--goto-cell cell 'beginning)
+      (emjupy-toggle-cell-code)
+      (should (emjupy--cell-source-hidden-p cell))
+      (emjupy-toggle-cell-code)
+      (should-not (emjupy--cell-source-hidden-p cell))
+      (should-not (emjupy-test--hidden-line cell))
+      (should (overlayp (emjupy-cell-output-ov cell))))))
+
+(ert-deftest emjupy-test-the-code-key-on-a-region ()
+  "Over a region, every code cell it touches is hidden; all hidden, shown.
+Some hidden and some not, all are hidden: not each one turned over."
+  (emjupy-test--hideable
+    (let ((transient-mark-mode t))
+      (cl-flet ((region-over (from to)
+                  (emjupy--goto-cell (aref cells from) 'beginning)
+                  (push-mark (point) t t)
+                  (emjupy--goto-cell (aref cells to) 'end)))
+        (region-over 0 1)
+        (emjupy-toggle-cell-code)
+        (should (emjupy--cell-source-hidden-p (aref cells 0)))
+        (should (emjupy--cell-source-hidden-p (aref cells 1)))
+        (should-not (emjupy--cell-source-hidden-p (aref cells 2)))
+        (should-not (use-region-p))
+        (region-over 0 1)
+        (emjupy-toggle-cell-code)
+        (should-not (emjupy--cell-source-hidden-p (aref cells 0)))
+        (should-not (emjupy--cell-source-hidden-p (aref cells 1)))
+        (emjupy--set-cell-source-hidden (aref cells 1) t)
+        (emjupy--redraw-notebook)
+        (region-over 0 1)
+        (emjupy-toggle-cell-code)
+        (should (emjupy--cell-source-hidden-p (aref cells 0)))
+        (should (emjupy--cell-source-hidden-p (aref cells 1)))))))
+
+(ert-deftest emjupy-test-a-click-shows-hidden-code ()
+  "A click on the marker shows the code, and its output, again."
+  (emjupy-test--hideable
+    (let ((cell (aref cells 1)))
+      (emjupy--goto-cell cell 'beginning)
+      (emjupy-toggle-cell-code)
+      (let ((shown (overlay-get (emjupy-test--hidden-line cell) 'display)))
+        (emjupy--show-code-from-string (cons shown (string-match "▸" shown))
+                                       (current-buffer)))
+      (should-not (emjupy--cell-source-hidden-p cell))
+      (should-not (emjupy-test--hidden-line cell))
+      (should (overlayp (emjupy-cell-output-ov cell))))))
+
+(ert-deftest emjupy-test-hidden-code-is-not-typed-into ()
+  "Typing into hidden code is refused; emjupy's own redrawing is not."
+  (emjupy-test--hideable
+    (let ((cell (aref cells 0)))
+      (emjupy--goto-cell cell 'beginning)
+      (emjupy-toggle-cell-code)
+      (goto-char (overlay-start (emjupy-test--hidden-line cell)))
+      (should-error (insert "x") :type 'user-error)
+      (emjupy--redraw-notebook)
+      (should (emjupy-test--hidden-line cell)))))
+
+(ert-deftest emjupy-test-hidden-cells-in-a-row-leave-no-empty-line ()
+  "Between two hidden cells, nothing to draw: the first's newline is none."
+  (emjupy-test--hideable
+    (dolist (i '(0 1))
+      (emjupy--set-cell-source-hidden (aref cells i) t))
+    (emjupy--redraw-notebook)
+    (let* ((ov (emjupy-cell-overlay (aref cells 0)))
+           (newline (1- (overlay-end ov))))
+      (should (cl-some (lambda (o) (equal (overlay-get o 'display) ""))
+                       (overlays-in newline (1+ newline)))))))
+
+(ert-deftest emjupy-test-a-hidden-cells-line-follows-its-count ()
+  "Run again, a hidden cell's line shows its new count."
+  (emjupy-test--hideable
+    (let ((cell (aref cells 0)))
+      (emjupy--goto-cell cell 'beginning)
+      (emjupy-toggle-cell-code)
+      (setf (emjupy-cell-exec-count cell) 9)
+      (emjupy--redraw-cell-header cell)
+      (should (string-match-p "\\[In: 9\\]"
+                              (overlay-get (emjupy-test--hidden-line cell)
+                                           'display))))))
+
 (provide 'emjupy-commands-test)
 
 ;;; emjupy-commands-test.el ends here

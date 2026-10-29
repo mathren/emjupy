@@ -216,11 +216,12 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
                     (when (overlayp ov)
                       (overlay-put ov 'emjupy-header nil)
                       (overlay-put ov 'before-string
-                                   (emjupy--rule (emjupy--cell-label cell)))
+                                   (emjupy--cell-header cell))
                       ;; A cell with output has no footer of its own: the
                       ;; output box's header doubles as its bottom edge.
                       (overlay-put ov 'after-string
-                                   (if (overlayp out)
+                                   (if (or (overlayp out)
+                                           (emjupy--cell-source-hidden-p cell))
                                        ""
                                      (emjupy--footer-rule))))
                     (when (overlayp out)

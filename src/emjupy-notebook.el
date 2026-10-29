@@ -576,6 +576,7 @@ this buffer."
     ("B" "switch notebook" emjupy-switch-notebook)
     ("X" "export as .py" emjupy-export-py)
     ("O" "outline, beside" emjupy-toc)
+    ("I" "hide or show code" emjupy-toggle-cell-code)
     ("N" "rename" emjupy-rename-notebook)
     ("W" "save as" emjupy-save-notebook-as)
     ("D" "duplicate" emjupy-duplicate-notebook)

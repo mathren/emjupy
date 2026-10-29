@@ -84,6 +84,7 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
     (define-key map (kbd "C-c C-d")     emjupy-debug-map)
     (define-key map (kbd "C-c C-q")     #'emjupy-toc)
+    (define-key map (kbd "C-c C-i")     #'emjupy-toggle-cell-code)
     ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
     (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
     (define-key map (kbd "C-c C-f")     #'emjupy-open-output)

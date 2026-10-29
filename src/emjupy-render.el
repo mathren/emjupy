@@ -245,6 +245,11 @@ buffer's structure; it rebuilds every rule."
                ;; at a hidden position.
                ((and gap-end (< (overlay-end prev) gap-end))
                 (let ((o (emjupy--hang-rules prev anchor rules 'display)))
+                  ;; A cell whose code is hidden, nothing below it to
+                  ;; draw: its newline is none, or an empty line shows.
+                  (when (and (string-empty-p rules)
+                             (overlay-get prev 'emjupy-code-hidden))
+                    (overlay-put o 'display ""))
                   (when ov (overlay-put ov 'emjupy-header-carrier o))))
                ;; Followed at once by another box -- a cell by its output --
                ;; or the last box: the rules hang on its own last line.
@@ -288,7 +293,8 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
 
 (defconst emjupy--box-corner-pairs
   '(("┌" . "┐")   ; top of a box
-    ("├" . "┤"))  ; a shared edge: input box's bottom, output box's top
+    ("├" . "┤")   ; a shared edge: input box's bottom, output box's top
+    ("╶" . "╴"))  ; a cell whose code is hidden: one line, no box
   "Left corner glyph -> matching right corner glyph.")
 
 (defun emjupy--box-header (label &optional corner)
@@ -434,7 +440,9 @@ not enter the undo history.  Where the rules carrying it are known, only
 they change; else every rule is rebuilt."
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
-      (let ((rule (emjupy--rule (emjupy--cell-label cell) "┌")))
+      ;; hidden, its one line shows the change: count, running
+      (when (emjupy--cell-source-hidden-p cell) (emjupy--hide-code-of cell))
+      (let ((rule (emjupy--cell-header cell "┌")))
         (unless (emjupy--rehang-header ov rule)
           (overlay-put ov 'emjupy-header nil)
           (overlay-put ov 'before-string rule)
@@ -598,10 +606,31 @@ the character before it."
 Kept in the cell's own metadata under the key Jupyter uses, so the state
 survives saving and means the same thing to other front ends."
   (or (emjupy-cell-size-hidden cell)
+      ;; its code hidden, its output goes with it
+      (emjupy--cell-source-hidden-p cell)
       (let* ((meta (emjupy-cell-metadata cell))
              (jupyter (and (hash-table-p meta) (gethash "jupyter" meta))))
         (and (hash-table-p jupyter)
              (eq (gethash "outputs_hidden" jupyter) t)))))
+
+(defun emjupy--cell-source-hidden-p (cell)
+  "Return non-nil if CELL's code is hidden, in Jupyter's metadata."
+  (let* ((meta (emjupy-cell-metadata cell))
+         (jupyter (and (hash-table-p meta) (gethash "jupyter" meta))))
+    (and (hash-table-p jupyter)
+         (eq (gethash "source_hidden" jupyter) t))))
+
+(defun emjupy--set-cell-source-hidden (cell hidden)
+  "Mark CELL's code HIDDEN, or not, as Jupyter does."
+  (unless (hash-table-p (emjupy-cell-metadata cell))
+    (setf (emjupy-cell-metadata cell) (make-hash-table :test 'equal)))
+  (let* ((meta (emjupy-cell-metadata cell))
+         (jupyter (or (gethash "jupyter" meta)
+                      (puthash "jupyter" (make-hash-table :test 'equal) meta))))
+    (if hidden
+        (puthash "source_hidden" t jupyter)
+      (remhash "source_hidden" jupyter)
+      (when (zerop (hash-table-count jupyter)) (remhash "jupyter" meta)))))
 
 (defun emjupy--cell-outputs-large-p (cell)
   "Return non-nil if CELL's outputs are large enough to hide on opening.
@@ -644,6 +673,42 @@ streams, plain text, tracebacks -- than `emjupy-large-output-lines'."
     (define-key map [mouse-1] 'emjupy-toggle-output-at-click)
     map)
   "Keymap active on the marker of a collapsed output box.")
+
+(defvar emjupy-hidden-code-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [down-mouse-1] #'ignore)
+    (define-key map [mouse-1] 'emjupy-show-code-at-click)
+    map)
+  "Keymap active on the marker of a cell whose code is hidden.")
+
+(defun emjupy--cell-header (cell &optional corner)
+  "Return CELL's header rule, CORNER its left corner.
+A cell whose code is hidden has none: its code shows as one line instead
+\(`emjupy--hidden-code-line')."
+  (if (emjupy--cell-source-hidden-p cell)
+      ""
+    (emjupy--rule (emjupy--cell-label cell) corner)))
+
+(defun emjupy--hidden-code-line (cell)
+  "Return the one line shown for CELL's hidden code, and its output.
+Its label, how much is hidden, and a marker a click on shows it by --
+drawn with ends of its own, so as not to read as an empty box."
+  (let* ((glyph (copy-sequence "▸"))
+         (lines (1+ (cl-count ?\n (or (emjupy-cell-source cell) ""))))
+         (outputs (length (or (emjupy-cell-outputs cell) []))))
+    (add-text-properties
+     0 (length glyph)
+     (list 'emjupy-toggle-cell (emjupy-cell-id cell)
+           'keymap emjupy-hidden-code-map
+           'mouse-face 'highlight
+           'help-echo "mouse-1: show this cell's code")
+     glyph)
+    (string-remove-suffix
+     "\n" (emjupy--rule (format "%s %s, %d line%s of code hidden%s"
+                               glyph (emjupy--cell-label cell)
+                               lines (if (= lines 1) "" "s")
+                               (if (> outputs 0) ", and its output" ""))
+                       "╶"))))
 
 (defun emjupy--hidden-output-label (cell)
   "Return the label shown on CELL's footer while its output is hidden.
@@ -1085,6 +1150,32 @@ not the notebook."
          (emjupy--rule (emjupy--hidden-output-label cell) 'footer))
         (t (emjupy--footer-rule)))))))
 
+(defun emjupy--hide-code-of (cell)
+  "Show CELL's code as one line if it is hidden; else as it is.
+The code is not removed -- it is the notebook -- but shown as that line,
+in its place: not its last newline, where the next cell's edge hangs."
+  (let ((ov (emjupy-cell-overlay cell)))
+    (when (overlayp ov)
+      (remove-overlays (overlay-start ov) (overlay-end ov)
+                       'emjupy-hidden-code t)
+      (overlay-put ov 'emjupy-code-hidden (emjupy--cell-source-hidden-p cell))
+      (when (emjupy--cell-source-hidden-p cell)
+        (let ((hide (make-overlay (overlay-start ov)
+                                  (max (overlay-start ov) (1- (overlay-end ov)))
+                                  nil t nil)))
+          (overlay-put hide 'display (emjupy--hidden-code-line cell))
+          (overlay-put hide 'evaporate t)
+          (overlay-put hide 'emjupy-hidden-code t)
+          ;; Code out of sight is not to be typed into.
+          (overlay-put hide 'modification-hooks '(emjupy--refuse-hidden-edit))
+          (overlay-put hide 'insert-in-front-hooks
+                       '(emjupy--refuse-hidden-edit)))))))
+
+(defun emjupy--refuse-hidden-edit (&rest _)
+  "Refuse an edit of hidden code, but emjupy's own redrawing."
+  (unless inhibit-read-only
+    (user-error "This cell's code is hidden: click its marker to show it")))
+
 (defun emjupy--draw-cell (cell)
   "Render CELL at point using overlays for boundary boxes and live outputs."
   (let* ((type (emjupy-cell-type cell))
@@ -1117,12 +1208,14 @@ not the notebook."
     (let* ((ov (make-overlay src-start (point)))
            ;; The rules carry the cell background too, so the outline reads
            ;; as the edge of the paper rather than floating on the canvas.
-           (header (emjupy--rule (emjupy--cell-label cell)))
+           (header (emjupy--cell-header cell))
            ;; When output follows, its header doubles as this box's bottom edge.
            ;; Hidden output is not drawn -- it stays in the cell -- and the
            ;; footer says so.
            (hidden (and has-outputs (emjupy--cell-outputs-hidden-p cell)))
            (footer (cond
+                    ;; its code hidden, the header line is all there is
+                    ((emjupy--cell-source-hidden-p cell) "")
                     (hidden (emjupy--rule
                              (emjupy--hidden-output-label cell) 'footer))
                     (has-outputs "")
@@ -1133,7 +1226,8 @@ not the notebook."
       (overlay-put ov 'after-string footer)
       ;; No face: source cells keep the buffer's normal background, and are
       ;; marked out by their rules alone.
-      (setf (emjupy-cell-overlay cell) ov))
+      (setf (emjupy-cell-overlay cell) ov)
+      (emjupy--hide-code-of cell))
 
     ;; 3. Output Box Overlay
     (when (and has-outputs (not (emjupy--cell-outputs-hidden-p cell)))

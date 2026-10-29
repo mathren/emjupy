@@ -833,6 +833,64 @@ EVENT is the mouse event."
      (posn-string posn)
      (window-buffer (posn-window posn)))))
 
+(defun emjupy-toggle-cell-code ()
+  "Hide the code of the cell at point, and its output; or show it again.
+With an active region, every code cell it touches: hidden, unless all
+are already, when they are shown.  A hidden cell is one line in its
+place, its marker a click on shows it by.  Kept in the notebook, as
+Jupyter's mark, for JupyterLab too."
+  (interactive)
+  (let* ((cells (if (use-region-p)
+                    (emjupy--code-cells-between (region-beginning)
+                                                (region-end))
+                  (let ((cell (emjupy--cell-at-point-including-output)))
+                    (unless (and cell (eq (emjupy-cell-type cell) 'code))
+                      (user-error "Point is not in a code cell"))
+                    (list cell))))
+         (hide (cl-notevery #'emjupy--cell-source-hidden-p cells)))
+    (unless cells (user-error "No code cell in the region"))
+    (dolist (cell cells) (emjupy--set-cell-source-hidden cell hide))
+    (unless (emjupy--redraw-cells-in-place cells cells)
+      (emjupy--redraw-notebook (car cells)))
+    (when (use-region-p) (deactivate-mark))
+    ;; On the first cell's line, hidden or shown: pressed again, it undoes.
+    (emjupy--goto-cell (car cells) 'beginning)))
+
+(defun emjupy--code-cells-between (start end)
+  "The code cells whose boxes START to END touch, in order."
+  (cl-loop for cell across (emjupy-notebook-cells (emjupy--notebook))
+           for ov = (emjupy-cell-overlay cell)
+           when (and (eq (emjupy-cell-type cell) 'code) (overlayp ov)
+                     (< (overlay-start ov) end) (> (overlay-end ov) start))
+           collect cell))
+
+(defun emjupy--redraw-shown-or-hidden (cell)
+  "Redraw CELL, its code or output now shown or hidden."
+  (unless (emjupy--redraw-cells-in-place (list cell) (list cell))
+    (emjupy--redraw-notebook cell)))
+
+(defun emjupy--show-code-from-string (pair buffer)
+  "Show the code of the cell named by PAIR, a (STRING . INDEX), in BUFFER.
+Apart from the mouse event, to be tested, as for an output's marker."
+  (let ((id (and (consp pair)
+                 (get-text-property (cdr pair) 'emjupy-toggle-cell
+                                    (car pair)))))
+    (when (and id (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (let ((cell (emjupy--cell-by-id id)))
+          (when cell
+            (emjupy--set-cell-source-hidden cell nil)
+            (emjupy--redraw-shown-or-hidden cell)
+            (emjupy--goto-cell cell 'beginning)))))))
+
+(defun emjupy-show-code-at-click (event)
+  "Show the code whose hidden cell's marker was clicked.
+EVENT is the mouse event."
+  (interactive "e")
+  (let ((posn (event-start event)))
+    (emjupy--show-code-from-string (posn-string posn)
+                                   (window-buffer (posn-window posn)))))
+
 ;;;; In a notebook buffer
 
 (defun emjupy-commands-enable ()
