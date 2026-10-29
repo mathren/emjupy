@@ -310,6 +310,21 @@ the user's own -- not a guessable name in a shared /tmp."
     (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'" a))
     (should-not (equal a b))))
 
+
+(ert-deftest emjupy-test-an-environment-path-is-on-the-notebooks-machine ()
+  "A venv named by an absolute path, for a notebook opened through TRAMP,
+is looked for on that notebook's machine, not this one.  Looked for
+here, a venv there was not found -- and one at the same path here was,
+wrongly."
+  (let ((default-directory "/ssh:somehost:/home/u/proj/"))
+    (should (equal (emjupy--environment-directory "/home/u/envs/sci" t)
+                   "/ssh:somehost:/home/u/envs/sci"))
+    (should (equal (emjupy--environment-directory "~/envs/sci" t)
+                   "/ssh:somehost:~/envs/sci")))
+  (let ((default-directory "/tmp/proj/"))
+    (should (equal (emjupy--environment-directory "envs/sci" nil)
+                   "/tmp/proj/envs/sci"))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

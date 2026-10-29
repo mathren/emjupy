@@ -94,6 +94,15 @@ Offered first: the environment named in an environment.yml beside it."
      (format-prompt "Environment (a conda name, or a venv's directory; empty for the PATH's)" named)
      (mapcar #'car envs) nil nil nil 'emjupy--environment-history named)))
 
+(defun emjupy--environment-directory (env remote)
+  "The directory ENV names, on the machine of `default-directory'.
+REMOTE when that machine is not this one: an absolute name, or one from
+the home directory, is then that machine's, not this one's -- expanded
+here, a venv there was looked for on this machine, and not found."
+  (if (and remote (file-name-absolute-p env))
+      (concat (file-remote-p default-directory) env)
+    (expand-file-name env)))
+
 (defun emjupy--environment-jupyter (env &optional where)
   "Return the `jupyter' program of the environment ENV.
 ENV is a conda environment's name, an environment's directory -- a venv
@@ -113,8 +122,8 @@ for on the machine of WHERE, a directory, and named as it names it."
         (cond (found (funcall here found))
               (remote (user-error "No `jupyter' on the remote PATH -- conda or modules often set it up only in a login shell: name the environment"))
               (t (user-error "No `jupyter' on the PATH: name an environment that has it")))))
-     ((file-directory-p (expand-file-name env))
-      (or (funcall in-dir (expand-file-name env))
+     ((file-directory-p (emjupy--environment-directory env remote))
+      (or (funcall in-dir (emjupy--environment-directory env remote))
           (user-error "No jupyter in %s: install jupyter-server there" env)))
      (t
       (let ((dir (cdr (assoc env (emjupy--conda-environments where)))))
