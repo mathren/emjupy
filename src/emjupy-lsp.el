@@ -231,20 +231,45 @@ given -- dropped every error unseen.  Recorded too, in
 That is `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
 
 (defun emjupy--server-offers-lsp-p (server)
-  "Return non-nil if SERVER has `emjupy-lsp-server', through jupyter-lsp.
-It runs beside the kernel, in its environment: the one to use.  One
-round trip, the first time; remembered for the server after."
-  (let ((key (and server (emjupy-server-base-url server))))
-    ;; no server, nothing offered
-    (when (and key (eq (gethash key emjupy--lsp-offered 'unknown) 'unknown))
-      (let* ((status (ignore-errors
-                       (emjupy--http-request "GET" server "/lsp/status")))
-             (sessions (and (hash-table-p status) (gethash "sessions" status))))
-        (puthash key (if (and (hash-table-p sessions)
-                              (gethash emjupy-lsp-server sessions))
-                         'yes 'no)
-                 emjupy--lsp-offered)))
-    (and key (eq (gethash key emjupy--lsp-offered) 'yes))))
+  "Return what SERVER is known to say of `emjupy-lsp-server' via jupyter-lsp.
+`yes', `no', or nil when it has not said: see `emjupy--ask-server-lsp'."
+  (and server (gethash (emjupy-server-base-url server) emjupy--lsp-offered)))
+
+(defvar emjupy--lsp-asking (make-hash-table :test 'equal)
+  "Servers, by address, being asked of their language server: attempts so far.")
+
+(defun emjupy--ask-server-lsp (server then)
+  "Ask SERVER, without waiting, whether it has `emjupy-lsp-server'; THEN.
+THEN is called with no argument once it has answered.  An answer is
+remembered: offered, not offered, or 404 -- no jupyter-lsp.  A failure,
+the network's, a timeout -- jupyter-lsp finds its servers on the first
+asking, which can be slow -- is no answer: asked again, three times, and
+only then taken as none, saying so.  Taken as none at once, a slow first
+answer left a notebook on the fallback for good."
+  (let* ((key (emjupy-server-base-url server))
+         (tries (gethash key emjupy--lsp-asking 0)))
+    (puthash key (1+ tries) emjupy--lsp-asking)
+    (emjupy--http-request-async
+     "GET" server "/lsp/status" nil
+     (lambda (status)
+       (remhash key emjupy--lsp-asking)
+       (let ((sessions (and (hash-table-p status) (gethash "sessions" status))))
+         (puthash key (if (and (hash-table-p sessions)
+                               (gethash emjupy-lsp-server sessions))
+                          'yes 'no)
+                  emjupy--lsp-offered))
+       (funcall then))
+     (lambda (err)
+       (cond ((string-match-p "HTTP 404" (format "%S" err))
+              (remhash key emjupy--lsp-asking)
+              (puthash key 'no emjupy--lsp-offered)
+              (funcall then))
+             ((< tries 2)
+              (run-with-timer 5 nil #'emjupy--ask-server-lsp server then))
+             (t
+              (remhash key emjupy--lsp-asking)
+              (puthash key 'unanswered emjupy--lsp-offered)
+              (funcall then)))))))
 
 (defun emjupy--lsp-explain-failure (server)
   "Say why SERVER has no language server, distinguishing the three causes.

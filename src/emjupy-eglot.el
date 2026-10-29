@@ -140,43 +140,66 @@ hand.  Reports what it found rather than failing quietly."
       ;; language server when it offers one.
       (with-current-buffer (emjupy-notebook-buffer nb)
         (unless emjupy--lsp-route
-          (cond ((not (bound-and-true-p emjupy-lsp-enabled))
-                 (emjupy--lsp-fall-back nb "emjupy-lsp-enabled is off"))
-                ((emjupy--server-offers-lsp-p (emjupy-notebook-server nb))
-                 (setq emjupy--lsp-route 'socket))
-                (t (emjupy--lsp-fall-back
-                    nb (format "the server offers no %s through jupyter-lsp"
-                               emjupy-lsp-server))))))
-      (let* ((want-socket (and (eq (buffer-local-value
-                                    'emjupy--lsp-route
-                                    (emjupy-notebook-buffer nb))
-                                   'socket)
-                               (emjupy-notebook-kernel-cwd nb)))
-             (emjupy--suppress-plain-eglot want-socket)
-             ;; Keep it local when the socket is what will read it -- which
-             ;; is to say, when nothing will read it.
-             (emjupy--force-local-shadow want-socket)
-             (buffer (condition-case err
-                         (emjupy--ensure-shadow-buffer nb)
-                       (file-error
-                        (emjupy--shadow-block (error-message-string err))
-                        nil))))
-        (when (buffer-live-p buffer)
-          (or (and want-socket
-                   (emjupy--claim-shadow-for-websocket buffer)
-                   (emjupy--eglot-connect nb buffer))
-              (progn
-                ;; Offered, but not reached: the fallback, said.
-                (when want-socket
-                  (emjupy--lsp-fall-back
-                   nb (format "its %s did not connect%s" emjupy-lsp-server
-                              (if (bound-and-true-p emjupy--lsp-last-failure)
-                                  (format " (%s)" emjupy--lsp-last-failure)
-                                "")))
-                  (with-current-buffer buffer
-                    (emjupy--attach-plain-eglot
-                     nb (emjupy-notebook-buffer nb))))
-                buffer)))))))
+          (pcase (and (bound-and-true-p emjupy-lsp-enabled)
+                      (emjupy--server-offers-lsp-p (emjupy-notebook-server nb)))
+            ('yes (setq emjupy--lsp-route 'socket))
+            ('no (emjupy--lsp-fall-back
+                  nb (format "the server offers no %s through jupyter-lsp"
+                             emjupy-lsp-server)))
+            ('unanswered (emjupy--lsp-fall-back
+                          nb "the server did not say whether it has one"))
+            ((guard (not (bound-and-true-p emjupy-lsp-enabled)))
+             (emjupy--lsp-fall-back nb "emjupy-lsp-enabled is off"))
+            ((guard (null (emjupy-notebook-server nb)))
+             (emjupy--lsp-fall-back nb "the notebook has no server"))
+            ;; Not known: asked, without waiting; this is done again once
+            ;; it has answered.  Nothing attaches meanwhile.
+            (_ (emjupy--ask-server-lsp
+                (emjupy-notebook-server nb)
+                (lambda () (emjupy-start-language-support nb)))))))
+      (when (buffer-local-value 'emjupy--lsp-route (emjupy-notebook-buffer nb))
+        (let* ((want-socket (and (eq (buffer-local-value
+                                      'emjupy--lsp-route
+                                      (emjupy-notebook-buffer nb))
+                                     'socket)
+                                 (emjupy-notebook-kernel-cwd nb)))
+               (emjupy--suppress-plain-eglot want-socket)
+               ;; Keep it local when the socket is what will read it -- which
+               ;; is to say, when nothing will read it.
+               (emjupy--force-local-shadow want-socket)
+               (buffer (condition-case err
+                           (emjupy--ensure-shadow-buffer nb)
+                         (file-error
+                          (emjupy--shadow-block (error-message-string err))
+                          nil))))
+          (when (buffer-live-p buffer)
+            (or (and want-socket
+                     ;; Attached already -- started again as the kernel
+                     ;; came back -- is no failure: taken for one, it fell
+                     ;; back, and lost the environment's server.
+                     (emjupy--socket-attached-p buffer)
+                     buffer)
+                (and want-socket
+                     (emjupy--claim-shadow-for-websocket buffer)
+                     (emjupy--eglot-connect nb buffer))
+                (progn
+                  ;; Offered, but not reached: the fallback, said.
+                  (when want-socket
+                    (emjupy--lsp-fall-back
+                     nb (format "its %s did not connect%s" emjupy-lsp-server
+                                (if (bound-and-true-p emjupy--lsp-last-failure)
+                                    (format " (%s)" emjupy--lsp-last-failure)
+                                  "")))
+                    (with-current-buffer buffer
+                      (emjupy--attach-plain-eglot
+                       nb (emjupy-notebook-buffer nb))))
+                  buffer))))))))
+
+(defun emjupy--socket-attached-p (buffer)
+  "Return non-nil if BUFFER has emjupy's WebSocket Eglot attached."
+  (with-current-buffer buffer
+    (let ((server (eglot-current-server)))
+      (and server (object-of-class-p server 'emjupy-eglot-server)))))
 
 (defun emjupy--claim-shadow-for-websocket (buffer)
   "Return non-nil if BUFFER is free for a WebSocket server to attach to.

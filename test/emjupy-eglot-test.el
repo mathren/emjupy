@@ -919,16 +919,18 @@ SAID collects messages; ATTACHED is set when plain Eglot attaches."
                                                          :source "x = 1"))
        buf nb
      (let ((said nil) (attached nil) (emjupy-language-support t)
-           (emjupy--lsp-offered (make-hash-table :test 'equal)))
+           (emjupy--lsp-offered (make-hash-table :test 'equal))
+           (emjupy--lsp-asking (make-hash-table :test 'equal)))
        (setf (emjupy-notebook-server nb)
              (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
-       (cl-letf (((symbol-function 'emjupy--http-request)
-                  (lambda (&rest _)
-                    (emjupy--json-object
-                     "sessions" (if ,offers
-                                    (emjupy--json-object "pylsp"
-                                                         (make-hash-table))
-                                  (make-hash-table)))))
+       (cl-letf (((symbol-function 'emjupy--http-request-async)
+                  (lambda (_m _s _p _b on-done _on-fail)
+                    (funcall on-done
+                             (emjupy--json-object
+                              "sessions" (if ,offers
+                                             (emjupy--json-object
+                                              "pylsp" (make-hash-table))
+                                           (make-hash-table))))))
                  ((symbol-function 'emjupy--ensure-shadow-buffer)
                   (lambda (_nb) (current-buffer)))
                  ((symbol-function 'emjupy--eglot-connect)
@@ -972,6 +974,45 @@ the mode line for as long as it lasts."
     (should-not emjupy--lsp-route)
     (emjupy--attach-plain-eglot nb buf)
     (should-not attached)))
+
+
+(ert-deftest emjupy-test-a-server-not-answering-is-asked-again ()
+  "A failed asking is no answer: asked again, the route left undecided; only
+after three is the fallback taken, saying so.  Taken as none at once, a
+slow first answer from jupyter-lsp left a notebook on it for good."
+  (emjupy-test--routing t
+    (let ((asked 0) (timers 0))
+      (cl-letf (((symbol-function 'emjupy--http-request-async)
+                 (lambda (_m _s _p _b _on-done on-fail)
+                   (cl-incf asked)
+                   (funcall on-fail '(emjupy-http-error "Network error"))))
+                ((symbol-function 'run-with-timer)
+                 (lambda (_secs _rep fn &rest args)
+                   (cl-incf timers) (apply fn args))))
+        (emjupy-start-language-support nb))
+      (should (= asked 3))
+      (should (= timers 2))
+      (should (eq emjupy--lsp-route 'local))
+      (should (seq-some (lambda (m) (string-match-p "did not say" m)) said)))))
+
+
+(ert-deftest emjupy-test-started-again-on-the-socket-is-no-fallback ()
+  "Language support started again, its WebSocket server attached, keeps it.
+Started again as a kernel came back, the server already attached was
+taken for one that failed to connect: the notebook fell back to a server
+here, and lost its environment's."
+  (emjupy-test--routing t
+    (let ((connects 0))
+      (cl-letf (((symbol-function 'emjupy--socket-attached-p) (lambda (_b) t))
+                ((symbol-function 'emjupy--eglot-connect)
+                 (lambda (&rest _) (cl-incf connects) nil)))
+        (setf (emjupy-notebook-kernel-cwd nb) "/tmp/")
+        (emjupy-start-language-support nb)
+        (emjupy-start-language-support nb))
+      (should (eq emjupy--lsp-route 'socket))
+      (should (= connects 0))
+      (should-not attached)
+      (should-not (seq-some (lambda (m) (string-match-p "FALLBACK" m)) said)))))
 
 (provide 'emjupy-eglot-test)
 
