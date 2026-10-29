@@ -338,8 +338,7 @@ A cell's output hidden for its size counts as hidden, and shown is shown."
     (dolist (cell cells)
       (unless hide (setf (emjupy-cell-size-hidden cell) nil))
       (emjupy--set-cell-outputs-hidden cell hide))
-    (unless (emjupy--redraw-cells-in-place cells cells)
-      (emjupy--redraw-notebook (car cells)))
+    (emjupy--redraw-each cells)
     (deactivate-mark)))
 
 (defun emjupy--cell-by-id (id)
@@ -865,11 +864,21 @@ Jupyter's mark, for JupyterLab too."
          (hide (cl-notevery #'emjupy--cell-source-hidden-p cells)))
     (unless cells (user-error "No code cell in the region"))
     (dolist (cell cells) (emjupy--set-cell-source-hidden cell hide))
-    (unless (emjupy--redraw-cells-in-place cells cells)
-      (emjupy--redraw-notebook (car cells)))
+    (emjupy--redraw-each cells)
     (when (use-region-p) (deactivate-mark))
     ;; On the first cell's line, hidden or shown: pressed again, it undoes.
     (emjupy--goto-cell (car cells) 'beginning)))
+
+(defun emjupy--redraw-each (cells)
+  "Redraw CELLS, each in its own place, the rules rebuilt once.
+Not together: `emjupy--redraw-cells-in-place' takes adjacent cells, and
+a region's cells acted on need not be -- a markdown cell, or one without
+output, between them would be drawn over."
+  (emjupy--with-rules-once
+    (unless (cl-every (lambda (cell)
+                        (emjupy--redraw-cells-in-place (list cell) (list cell)))
+                      cells)
+      (emjupy--redraw-notebook (car cells)))))
 
 (defun emjupy--cells-between (start end)
   "The cells START to END touch, in order: their code, or their output."

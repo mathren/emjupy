@@ -1079,6 +1079,44 @@ code is hidden, is left alone; a region over output alone counts."
           (emjupy-toggle-cell-output)
           (should (hidden 2)))))))
 
+
+(ert-deftest emjupy-test-a-region-over-cells-left-alone-keeps-them ()
+  "A region over code, markdown, code: the markdown cell, not acted on,
+is kept whole -- for C-c C-i, and for C-c C-o over a cell without output.
+Redrawn together, the cells acted on drew over the one between."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1"
+                                  :outputs (vector (stream "1\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 2 :type 'markdown :source "# Between"
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 3 :type 'code :source "b = 2"
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 4 :type 'code :source "c = 3"
+                                  :outputs (vector (stream "3\n"))
+                                  :metadata (make-hash-table :test 'equal)))
+        buf nb
+      (let ((cells (emjupy-notebook-cells nb)) (transient-mark-mode t))
+        (cl-flet ((whole ()
+                    (emjupy--sync-all-cells)
+                    (should-not (emjupy--check-invariants))
+                    (should (equal (emjupy-cell-source (aref cells 1))
+                                   "# Between"))))
+          (dolist (command '(emjupy-toggle-cell-code
+                             emjupy-toggle-cell-code
+                             emjupy-toggle-cell-output
+                             emjupy-toggle-cell-output))
+            (goto-char (point-min))
+            (push-mark (point) t t)
+            (goto-char (point-max))
+            (funcall command)
+            (whole)))))))
+
 (provide 'emjupy-commands-test)
 
 ;;; emjupy-commands-test.el ends here
