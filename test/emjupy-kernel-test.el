@@ -1494,22 +1494,17 @@ a notebook run whole was read once per cell: 0.8 s at 500 cells."
     (should (= (calls 'sync) 1))
     (should (= (calls 'whole) 0))))
 
-(ert-deftest emjupy-test-the-kernel-is-told-its-width-once ()
-  "The width is sent once to a connection, not again when the same: it
-queued code before a first cell's.  A new connection is told afresh."
+(ert-deftest emjupy-test-the-kernel-is-told-its-width-every-time ()
+  "The width is sent each time, the same width included.
+Spared, a fresh kernel's first output could be a user's cell's, and was
+lost: the first a new connection hears may come too late for it."
   (emjupy-test--running
     (let ((told 0))
       (cl-letf (((symbol-function 'emjupy--kernel-eval)
                  (lambda (&rest _) (cl-incf told))))
         (emjupy--tell-kernel-width nb 80)
         (emjupy--tell-kernel-width nb 80)
-        (should (= told 1))
-        (emjupy--tell-kernel-width nb 90)
-        (should (= told 2))
-        (setq emjupy--kernel-width-told nil)
-        (emjupy--tell-kernel-width nb 90)
-        (should (= told 3))))))
-
+        (should (= told 2))))))
 
 (ert-deftest emjupy-test-emjupys-own-code-is-no-run-of-the-users ()
   "emjupy's own code on the kernel counts nothing and stops nothing.

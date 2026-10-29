@@ -945,9 +945,12 @@ is still folded where the box ends."
     (when (and kernel (emjupy--ws-live-p kernel) (buffer-live-p buf))
       (with-current-buffer buf
         (let ((columns (or width (emjupy--box-width))))
-          ;; Told already, on this connection: not again.
-          (unless (equal emjupy--kernel-width-told
-                         (cons (emjupy-kernel-id kernel) columns))
+          ;; Told every time, the same width included: what a new kernel
+          ;; runs first may publish its output before this connection
+          ;; hears it.  This line, whose output no one reads, takes that
+          ;; place; spared, a user's first cell lost its output.  It goes
+          ;; with the cell: no round trip.
+          (progn
             (emjupy--kernel-eval
              kernel
              (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
