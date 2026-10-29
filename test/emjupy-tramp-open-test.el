@@ -325,6 +325,39 @@ wrongly."
     (should (equal (emjupy--environment-directory "envs/sci" nil)
                    "/tmp/proj/envs/sci"))))
 
+
+(ert-deftest emjupy-test-a-server-already-reached-is-used-again ()
+  "Opening a notebook, a server this Emacs reaches is used before asking
+the machine -- on its machine, in its environment, serving the folder,
+and answering.  Asking runs jupyter server list there: seconds of Python
+starting, for a server opened a moment ago."
+  (let* ((server (make-emjupy-server :base-url "127.0.0.1:5000" :token "tk"
+                                     :files-root "/ssh:h:/home/u/proj"))
+         (emjupy--remote-tunnels
+          (list (list :route '(:host "h") :port 5000 :remote-port 8888
+                      :server server :jupyter "/home/u/envs/a/bin/jupyter")))
+         (answers t))
+    (cl-letf (((symbol-function 'emjupy--server-reachable-p)
+               (lambda (_s) answers)))
+      (should (equal (emjupy--known-remote-server
+                      "/ssh:h:/home/u/proj/sub/" "/home/u/envs/a/bin/jupyter"
+                      '(:host "h"))
+                     '(:port 8888 :token "tk" :root_dir "/home/u/proj")))
+      ;; another environment, machine or folder; or not answering: asked
+      (should-not (emjupy--known-remote-server
+                   "/ssh:h:/home/u/proj/"
+                   "/home/u/envs/b/bin/jupyter" '(:host "h")))
+      (should-not (emjupy--known-remote-server
+                   "/ssh:h:/home/u/proj/"
+                   "/home/u/envs/a/bin/jupyter" '(:host "g")))
+      (should-not (emjupy--known-remote-server
+                   "/ssh:h:/home/u/other/"
+                   "/home/u/envs/a/bin/jupyter" '(:host "h")))
+      (setq answers nil)
+      (should-not (emjupy--known-remote-server
+                   "/ssh:h:/home/u/proj/"
+                   "/home/u/envs/a/bin/jupyter" '(:host "h"))))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

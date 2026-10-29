@@ -449,19 +449,44 @@ The server itself, on the other machine, keeps running."
 
 ;;;; Opening the notebook
 
+(defun emjupy--known-remote-server (dir jupyter route)
+  "Return a server this Emacs reaches, on ROUTE's machine, serving DIR.
+In JUPYTER's environment, its root DIR or a folder above it, and
+answering, through its tunnel: as `emjupy--remote-server-for' returns
+one.  Asking the machine, `jupyter server list' starts a Python and
+imports Jupyter -- seconds, for a server opened a moment ago."
+  (cl-loop for tn in emjupy--remote-tunnels
+           for server = (plist-get tn :server)
+           for root = (and server (emjupy-server-files-root server))
+           when (and root
+                     (equal (plist-get tn :jupyter) jupyter)
+                     (equal (plist-get (plist-get tn :route) :host)
+                            (plist-get route :host))
+                     (string-prefix-p (file-name-as-directory root)
+                                      (file-name-as-directory dir))
+                     (emjupy--server-reachable-p server))
+           return (list :port (plist-get tn :remote-port)
+                        :token (emjupy-server-token server)
+                        :root_dir (directory-file-name
+                                   (or (file-remote-p root 'localname) root)))))
+
 (defun emjupy--remote-server (dir jupyter route)
   "Return the Jupyter server serving DIR on its machine, started if need be.
 One already serving DIR, or a folder above it, is used; otherwise JUPYTER
 starts one.  ROUTE names the machine, for the messages."
   (let* ((host (plist-get route :host))
-         (_ (message "[emjupy] Looking for a Jupyter server on %s..." host))
-         (listed (condition-case nil
+         (known (emjupy--known-remote-server dir jupyter route))
+         (_ (unless known
+              (message "[emjupy] Looking for a Jupyter server on %s..." host)))
+         (listed (and (not known)
+                      (condition-case nil
                      (emjupy--remote-shell
                       dir (format "%s server list --json"
                                   (shell-quote-argument jupyter)))
-                   (file-error "")))
-         (found (emjupy--remote-server-for listed (file-remote-p dir
-                                                                 'localname))))
+                   (file-error ""))))
+         (found (or known
+                    (emjupy--remote-server-for
+                     listed (file-remote-p dir 'localname)))))
     (if found
         (progn (message "[emjupy] Using the Jupyter server already serving %s on %s"
                         (plist-get found :root_dir) host)
@@ -488,7 +513,8 @@ and opens the notebook on it.  Return the notebook\\='s buffer."
     (let ((tunnel (cl-find local-port emjupy--remote-tunnels
                            :key (lambda (s) (plist-get s :port)))))
       (setq emjupy--remote-tunnels
-            (cons (plist-put tunnel :server server)
+            (cons (plist-put (plist-put tunnel :server server)
+                             :jupyter jupyter)
                   (delq tunnel emjupy--remote-tunnels))))
     (setf (emjupy-server-files-root server) (concat prefix root))
     (while (and (< (float-time) deadline)
