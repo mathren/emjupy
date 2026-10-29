@@ -1369,6 +1369,32 @@ then clearing, clears; each asks first."
       (should (equal asked '("DELETE" "/api/kernels/k1")))
       (should-not (emjupy-notebook-kernel nb)))))
 
+
+(ert-deftest emjupy-test-a-disconnect-stops-reconnecting ()
+  "Closing a kernel's connection on purpose -- a restart, a shutdown --
+stops a reconnecting an earlier drop began, and releases the cells held
+for it.  Going on, the reconnecting replaced the connection made next,
+and the mode line said reconnecting."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf nb
+    (let ((cell (aref (emjupy-notebook-cells nb) 0)))
+      (setf (emjupy-notebook-kernel nb)
+            (make-emjupy-kernel :id "k" :notebook nb
+                                :pending (make-hash-table :test 'equal)))
+      (setq emjupy--reconnect-timer (run-at-time 3600 nil #'ignore))
+      (emjupy--mark-running cell)
+      (setq emjupy--runs-waiting (list cell))
+      (unwind-protect
+          (progn
+            (emjupy--disconnect-kernel nb)
+            (should-not emjupy--reconnect-timer)
+            (should-not emjupy--runs-waiting)
+            (should-not (emjupy--cell-running-p cell)))
+        (when (timerp emjupy--reconnect-timer)
+          (cancel-timer emjupy--reconnect-timer))
+        (emjupy--stop-spinner)))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

@@ -865,7 +865,18 @@ attaching two notebooks to one kernel makes them share state."
       (websocket-close (emjupy-kernel-ws kernel)))
     (when (emjupy-kernel-pending kernel)
       (clrhash (emjupy-kernel-pending kernel)))
-    (setf (emjupy-kernel-ws kernel) nil)))
+    (setf (emjupy-kernel-ws kernel) nil))
+  ;; Nor is a reconnecting begun by an earlier drop to go on: it would
+  ;; replace the connection made next, requests in flight on this one.
+  ;; Cells held for it run no more, as Jupyter's queue on a restart.
+  (let ((buf (emjupy-notebook-buffer notebook)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (timerp emjupy--reconnect-timer)
+          (cancel-timer emjupy--reconnect-timer))
+        (setq emjupy--reconnect-timer nil)
+        (dolist (cell emjupy--runs-waiting) (emjupy--mark-done cell buf))
+        (setq emjupy--runs-waiting nil)))))
 
 ;;;; The connection
 
