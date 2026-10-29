@@ -1221,9 +1221,15 @@ The timer calling this stops once no cell runs anywhere."
   ;; A markdown cell has nothing to run.  Jupyter treats running one as
   ;; rendering it, and sending its prose to Python produces a syntax error
   ;; from text that was never code.
+  (when (use-region-p)
+    (emjupy--run-region)
+    (cl-return-from emjupy-execute-cell-at-point nil))
   (let ((here (emjupy--cell-at-point)))
     (when (and here (eq (emjupy-cell-type here) 'markdown))
       (emjupy--redraw-markdown-cell here)
+      (cl-return-from emjupy-execute-cell-at-point here))
+    ;; A raw cell is not run, as in Jupyter: it is for other tools.
+    (when (and here (eq (emjupy-cell-type here) 'raw))
       (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
     ;; Reconnecting after a dropped connection: the kernel is there, and the
@@ -1289,7 +1295,7 @@ The timer calling this stops once no cell runs anywhere."
         ;; cells that were never run: an empty box and no execution count.
         (emjupy--mark-running cell)))))
 
-(defun emjupy-execute-cell-and-goto-next (&optional n)
+(cl-defun emjupy-execute-cell-and-goto-next (&optional n)
   "Execute the cell at point, then move to the start of the next cell.
 With a numeric prefix N, do so N times: \\[universal-argument] 5
 \\[emjupy-execute-cell-and-goto-next] runs five cells.
@@ -1303,6 +1309,9 @@ Point is taken from the cell list rather than by walking the buffer: the
 executed cell may still be redrawing as its output arrives, and
 stepping over overlays mid-flight lands in the output box."
   (interactive "p")
+  (when (use-region-p)
+    (emjupy--run-region)
+    (cl-return-from emjupy-execute-cell-and-goto-next nil))
   (catch 'end
     (dotimes (i (max 1 (or n 1)))
       (let* ((cell (emjupy--cell-at-point)))
@@ -1327,6 +1336,14 @@ Point stays where it was."
       (unless (eq (emjupy-cell-type cell) 'raw)
         (emjupy--goto-cell cell 'beginning)
         (emjupy-execute-cell-at-point)))))
+
+(defun emjupy--run-region ()
+  "Run the cells the region touches, in order: Jupyter's run selected cells.
+The region goes first: the cells' runs, each from its own place, are of
+one cell each."
+  (let ((cells (emjupy--cells-between (region-beginning) (region-end))))
+    (deactivate-mark)
+    (emjupy--run-cells cells)))
 
 (defun emjupy-run-all-cells ()
   "Run every cell of the notebook, top to bottom, as JupyterLab's Run All."
@@ -1390,6 +1407,11 @@ Other open notebooks, and their kernels, are untouched."
              (format "Restart the kernel for %s -- all variables will be lost?"
                      (emjupy-notebook-path nb)))
       (user-error "Kernel left running"))
+    (emjupy--restart-kernel-1 nb)))
+
+(defun emjupy--restart-kernel-1 (nb)
+  "Restart NB's kernel and reconnect its websocket; nothing asked."
+  (let ((kernel (emjupy-notebook-kernel nb)))
     (let ((kernel-id (emjupy-kernel-id kernel))
           (server (emjupy-notebook-server nb))
           (name (emjupy-kernel-name kernel)))
@@ -1400,6 +1422,65 @@ Other open notebooks, and their kernels, are untouched."
                                                   kernel-id))
       (message "[emjupy] Kernel %s restarting..." kernel-id)
       (emjupy-connect-kernel nb kernel-id name))))
+
+(defun emjupy--kernel-or-say (nb)
+  "Return NB's kernel, or say how to have one."
+  (let ((kernel (emjupy-notebook-kernel nb)))
+    (unless (and kernel (emjupy-kernel-id kernel))
+      (user-error "This notebook has no kernel! Use %s to select or start one"
+                  (substitute-command-keys
+                   "\\[emjupy-connect-kernel-interactive]")))
+    kernel))
+
+(defun emjupy--await-connection (nb)
+  "Wait, at most 30 s, for NB's kernel to be connected; say if not."
+  (let ((deadline (+ (float-time) 30)))
+    (while (and (not (emjupy--ws-live-p (emjupy-notebook-kernel nb)))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.1))
+    (unless (emjupy--ws-live-p (emjupy-notebook-kernel nb))
+      (user-error "The kernel restarted, but is not connected yet"))))
+
+(defun emjupy-restart-kernel-and-run-all ()
+  "Restart this notebook's kernel, then run every cell, as JupyterLab does."
+  (interactive)
+  (let ((nb (emjupy--notebook)))
+    (emjupy--kernel-or-say nb)
+    (unless (y-or-n-p (format "Restart the kernel for %s and run all cells -- all variables will be lost?"
+                              (emjupy-notebook-path nb)))
+      (user-error "Kernel left running"))
+    (emjupy--restart-kernel-1 nb)
+    (emjupy--await-connection nb)
+    (emjupy-run-all-cells)))
+
+(defun emjupy-restart-kernel-and-clear-outputs ()
+  "Restart this notebook's kernel, and clear every cell's output."
+  (interactive)
+  (let ((nb (emjupy--notebook)))
+    (emjupy--kernel-or-say nb)
+    (unless (y-or-n-p (format "Restart the kernel for %s and clear all outputs -- all variables will be lost?"
+                              (emjupy-notebook-path nb)))
+      (user-error "Kernel left running"))
+    (emjupy--restart-kernel-1 nb)
+    (emjupy-clear-all-outputs)))
+
+(defun emjupy-shutdown-kernel ()
+  "Shut this notebook's kernel down, on its server.
+The notebook stays as it is; only the kernel's state is lost."
+  (interactive)
+  (let* ((nb (emjupy--notebook))
+         (kernel (emjupy--kernel-or-say nb))
+         (kernel-id (emjupy-kernel-id kernel)))
+    (unless (y-or-n-p (format "Shut down the kernel of %s -- all variables will be lost?"
+                              (emjupy-notebook-path nb)))
+      (user-error "Kernel left running"))
+    (emjupy--disconnect-kernel nb)
+    (emjupy--http-request "DELETE" (emjupy-notebook-server nb)
+                          (format "/api/kernels/%s" kernel-id))
+    (setf (emjupy-notebook-kernel nb) nil)
+    (force-mode-line-update)
+    (message "[emjupy] Kernel %s shut down; %s starts another" kernel-id
+             (substitute-command-keys "\\[emjupy-connect-kernel-interactive]"))))
 
 (defun emjupy--repair-if-scrambled (nb)
   "Redraw NB if its buffer and cells have come out of step.

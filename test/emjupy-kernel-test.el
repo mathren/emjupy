@@ -19,7 +19,6 @@
 (require 'emjupy)
 (require 'emjupy-test-helpers)
 
-
 ;;;; Server URL parsing (remote kernels reached through an SSH tunnel)
 
 (ert-deftest emjupy-test-kernel-ws-url-is-scheme-and-path-aware ()
@@ -905,7 +904,6 @@ applied, and stale bars piled up."
           (should (equal (sort (hash-table-keys out) #'string<)
                          '("name" "output_type" "text"))))))))
 
-
 ;;;; Running a cell while reconnecting
 
 (defmacro emjupy-test--reconnecting (live-var sent-var &rest body)
@@ -961,7 +959,6 @@ left the kernel being reconnected to, and everything defined in it."
     (should-not sent)
     (should-not emjupy--runs-waiting)))
 
-
 (ert-deftest emjupy-test-reconnecting-restores-the-way-first ()
   "Each attempt to reconnect first asks for the way to the server back.
 `emjupy-reconnect-functions' get the server, then the connection is tried:
@@ -1007,7 +1004,6 @@ The kernel is there; \\[emjupy-reconnect-kernel] reaches it again."
       (should (string-match-p "connection to this notebook.s kernel is down"
                               (cadr err))))))
 
-
 (ert-deftest emjupy-test-a-kernel-gone-from-the-server-stops-reconnecting ()
   "A kernel the server no longer has is not reconnected to for 30 seconds.
 Asked during the reconnect, the server answers 404: the reconnecting
@@ -1048,7 +1044,6 @@ without a kernel, for running a cell to say so."
                                (- (float-time) 1) "nb"))
       (should (seq-some (lambda (m) (string-match-p "does not answer" m))
                         said)))))
-
 
 ;;;; A kernel quiet while running a cell
 
@@ -1110,7 +1105,6 @@ showing as running for good."
       (should-not asked)
       (should-not emjupy--quiet-check-timer))))
 
-
 (ert-deftest emjupy-test-a-refused-header-puts-the-token-in-the-address ()
   "A WebSocket refused, 403, with the token in a header alone is noted.
 Its server then gets the token in the address too, from the next attempt
@@ -1129,7 +1123,6 @@ on; any other error is only reported."
                  '(websocket-received-error-http-response 403))
         (should (equal emjupy--token-in-ws-address '("127.0.0.1:1")))))))
 
-
 (ert-deftest emjupy-test-a-cell-run-here-is-trusted ()
   "A cell run is trusted from then on, as Jupyter marks a cell the user runs.
 Saved with every cell trusted, the server signs the notebook."
@@ -1144,7 +1137,6 @@ Saved with every cell trusted, the server signs the notebook."
       (emjupy-execute-cell-at-point)
       (should sent)
       (should (emjupy--cell-trusted-p cell)))))
-
 
 (ert-deftest emjupy-test-a-refused-handshake-is-never-open ()
   "A WebSocket the server refuses -- a kernel gone, a server restarted -- is
@@ -1178,7 +1170,6 @@ never taken as open.  websocket.el, the handshake refused, still called
                                   said))))
       (when (process-live-p conn) (delete-process conn)))))
 
-
 (ert-deftest emjupy-test-adopted-runs-are-not-ended-while-the-kernel-works ()
   "Runs adopted after a drop are not ended while their kernel is heard from.
 A kernel working through queued cells is idle a moment between two: one
@@ -1210,7 +1201,6 @@ cells.  Quiet and idle, the runs end."
         (emjupy--settle-adopted-runs kernel '("m1"))
         (should ended)
         (should-not (gethash "m1" pending))))))
-
 
 ;;;; Running several cells
 
@@ -1267,7 +1257,6 @@ running the last one always makes."
     (emjupy-execute-cell-and-goto-next 5)
     (should (= (length (emjupy-notebook-cells nb)) 6))))
 
-
 (defun emjupy-test--message (type date &optional state)
   "A message of TYPE from the kernel at DATE; status messages with STATE."
   (let ((header (make-hash-table :test 'equal))
@@ -1304,6 +1293,81 @@ A new run starts afresh; with the option off, nothing is written."
       (cl-letf (((symbol-function 'emjupy--ws-parent-id) #'ignore))
         (ignore-errors (emjupy--apply-to-cell other nil m)))
       (should-not (emjupy-cell-metadata other)))))
+
+
+;;;; Raw cells, regions, restarting, shutting down
+
+(ert-deftest emjupy-test-a-raw-cell-is-not-run ()
+  "A raw cell is not sent to the kernel, as in Jupyter."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'raw
+                                                        :source "not code"))
+      buf nb
+    (let ((sent nil))
+      (cl-letf (((symbol-function 'emjupy--ws-send)
+                 (lambda (&rest _) (setq sent t))))
+        (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0) 'beginning)
+        (emjupy-execute-cell-at-point))
+      (should-not sent))))
+
+(ert-deftest emjupy-test-running-a-region-runs-its-cells ()
+  "C-c C-c with a region runs every cell it touches, in order."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1")
+              (make-emjupy-cell :id 2 :type 'code :source "b = 2")
+              (make-emjupy-cell :id 3 :type 'code :source "c = 3"))
+      buf nb
+    (let ((ran nil) (transient-mark-mode t)
+          (cells (emjupy-notebook-cells nb)))
+      (cl-letf (((symbol-function 'emjupy--run-cells)
+                 (lambda (cs) (setq ran (mapcar #'emjupy-cell-id cs)))))
+        (emjupy--goto-cell (aref cells 0) 'beginning)
+        (push-mark (point) t t)
+        (emjupy--goto-cell (aref cells 1) 'end)
+        (emjupy-execute-cell-and-goto-next))
+      (should (equal ran '(1 2)))
+      (should-not (use-region-p)))))
+
+(ert-deftest emjupy-test-restart-and-run-all-or-clear ()
+  "Restarting, then running all, waits for the kernel first; restarting,
+then clearing, clears; each asks first."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf nb
+    (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+    (let ((did nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'emjupy--restart-kernel-1)
+                 (lambda (_) (push 'restart did)))
+                ((symbol-function 'emjupy--await-connection)
+                 (lambda (_) (push 'await did)))
+                ((symbol-function 'emjupy-run-all-cells)
+                 (lambda () (push 'run-all did)))
+                ((symbol-function 'emjupy-clear-all-outputs)
+                 (lambda () (push 'clear did))))
+        (emjupy-restart-kernel-and-run-all)
+        (should (equal (reverse did) '(restart await run-all)))
+        (setq did nil)
+        (emjupy-restart-kernel-and-clear-outputs)
+        (should (equal (reverse did) '(restart clear)))))))
+
+(ert-deftest emjupy-test-shutting-the-kernel-down ()
+  "Shutting down deletes the kernel on its server; the notebook has none."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf nb
+    (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k1")
+          (emjupy-notebook-server nb)
+          (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                ((symbol-function 'emjupy--disconnect-kernel) #'ignore)
+                ((symbol-function 'message) #'ignore)
+                ((symbol-function 'emjupy--http-request)
+                 (lambda (method _server path &rest _)
+                   (setq asked (list method path)))))
+        (emjupy-shutdown-kernel))
+      (should (equal asked '("DELETE" "/api/kernels/k1")))
+      (should-not (emjupy-notebook-kernel nb)))))
 
 (provide 'emjupy-kernel-test)
 

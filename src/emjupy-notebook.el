@@ -587,6 +587,9 @@ this buffer."
   [["Server"
     ("g" "log in to a server" emjupy-login)
     ("R" "restart the kernel" emjupy-restart-kernel)
+    ("Q" "restart, then run all" emjupy-restart-kernel-and-run-all)
+    ("Z" "restart, clearing outputs" emjupy-restart-kernel-and-clear-outputs)
+    ("Y" "shut the kernel down" emjupy-shutdown-kernel)
     ("C" "reconnect the kernel" emjupy-reconnect-kernel)
     ("K" "choose a kernel" emjupy-connect-kernel-interactive)
     ("?" "what is going on" emjupy-status)]

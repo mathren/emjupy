@@ -1822,6 +1822,46 @@ its variable evaluated there and what that variable holds shown."
                20 (lambda () (string-match-p "idle"
                                              (emjupy--mode-line-status))))))))
 
+(ert-deftest emjupy-int-restart-run-all-a-region-and-shutting-down ()
+  "Restart and run all: a fresh kernel runs every cell.  A region runs its
+cells.  Shut down, the server has the kernel no more."
+  (emjupy-int--with-file-notebook "x = 41"
+    (let* ((nb (emjupy--notebook)) (cells nil))
+      (emjupy-insert-cell-below)
+      (insert "print(x + 1)")
+      (emjupy--sync-all-cells)
+      (setq cells (emjupy-notebook-cells nb))
+      (emjupy--spawn-and-connect-kernel nb)
+      (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+      (cl-flet ((done ()
+                  (cl-every (lambda (c) (numberp (emjupy-cell-exec-count c)))
+                            cells)))
+        ;; a region over both
+        (let ((transient-mark-mode t))
+          (emjupy--goto-cell (aref cells 0) 'beginning)
+          (push-mark (point) t t)
+          (emjupy--goto-cell (aref cells 1) 'end)
+          (emjupy-execute-cell-at-point))
+        (should (emjupy-int--pump 30 #'done))
+        (should (equal (string-trim (emjupy-int--stdout (aref cells 1))) "42"))
+        ;; restart and run all: a fresh kernel counts from 1 again, where
+        ;; the old one would go on at 3
+        (dolist (c (append cells nil)) (setf (emjupy-cell-exec-count c) nil))
+        (emjupy-restart-kernel-and-run-all)
+        (should (emjupy-int--pump 60 #'done))
+        (should (equal (mapcar #'emjupy-cell-exec-count (append cells nil))
+                       '(1 2)))
+        (should (equal (string-trim (emjupy-int--stdout (aref cells 1))) "42")))
+      (let ((kernel-id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
+        (emjupy-shutdown-kernel)
+        (should-not (emjupy-notebook-kernel nb))
+        (should-not (cl-find kernel-id
+                             (append (emjupy--http-request
+                                      "GET" emjupy--current-server "/api/kernels")
+                                     nil)
+                             :key (lambda (k) (gethash "id" k))
+                             :test #'equal))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the
