@@ -55,15 +55,29 @@ That is environment.yml, or environment.yaml."
                            nil t)
                       (match-string 1)))))
 
+(defun emjupy--find-conda (remote)
+  "Return conda, mamba or micromamba, the first there is, or nil.
+On the machine of `default-directory'; REMOTE when that is another.
+There, one command asks: `executable-find' over TRAMP tests each folder
+of the PATH for each name, a round trip each -- 21 on a plain machine."
+  (if (not remote)
+      (or (executable-find "conda") (executable-find "mamba")
+          (executable-find "micromamba"))
+    (with-temp-buffer
+      (when (eq 0 (ignore-errors
+                    (process-file "sh" nil t nil "-c"
+                                  "command -v conda || command -v mamba || command -v micromamba")))
+        (let ((found (string-trim (buffer-string))))
+          (and (not (string-empty-p found))
+               (concat (file-remote-p default-directory) found)))))))
+
 (defun emjupy--conda-environments (&optional where)
   "Return conda's environments as an alist of name and directory, or nil.
 nil when there is no conda, mamba or micromamba to ask.  Asked on the
 machine of WHERE, a directory -- one through TRAMP asks the remote."
   (let* ((default-directory (or where temporary-file-directory))
          (remote (and (file-remote-p default-directory) t))
-         (conda (or (executable-find "conda" remote)
-                    (executable-find "mamba" remote)
-                    (executable-find "micromamba" remote))))
+         (conda (emjupy--find-conda remote)))
     (when conda
       (with-temp-buffer
         (when (eq 0 (process-file (or (file-remote-p conda 'localname) conda)
