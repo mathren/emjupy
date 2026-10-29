@@ -39,7 +39,7 @@ REPLIES maps a command to the body it answers; ASKED, in BODY, lists
   "Before a cell runs, the debugger has its code and its breakpoints' lines.
 configurationDone once in a session; with the mode off, nothing."
   (emjupy-test--debugging
-      `(("dumpCell" . ,(emjupy--debug-object "sourcePath" "/tmp/k/1.py")))
+      `(("dumpCell" . ,(emjupy--json-object "sourcePath" "/tmp/k/1.py")))
     (emjupy-test--line cell 3) (emjupy-debug-toggle-breakpoint)
     (emjupy--debug-before-execute cell)
     (should-not asked)
@@ -60,17 +60,17 @@ configurationDone once in a session; with the mode off, nothing."
 (ert-deftest emjupy-test-a-stop-marks-its-line-in-its-cell ()
   "Stopped, the line of the top frame is marked in the cell it ran from."
   (emjupy-test--debugging
-      `(("stackTrace" . ,(emjupy--debug-object
+      `(("stackTrace" . ,(emjupy--json-object
                           "stackFrames"
-                          (vector (emjupy--debug-object
+                          (vector (emjupy--json-object
                                    "id" 7 "line" 3
-                                   "source" (emjupy--debug-object
+                                   "source" (emjupy--json-object
                                              "path" "/tmp/k/1.py"))))))
     (setq emjupy--debug-paths (make-hash-table :test 'equal))
     (puthash "/tmp/k/1.py" cell emjupy--debug-paths)
-    (emjupy--debug-event buf (emjupy--debug-object
+    (emjupy--debug-event buf (emjupy--json-object
                               "event" "stopped"
-                              "body" (emjupy--debug-object "threadId" 1)))
+                              "body" (emjupy--json-object "threadId" 1)))
     (should (equal emjupy--debug-stopped '(1 . 7)))
     (should (equal (string-trim (buffer-substring
                                  (overlay-start emjupy--debug-arrow)
@@ -106,7 +106,7 @@ configurationDone once in a session; with the mode off, nothing."
   "A prefix asks for a condition, sent with the breakpoint's line; asked on
 a breakpoint there, it changes its condition, not removes it."
   (emjupy-test--debugging
-      `(("dumpCell" . ,(emjupy--debug-object "sourcePath" "/tmp/k/1.py")))
+      `(("dumpCell" . ,(emjupy--json-object "sourcePath" "/tmp/k/1.py")))
     (emjupy-test--line cell 3)
     (emjupy-debug-toggle-breakpoint "b > 1")
     (emjupy-debug-toggle-breakpoint "b > 5")
@@ -135,11 +135,11 @@ sent when debugging starts."
 (ert-deftest emjupy-test-choosing-a-frame ()
   "Choosing a frame makes it the one evaluated in, its line marked."
   (emjupy-test--debugging nil
-    (let ((inner (emjupy--debug-object "id" 1 "name" "inner" "line" 4
-                                       "source" (emjupy--debug-object
+    (let ((inner (emjupy--json-object "id" 1 "name" "inner" "line" 4
+                                       "source" (emjupy--json-object
                                                  "path" "/tmp/k/1.py")))
-          (outer (emjupy--debug-object "id" 2 "name" "outer" "line" 2
-                                       "source" (emjupy--debug-object
+          (outer (emjupy--json-object "id" 2 "name" "outer" "line" 2
+                                       "source" (emjupy--json-object
                                                  "path" "/tmp/k/1.py"))))
       (setq emjupy--debug-paths (make-hash-table :test 'equal)
             emjupy--debug-stopped (cons 9 1)
@@ -154,10 +154,10 @@ sent when debugging starts."
 
 (ert-deftest emjupy-test-a-variable-shows-what-it-holds ()
   "A variable holding others has a button: pressed, they show; again, hide."
-  (let ((replies (list (cons 1 (vector (emjupy--debug-object
+  (let ((replies (list (cons 1 (vector (emjupy--json-object
                                         "name" "d" "value" "{'a': 1}"
                                         "variablesReference" 2)))
-                       (cons 2 (vector (emjupy--debug-object
+                       (cons 2 (vector (emjupy--json-object
                                         "name" "'a'" "value" "1"
                                         "variablesReference" 0))))))
     (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
@@ -166,11 +166,11 @@ sent when debugging starts."
       (cl-letf (((symbol-function 'emjupy--debug-request)
                  (lambda (command &optional arguments)
                    (if (equal command "scopes")
-                       (emjupy--debug-object
-                        "scopes" (vector (emjupy--debug-object
+                       (emjupy--json-object
+                        "scopes" (vector (emjupy--json-object
                                           "name" "Locals"
                                           "variablesReference" 1)))
-                     (emjupy--debug-object
+                     (emjupy--json-object
                       "variables"
                       (cdr (assoc (gethash "variablesReference" arguments)
                                   replies))))))

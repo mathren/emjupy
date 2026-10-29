@@ -93,7 +93,7 @@ debugpy."
           (progn
             (emjupy--debug-request
              "initialize"
-             (emjupy--debug-object
+             (emjupy--json-object
               "clientID" "emacs" "adapterID" "python" "pathFormat" "path"
               "linesStartAt1" t "columnsStartAt1" t))
             (emjupy--debug-request "attach")
@@ -112,16 +112,10 @@ debugpy."
     (setq emjupy--debug-stopped nil)
     (ignore-errors
       (emjupy--debug-request "disconnect"
-                             (emjupy--debug-object "restart" :false
+                             (emjupy--json-object "restart" :false
                                                    "terminateDebuggee" :false)))))
 
 ;;;; Requests and replies
-
-(defun emjupy--debug-object (&rest pairs)
-  "Return PAIRS, a plist of keys and values, as a hash table for JSON."
-  (let ((h (make-hash-table :test 'equal)))
-    (while pairs (puthash (pop pairs) (pop pairs) h))
-    h))
 
 (defun emjupy--debug-request (command &optional arguments)
   "Send the debugger COMMAND with ARGUMENTS, a hash table; return its body.
@@ -130,7 +124,7 @@ called from a process filter, which could not read it."
   (let* ((kernel (or (emjupy--kernel) (user-error "No kernel")))
          (msg (emjupy--make-message
                "debug_request"
-               (emjupy--debug-object "seq" 1 "type" "request"
+               (emjupy--json-object "seq" 1 "type" "request"
                                      "command" command
                                      "arguments" (or arguments
                                                      (make-hash-table)))
@@ -172,7 +166,7 @@ Each is its line, from 1, and its condition if it has one."
   (let ((start (overlay-start (emjupy-cell-overlay cell))))
     (cl-loop for o in emjupy--debug-breakpoints
              when (eq (emjupy--debug-cell-at (overlay-start o)) cell)
-             collect (let ((b (emjupy--debug-object
+             collect (let ((b (emjupy--json-object
                                "line" (1+ (count-lines start
                                                        (overlay-start o)))))
                            (condition (overlay-get o 'emjupy-condition)))
@@ -229,13 +223,13 @@ anew each time it may have changed."
   (when (and emjupy-debug-mode (eq (emjupy-cell-type cell) 'code))
     (let ((path (gethash "sourcePath"
                          (emjupy--debug-request
-                          "dumpCell" (emjupy--debug-object
+                          "dumpCell" (emjupy--json-object
                                       "code" (emjupy-cell-source cell))))))
       (puthash path cell emjupy--debug-paths)
       (emjupy--debug-request
        "setBreakpoints"
-       (emjupy--debug-object
-        "source" (emjupy--debug-object "path" path)
+       (emjupy--json-object
+        "source" (emjupy--json-object "path" path)
         "breakpoints" (vconcat (emjupy--debug-cell-breakpoints cell))
         "sourceModified" :false))
       (unless emjupy--debug-configured
@@ -263,7 +257,7 @@ raised -- as JupyterLab offers."
 (defun emjupy--debug-send-exceptions ()
   "Tell the debugger when to stop on an exception."
   (emjupy--debug-request "setExceptionBreakpoints"
-                         (emjupy--debug-object
+                         (emjupy--json-object
                           "filters" (vconcat emjupy--debug-exceptions))))
 
 ;;;; Stopping and going on
@@ -278,7 +272,7 @@ raised -- as JupyterLab offers."
                 (frames (gethash "stackFrames"
                                  (emjupy--debug-request
                                   "stackTrace"
-                                  (emjupy--debug-object "threadId" thread))))
+                                  (emjupy--json-object "threadId" thread))))
                 (top (and (> (length frames) 0) (aref frames 0))))
            (when top
              (setq emjupy--debug-stopped (cons thread (gethash "id" top))
@@ -290,7 +284,7 @@ raised -- as JupyterLab offers."
                         (gethash "description"
                                  (emjupy--debug-request
                                   "exceptionInfo"
-                                  (emjupy--debug-object
+                                  (emjupy--json-object
                                    "threadId" thread))))))))
         ("continued" (emjupy--debug-clear-arrow))
         ((or "terminated" "exited") (emjupy-debug-mode -1))))))
@@ -329,7 +323,7 @@ raised -- as JupyterLab offers."
   (let ((thread (car emjupy--debug-stopped)))
     (setq emjupy--debug-stopped nil emjupy--debug-frames nil)
     (emjupy--debug-clear-arrow)
-    (emjupy--debug-request command (emjupy--debug-object "threadId" thread))))
+    (emjupy--debug-request command (emjupy--json-object "threadId" thread))))
 
 (defun emjupy-debug-continue () "Go on to the next breakpoint." (interactive)
        (emjupy--debug-go "continue"))
@@ -368,7 +362,7 @@ Evaluating and the variables are then of it."
   (message "%s" (gethash "result"
                          (emjupy--debug-request
                           "evaluate"
-                          (emjupy--debug-object
+                          (emjupy--json-object
                            "expression" expression
                            "frameId" (cdr emjupy--debug-stopped)
                            "context" "repl")))))
@@ -381,7 +375,7 @@ Evaluating and the variables are then of it."
   (with-current-buffer notebook
     (append (gethash "variables"
                      (emjupy--debug-request
-                      "variables" (emjupy--debug-object
+                      "variables" (emjupy--json-object
                                    "variablesReference" reference)))
             nil)))
 
@@ -436,7 +430,7 @@ showing them."
   (let* ((notebook (current-buffer))
          (scopes (append (gethash "scopes"
                                   (emjupy--debug-request
-                                   "scopes" (emjupy--debug-object
+                                   "scopes" (emjupy--json-object
                                              "frameId"
                                              (cdr emjupy--debug-stopped))))
                          nil))

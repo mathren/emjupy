@@ -450,13 +450,6 @@ outputs until you save."
 
 ;;;; Deleting, copying and yanking
 
-(defun emjupy--cell-index (cell)
-  "Return the position of CELL in the notebook, or nil."
-  (and emjupy--buffer-notebook
-       (cl-position cell
-                    (append
-                     (emjupy-notebook-cells emjupy--buffer-notebook) nil))))
-
 (defun emjupy-delete-cell ()
   "Delete current cell at point."
   (interactive)

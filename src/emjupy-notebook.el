@@ -354,12 +354,6 @@ first, as a notebook is a file people share."
       (mapc #'emjupy--mark-cell-trusted (emjupy-notebook-cells nb))
       (message "[emjupy] %s is trusted." path))))
 
-(defun emjupy--json-body (&rest pairs)
-  "Return PAIRS, a plist of keys and values, as a JSON object string."
-  (let ((h (make-hash-table :test 'equal)))
-    (while pairs (puthash (pop pairs) (pop pairs) h))
-    (json-serialize h)))
-
 (defun emjupy--follow-notebook (nb path)
   "Have NB, and its buffer, be the notebook at PATH on its server now."
   (setf (emjupy-notebook-path nb) path)
@@ -377,7 +371,8 @@ Unsaved changes stay here, saved under the new name."
   (let* ((nb (emjupy--notebook)) (old (emjupy-notebook-path nb)))
     (emjupy--http-request "PATCH" (emjupy-notebook-server nb)
                           (emjupy--contents-path old)
-                          (emjupy--json-body "path" new-path))
+                          (json-serialize
+                           (emjupy--json-object "path" new-path)))
     (emjupy--follow-notebook nb new-path)
     (message "[emjupy] Renamed %s to %s" old new-path)))
 
@@ -406,7 +401,7 @@ The copy is of the file as last saved, as JupyterLab's Duplicate."
          (model (emjupy--http-request
                  "POST" server
                  (emjupy--contents-path (or (file-name-directory path) ""))
-                 (emjupy--json-body "copy_from" path))))
+                 (json-serialize (emjupy--json-object "copy_from" path)))))
     (emjupy-open-notebook (gethash "path" model) server)))
 
 (defun emjupy-revert-to-checkpoint ()

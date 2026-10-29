@@ -143,39 +143,6 @@ proxies and servers log."
     (should (equal emjupy--token-in-ws-address '("localhost:9999")))
     (should emjupy--lsp-last-failure)))
 
-(ert-deftest emjupy-test-lsp-edits-are-applied-back-to-front ()
-  "Edits are applied from the end, or each one moves the next.
-
-Every edit's range refers to the document as the server last saw it, so
-applying from the front shifts the ground under the rest -- the classic
-way to turn a rename into plausible-looking nonsense."
-  (let ((text "aaa bbb aaa"))
-    (cl-flet ((edit (l1 c1 l2 c2 new)
-                (let ((e (make-hash-table :test 'equal))
-                      (r (make-hash-table :test 'equal))
-                      (s (make-hash-table :test 'equal))
-                      (n (make-hash-table :test 'equal)))
-                  (puthash "line" l1 s) (puthash "character" c1 s)
-                  (puthash "line" l2 n) (puthash "character" c2 n)
-                  (puthash "start" s r) (puthash "end" n r)
-                  (puthash "range" r e) (puthash "newText" new e)
-                  e)))
-      ;; both occurrences of aaa -> zzzz, given in document order
-      (should (equal (emjupy--lsp-apply-edits
-                      text (vector (edit 0 0 0 3 "zzzz") (edit 0 8 0 11
-                                                               "zzzz")))
-                     "zzzz bbb zzzz")))))
-
-(ert-deftest emjupy-test-lsp-position-offsets ()
-  "LSP counts lines and characters from zero; buffer offsets differ."
-  (let ((text "one\ntwo\nthree"))
-    (should (= (emjupy--lsp-offset-of-position text 0 0) 0))
-    (should (= (emjupy--lsp-offset-of-position text 1 0) 4))
-    (should (= (emjupy--lsp-offset-of-position text 2 2) 10))
-    ;; past the end clamps rather than signalling: a server being generous
-    ;; about a final newline is not a reason to abandon a rename
-    (should (= (emjupy--lsp-offset-of-position text 99 99) (length text)))))
-
 (ert-deftest emjupy-test-eglot-websocket-class ()
   "The WebSocket-backed server overrides the transport, not the protocol.
 

@@ -37,11 +37,6 @@ parsed once, when the server was made (see `emjupy--parse-base-url')."
           :host (emjupy-server-host server) :port (emjupy-server-port server)
           :path (emjupy-server-path server))))
 
-(defun emjupy--server-host-port (server)
-  "Return (HOST . PORT) parsed from SERVER's base-url."
-  (let ((p (emjupy--server-parts server)))
-    (cons (plist-get p :host) (plist-get p :port))))
-
 ;;;; The XSRF cookie
 
 (defconst emjupy--xsrf-endpoints '("/login" "/tree" "/lab" "/")

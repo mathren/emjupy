@@ -272,6 +272,12 @@ from \"iopub.execute_input\" to \"shell.execute_reply\"."
         (t (format "%dh %02dm" (floor seconds 3600)
                    (mod (floor seconds 60) 60)))))
 
+(defun emjupy--json-object (&rest pairs)
+  "Return PAIRS, a plist of keys and values, as a hash table for JSON."
+  (let ((h (make-hash-table :test 'equal)))
+    (while pairs (puthash (pop pairs) (pop pairs) h))
+    h))
+
 ;;;; Lookups
 
 (defun emjupy--intern-server (base-url token)

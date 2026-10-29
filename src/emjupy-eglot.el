@@ -404,26 +404,6 @@ Items pointing anywhere else, a library say, are left as they are."
   "Return the completion table Eglot provides for identifiers."
   (emjupy--xref-in-shadow #'xref-backend-identifier-completion-table))
 
-(defun emjupy--shadow-offset-to-cell (nb offset)
-  "Return (CELL . POSITION) for OFFSET in NB's synthetic document."
-  (let ((text (emjupy--build-shadow-content nb))
-        (found nil))
-    (cl-loop for cell across (emjupy-notebook-cells nb)
-             until found
-             when (eq (emjupy-cell-type cell) 'code)
-             do
-             (let* ((marker (emjupy--shadow-cell-marker (emjupy-cell-id cell)))
-                    (idx (string-search marker text)))
-               (when idx
-                 (let* ((body (+ idx (length marker) 1))
-                        (len (length (or (emjupy-cell-source cell) "")))
-                        (ov (emjupy-cell-overlay cell)))
-                   (when (and (overlayp ov) (>= offset body)
-                              (<= offset (+ body len)))
-                     (setq found (list cell (+ (overlay-start ov)
-                                               (- offset body)))))))))
-    found))
-
 (cl-defmethod xref-backend-definitions ((_backend (eql emjupy)) identifier)
   "Return definitions of IDENTIFIER, mapped back onto notebook cells."
   (let ((nb emjupy--buffer-notebook))
