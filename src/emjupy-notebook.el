@@ -71,17 +71,28 @@ credential ends up on screen and in the minibuffer history."
       (concat "localhost:" url)
     url))
 
+(defvar emjupy--reachable-at (make-hash-table :test 'eq)
+  "Servers that answered `emjupy--server-reachable-p', and when.")
+
 (defun emjupy--server-reachable-p (server)
   "Return non-nil if SERVER accepts SERVER's credentials.
 Probes /api/contents: some jupyter_server versions answer /api/status
-without authentication."
-  (let ((inhibit-message t)
-        (message-log-max nil))
-    ;; A failed request -- refused, or no server -- is the answer "no";
-    ;; anything else is a bug, and is raised rather than taken for it.
-    (condition-case nil
-        (and (emjupy--http-request "GET" server "/api/contents") t)
-      (emjupy-http-error nil))))
+without authentication.  With content=0: the root's model, not its
+listing, whose size grew with the folder.  A yes holds for 2 s -- the
+several askings of one opening, a round trip each, are one; a no is
+asked again, a server being waited for."
+  (let ((at (gethash server emjupy--reachable-at)))
+    (or (and at (< (- (float-time) at) 2))
+        (let ((inhibit-message t)
+              (message-log-max nil))
+          ;; A failed request -- refused, or no server -- is the answer "no";
+          ;; anything else is a bug, and is raised rather than taken for it.
+          (condition-case nil
+              (when (emjupy--http-request "GET" server
+                                          "/api/contents?content=0")
+                (puthash server (float-time) emjupy--reachable-at)
+                t)
+            (emjupy-http-error nil))))))
 
 (defun emjupy--resolve-token (base-url explicit)
   "Work out the token for BASE-URL, prompting only when unavoidable.

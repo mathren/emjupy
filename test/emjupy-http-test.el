@@ -207,7 +207,7 @@ with 403 -- without ever asking for the token."
       (emjupy--server-reachable-p
        (make-emjupy-server :base-url "localhost:8888"))
       (should-not (equal probed "/api/status"))
-      (should (equal probed "/api/contents")))))
+      (should (equal probed "/api/contents?content=0")))))
 
 (ert-deftest emjupy-test-interrupt-posts-to-the-interrupt-endpoint ()
   "Interrupting leaves the session alone -- it is not a restart."
@@ -562,6 +562,27 @@ httpsfoo:8888 was taken to be served over TLS."
   (should (equal (emjupy--server-root-url
                   (make-emjupy-server :base-url "https://hub.example.org/u/a"))
                  "https://hub.example.org/u/a")))
+
+
+(ert-deftest emjupy-test-a-server-answering-is-asked-once-an-opening ()
+  "A yes from the reachability probe holds for a moment; a no does not.
+One opening asked three times, a round trip each."
+  (let ((server (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
+        (asked 0) (answer t)
+        (emjupy--reachable-at (make-hash-table :test 'eq)))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (&rest _)
+                 (cl-incf asked)
+                 (if answer (make-hash-table)
+                   (signal 'emjupy-http-error '("refused"))))))
+      (setq answer nil)
+      (should-not (emjupy--server-reachable-p server))
+      (should-not (emjupy--server-reachable-p server))
+      (should (= asked 2))
+      (setq answer t)
+      (should (emjupy--server-reachable-p server))
+      (should (emjupy--server-reachable-p server))
+      (should (= asked 3)))))
 
 (provide 'emjupy-http-test)
 
