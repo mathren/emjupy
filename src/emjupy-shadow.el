@@ -249,15 +249,19 @@ one, or answered from this machine's Python.")
   "Return the directory NB's shadow file belongs in."
   ;; Forcing local rejects REMOTE candidates only.  A directory set by hand
   ;; that is already on this machine is still what the user asked for.
-  ;; Local for the socket route, whoever asks: the server is sent the text.
+  ;; Local unless on the local route, whoever asks: the server is sent the text
   ;; Built by completion with the shadow beside a remote notebook, it moved
   ;; there, and the connected server went with the buffer it left.
   (let ((emjupy--force-local-shadow
          (or emjupy--force-local-shadow
              (let ((buf (emjupy-notebook-buffer nb)))
+               ;; and while undecided: built then, beside a remote notebook,
+               ;; it was written over TRAMP, a round trip a step, only to
+               ;; move back here once the socket route was found -- 8 s
+               ;; of a first completion.  Only the local route puts it there.
                (and (buffer-live-p buf)
-                    (eq (buffer-local-value 'emjupy--lsp-route buf)
-                        'socket))))))
+                    (not (eq (buffer-local-value 'emjupy--lsp-route buf)
+                             'local)))))))
     (cl-flet ((usable (dir)
                 (and dir
                      (not (and emjupy--force-local-shadow (file-remote-p dir)))

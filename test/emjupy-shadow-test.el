@@ -143,6 +143,8 @@ looks exactly like a hang."
          (attempts 0))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
+        ;; a shadow beside the notebook: the local route's
+        (setq emjupy--lsp-route 'local)
         (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
         (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/")
               (emjupy-shadow-retry-interval 60))
