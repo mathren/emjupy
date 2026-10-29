@@ -498,6 +498,35 @@ Measuring a window selects it; a redraw did it six times a cell."
         ;; once for the redraw: a window showing it, or the selected one
         (should (<= measures 1))))))
 
+
+(ert-deftest emjupy-test-a-cell-step-is-undone-by-its-snapshot-alone ()
+  "Undoing a change to the cells restores their snapshot, and nothing more.
+The step's own edits were kept beside it: undone after it -- undo takes
+the newest first -- they applied where its redraw had moved the text,
+cutting characters from another cell's code."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "a = 1")
+                                      (make-emjupy-cell :id 2 :type 'code
+                                                        :source "b = 2"))
+      buf nb
+    (buffer-enable-undo)
+    (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 1) 'end)
+    (insert " + 0")
+    (undo-boundary)
+    (let ((before (seq-remove #'null buffer-undo-list)))
+      (emjupy--as-one-undo-step
+        (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0) 'end)
+        (insert "  # an edit within the step"))
+      (let ((added (seq-take (seq-remove #'null buffer-undo-list)
+                             (- (length (seq-remove #'null buffer-undo-list))
+                                (length before)))))
+        (should (= (length added) 1))
+        (should (eq (car-safe (car added)) 'apply))
+        ;; what came before is there still, under it
+        (should (equal (seq-remove #'null (cdr (memq (car added)
+                                                     buffer-undo-list)))
+                       before))))))
+
 (provide 'emjupy-redraw-test)
 
 ;;; emjupy-redraw-test.el ends here

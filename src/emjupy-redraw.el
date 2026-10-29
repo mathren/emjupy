@@ -566,11 +566,18 @@ The cells are snapshotted before BODY and restored by the undo, which
 records the way forward again, for redo.  A BODY that signals records
 nothing."
   (declare (indent 0) (debug t))
-  `(let* ((snapshot (progn (emjupy--sync-all-cells) (emjupy--snapshot-cells)))
-          ;; No earlier entry is shifted or dropped while BODY runs: undoing the
-          ;; step restores the text they describe first.
+  `(let* ((snapshot (progn (undo-boundary)
+                           (emjupy--sync-all-cells)
+                           (emjupy--snapshot-cells)))
+          (before buffer-undo-list)
+          ;; No earlier entry is shifted or dropped while BODY runs: the
+          ;; snapshot restores the text they describe.
           (result (let ((emjupy--in-cell-step t)) ,@body)))
      (unless (or (eq buffer-undo-list t) undo-in-progress (null snapshot))
+       ;; The snapshot undoes all BODY did.  BODY's own entries go: undone
+       ;; after it -- undo takes the newest first -- they applied at
+       ;; positions its redraw had moved, cutting text from another cell.
+       (setq buffer-undo-list before)
        (push (list 'apply #'emjupy--restore-cells-snapshot snapshot)
              buffer-undo-list)
        (undo-boundary))
