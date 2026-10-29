@@ -124,3 +124,12 @@ first failure with the step's action and what came before, and ends by
 restarting each kernel and running every cell, then saving and comparing
 the server's copy with the buffer.  Fresh notebooks each run: a run
 saves them.  Seeds fixed, so a failure replays.
+
+## Skipped tests are results
+
+A test skips when what it needs is missing -- a language server not
+attached in time, no TRAMP environment.  Compare the skipped count with
+the last full check's: a rise is a regression until explained, as a
+failure is.  Six Eglot tests once went from passing to skipping, a
+change having left their notebooks with no language server: the check
+said 0 unexpected.
