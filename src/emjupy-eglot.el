@@ -254,6 +254,11 @@ The server is folded into the name: two servers can both host
   "Attach an ordinary Eglot to the current buffer, NB's shadow buffer.
 Unless one is attached, another is being, language support is off, or
 NB-BUFFER, the notebook's, is backing off."
+  ;; No server, no other route: decided here, as no kernel will connect to
+  ;; decide it.  Left undecided, nothing ever attached.
+  (when (and (null (buffer-local-value 'emjupy--lsp-route nb-buffer))
+             (null (emjupy-notebook-server nb)))
+    (emjupy--lsp-fall-back nb "the notebook has no server"))
   (condition-case err
       ;; Connected here, not with `eglot-ensure', which waits for a command in
       ;; this buffer that never comes.  Backed off like the file; the flag is
