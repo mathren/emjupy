@@ -41,6 +41,32 @@ with one running (it must find it).  Paths through each differ.
 `sshd` dies between commands now and then: check it answers before a run
 (`ssh -o BatchMode=yes -o ConnectTimeout=3 rbox true`), restart if not.
 
+## The standard for fuzzing: TRAMP, several environments, Eglot, latency
+
+Every fuzz test runs this way -- it is how the maintainer works:
+notebooks opened through TRAMP over the two hops above, each in its own
+environment on the remote, Eglot on, and the first hop slowed.
+
+- Environments, as remote: `scripts/make-envs.sh` makes ~/envs/sci
+  (numpy 2, matplotlib), ~/envs/plain (no numpy) and ~/envs/py311
+  (Python 3.11, numpy < 2), each with jupyter-server, ipykernel,
+  jupyter-lsp and python-lsp-server.  uv fetches 3.11; under `su -` the
+  sandbox's SSL_CERT_FILE is lost, so pass it, or uv cannot connect.
+  Give each a project folder, ~/proj-sci and so on, with a notebook.
+- Latency: `scripts/latency.py 2223 2222 0.04` delays each chunk 40 ms
+  each way without throttling (an earlier version held each chunk before
+  reading the next: a link with no bandwidth, which made SSH twice as
+  slow as it is).  Point local's `Host bhost` at Port 2223; put it back
+  after.  An SSH command over both hops then takes about 1.5 s.
+- Up: `scripts/testbed-up.sh` starts what is down -- sshd, the proxy,
+  server A.  Run it before any live run: processes die between turns.
+  Do not pipe it: what it starts keeps the pipe open.
+- Open through `emjupy-int--open-through-tramp` FILE ENV, as `local`;
+  each environment gets a server of its own, and its language server is
+  the server's, through jupyter-lsp.  A language server is ready when its
+  capabilities have come, seconds after it is attached: wait for
+  `eglot--capabilities`, not `eglot-current-server`, before asking it.
+
 ## A second server, through a tunnel
 
 The two tests of a second server want what a user has: another machine,

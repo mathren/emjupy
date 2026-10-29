@@ -118,3 +118,11 @@
 - **Batch Emacs renders no mode line**: `format-mode-line` returns "" for
   anything.  Test the construct and what its `:eval` returns; to see it
   drawn, run `emacs -nw` under `script -qc` and write the result to a file.
+- **`pkill -f` also matches your own command line** wherever the pattern
+  appears in it, not only as the pattern: anchor it,
+  `pkill -f "^python3 /tmp/fz/latency.py"`.
+- **Rewrapping long comment lines splits a file's first line**: the
+  lexical-binding cookie moves to the second, where Emacs does not look.
+  Never rewrap line 1; a test now fails if a file loses the cookie.
+- **`record` is a built-in**: a helper of that name in a test script
+  breaks every struct.

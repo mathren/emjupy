@@ -114,3 +114,13 @@ Quote those numbers.  A live test failing once in a full run but passing
 alone 5 times out of 5 is flaky: say so, and look for the race (drawing
 from a timer, replies overtaking output, a timer settling things
 early) before lengthening a timeout.
+
+## Fuzzing
+
+Fuzz on the standard testbed (testbeds.md): through TRAMP, several
+environments, Eglot on, latency.  A run checks the buffer after every
+step (sync first: typed text reaches the cells lazily), stops at the
+first failure with the step's action and what came before, and ends by
+restarting each kernel and running every cell, then saving and comparing
+the server's copy with the buffer.  Fresh notebooks each run: a run
+saves them.  Seeds fixed, so a failure replays.
