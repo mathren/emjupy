@@ -99,6 +99,10 @@ shows what the kernel is doing and its server's port,
 =emjupy[busy :8888]=: idle, busy or starting, or no kernel, disconnected,
 reconnecting.
 
+A kernel started for a notebook is the one its metadata records, as in
+Jupyter: =py-a= for a notebook made on =py-a=; one the server does not
+have gives way to =python3=, saying so.
+
 =C-c C-c= runs the cell at point and moves on; with a region, every cell
 the region touches.  A numeric prefix runs that many, =C-u 5 C-c C-c=,
 and =C-x z= repeats it.  =emjupy-run-all-cells=, =emjupy-run-cells-above=

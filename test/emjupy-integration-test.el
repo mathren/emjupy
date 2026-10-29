@@ -1862,6 +1862,32 @@ cells.  Shut down, the server has the kernel no more."
                              :key (lambda (k) (gethash "id" k))
                              :test #'equal))))))
 
+(ert-deftest emjupy-int-a-notebook-gets-the-kernel-it-records ()
+  "A notebook recording a kernelspec the server has gets a kernel of it, as
+the server says; one recording a kernel it lacks gets python3."
+  (emjupy-int--skip-unless-live)
+  (let* ((specs (gethash "kernelspecs"
+                         (emjupy--http-request "GET" emjupy--current-server
+                                               "/api/kernelspecs")))
+         (other (seq-find (lambda (n) (not (equal n "python3")))
+                          (hash-table-keys specs))))
+    (dolist (case (append (and other (list (cons other other)))
+                          (list (cons "no-such-kernel" "python3"))))
+      (emjupy-int--with-file-notebook "x = 1"
+        (let ((nb (emjupy--notebook)))
+          (setf (emjupy-notebook-metadata nb)
+                (emjupy--json-object "kernelspec"
+                                     (emjupy--json-object "name" (car case))))
+          (cl-letf (((symbol-function 'message) #'ignore))
+            (emjupy--spawn-and-connect-kernel nb))
+          (let ((id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
+            (should (equal (gethash "name"
+                                    (emjupy--http-request
+                                     "GET" emjupy--current-server
+                                     (format "/api/kernels/%s" id)))
+                           (cdr case))))
+          (emjupy-shutdown-kernel))))))
+
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
 Opening one builds the shadow buffer and starts a server in the

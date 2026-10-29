@@ -771,8 +771,9 @@ several notebooks -- from several servers -- stay live at once."
                     'emjupy-kernel-connected-functions notebook)
     kernel))
 
-(defun emjupy--start-kernel-session (notebook)
+(defun emjupy--start-kernel-session (notebook &optional name)
   "Create a session for NOTEBOOK and return its kernel description, or nil.
+NAME is the kernel to start, by default the one NOTEBOOK records.
 
 Returns nil rather than signalling if the server will not make one, so
 the caller can fall back to a bare kernel."
@@ -781,7 +782,7 @@ the caller can fall back to a bare kernel."
         (body (make-hash-table :test 'equal))
         (kspec (make-hash-table :test 'equal)))
     (when path
-      (puthash "name" "python3" kspec)
+      (puthash "name" (or name (emjupy--notebook-kernel-name notebook)) kspec)
       (puthash "path" path body)
       (puthash "type" "notebook" body)
       (puthash "name" (file-name-nondirectory path) body)
@@ -797,21 +798,36 @@ the caller can fall back to a bare kernel."
                   path (error-message-string err))
          nil)))))
 
+(defun emjupy--notebook-kernel-name (notebook)
+  "Return the name of the kernel NOTEBOOK records: its kernelspec's.
+\"python3\" for a notebook that records none."
+  (let* ((meta (emjupy-notebook-metadata notebook))
+         (spec (and (hash-table-p meta) (gethash "kernelspec" meta)))
+         (name (and (hash-table-p spec) (gethash "name" spec))))
+    (if (and (stringp name) (not (string-empty-p name))) name "python3")))
+
 (defun emjupy--spawn-and-connect-kernel (notebook)
-  "Start a fresh Python 3 kernel on NOTEBOOK's server and attach it.
+  "Start a fresh kernel on NOTEBOOK's server, the one it records, and attach it.
 Through a session bound to the notebook's path, so the kernel runs in
 the notebook's directory, as in Jupyter, and other front-ends see it as
-the notebook's kernel."
-  (let ((server (emjupy-notebook-server notebook)))
-    (let* ((res (or (emjupy--start-kernel-session notebook)
-                    (let ((payload (make-hash-table :test 'equal)))
-                      (puthash "name" "python3" payload)
-                      (emjupy--http-request "POST" server "/api/kernels"
-                                            (json-serialize payload)))))
-           (new-id (gethash "id" res)))
-      (message "[emjupy] Started Python 3 kernel (%s) for %s. Connecting..."
-               new-id (emjupy-notebook-path notebook))
-      (emjupy-connect-kernel notebook new-id "python3"))))
+the notebook's kernel.  A kernel the server does not have, say from a
+notebook made elsewhere, gives way to python3, saying so."
+  (let* ((server (emjupy-notebook-server notebook))
+         (wanted (emjupy--notebook-kernel-name notebook))
+         (name wanted)
+         (res (or (emjupy--start-kernel-session notebook name)
+                  (unless (equal name "python3")
+                    (message "[emjupy] %s asks for the kernel %s, which the server could not start; starting python3"
+                             (emjupy-notebook-path notebook) wanted)
+                    (setq name "python3")
+                    (emjupy--start-kernel-session notebook name))
+                  (emjupy--http-request
+                   "POST" server "/api/kernels"
+                   (json-serialize (emjupy--json-object "name" name)))))
+         (new-id (gethash "id" res)))
+    (message "[emjupy] Started %s kernel (%s) for %s. Connecting..."
+             name new-id (emjupy-notebook-path notebook))
+    (emjupy-connect-kernel notebook new-id name)))
 
 (defun emjupy-connect-kernel-interactive ()
   "Select an existing kernel, or spawn a new one, for THIS notebook.

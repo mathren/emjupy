@@ -1395,6 +1395,61 @@ and the mode line said reconnecting."
           (cancel-timer emjupy--reconnect-timer))
         (emjupy--stop-spinner)))))
 
+
+;;;; The kernel a notebook records
+
+(defun emjupy-test--notebook-on (kernel-name)
+  "A notebook recording KERNEL-NAME as its kernelspec, nil for none."
+  (let ((meta (make-hash-table :test 'equal)))
+    (when kernel-name
+      (puthash "kernelspec" (emjupy--json-object "name" kernel-name) meta))
+    (make-emjupy-notebook :path "a.ipynb" :metadata meta
+                          :server (make-emjupy-server :base-url "127.0.0.1:1"
+                                                      :token "t"))))
+
+(ert-deftest emjupy-test-a-notebook-gets-the-kernel-it-records ()
+  "The kernel started is the notebook's kernelspec, as in Jupyter; python3
+for a notebook recording none.  It was python3 for every notebook."
+  (should (equal (emjupy--notebook-kernel-name
+                  (emjupy-test--notebook-on "py-a"))
+                 "py-a"))
+  (should (equal (emjupy--notebook-kernel-name (emjupy-test--notebook-on nil))
+                 "python3"))
+  (let ((asked nil) (connected nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (_method _server path &optional body &rest _)
+                 (let ((kernel (gethash "kernel" (json-parse-string body))))
+                   (push (cons path (gethash "name" kernel)) asked))
+                 (emjupy--json-object "kernel"
+                                      (emjupy--json-object "id" "k1"))))
+              ((symbol-function 'emjupy-connect-kernel)
+               (lambda (_nb id name) (setq connected (list id name))))
+              ((symbol-function 'message) #'ignore))
+      (emjupy--spawn-and-connect-kernel (emjupy-test--notebook-on "py-a")))
+    (should (equal asked '(("/api/sessions" . "py-a"))))
+    (should (equal connected '("k1" "py-a")))))
+
+(ert-deftest emjupy-test-a-kernel-the-server-lacks-gives-way-to-python3 ()
+  "A notebook recording a kernel the server cannot start gets python3, and
+says so."
+  (let ((asked nil) (said nil))
+    (cl-letf (((symbol-function 'emjupy--http-request)
+               (lambda (_method _server path &optional body &rest _)
+                 (let* ((kernel (gethash "kernel" (json-parse-string body)))
+                        (name (gethash "name" kernel)))
+                   (push name asked)
+                   (if (equal name "python3")
+                       (emjupy--json-object "kernel"
+                                            (emjupy--json-object "id" "k2"))
+                     (signal 'emjupy-http-error (list "no such kernel"))))))
+              ((symbol-function 'emjupy-connect-kernel) #'ignore)
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (push (apply #'format fmt args) said))))
+      (emjupy--spawn-and-connect-kernel (emjupy-test--notebook-on "gone")))
+    (should (equal (reverse asked) '("gone" "python3")))
+    (should (seq-some (lambda (m) (string-match-p "asks for the kernel gone" m))
+                      said))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here
