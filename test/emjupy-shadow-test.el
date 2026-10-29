@@ -173,6 +173,8 @@ squarely on the user while they are running cells."
          (connects 0))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
+        ;; the fallback's behaviour: on the local route
+        (setq emjupy--lsp-route 'local)
         (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
         (let ((emjupy-shadow-directory
                (expand-file-name "emjupy-connect-test"
@@ -344,6 +346,23 @@ temp directory does the same job without inventing directories."
              (emjupy-remote-root here))
         (should (string-prefix-p here
                                  (emjupy--shadow-directory-for nb-here)))))))
+
+
+(ert-deftest emjupy-test-the-socket-routes-shadow-stays-here ()
+  "On the socket route a notebook's shadow is local, whoever builds it.
+Built by completion, without the flag the route's setup binds, it was
+put beside a remote notebook: the local one, with its connected server,
+was retired, and completion over TRAMP answered nothing."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x = 1"))
+      buf nb
+    (let ((emjupy-shadow-beside-notebook t) (emjupy-shadow-directory nil))
+      (cl-letf (((symbol-function 'emjupy--notebook-directory)
+                 (lambda (_nb) "/ssh:somehost:/home/u/proj/")))
+        (setq emjupy--lsp-route 'local)
+        (should (file-remote-p (emjupy--shadow-directory-for nb)))
+        (setq emjupy--lsp-route 'socket)
+        (should-not (file-remote-p (emjupy--shadow-directory-for nb)))))))
 
 (provide 'emjupy-shadow-test)
 

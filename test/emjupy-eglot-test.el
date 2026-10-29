@@ -462,6 +462,8 @@ buffer is still built: editing all the code in one buffer needs no server."
                                 :outputs [] :metadata (make-hash-table))))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
+        ;; the fallback's behaviour: on the local route
+        (setq emjupy--lsp-route 'local)
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
         (let ((emjupy-language-support nil))
           (should (= 0 (emjupy-test--counting-server-starts starts
@@ -905,6 +907,71 @@ follows -- twice for each item a search returns."
     (should (equal (emjupy--local-truename "/ssh:box:/tmp/emjupy-shadow/x.py")
                    "/ssh:box:/tmp/emjupy-shadow/x.py"))
     (should (equal (emjupy--local-truename "/tmp/here.py") "/tmp/here.py"))))
+
+
+;;;; Which language server: decided first, the fallback marked
+
+(defmacro emjupy-test--routing (offers &rest body)
+  "Run BODY in a notebook whose server OFFERS the language server, or not.
+SAID collects messages; ATTACHED is set when plain Eglot attaches."
+  (declare (indent 1))
+  `(emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                         :source "x = 1"))
+       buf nb
+     (let ((said nil) (attached nil) (emjupy-language-support t)
+           (emjupy--lsp-offered (make-hash-table :test 'equal)))
+       (setf (emjupy-notebook-server nb)
+             (make-emjupy-server :base-url "127.0.0.1:1" :token "t"))
+       (cl-letf (((symbol-function 'emjupy--http-request)
+                  (lambda (&rest _)
+                    (emjupy--json-object
+                     "sessions" (if ,offers
+                                    (emjupy--json-object "pylsp"
+                                                         (make-hash-table))
+                                  (make-hash-table)))))
+                 ((symbol-function 'emjupy--ensure-shadow-buffer)
+                  (lambda (_nb) (current-buffer)))
+                 ((symbol-function 'emjupy--eglot-connect)
+                  (lambda (&rest _) nil))
+                 ((symbol-function 'eglot--connect)
+                  (lambda (&rest _) (setq attached t)))
+                 ((symbol-function 'eglot--guess-contact) (lambda () nil))
+                 ((symbol-function 'message)
+                  (lambda (fmt &rest args)
+                    (push (apply #'format fmt args) said))))
+         ,@body))))
+
+(ert-deftest emjupy-test-the-servers-language-server-when-it-offers-one ()
+  "A server offering the language server gets the socket route; no
+ordinary Eglot starts first -- it raced the right one, over TRAMP."
+  (emjupy-test--routing t
+    (emjupy-start-language-support nb)
+    (should (eq emjupy--lsp-route 'socket))
+    (emjupy--attach-plain-eglot nb buf)
+    (should-not attached)
+    (should-not (string-match-p "this machine" (emjupy--mode-line-status)))))
+
+(ert-deftest emjupy-test-the-fallback-is-plain-to-see ()
+  "A server offering none: a language server here, said, and marked in
+the mode line for as long as it lasts."
+  (emjupy-test--routing nil
+    (emjupy-start-language-support nb)
+    (should (eq emjupy--lsp-route 'local))
+    (should (seq-some (lambda (m) (string-match-p "LANGUAGE SERVER FALLBACK" m))
+                      said))
+    (let ((shown (emjupy--mode-line-status)))
+      (should (string-match-p "LSP: this machine" shown))
+      (should (eq (get-text-property (string-match "LSP" shown) 'face shown)
+                  'error)))
+    (emjupy--attach-plain-eglot nb buf)
+    (should attached)))
+
+(ert-deftest emjupy-test-no-plain-eglot-before-the-route-is-known ()
+  "Before the server is asked, no ordinary Eglot attaches."
+  (emjupy-test--routing t
+    (should-not emjupy--lsp-route)
+    (emjupy--attach-plain-eglot nb buf)
+    (should-not attached)))
 
 (provide 'emjupy-eglot-test)
 

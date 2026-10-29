@@ -224,7 +224,7 @@ no kernel, disconnected, reconnecting."
                       (emjupy--reconnect-timer "reconnecting")
                       ((not (emjupy--ws-live-p kernel)) "disconnected")
                       (t (or (emjupy-kernel-state kernel) "connecting")))))
-    (format "[%s%s]"
+    (format "[%s%s]%s"
             (propertize state 'face
                         (pcase state
                           ("idle" nil)
@@ -236,7 +236,11 @@ no kernel, disconnected, reconnecting."
                    (format " :%s" (plist-get parts :port)))
                   ((plist-get parts :host)
                    (format " %s" (plist-get parts :host)))
-                  (t "")))))
+                  (t ""))
+            ;; The fallback, plain to see: its answers are this machine's.
+            (if (eq emjupy--lsp-route 'local)
+                (propertize " LSP: this machine" 'face 'error)
+              ""))))
 
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."

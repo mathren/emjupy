@@ -237,26 +237,44 @@ somewhere this machine cannot reach as a plain path."
        (let ((dir (emjupy--notebook-directory nb)))
          (and dir (not (emjupy--local-directory-p dir))))))
 
+(defvar-local emjupy--lsp-route nil
+  "In a notebook buffer: how its language server is reached, once decided.
+`socket', the server's beside the kernel, in its environment; `local',
+one on this machine -- the fallback, marked in the mode line; nil until
+the server has been asked.  Nothing is attached while it is nil: an
+ordinary Eglot started first, over TRAMP, failed and blocked the right
+one, or answered from this machine's Python.")
+
 (defun emjupy--shadow-directory-for (nb)
   "Return the directory NB's shadow file belongs in."
   ;; Forcing local rejects REMOTE candidates only.  A directory set by hand
   ;; that is already on this machine is still what the user asked for.
-  (cl-flet ((usable (dir)
-              (and dir
-                   (not (and emjupy--force-local-shadow (file-remote-p dir)))
-                   dir)))
-    (let* ((explicit (usable (and emjupy-shadow-directory
-                                  (file-name-as-directory
-                                   emjupy-shadow-directory))))
-           ;; Not beside a notebook that lives elsewhere when the shadow must
-           ;; stay here: that would make a local directory named after a remote
-           ;; path.  The socket transport never reads the file, so a temporary
-           ;; directory serves.
-           (beside (and (not explicit)
-                        emjupy-shadow-beside-notebook
-                        (not (emjupy--shadow-must-stay-here-p nb))
-                        (usable (emjupy--notebook-directory nb)))))
-      (or explicit beside (emjupy--shadow-temporary-directory)))))
+  ;; Local for the socket route, whoever asks: the server is sent the text.
+  ;; Built by completion with the shadow beside a remote notebook, it moved
+  ;; there, and the connected server went with the buffer it left.
+  (let ((emjupy--force-local-shadow
+         (or emjupy--force-local-shadow
+             (let ((buf (emjupy-notebook-buffer nb)))
+               (and (buffer-live-p buf)
+                    (eq (buffer-local-value 'emjupy--lsp-route buf)
+                        'socket))))))
+    (cl-flet ((usable (dir)
+                (and dir
+                     (not (and emjupy--force-local-shadow (file-remote-p dir)))
+                     dir)))
+      (let* ((explicit (usable (and emjupy-shadow-directory
+                                    (file-name-as-directory
+                                     emjupy-shadow-directory))))
+             ;; Not beside a notebook that lives elsewhere when the shadow must
+             ;; stay here: that would make a local directory named after a
+             ;; remote
+             ;; path.  The socket transport never reads the file, so a temporary
+             ;; directory serves.
+             (beside (and (not explicit)
+                          emjupy-shadow-beside-notebook
+                          (not (emjupy--shadow-must-stay-here-p nb))
+                          (usable (emjupy--notebook-directory nb)))))
+        (or explicit beside (emjupy--shadow-temporary-directory))))))
 
 (defun emjupy--shadow-temporary-directory ()
   "Return the temporary directory for this user's shadow files.

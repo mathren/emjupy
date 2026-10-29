@@ -99,6 +99,16 @@ the advice does nothing at all."
            (emjupy-start-language-support nb)))))))
 
 
+(defun emjupy--lsp-fall-back (nb why)
+  "Have NB use a language server on this machine, WHY the server's could not."
+  (let ((buf (emjupy-notebook-buffer nb)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq emjupy--lsp-route 'local)
+        (force-mode-line-update)
+        (message "[emjupy] LANGUAGE SERVER FALLBACK for %s: %s.  Using one on THIS machine: it does not see the notebook's environment or files.  M-x emjupy-lsp-diagnose"
+                 (emjupy-notebook-path nb) why)))))
+
 (defvar emjupy--suppress-plain-eglot nil
   "Non-nil while a WebSocket-backed Eglot is about to be attached.
 `emjupy--ensure-shadow-buffer' would otherwise start an ordinary Eglot
@@ -126,7 +136,21 @@ hand.  Reports what it found rather than failing quietly."
                ;; would serve nothing, and nothing would ever end it.
                (buffer-live-p (emjupy-notebook-buffer nb))
                (not (emjupy--shadow-would-mislead-p nb)))
-      (let* ((want-socket (and (bound-and-true-p emjupy-lsp-enabled)
+      ;; The route, decided once, before anything attaches: the server's
+      ;; language server when it offers one.
+      (with-current-buffer (emjupy-notebook-buffer nb)
+        (unless emjupy--lsp-route
+          (cond ((not (bound-and-true-p emjupy-lsp-enabled))
+                 (emjupy--lsp-fall-back nb "emjupy-lsp-enabled is off"))
+                ((emjupy--server-offers-lsp-p (emjupy-notebook-server nb))
+                 (setq emjupy--lsp-route 'socket))
+                (t (emjupy--lsp-fall-back
+                    nb (format "the server offers no %s through jupyter-lsp"
+                               emjupy-lsp-server))))))
+      (let* ((want-socket (and (eq (buffer-local-value
+                                    'emjupy--lsp-route
+                                    (emjupy-notebook-buffer nb))
+                                   'socket)
                                (emjupy-notebook-kernel-cwd nb)))
              (emjupy--suppress-plain-eglot want-socket)
              ;; Keep it local when the socket is what will read it -- which
@@ -141,7 +165,18 @@ hand.  Reports what it found rather than failing quietly."
           (or (and want-socket
                    (emjupy--claim-shadow-for-websocket buffer)
                    (emjupy--eglot-connect nb buffer))
-              buffer))))))
+              (progn
+                ;; Offered, but not reached: the fallback, said.
+                (when want-socket
+                  (emjupy--lsp-fall-back
+                   nb (format "its %s did not connect%s" emjupy-lsp-server
+                              (if (bound-and-true-p emjupy--lsp-last-failure)
+                                  (format " (%s)" emjupy--lsp-last-failure)
+                                "")))
+                  (with-current-buffer buffer
+                    (emjupy--attach-plain-eglot
+                     nb (emjupy-notebook-buffer nb))))
+                buffer)))))))
 
 (defun emjupy--claim-shadow-for-websocket (buffer)
   "Return non-nil if BUFFER is free for a WebSocket server to attach to.
@@ -197,6 +232,9 @@ NB-BUFFER, the notebook's, is backing off."
       ;; the code, but nothing is attached.
       (unless (or emjupy--suppress-plain-eglot
                   (not emjupy-language-support)
+                  ;; only as the fallback, decided: never first, racing
+                  (not (eq (buffer-local-value 'emjupy--lsp-route nb-buffer)
+                           'local))
                   (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
                   (and (boundp 'eglot--managed-mode) eglot--managed-mode))
         (with-timeout (emjupy-shadow-timeout
