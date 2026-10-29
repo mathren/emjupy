@@ -119,11 +119,13 @@ Said if the reconnect gives up: the server may have stopped.")
 (defvar emjupy--session-id (emjupy--uuid)
   "Unique identifier for the current Emacs session.")
 
-(cl-defun emjupy--make-execute-request (code &key allow-stdin)
+(cl-defun emjupy--make-execute-request (code &key allow-stdin internal)
   "Return a Jupyter `execute_request' payload for CODE.
 The value is a cons of the message id and the serialized message.  With
 ALLOW-STDIN, the kernel may ask for input -- `input', `getpass', pdb --
-as a cell run by the user does; emjupy's own requests never do."
+as a cell run by the user does; emjupy's own requests never do.  With
+INTERNAL, it is emjupy's own: counted in no execution count, kept in no
+history, and stopping none of the user's queued cells if it fails."
   (let* ((msg-id (emjupy--uuid))
          (header (make-hash-table :test 'equal))
          (content (make-hash-table :test 'equal))
@@ -137,10 +139,12 @@ as a cell run by the user does; emjupy's own requests never do."
 
     (puthash "code" code content)
     (puthash "silent" :false content)
-    (puthash "store_history" t content)
+    ;; emjupy's own code, INTERNAL, is no run of the user's: it counts
+    ;; nothing, is in no history, and failing stops none of their cells.
+    (puthash "store_history" (if internal :false t) content)
     (puthash "user_expressions" (make-hash-table) content)
     (puthash "allow_stdin" (if allow-stdin t :false) content)
-    (puthash "stop_on_error" t content)
+    (puthash "stop_on_error" (if internal :false t) content)
 
     (puthash "header" header msg)
     (puthash "parent_header" (make-hash-table) msg)
@@ -478,7 +482,7 @@ Apart from a kernel's pending table: they belong to no cell.")
 
 For emjupy's own questions -- \"where are you?\" -- not for user code."
   (when (emjupy--ws-live-p kernel)
-    (let* ((req (emjupy--make-execute-request code))
+    (let* ((req (emjupy--make-execute-request code :internal t))
            (msg-id (car req)))
       ;; The callback, and the output gathered so far, newest first.
       (puthash msg-id (cons callback nil) emjupy--internal-requests)

@@ -1510,6 +1510,20 @@ queued code before a first cell's.  A new connection is told afresh."
         (emjupy--tell-kernel-width nb 90)
         (should (= told 3))))))
 
+
+(ert-deftest emjupy-test-emjupys-own-code-is-no-run-of-the-users ()
+  "emjupy's own code on the kernel counts nothing and stops nothing.
+It took an execution count: a restarted kernel, told its width, numbered
+the user's first cell 2."
+  (cl-flet ((content (req)
+              (gethash "content" (json-parse-string (cdr req)))))
+    (let ((own (content (emjupy--make-execute-request "x" :internal t)))
+          (users (content (emjupy--make-execute-request "x"))))
+      (should (eq (gethash "store_history" own) :false))
+      (should (eq (gethash "stop_on_error" own) :false))
+      (should (eq (gethash "store_history" users) t))
+      (should (eq (gethash "stop_on_error" users) t)))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here
