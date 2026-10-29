@@ -202,11 +202,13 @@ JupyterLab, or by someone else -- ask before overwriting it."
            (emjupy--save-to-server nb t)
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
     ;; A checkpoint, as JupyterLab makes on saving: what
-    ;; `emjupy-revert-to-checkpoint' goes back to.  Not for automatic saves.
-    (with-demoted-errors "[emjupy] No checkpoint made: %S"
-      (emjupy--http-request "POST" (emjupy-notebook-server nb)
-                            (concat (emjupy--contents-path path)
-                                    "/checkpoints")))
+    ;; `emjupy-revert-to-checkpoint' goes back to.  Not for automatic saves;
+    ;; not waited for, a round trip on a slow link, but said if it fails.
+    (emjupy--http-request-async
+     "POST" (emjupy-notebook-server nb)
+     (concat (emjupy--contents-path path) "/checkpoints") nil
+     #'ignore
+     (lambda (err) (message "[emjupy] No checkpoint made: %S" err)))
     (message "[emjupy] Saved %s" path)))
 
 ;;;; Copies of unsaved edits

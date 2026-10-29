@@ -201,6 +201,33 @@ what the save by hand replaces."
       (should (equal (car order) "PUT-auto"))
       (should (member "PUT" order)))))
 
+
+(ert-deftest emjupy-test-saving-does-not-wait-for-its-checkpoint ()
+  "Saving waits for the save, not the checkpoint: a round trip less."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x = 1"))
+      buf nb
+    (setf (emjupy-notebook-server nb)
+          (make-emjupy-server :base-url "127.0.0.1:1" :token "t")
+          (emjupy-notebook-path nb) "a.ipynb")
+    (let ((waited nil) (not-waited nil))
+      (cl-letf (((symbol-function 'emjupy--save-to-server)
+                 (lambda (&rest _) (push 'save waited) t))
+                ((symbol-function 'emjupy--http-request)
+                 (lambda (method _s path &rest _)
+                   (push (list method path) waited)))
+                ((symbol-function 'emjupy--http-request-async)
+                 (lambda (method _s path &rest _)
+                   (push (list method path) not-waited)))
+                ((symbol-function 'message) #'ignore))
+        (emjupy-save-notebook))
+      (should-not (cl-find-if (lambda (r)
+                                (and (consp r)
+                                     (string-suffix-p "/checkpoints" (cadr r))))
+                              waited))
+      (should (equal not-waited
+                     '(("POST" "/api/contents/a.ipynb/checkpoints")))))))
+
 (provide 'emjupy-save-test)
 
 ;;; emjupy-save-test.el ends here

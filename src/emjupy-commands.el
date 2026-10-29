@@ -712,17 +712,25 @@ next line, outside the code."
 
 ;;;; Appearance
 
+(defvar emjupy--cells-synced nil
+  "Non-nil while cells are run in a row, synced once before them.
+Each run synced every cell: a notebook run whole was read once per
+cell, slower with the square of its size.")
+
 (defun emjupy--redraw-markdown-cell (cell)
   "Redraw markdown CELL, its LaTeX included.
 
 What running a markdown cell means in Jupyter: there is no code in it,
 so the result is the rendered form rather than anything from a kernel."
-  (emjupy--sync-all-cells)
+  (unless emjupy--cells-synced (emjupy--sync-all-cells))
   ;; Running a markdown cell means "show it formatted": its preview is turned on
   ;; if it was off.
   (unless emjupy-render-latex
     (setq-local emjupy-render-latex t))
-  (emjupy--redraw-notebook cell)
+  ;; In place: the notebook redrawn for each markdown cell made running a
+  ;; notebook whole slower with every markdown cell in it.
+  (unless (emjupy--redraw-cells-in-place (list cell) (list cell))
+    (emjupy--redraw-notebook cell))
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
       (emjupy--preview-latex-in (overlay-start ov) (overlay-end ov))))

@@ -74,6 +74,9 @@ without a kernel.  nil never asks."
 
 ;;;; Connection state
 
+(defvar-local emjupy--kernel-width-told nil
+  "The kernel and width last sent to it, as (KERNEL-ID . WIDTH).")
+
 (defvar emjupy-debug-functions nil
   "Functions called with KERNEL, MSG-TYPE and DATA for the debugger's messages.
 debug_reply and debug_event: the debugger, a layer above, hears them so.")
@@ -700,6 +703,11 @@ dropped; any other's are raised as they were."
 KERNEL-NAME, when given, is the kernelspec name to record.
 Returns the `emjupy-kernel'.  Each notebook keeps its own kernel, so
 several notebooks -- from several servers -- stay live at once."
+  ;; A new connection, or a restarted kernel under the same id: told the
+  ;; width afresh.
+  (when (buffer-live-p (emjupy-notebook-buffer notebook))
+    (with-current-buffer (emjupy-notebook-buffer notebook)
+      (setq emjupy--kernel-width-told nil)))
   (let* ((server (emjupy-notebook-server notebook))
          (parts (emjupy--server-parts server))
          ;; https:// servers require wss://, and any base path (proxy or
@@ -923,9 +931,6 @@ Run a moment after the connection, when the socket is up.  Layers above
 this one hang their start-up work here -- asking the kernel where it
 runs, for instance -- rather than this file calling into them.")
 
-(defvar-local emjupy--kernel-width-told nil
-  "The kernel and width last sent to it, as (KERNEL-ID . WIDTH).")
-
 (defun emjupy--tell-kernel-width (nb &optional width)
   "Tell NB's kernel how wide its output is drawn: WIDTH, or the box's now.
 Sets COLUMNS in the kernel's environment, which programs read when their
@@ -936,13 +941,16 @@ is still folded where the box ends."
     (when (and kernel (emjupy--ws-live-p kernel) (buffer-live-p buf))
       (with-current-buffer buf
         (let ((columns (or width (emjupy--box-width))))
-          (emjupy--kernel-eval
-           kernel
-           (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
-                   columns)
-           #'ignore)
-          (setq emjupy--kernel-width-told
-                (cons (emjupy-kernel-id kernel) columns)))))))
+          ;; Told already, on this connection: not again.
+          (unless (equal emjupy--kernel-width-told
+                         (cons (emjupy-kernel-id kernel) columns))
+            (emjupy--kernel-eval
+             kernel
+             (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
+                     columns)
+             #'ignore)
+            (setq emjupy--kernel-width-told
+                  (cons (emjupy-kernel-id kernel) columns))))))))
 
 (defun emjupy--ensure-kernel-width (nb)
   "Tell NB's kernel the box width, unless it already has this one."
@@ -1283,7 +1291,7 @@ The timer calling this stops once no cell runs anywhere."
 
       ;; 1.  Sync ALL cells: the code sent is read from the cell, and a fallback
       ;; redraw rebuilds the notebook from the cells.
-      (emjupy--sync-all-cells)
+      (unless emjupy--cells-synced (emjupy--sync-all-cells))
       (run-hook-with-args 'emjupy-before-execute-functions cell)
 
       ;; 2.  Clear the previous output, in place as C-c C-l does: a full redraw
@@ -1358,11 +1366,15 @@ stepping over overlays mid-flight lands in the output box."
   "Run CELLS in order, as each would be run from its own place.
 Raw cells are left alone, as Jupyter does; markdown ones are rendered.
 Point stays where it was."
+  (emjupy--sync-all-cells)
   (save-excursion
-    (dolist (cell cells)
-      (unless (eq (emjupy-cell-type cell) 'raw)
-        (emjupy--goto-cell cell 'beginning)
-        (emjupy-execute-cell-at-point)))))
+    ;; Synced once, the rules rebuilt once, for all of them.
+    (let ((emjupy--cells-synced t))
+      (emjupy--with-rules-once
+        (dolist (cell cells)
+          (unless (eq (emjupy-cell-type cell) 'raw)
+            (emjupy--goto-cell cell 'beginning)
+            (emjupy-execute-cell-at-point)))))))
 
 (defun emjupy--run-region ()
   "Run the cells the region touches, in order: Jupyter's run selected cells.

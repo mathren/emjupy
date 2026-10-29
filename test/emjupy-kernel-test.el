@@ -1450,6 +1450,66 @@ says so."
     (should (seq-some (lambda (m) (string-match-p "asks for the kernel gone" m))
                       said))))
 
+
+;;;; Work done once, not once per cell
+
+(defmacro emjupy-test--running (&rest body)
+  "Run BODY in four cells, the last markdown, on a stubbed live kernel.
+SENT, in BODY, collects what is sent; (calls FN) counts calls to FN."
+  (declare (indent 0))
+  `(emjupy-test--with-notebook
+       (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1")
+               (make-emjupy-cell :id 2 :type 'code :source "b = 2")
+               (make-emjupy-cell :id 3 :type 'code :source "c = 3")
+               (make-emjupy-cell :id 4 :type 'markdown :source "# m"))
+       buf nb
+     (let ((sent nil) (counts (make-hash-table)))
+       (setf (emjupy-notebook-kernel nb)
+             (make-emjupy-kernel :id "k" :notebook nb
+                                 :pending (make-hash-table :test 'equal)))
+       (cl-letf* (((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+                  ((symbol-function 'emjupy--ws-send)
+                   (lambda (payload &rest _) (push payload sent)))
+                  (sync (symbol-function 'emjupy--sync-all-cells))
+                  ((symbol-function 'emjupy--sync-all-cells)
+                   (lambda ()
+                     (cl-incf (gethash 'sync counts 0))
+                     (funcall sync)))
+                  (whole (symbol-function 'emjupy--redraw-notebook))
+                  ((symbol-function 'emjupy--redraw-notebook)
+                   (lambda (&rest args)
+                     (cl-incf (gethash 'whole counts 0)) (apply whole args))))
+         (cl-flet ((calls (what) (gethash what counts 0)))
+           (unwind-protect (progn ,@body) (emjupy--stop-spinner)))))))
+
+(ert-deftest emjupy-test-run-all-reads-the-cells-once ()
+  "Running all cells syncs them once, not once per cell, and renders a
+markdown cell in place, not by redrawing the notebook.  Synced per cell,
+a notebook run whole was read once per cell: 0.8 s at 500 cells."
+  (emjupy-test--running
+    (emjupy-run-all-cells)
+    ;; the three code cells; the width, told once, besides
+    (should (= (cl-count-if-not (lambda (p) (string-match-p "COLUMNS" p)) sent)
+               3))
+    (should (= (calls 'sync) 1))
+    (should (= (calls 'whole) 0))))
+
+(ert-deftest emjupy-test-the-kernel-is-told-its-width-once ()
+  "The width is sent once to a connection, not again when the same: it
+queued code before a first cell's.  A new connection is told afresh."
+  (emjupy-test--running
+    (let ((told 0))
+      (cl-letf (((symbol-function 'emjupy--kernel-eval)
+                 (lambda (&rest _) (cl-incf told))))
+        (emjupy--tell-kernel-width nb 80)
+        (emjupy--tell-kernel-width nb 80)
+        (should (= told 1))
+        (emjupy--tell-kernel-width nb 90)
+        (should (= told 2))
+        (setq emjupy--kernel-width-told nil)
+        (emjupy--tell-kernel-width nb 90)
+        (should (= told 3))))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here
