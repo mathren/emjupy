@@ -358,6 +358,63 @@ starting, for a server opened a moment ago."
                    "/ssh:h:/home/u/proj/"
                    "/home/u/envs/a/bin/jupyter" '(:host "h"))))))
 
+
+(ert-deftest emjupy-test-a-remote-machines-environments-are-asked-once ()
+  "A remote machine's environments and conda are found once a session:
+each was a round trip or more at every opening."
+  (let ((emjupy--environment-jupyters (make-hash-table :test 'equal))
+        (emjupy--conda-environments-of (make-hash-table :test 'equal))
+        (found 0) (asked 0))
+    (cl-letf (((symbol-function 'emjupy--find-environment-jupyter)
+               (lambda (&rest _) (cl-incf found) "/e/bin/jupyter"))
+              ((symbol-function 'emjupy--ask-conda-environments)
+               (lambda (&rest _) (cl-incf asked) '(("base" . "/c")))))
+      (dotimes (_ 3)
+        (should (equal (emjupy--environment-jupyter "/e" "/ssh:h:/p/")
+                       "/e/bin/jupyter"))
+        (should (equal (emjupy--conda-environments "/ssh:h:/p/")
+                       '(("base" . "/c")))))
+      (should (= found 1))
+      (should (= asked 1))
+      ;; another environment, or machine, is found again
+      (emjupy--environment-jupyter "/other" "/ssh:h:/p/")
+      (emjupy--conda-environments "/ssh:g:/p/")
+      (should (= found 2))
+      (should (= asked 2)))))
+
+(ert-deftest emjupy-test-servers-are-listed-from-their-runtime-files ()
+  "Running servers are read from their runtime files, those of live
+processes only; with no runtime file, jupyter's own list."
+  (let* ((dir (make-temp-file "emjupy-runtime" t))
+         (jupyter (expand-file-name "fake-jupyter" dir))
+         ;; HOME too: this machine's own runtime files are not the test's
+         (process-environment (append (list (concat "JUPYTER_RUNTIME_DIR=" dir)
+                                            (concat "HOME=" dir))
+                                      process-environment))
+         (run (lambda ()
+                (with-temp-buffer
+                  (call-process "sh" nil t nil "-c"
+                                (emjupy--server-list-command jupyter))
+                  (buffer-string)))))
+    (unwind-protect
+        (progn
+          (with-temp-file jupyter (insert "#!/bin/sh\necho FROM-JUPYTER\n"))
+          (set-file-modes jupyter #o755)
+          ;; none: jupyter's own list
+          (should (string-match-p "FROM-JUPYTER" (funcall run)))
+          ;; a live server's file read, a dead one's not
+          (with-temp-file (expand-file-name
+                           (format "jpserver-%d.json" (emacs-pid)) dir)
+            (insert "{\"port\": 8888,\n \"root_dir\": \"/r\"}"))
+          (with-temp-file (expand-file-name "jpserver-999999.json" dir)
+            (insert "{\"port\": 9999}"))
+          (let ((out (funcall run)))
+            (should (string-match-p "\"port\": 8888" out))
+            (should-not (string-match-p "9999" out))
+            (should-not (string-match-p "FROM-JUPYTER" out))
+            (should (= 1 (length (split-string out "\n" t))))))
+      (delete-directory dir t))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

@@ -43,17 +43,31 @@
 
 (defun emjupy--environment-yml-name (dir)
   "Return the `name:' of the conda environment file in DIR, or nil.
-That is environment.yml, or environment.yaml."
-  (cl-loop for file in '("environment.yml" "environment.yaml")
-           for path = (expand-file-name file dir)
-           when (file-readable-p path)
-           return (with-temp-buffer
-                    (insert-file-contents path)
-                    (goto-char (point-min))
-                    (when (re-search-forward
-                           "^name:[ \t]*[\"']?\\([^\"'#\n]*[^\"'#\n \t]\\)[\"']?[ \t]*\\(?:#.*\\)?$"
-                           nil t)
-                      (match-string 1)))))
+That is environment.yml, or environment.yaml.  On another machine read
+with one command: tested and read through TRAMP, three round trips."
+  (if (file-remote-p dir)
+      (with-temp-buffer
+        (let ((default-directory dir))
+          (ignore-errors
+            (process-file "sh" nil t nil "-c"
+                          (concat "cat environment.yml 2>/dev/null"
+                                  " || cat environment.yaml 2>/dev/null"))))
+        (goto-char (point-min))
+        (emjupy--environment-yml-name-here))
+    (cl-loop for file in '("environment.yml" "environment.yaml")
+             for path = (expand-file-name file dir)
+             when (file-readable-p path)
+             return (with-temp-buffer
+                      (insert-file-contents path)
+                      (goto-char (point-min))
+                      (emjupy--environment-yml-name-here)))))
+
+(defun emjupy--environment-yml-name-here ()
+  "Return the `name:' in the environment file in this buffer, from point."
+  (when (re-search-forward
+         "^name:[ \t]*[\"']?\\([^\"'#\n]*[^\"'#\n \t]\\)[\"']?[ \t]*\\(?:#.*\\)?$"
+         nil t)
+    (match-string 1)))
 
 (defun emjupy--find-conda (remote)
   "Return conda, mamba or micromamba, the first there is, or nil.
@@ -71,7 +85,23 @@ of the PATH for each name, a round trip each -- 21 on a plain machine."
           (and (not (string-empty-p found))
                (concat (file-remote-p default-directory) found)))))))
 
+(defvar emjupy--conda-environments-of (make-hash-table :test 'equal)
+  "Conda's environments, by remote machine: asked once a session.")
+
 (defun emjupy--conda-environments (&optional where)
+  "Return conda's environments on WHERE's machine, as name and directory.
+See `emjupy--ask-conda-environments'.  A remote machine's, asked once:
+a round trip or two, at every opening, for an answer that rarely
+changes."
+  (let ((machine (file-remote-p (or where temporary-file-directory))))
+    (if (not machine)
+        (emjupy--ask-conda-environments where)
+      (pcase (gethash machine emjupy--conda-environments-of 'unasked)
+        ('unasked (puthash machine (emjupy--ask-conda-environments where)
+                           emjupy--conda-environments-of))
+        (known known)))))
+
+(defun emjupy--ask-conda-environments (&optional where)
   "Return conda's environments as an alist of name and directory, or nil.
 nil when there is no conda, mamba or micromamba to ask.  Asked on the
 machine of WHERE, a directory -- one through TRAMP asks the remote."
@@ -117,7 +147,24 @@ here, a venv there was looked for on this machine, and not found."
       (concat (file-remote-p default-directory) env)
     (expand-file-name env)))
 
+(defvar emjupy--environment-jupyters (make-hash-table :test 'equal)
+  "The jupyter of each environment found, by machine and name.
+Asked over TRAMP, each a round trip or two at every opening.")
+
 (defun emjupy--environment-jupyter (env &optional where)
+  "Return the `jupyter' program of the environment ENV, on WHERE's machine.
+See `emjupy--find-environment-jupyter'; on a remote machine, found once."
+  (let* ((default-directory (or where default-directory))
+         (machine (file-remote-p default-directory))
+         (key (list machine env)))
+    (if (not machine)
+        ;; Here a look is cheap, and an environment may change under it.
+        (emjupy--find-environment-jupyter env where)
+      (or (gethash key emjupy--environment-jupyters)
+          (puthash key (emjupy--find-environment-jupyter env where)
+                   emjupy--environment-jupyters)))))
+
+(defun emjupy--find-environment-jupyter (env &optional where)
   "Return the `jupyter' program of the environment ENV.
 ENV is a conda environment's name, an environment's directory -- a venv
 or a conda prefix -- or empty for the one first on the PATH.  Looked
@@ -470,6 +517,24 @@ imports Jupyter -- seconds, for a server opened a moment ago."
                         :root_dir (directory-file-name
                                    (or (file-remote-p root 'localname) root)))))
 
+(defun emjupy--server-list-command (jupyter)
+  "Return a shell command printing the running servers, as JUPYTER's list.
+The runtime files the list is made of, one JSON line for each server
+whose process is alive -- `jupyter server list' starts a Python and
+imports Jupyter for it, a second or more.  No runtime file where Jupyter
+puts them on Linux or macOS, or where JUPYTER_RUNTIME_DIR says: then
+JUPYTER's own list."
+  (concat
+   "found=; for d in \"${JUPYTER_RUNTIME_DIR:-}\" "
+   "\"$HOME/.local/share/jupyter/runtime\" "
+   "\"$HOME/Library/Jupyter/runtime\"; do "
+   "[ -n \"$d\" ] || continue; "
+   "for f in \"$d\"/jpserver-*.json; do [ -f \"$f\" ] || continue; found=1; "
+   "p=${f##*jpserver-}; p=${p%.json}; "
+   "kill -0 \"$p\" 2>/dev/null && { tr -d '\\n' < \"$f\"; echo; }; done; done; "
+   "[ -n \"$found\" ] || "
+   (shell-quote-argument jupyter) " server list --json"))
+
 (defun emjupy--remote-server (dir jupyter route)
   "Return the Jupyter server serving DIR on its machine, started if need be.
 One already serving DIR, or a folder above it, is used; otherwise JUPYTER
@@ -481,8 +546,7 @@ starts one.  ROUTE names the machine, for the messages."
          (listed (and (not known)
                       (condition-case nil
                      (emjupy--remote-shell
-                      dir (format "%s server list --json"
-                                  (shell-quote-argument jupyter)))
+                      dir (emjupy--server-list-command jupyter))
                    (file-error ""))))
          (found (or known
                     (emjupy--remote-server-for
@@ -530,7 +594,10 @@ and opens the notebook on it.  Return the notebook\\='s buffer."
                                                        (plist-get remote :log)))
                                         (file-error "")))
                     "")))
-    (emjupy--bind-server-kernel server)
+    ;; Bound already, by an earlier opening: asking again lists its
+    ;; kernels, a round trip, to come to the same one.
+    (unless (emjupy-server-kernel-id server)
+      (emjupy--bind-server-kernel server))
     (list server (file-relative-name (file-remote-p file 'localname) root))))
 
 (defun emjupy--tunnel-of (server)
