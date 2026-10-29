@@ -156,7 +156,14 @@ hand.  Reports what it found rather than failing quietly."
             ;; it has answered.  Nothing attaches meanwhile.
             (_ (emjupy--ask-server-lsp
                 (emjupy-notebook-server nb)
-                (lambda () (emjupy-start-language-support nb)))))))
+                ;; Answered later: only for a notebook still open, its
+                ;; kernel connected.  One closed meanwhile was attached to
+                ;; all the same, and Eglot waited 30 s for no one.
+                (lambda ()
+                  (let ((buf (emjupy-notebook-buffer nb)))
+                    (when (and (buffer-live-p buf)
+                               (with-current-buffer buf (emjupy--ws-live-p)))
+                      (emjupy-start-language-support nb)))))))))
       (when (buffer-local-value 'emjupy--lsp-route (emjupy-notebook-buffer nb))
         (let* ((want-socket (and (eq (buffer-local-value
                                       'emjupy--lsp-route

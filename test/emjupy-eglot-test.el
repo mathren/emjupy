@@ -933,6 +933,8 @@ SAID collects messages; ATTACHED is set when plain Eglot attaches."
                                            (make-hash-table))))))
                  ((symbol-function 'emjupy--ensure-shadow-buffer)
                   (lambda (_nb) (current-buffer)))
+                 ;; its kernel connected, as when the server answers
+                 ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
                  ((symbol-function 'emjupy--eglot-connect)
                   (lambda (&rest _) nil))
                  ((symbol-function 'eglot--connect)
@@ -1013,6 +1015,23 @@ here, and lost its environment's."
       (should (= connects 0))
       (should-not attached)
       (should-not (seq-some (lambda (m) (string-match-p "FALLBACK" m)) said)))))
+
+
+(ert-deftest emjupy-test-an-answer-for-a-closed-notebook-starts-nothing ()
+  "The server answering after its notebook closed starts nothing.
+Started all the same, Eglot waited 30 s for a server no one would use,
+and said so in whatever came next."
+  (emjupy-test--routing t
+    (let ((then nil) (started 0))
+      (cl-letf (((symbol-function 'emjupy--ask-server-lsp)
+                 (lambda (_server fn) (setq then fn))))
+        (emjupy-start-language-support nb))
+      (should (functionp then))
+      (cl-letf (((symbol-function 'emjupy-start-language-support)
+                 (lambda (&rest _) (cl-incf started))))
+        (kill-buffer buf)
+        (funcall then))
+      (should (= started 0)))))
 
 (provide 'emjupy-eglot-test)
 
