@@ -196,6 +196,20 @@ Checked in a fresh Emacs, as this one has opened notebooks."
                 (buffer-string))))
     (should (string-suffix-p "(nil nil)" (string-trim out)))))
 
+
+(ert-deftest emjupy-test-every-file-binds-lexically ()
+  "Every source file says lexical-binding: t on its first line.
+Only there does Emacs read it: a long first line rewrapped once lost it,
+and the file would have been compiled with dynamic binding."
+  (dolist (file (directory-files
+                 (file-name-directory (locate-library "emjupy-core.el"))
+                 t "\\`emjupy.*\\.el\\'"))
+    (with-temp-buffer
+      (insert-file-contents file nil 0 300)
+      (should (string-match-p "-\\*-.*lexical-binding: t.*-\\*-"
+                              (buffer-substring (point-min)
+                                                (line-end-position)))))))
+
 (provide 'emjupy-package-test)
 
 ;;; emjupy-package-test.el ends here
