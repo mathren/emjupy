@@ -1192,7 +1192,12 @@ in its place: not its last newline, where the next cell's edge hangs."
       (insert to-insert)
       ;; Faces are applied as plain (non-sticky) `face' properties so that
       ;; text typed at a cell edge does not inherit the neighbouring face.
-      (remove-text-properties src-start (point) '(rear-nonsticky nil)))
+      (remove-text-properties src-start (point) '(rear-nonsticky nil))
+      ;; An empty cell's line to type on is no source: marked, sync skips
+      ;; it, typed on or not.  Not passed on to what is typed.
+      (when (string-empty-p source)
+        (add-text-properties src-start (1+ src-start)
+                             '(emjupy-placeholder t rear-nonsticky t))))
     ;; Always one newline after the source, which sync removes; added only when
     ;; missing, a source ending in a newline lost it on the first save.
     (insert "\n")

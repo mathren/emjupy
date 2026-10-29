@@ -655,6 +655,25 @@ would undo the typing, so only the structure is checked."
         (emjupy--check-integrity buf)
         (should-not (emjupy--check-invariants :structure-only t))))))
 
+
+(ert-deftest emjupy-test-a-new-cell-typed-in-has-no-trailing-newline ()
+  "An empty cell is drawn with a line to type on; typed on, its code does
+not keep that line's newline.  It did: every new cell, typed in, ended in
+a newline its author never typed."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "a = 1"))
+      buf nb
+    (cl-flet ((new-cell-with (text)
+                (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0)
+                                   'beginning)
+                (emjupy-insert-cell-below)
+                (insert text)
+                (emjupy--sync-all-cells)
+                (emjupy-cell-source (aref (emjupy-notebook-cells nb) 1))))
+      (should (equal (new-cell-with "q = 1") "q = 1"))
+      (should (equal (new-cell-with "x = 1\ny = 2") "x = 1\ny = 2"))
+      (should (equal (new-cell-with "") "")))))
+
 (provide 'emjupy-cells-test)
 
 ;;; emjupy-cells-test.el ends here

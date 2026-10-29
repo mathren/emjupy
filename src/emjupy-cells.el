@@ -40,14 +40,24 @@ mistake costs the run."
   "Copy the buffer text inside CELL's overlay into its `emjupy-cell-source'."
   (when-let* ((ov (emjupy-cell-overlay cell)))
     (when (overlay-buffer ov)
-      (let* ((text (buffer-substring-no-properties (overlay-start ov)
-                                                   (overlay-end ov)))
-             (trimmed (string-trim-right text "\n")))
-        ;; An empty cell is drawn with a newline, to have a line to type on;
-        ;; that newline is not source.
-        (setf (emjupy-cell-source cell)
-              (if (string-empty-p (string-trim-right trimmed "[\n]+"))
-                  "" trimmed))))))
+      ;; Its text but an empty cell's line to type on, marked when drawn:
+      ;; typed on, that newline stayed, ending the source.
+      (let ((text (emjupy--text-but-placeholders (overlay-start ov)
+                                                 (overlay-end ov))))
+        (setf (emjupy-cell-source cell) (string-trim-right text "\n"))))))
+
+(defun emjupy--text-but-placeholders (start end)
+  "Return the text from START to END, without a placeholder at its end.
+An empty cell is drawn with a newline to type on, marked
+`emjupy-placeholder'.  Typed on, the text comes before it, and the
+newline is none of the source; typed after, it is a blank line kept."
+  (let ((pos (text-property-any start end 'emjupy-placeholder t)))
+    (if (and pos
+             (string-match-p "\\`\n*\\'"
+                             (buffer-substring-no-properties (1+ pos) end)))
+        (concat (buffer-substring-no-properties start pos)
+                (buffer-substring-no-properties (1+ pos) end))
+      (buffer-substring-no-properties start end))))
 
 (defun emjupy--cell-problems (cell index prev-end structure-only)
   "Return the ways CELL, the INDEXth, disagrees with this buffer, in order.
