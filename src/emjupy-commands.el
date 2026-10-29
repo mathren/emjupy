@@ -304,6 +304,9 @@ reverse, would silently reinterpret one of them."
 
 (defun emjupy-toggle-cell-output ()
   "Collapse or restore the output of the cell at point.
+With an active region, the output of every cell it touches: hidden,
+unless all is already, when it is shown.  A cell whose code is hidden is
+left alone, its output hidden with the code.
 
 Collapsing hides the output and marks the cell's bottom rule with a
 glyph.  Nothing is discarded: the outputs stay on the cell, so restoring
@@ -316,9 +319,28 @@ survives saving and means the same thing elsewhere."
   (emjupy--as-one-undo-step
     (emjupy--as-one-undo-step
       (emjupy--sync-all-cells)
-      (let ((cell (emjupy--cell-at-point-including-output)))
-        (unless cell (user-error "Point is not in a cell"))
-        (emjupy-toggle-output-of-cell cell)))))
+      (if (use-region-p)
+          (emjupy--toggle-outputs-in-region (region-beginning) (region-end))
+        (let ((cell (emjupy--cell-at-point-including-output)))
+          (unless cell (user-error "Point is not in a cell"))
+          (emjupy-toggle-output-of-cell cell))))))
+
+(defun emjupy--toggle-outputs-in-region (start end)
+  "Hide the output of the cells START to END touch; or show it, all hidden.
+A cell's output hidden for its size counts as hidden, and shown is shown."
+  (let* ((cells (cl-remove-if-not
+                 (lambda (cell)
+                   (and (> (length (or (emjupy-cell-outputs cell) [])) 0)
+                        (not (emjupy--cell-source-hidden-p cell))))
+                 (emjupy--cells-between start end)))
+         (hide (cl-notevery #'emjupy--cell-outputs-hidden-p cells)))
+    (unless cells (user-error "No output in the region"))
+    (dolist (cell cells)
+      (unless hide (setf (emjupy-cell-size-hidden cell) nil))
+      (emjupy--set-cell-outputs-hidden cell hide))
+    (unless (emjupy--redraw-cells-in-place cells cells)
+      (emjupy--redraw-notebook (car cells)))
+    (deactivate-mark)))
 
 (defun emjupy--cell-by-id (id)
   "Return the cell of this notebook whose id is ID, or nil."
@@ -856,13 +878,20 @@ Jupyter's mark, for JupyterLab too."
     ;; On the first cell's line, hidden or shown: pressed again, it undoes.
     (emjupy--goto-cell (car cells) 'beginning)))
 
-(defun emjupy--code-cells-between (start end)
-  "The code cells whose boxes START to END touch, in order."
+(defun emjupy--cells-between (start end)
+  "The cells START to END touch, in order: their code, or their output."
   (cl-loop for cell across (emjupy-notebook-cells (emjupy--notebook))
            for ov = (emjupy-cell-overlay cell)
-           when (and (eq (emjupy-cell-type cell) 'code) (overlayp ov)
-                     (< (overlay-start ov) end) (> (overlay-end ov) start))
+           for out = (emjupy-cell-output-ov cell)
+           when (and (overlayp ov) (< (overlay-start ov) end)
+                     (> (if (overlayp out) (overlay-end out) (overlay-end ov))
+                        start))
            collect cell))
+
+(defun emjupy--code-cells-between (start end)
+  "The code cells START to END touch, in order."
+  (cl-remove-if-not (lambda (cell) (eq (emjupy-cell-type cell) 'code))
+                    (emjupy--cells-between start end)))
 
 (defun emjupy--redraw-shown-or-hidden (cell)
   "Redraw CELL, its code or output now shown or hidden."

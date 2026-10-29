@@ -63,7 +63,9 @@ saved, as Jupyter does.  Opening a notebook, an output past what Jupyter
 draws whole -- more than =emjupy-large-output-count= outputs (50, as
 JupyterLab), or =emjupy-large-output-lines= lines (100, where the Jupyter
 Notebook scrolls) -- is hidden for drawing only, its label saying
-/large/: the file is unchanged, and =C-c C-o= shows it.
+/large/: the file is unchanged, and =C-c C-o= shows it.  With a region,
+=C-c C-o= hides the output of every cell the region touches, or shows it
+if all is hidden.
 
 =C-c C-i= hides a code cell's code, and its output with it, as Jupyter's
 "collapse input" does: the cell becomes one line -- =▸=, its count, how

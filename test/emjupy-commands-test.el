@@ -1028,6 +1028,57 @@ Some hidden and some not, all are hidden: not each one turned over."
                               (overlay-get (emjupy-test--hidden-line cell)
                                            'display))))))
 
+
+(ert-deftest emjupy-test-the-output-key-on-a-region ()
+  "Over a region, the output of every cell it touches is hidden, or, all
+hidden, shown; some hidden, all are.  A cell without output, or whose
+code is hidden, is left alone; a region over output alone counts."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1"
+                                  :outputs (vector (stream "1\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 2 :type 'code :source "b = 2"
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 3 :type 'code :source "c = 3"
+                                  :outputs (vector (stream "3\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 4 :type 'code :source "d = 4"
+                                  :outputs (vector (stream "4\n"))
+                                  :metadata (make-hash-table :test 'equal)))
+        buf nb
+      (let ((cells (emjupy-notebook-cells nb))
+            (transient-mark-mode t))
+        (emjupy--set-cell-source-hidden (aref cells 3) t)
+        (emjupy--redraw-notebook)
+        (cl-flet ((region (from to)
+                    (goto-char from) (push-mark (point) t t) (goto-char to))
+                  (hidden (i) (emjupy--cell-outputs-hidden-p (aref cells i))))
+          (region (point-min) (point-max))
+          (emjupy-toggle-cell-output)
+          (should (and (hidden 0) (hidden 2)))
+          (should (emjupy--cell-source-hidden-p (aref cells 3)))
+          (should-not (use-region-p))
+          (region (point-min) (point-max))
+          (emjupy-toggle-cell-output)
+          (should-not (or (hidden 0) (hidden 2)))
+          (emjupy--set-cell-outputs-hidden (aref cells 0) t)
+          (emjupy--redraw-notebook)
+          (region (point-min) (point-max))
+          (emjupy-toggle-cell-output)
+          (should (and (hidden 0) (hidden 2)))
+          ;; a region over cell 3's output text alone
+          (emjupy--set-cell-outputs-hidden (aref cells 2) nil)
+          (emjupy--redraw-notebook)
+          (let ((out (emjupy-cell-output-ov (aref cells 2))))
+            (region (overlay-start out) (1- (overlay-end out))))
+          (emjupy-toggle-cell-output)
+          (should (hidden 2)))))))
+
 (provide 'emjupy-commands-test)
 
 ;;; emjupy-commands-test.el ends here
