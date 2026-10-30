@@ -1033,6 +1033,35 @@ and said so in whatever came next."
         (funcall then))
       (should (= started 0)))))
 
+
+(ert-deftest emjupy-test-the-status-says-why-and-in-order ()
+  "The status of a notebook: its sections in order, the language server's
+route with its reason -- a fallback plain to see -- and, with a prefix,
+a line for every notebook instead."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf nb
+    (setq emjupy--lsp-route 'local
+          emjupy--lsp-route-reason "the server offers no pylsp")
+    (setf (emjupy-notebook-kernel nb)
+          (make-emjupy-kernel :id "k1" :name "python3" :notebook nb
+                              :pending (make-hash-table :test 'equal)))
+    (let ((said nil))
+      (cl-letf (((symbol-function 'display-buffer) #'ignore)
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format fmt args) said))))
+        (emjupy-status)
+        (with-current-buffer "*emjupy status*"
+          (let ((text (buffer-string)))
+            (should (string-match-p "FALLBACK" text))
+            (should (string-match-p "because the server offers no pylsp" text))
+            (should (< (string-match "^Kernel" text)
+                       (string-match "^Language server" text)
+                       (string-match "^Recent messages" text)))))
+        (emjupy-status t)
+        (should (string-match-p "k1" (car said)))))))
+
 (provide 'emjupy-eglot-test)
 
 ;;; emjupy-eglot-test.el ends here

@@ -245,6 +245,9 @@ the server has been asked.  Nothing is attached while it is nil: an
 ordinary Eglot started first, over TRAMP, failed and blocked the right
 one, or answered from this machine's Python.")
 
+(defvar-local emjupy--lsp-route-reason nil
+  "In a notebook buffer: why its route is what it is, for `emjupy-status'.")
+
 (defun emjupy--shadow-directory-for (nb)
   "Return the directory NB's shadow file belongs in."
   ;; Forcing local rejects REMOTE candidates only.  A directory set by hand

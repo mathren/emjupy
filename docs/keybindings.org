@@ -45,7 +45,7 @@
 | =C-c C-x C-r=                   | =emjupy-restart-kernel=             | Restart this notebook's kernel; other notebooks are untouched                                                          |
 | =C-c C-x C-c=                   | =emjupy-reconnect-kernel=           | Reopen the socket to the same kernel after a drop; state survives                                                      |
 | =C-c C-x b=                     | =emjupy-switch-notebook=            | Switch to another open notebook, labelled by server                                                                    |
-| =C-c C-x s=                     | =emjupy-status=                     | List every open notebook with its server and kernel                                                                    |
+| =C-c C-x s=                     | =emjupy-status=                     | This notebook's state: server, kernel, language server and why, remote; =C-u= for every notebook                       |
 | =C-c C-x l=                     | =emjupy-login=                      | Log in to another server (another ssh tunnel)                                                                          |
 | =C-c C-x C-e=                   | =emjupy-export-py=                  | Export the notebook as a plain .py file                                                                                |
 | =C-c C-x C-l=                   | =emjupy-re-render=                  | Redraw the notebook from the cells                                                                                     |

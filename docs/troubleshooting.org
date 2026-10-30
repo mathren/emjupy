@@ -4,6 +4,11 @@
 
 When something behaves unexpectedly.
 
+First, =C-c C-x s= (=emjupy-status=) in the notebook: its server, its
+kernel and what it is doing, its language server -- the server's or a
+fallback, and why -- the remote it is reached through, and emjupy's
+recent messages.  It is what to look at, and to send with a report.
+
 * Diagnosing slowness
 
 First find which part is slow.

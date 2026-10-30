@@ -173,8 +173,9 @@ a prompt.  =C-u M-x emjupy-login= always prompts.
 * If the token is the problem
 
 A tunnelled server still has a token.  emjupy remembers it per server --
-=M-x emjupy-status= lists each open notebook with its server -- so it is
-typed again only to check the server from the shell, with =curl= say.
+=C-u M-x emjupy-status= lists each open notebook with its server -- so
+it is typed again only to check the server from the shell, with =curl=
+say.
 
 * Where the server's files are
 Jupyter does not publish its root directory, deliberately.  emjupy works

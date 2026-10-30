@@ -497,9 +497,61 @@ file name works there, if you would rather push it somewhere else."
     (switch-to-buffer (completing-read "Notebook: " names nil t nil
                                        'emjupy--notebook-history))))
 
-(defun emjupy-status ()
-  "Report every open notebook, its server, and its kernel."
-  (interactive)
+(defvar emjupy-status-functions nil
+  "Functions called with a notebook, each giving a section of its status.
+A section is (TITLE . LINES), strings; nil for nothing to say.  Layers
+above this one add theirs: the kernel, the language server, the remote.")
+
+(defun emjupy-status (&optional all)
+  "Show the state of this notebook: server, kernel, language server, remote.
+In a buffer of its own, ending with emjupy's recent messages -- what to
+look at, or send, when something is wrong.  With prefix ALL, or outside
+a notebook, a line for every notebook open."
+  (interactive "P")
+  (let ((nb (and (not all) (bound-and-true-p emjupy--buffer-notebook))))
+    (if nb
+        (emjupy--status-report nb)
+      (emjupy--status-overview))))
+
+(defun emjupy--status-report (nb)
+  "Show NB's status in the buffer *emjupy status*."
+  (let ((server (emjupy-notebook-server nb))
+        (sections
+         (delq nil (mapcar (lambda (fn) (ignore-errors (funcall fn nb)))
+                           emjupy-status-functions))))
+    (with-current-buffer (get-buffer-create "*emjupy status*")
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format "Notebook  %s\n" (emjupy-notebook-path nb)))
+        (emjupy--status-insert
+         (cons "Server"
+               (if (not server) '("none")
+                 (delq nil
+                       (list (emjupy--server-label server)
+                             (when (emjupy-server-files-root server)
+                               (format "files from %s"
+                                       (emjupy-server-files-root server))))))))
+        (mapc #'emjupy--status-insert sections)
+        (emjupy--status-insert
+         (cons "Recent messages"
+               (or (with-current-buffer (messages-buffer)
+                     (last (seq-filter
+                            (lambda (l) (string-prefix-p "[emjupy]" l))
+                            (split-string (buffer-string) "\n"))
+                           12))
+                   '("none"))))
+        (goto-char (point-min))
+        (special-mode))
+      (display-buffer (current-buffer)))))
+
+(defun emjupy--status-insert (section)
+  "Insert SECTION, (TITLE . LINES), in the status buffer."
+  (insert (format "\n%s\n" (car section)))
+  (dolist (line (cdr section))
+    (insert (format "  %s\n" line))))
+
+(defun emjupy--status-overview ()
+  "Report every open notebook, its server, and its kernel, a line each."
   (let ((buffers (emjupy--notebook-buffers)))
     (if (not buffers)
         (message "[emjupy] No notebooks open.")
@@ -511,7 +563,8 @@ file name works there, if you would rather push it somewhere else."
                  (k (emjupy-notebook-kernel nb)))
             (format "%-28s %-22s %s"
                     (emjupy-notebook-path nb)
-                    (emjupy--server-label (emjupy-notebook-server nb))
+                    (let ((server (emjupy-notebook-server nb)))
+                      (if server (emjupy--server-label server) "no server"))
                     (cond ((null k) "no kernel")
                           ((emjupy--ws-live-p k)
                            (format "kernel %s (connected)"

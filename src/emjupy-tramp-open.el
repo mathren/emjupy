@@ -601,6 +601,32 @@ JUPYTER's own list."
    "[ -n \"$found\" ] || "
    (shell-quote-argument jupyter) " server list --json"))
 
+(defun emjupy--remote-status (nb)
+  "Return the remote section of NB's status, if it is reached by a tunnel."
+  (let* ((server (emjupy-notebook-server nb))
+         (tunnel (seq-find (lambda (tn) (eq (plist-get tn :server) server))
+                           emjupy--remote-tunnels)))
+    (when tunnel
+      (let ((root (emjupy-server-files-root server)))
+        (cons "Remote"
+              (delq nil
+                    (list (format "%s, port %s, through a tunnel from %s"
+                                  (plist-get (plist-get tunnel :route) :host)
+                                  (plist-get tunnel :remote-port)
+                                  (plist-get tunnel :port))
+                          (when (plist-get tunnel :jupyter)
+                            (format "environment's jupyter %s"
+                                    (plist-get tunnel :jupyter)))
+                          (when root
+                            (let* ((key (emjupy--environment-key
+                                         (file-name-as-directory root)))
+                                   (env (cdr (assoc key
+                                                    (emjupy--environments)))))
+                              (and env (format "remembered for %s: %s"
+                                               root env)))))))))))
+
+(add-hook 'emjupy-status-functions #'emjupy--remote-status 30)
+
 (defun emjupy--remote-server (dir jupyter route)
   "Return the Jupyter server serving DIR on its machine, started if need be.
 One already serving DIR, or a folder above it, is used; otherwise JUPYTER

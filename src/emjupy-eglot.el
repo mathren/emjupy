@@ -104,7 +104,8 @@ the advice does nothing at all."
   (let ((buf (emjupy-notebook-buffer nb)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq emjupy--lsp-route 'local)
+        (setq emjupy--lsp-route 'local
+              emjupy--lsp-route-reason why)
         (force-mode-line-update)
         (message "[emjupy] LANGUAGE SERVER FALLBACK for %s: %s.  Using one on THIS machine: it does not see the notebook's environment or files.  M-x emjupy-lsp-diagnose"
                  (emjupy-notebook-path nb) why)))))
@@ -156,7 +157,10 @@ one and lost the environment's."
           (emjupy--lsp-fall-back nb "the notebook has no server"))
          (t
           (pcase (emjupy--server-lsp-answer server)
-            ('yes (setq emjupy--lsp-route 'socket))
+            ('yes (setq emjupy--lsp-route 'socket
+                        emjupy--lsp-route-reason
+                        (format "the server has %s, through jupyter-lsp"
+                                emjupy-lsp-server)))
             ('no (emjupy--lsp-fall-back
                   nb (format "the server offers no %s through jupyter-lsp"
                              emjupy-lsp-server)))
@@ -172,6 +176,42 @@ one and lost the environment's."
                                (with-current-buffer buf (emjupy--ws-live-p)))
                       (emjupy-start-language-support nb)))))))))))
     emjupy--lsp-route))
+
+(defun emjupy--eglot-server-description (server)
+  "Return what SERVER, an Eglot server, is, how it is reached, and if ready."
+  (format "%s, %s"
+          (if (object-of-class-p server 'emjupy-eglot-server)
+              (format "%s, through the server's WebSocket" emjupy-lsp-server)
+            (format "%s, a process here"
+                    (car (process-command (jsonrpc--process server)))))
+          (if (eglot--capabilities server) "ready" "starting")))
+
+(defun emjupy--language-server-status (nb)
+  "Return the language-server section of NB's status."
+  (let* ((buf (emjupy-notebook-buffer nb))
+         (route (and (buffer-live-p buf)
+                     (buffer-local-value 'emjupy--lsp-route buf)))
+         (sb (emjupy-notebook-shadow-buffer nb))
+         (server (and (buffer-live-p sb)
+                      (with-current-buffer sb (eglot-current-server)))))
+    (cons "Language server"
+          (delq nil
+                (list (pcase route
+                        ('socket "the server's, beside the kernel")
+                        ('local "FALLBACK: one on this machine")
+                        (_ (if emjupy-language-support "not yet decided"
+                             "off: emjupy-language-support is nil")))
+                      (when route
+                        (format "because %s"
+                                (buffer-local-value 'emjupy--lsp-route-reason
+                                                    buf)))
+                      (if server
+                          (emjupy--eglot-server-description server)
+                        (and route "none attached"))
+                      (when (buffer-live-p sb)
+                        (format "shadow %s" (buffer-file-name sb))))))))
+
+(add-hook 'emjupy-status-functions #'emjupy--language-server-status 20)
 
 (defun emjupy--attach-language-server (nb route)
   "Attach NB's shadow buffer to its language server, reached by ROUTE.

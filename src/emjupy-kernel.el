@@ -973,6 +973,35 @@ so."
 
 ;;;; Once connected
 
+(defun emjupy--kernel-status (nb)
+  "Return the kernel section of NB's status: see `emjupy-status-functions'."
+  (let ((k (emjupy-notebook-kernel nb))
+        (buf (emjupy-notebook-buffer nb)))
+    (cons "Kernel"
+          (if (not k) '("none")
+            (delq nil
+                  (list (format "%s, %s" (emjupy-kernel-id k)
+                                (or (emjupy-kernel-name k) "?"))
+                        (format "%s, %s"
+                                (if (emjupy--ws-live-p k) "connected"
+                                  "not connected")
+                                (or (emjupy-kernel-state k) "state unknown"))
+                        (when (emjupy-kernel-handshake k)
+                          (format "waiting to hear it; %d held"
+                                  (length (emjupy-kernel-held k))))
+                        (when (emjupy-kernel-heard k)
+                          (format "last heard %.0f s ago"
+                                  (- (float-time) (emjupy-kernel-heard k))))
+                        (when (buffer-live-p buf)
+                          (with-current-buffer buf
+                            (format "%d cells running, %d waiting%s"
+                                    (length emjupy--running-cells)
+                                    (length emjupy--runs-waiting)
+                                    (if emjupy--reconnect-timer
+                                        "; reconnecting" ""))))))))))
+
+(add-hook 'emjupy-status-functions #'emjupy--kernel-status 10)
+
 (defvar emjupy-kernel-connected-functions nil
   "Functions called with a notebook once a kernel is attached to it.
 
