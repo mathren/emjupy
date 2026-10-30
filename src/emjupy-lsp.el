@@ -230,9 +230,10 @@ given -- dropped every error unseen.  Recorded too, in
   "Whether each server, by address, has the language server: `yes' or `no'.
 That is `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
 
-(defun emjupy--server-offers-lsp-p (server)
-  "Return what SERVER is known to say of `emjupy-lsp-server' via jupyter-lsp.
-`yes', `no', or nil when it has not said: see `emjupy--ask-server-lsp'."
+(defun emjupy--server-lsp-answer (server)
+  "Return what SERVER said of having `emjupy-lsp-server', via jupyter-lsp.
+`yes', `no', `unanswered', or nil when not yet asked: see
+`emjupy--ask-server-lsp'.  Not a predicate: `no' is true."
   (and server (gethash (emjupy-server-base-url server) emjupy--lsp-offered)))
 
 (defvar emjupy--lsp-asking (make-hash-table :test 'equal)
