@@ -133,3 +133,11 @@ the last full check's: a rise is a regression until explained, as a
 failure is.  Six Eglot tests once went from passing to skipping, a
 change having left their notebooks with no language server: the check
 said 0 unexpected.
+
+## Round trips are counted
+
+Two live tests hold the round trips Emacs waits for at what the audit
+left: opening a notebook, its kernel's start, its first run; and a
+second notebook through TRAMP, run with the TRAMP tests' variables set.
+A change adding one fails there.  Lowering a count is good news: lower
+the test's limit with it.  check.sh fails, too, on a test newly skipped.
