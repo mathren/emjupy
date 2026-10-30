@@ -126,3 +126,10 @@
   Never rewrap line 1; a test now fails if a file loses the cookie.
 - **`record` is a built-in**: a helper of that name in a test script
   breaks every struct.
+- **A new connection's first output (open).**  emjupy holds what it sends
+  until a status answering its kernel_info_request arrives: statuses
+  come only on the output channel.  It fixed the full check's
+  two-notebooks test with the width line spared; but in that run the
+  second server's, through its tunnel, still lost a first output.  The
+  width line is still sent first, as a shield.  And a kernel restarting
+  can take longer than the 5 s the handshake waits, which then goes on.
