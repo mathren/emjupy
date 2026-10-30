@@ -418,12 +418,35 @@ produce, so it asks -- and declining changes nothing."
         (should-error (emjupy-beginning-of-previous-cell) :type 'user-error)))))
 
 (ert-deftest emjupy-test-navigation-bindings ()
-  (dolist (pair '(("M-<prior>" . emjupy-beginning-of-previous-cell)
-                 ("M-<next>"  . emjupy-end-of-previous-cell)
-                 ("M-<up>"    . emjupy-beginning-of-next-cell)
-                 ("M-<down>"  . emjupy-end-of-next-cell)
-                 ("C-c C-x C-l" . emjupy-re-render)))
-    (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair)))))
+  "Each Meta navigation key goes the way it points: Up and Page Up back,
+Down and Page Down forward; an arrow to a cell's start, a Page key to its
+end.  M-<up> went to the next cell once."
+  (should (eq (lookup-key emjupy-mode-map (kbd "C-c C-x C-l"))
+              #'emjupy-re-render))
+  (let ((cells (cl-loop for s in '("one" "two" "three")
+                        collect (make-emjupy-cell :id (emjupy--new-cell-id)
+                                                  :type 'code :source s
+                                                  :outputs []
+                                                  :metadata
+                                                  (make-hash-table)))))
+    (emjupy-test--with-notebook (vconcat cells) buf nb
+      (with-current-buffer buf
+        (pcase-dolist (`(,key ,cell ,at-end)
+                       `(("M-<up>" ,(nth 0 cells) nil)
+                         ("M-<down>" ,(nth 2 cells) nil)
+                         ("M-<prior>" ,(nth 0 cells) t)
+                         ("M-<next>" ,(nth 2 cells) t)))
+          (ert-info (key)
+            (goto-char (overlay-start (emjupy-cell-overlay (nth 1 cells))))
+            (call-interactively (lookup-key emjupy-mode-map (kbd key)))
+            (should (eq (emjupy--cell-at-point) cell))
+            (if at-end
+                (should (equal (buffer-substring-no-properties
+                                (- (point) (length (emjupy-cell-source cell)))
+                                (point))
+                               (emjupy-cell-source cell)))
+              (should (= (point)
+                         (overlay-start (emjupy-cell-overlay cell)))))))))))
 
 (ert-deftest emjupy-test-cell-at-point-past-the-last-cell ()
   "Point past the last cell still resolves to a cell.

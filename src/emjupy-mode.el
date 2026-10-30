@@ -91,12 +91,13 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
     (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
     (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
-    ;; Same axis one level out: C-c moves within this cell, M- moves to a
-    ;; neighbouring one.
-    (define-key map (kbd "M-<prior>") #'emjupy-beginning-of-previous-cell)
-    (define-key map (kbd "M-<next>")  #'emjupy-end-of-previous-cell)
-    (define-key map (kbd "M-<up>")    #'emjupy-beginning-of-next-cell)
-    (define-key map (kbd "M-<down>")  #'emjupy-end-of-next-cell)
+    ;; To a neighbouring cell, the way each key points: Up and Page Up back,
+    ;; Down and Page Down forward; an arrow lands at the cell's start, a
+    ;; Page key at its end.  M-<up> went forward once, against every key.
+    (define-key map (kbd "M-<up>")    #'emjupy-beginning-of-previous-cell)
+    (define-key map (kbd "M-<down>")  #'emjupy-beginning-of-next-cell)
+    (define-key map (kbd "M-<prior>") #'emjupy-end-of-previous-cell)
+    (define-key map (kbd "M-<next>")  #'emjupy-end-of-next-cell)
 
     ;; Changing cells
     (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
