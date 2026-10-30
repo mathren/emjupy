@@ -1911,6 +1911,120 @@ it on."
             (with-current-buffer emjupy-int--buffer (set-buffer-modified-p nil))
             (kill-buffer emjupy-int--buffer)))))))
 
+;;;; Round trips Emacs waits for, counted
+
+(defun emjupy-int--blocking-round-trips (thunk)
+  "Call THUNK; return the round trips emjupy made Emacs wait for meanwhile.
+TRAMP commands, and HTTP requests not sent in the background -- each a
+round trip a remote link makes slow.  Those of this file's helpers are
+not emjupy's, and not counted."
+  (let ((count 0))
+    (cl-flet ((emjupy-p ()
+                (let (ours)
+                  (mapbacktrace
+                   (lambda (_e f _a _fl)
+                     (when (and (symbolp f)
+                                (string-prefix-p "emjupy" (symbol-name f))
+                                (not (string-prefix-p "emjupy-int"
+                                                      (symbol-name f))))
+                       (setq ours t))))
+                  ours)))
+      (let ((tramp (lambda (&rest _) (when (emjupy-p) (cl-incf count))))
+            (http (lambda (_method _server _path
+                                   &optional _body callback &rest _)
+                    (unless callback (when (emjupy-p) (cl-incf count))))))
+        (advice-add 'emjupy--http-request :before http)
+        (when (fboundp 'tramp-send-command)
+          (advice-add 'tramp-send-command :before tramp))
+        (unwind-protect (funcall thunk)
+          (advice-remove 'emjupy--http-request http)
+          (when (fboundp 'tramp-send-command)
+            (advice-remove 'tramp-send-command tramp)))))
+    count))
+
+(ert-deftest emjupy-int-opening-and-a-first-run-wait-for-few-round-trips ()
+  "Opening a notebook, a second on its server, its kernel's start and first
+run: each waits for no more round trips than now.  Audited over a slow
+link, each was cut; a change adding one fails here."
+  (emjupy-int--skip-unless-live)
+  (let* ((emjupy-language-support nil)
+         (a (emjupy-int--file-notebook "x = 1"))
+         (b (emjupy-int--file-notebook "y = 2"))
+         buf counts)
+    (push (cons "open" (emjupy-int--blocking-round-trips
+                        (lambda () (setq buf (emjupy-open-notebook
+                                              a emjupy--current-server)))))
+          counts)
+    (unwind-protect
+        (with-current-buffer buf
+          (push (cons "open another" (emjupy-int--blocking-round-trips
+                                      (lambda ()
+                                        (kill-buffer
+                                         (emjupy-open-notebook
+                                          b emjupy--current-server)))))
+                counts)
+          (push (cons "start its kernel"
+                      (emjupy-int--blocking-round-trips
+                       (lambda ()
+                         (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+                         (emjupy-int--pump 30 #'emjupy--ws-live-p))))
+                counts)
+          (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+            (push (cons "first run"
+                        (emjupy-int--blocking-round-trips
+                         (lambda ()
+                           (emjupy--goto-cell cell 'beginning)
+                           (emjupy-execute-cell-at-point)
+                           (emjupy-int--pump
+                            20 (lambda ()
+                                 (numberp (emjupy-cell-exec-count cell)))))))
+                  counts))
+          (message "round trips waited for: %S" (reverse counts))
+          ;; fetching the notebook; creating the kernel's session; nothing
+          (dolist (limit '(("open" . 1) ("open another" . 1)
+                           ("start its kernel" . 1) ("first run" . 0)))
+            (ert-info ((car limit))
+              (should (<= (cdr (assoc (car limit) counts)) (cdr limit)))))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+            (ignore-errors (emjupy-shutdown-kernel))))
+      (let ((kill-buffer-query-functions nil))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf (set-buffer-modified-p nil))
+          (kill-buffer buf))))))
+
+(ert-deftest emjupy-int-a-notebook-beside-one-open-through-tramp-is-quick ()
+  "A second notebook in a folder already open through TRAMP waits for no
+more round trips than now: its server, tunnel and environment known,
+nothing is asked again."
+  (let ((file (getenv "EMJUPY_TEST_SSH_NOTEBOOK"))
+        (env (getenv "EMJUPY_TEST_SSH_ENV")))
+    (unless (and file env)
+      (ert-skip "EMJUPY_TEST_SSH_NOTEBOOK and EMJUPY_TEST_SSH_ENV not set"))
+    (let* ((emjupy-language-support nil)
+           (emjupy-environments-file nil)
+           (emjupy--environments nil)
+           (first (emjupy-int--open-through-tramp file env))
+           (second-file (concat (file-name-directory file)
+                                "emjupy-rt-second.ipynb"))
+           second n)
+      (unwind-protect
+          (progn
+            (copy-file file second-file t)
+            (setq n (emjupy-int--blocking-round-trips
+                     (lambda ()
+                       (setq second (emjupy-int--open-through-tramp
+                                     second-file env)))))
+            (message "round trips waited for, a second notebook through TRAMP: %d"
+                     n)
+            ;; listing the folder's environment.yml, fetching the notebook
+            (should (<= n 2)))
+        (let ((kill-buffer-query-functions nil))
+          (dolist (b (list first second))
+            (when (buffer-live-p b)
+              (with-current-buffer b (set-buffer-modified-p nil))
+              (kill-buffer b))))
+        (ignore-errors (delete-file second-file))))))
+
 (defun emjupy-int--open-through-tramp (file env)
   "Open FILE, a notebook through TRAMP, with C-c C-o, the environment ENV."
   (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) env)))
