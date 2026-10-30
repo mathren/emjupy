@@ -133,3 +133,9 @@
   second server's, through its tunnel, still lost a first output.  The
   width line is still sent first, as a shield.  And a kernel restarting
   can take longer than the 5 s the handshake waits, which then goes on.
+- **Warming the language server up does not speed the first completion.**
+  Hovers on the imported modules, or on their first attribute use, sent
+  as the server connects: 1.42 and 1.43 s without, 1.63 and 1.22 s with,
+  cold, over TRAMP at 80 ms.  The cost is per completion -- pylsp
+  resolves the first candidates' signatures -- not loading the module.
+  Tried and taken out; pylsp's own settings are the place to look.
