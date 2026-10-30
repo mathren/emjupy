@@ -288,6 +288,10 @@ make docs                   # then open html-content/index.html
 python3 tools/check-links.py
 #+end_src
 
+The Org sources are checked too, with the test suite, the site unbuilt:
+=emjupy-test-every-link-in-the-docs-leads-somewhere= follows every
+internal link to its file, and to the heading it names.
+
 Link to a section by its title -- =[[*Title]]= within a page,
 =[[file:page.org::*Title]]= to another -- with no =CUSTOM_ID= to manage:
 the site makes each heading's anchor the slug of its title, and resolves

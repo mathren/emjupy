@@ -210,6 +210,83 @@ and the file would have been compiled with dynamic binding."
                               (buffer-substring (point-min)
                                                 (line-end-position)))))))
 
+
+;;;; Every link in the docs leads somewhere
+
+(defun emjupy-test--org-links (file)
+  "Return the internal links in the Org FILE, as (LINE . TARGET).
+Not those in verbatim text or in a source or example block: those show
+link syntax, they are not links."
+  (let ((links nil) (line 0) (in-block nil))
+    (dolist (text (split-string (with-temp-buffer
+                                  (insert-file-contents file)
+                                  (buffer-string))
+                                "\n"))
+      (setq line (1+ line))
+      (cond ((string-match-p "\\`[ \t]*#\\+begin_\\(src\\|example\\)"
+                             (downcase text))
+             (setq in-block t))
+            ((string-match-p "\\`[ \t]*#\\+end_\\(src\\|example\\)"
+                             (downcase text))
+             (setq in-block nil))
+            ((not in-block)
+             (let ((plain (replace-regexp-in-string "[=~][^=~\n]+[=~]" "" text))
+                   (start 0))
+               (while (string-match "\\[\\[\\([^]]+\\)\\]" plain start)
+                 (let ((target (match-string 1 plain)))
+                   (unless (string-match-p "\\`[a-z]+://\\|\\`mailto:" target)
+                     (push (cons line target) links)))
+                 (setq start (match-end 0)))))))
+    (nreverse links)))
+
+(defun emjupy-test--org-has-heading-p (file heading)
+  "Return non-nil if the Org FILE has a heading titled HEADING."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (goto-char (point-min))
+    (re-search-forward
+     (concat "^\\*+[ \t]+" (regexp-quote heading)
+             "[ \t]*\\(?::[[:alnum:]_@#%:]+:[ \t]*\\)?$")
+     nil t)))
+
+(ert-deftest emjupy-test-every-link-in-the-docs-leads-somewhere ()
+  "Every internal link in the docs' Org sources resolves: its file exists,
+and the heading it names is in it -- an image, in the site the docs are
+exported to.  The site's checker, on the exported
+HTML, runs only when the site is built; a heading renamed broke links
+unseen until then."
+  (skip-unless (file-directory-p emjupy-test--docs-directory))
+  (let ((broken nil))
+    (dolist (file (directory-files emjupy-test--docs-directory t "\\.org\\'"))
+      (dolist (link (emjupy-test--org-links file))
+        (let* ((target (cdr link))
+               (parts (split-string target "::"))
+               (path (car parts))
+               (inside (cadr parts))
+               (into (cond ((string-prefix-p "file:" path)
+                            (expand-file-name (substring path 5)
+                                              emjupy-test--docs-directory))
+                           ((string-prefix-p "*" path) file)
+                           (t nil)))
+               (heading (cond ((string-prefix-p "*" path) (substring path 1))
+                              ((and inside (string-prefix-p "*" inside))
+                               (substring inside 1)))))
+          ;; An image, a graph: in the site the docs are exported to,
+          ;; beside the pages that show it.
+          (when (and into (not (file-exists-p into))
+                     (not (string-suffix-p ".org" into)))
+            (setq into (expand-file-name (substring path 5)
+                                         (expand-file-name
+                                          "../html-content/"
+                                          emjupy-test--docs-directory))))
+          (unless (and into (file-exists-p into)
+                       (or (null heading)
+                           (emjupy-test--org-has-heading-p into heading)))
+            (push (format "%s:%d: %s" (file-name-nondirectory file) (car link)
+                          target)
+                  broken)))))
+    (should-not (nreverse broken))))
+
 (provide 'emjupy-package-test)
 
 ;;; emjupy-package-test.el ends here
