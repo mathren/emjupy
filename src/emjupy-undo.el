@@ -86,59 +86,58 @@ Entries before START stay; entries inside the region describe text
 that is gone, and go; entries after it have moved, and shift by DELTA.
 Each entry shape is handled explicitly: a wrong position does not
 fail, it rewrites the wrong text."
-  (unless emjupy--in-cell-step
-    (let ((transform
-           (lambda (entry)
-             (let ((p (emjupy--undo-entry-position entry)))
-               (cond
-                ((null p) entry)
-                ((< p start) entry)
-                ((< p old-end)
-                 ;; Text inside the region is gone, and an entry for it goes
-                 ;; too.  Structural commands never get here: they are undone
-                 ;; whole.  This is for redraws, such as output arriving.
-                 :emjupy-drop)
-                (t (emjupy--undo-map-positions
-                    entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
-          (seen (make-hash-table :test 'eq)))
-      ;; In place: undo replays from a list `primitive-undo' holds, and the
-      ;; three lists share their cons cells, so changing those reaches each,
-      ;; once.  An entry to drop becomes one that does nothing.  All or nothing:
-      ;; every new entry is worked out first, or a failure would leave the
-      ;; history half shifted.
-      (let ((changes nil))
-        (condition-case err
-            (progn
-              (dolist (entries (list buffer-undo-list pending-undo-list))
-                (when (consp entries)
-                  (let ((c entries))
-                    (while (consp c)
-                      (unless (gethash c seen)
-                        (puthash c t seen)
-                        (push (cons c (funcall transform (car c))) changes))
-                      (setq c (cdr c))))))
-              (pcase-dolist (`(,c . ,new) changes)
-                (setcar c (if (eq new :emjupy-drop)
-                              (list 'apply #'ignore :emjupy-dropped)
-                            new))))
-          ;; Anything else is a mode's own entry: the ones from START on are
-          ;; stale and go -- lost history is safe, wrong history is not.
-          (error
-           (emjupy--undo-drop-from start)
-           (when (consp pending-undo-list)
-             (setq pending-undo-list
-                   (cl-remove-if (lambda (e)
-                                   (let ((p (emjupy--undo-entry-position e)))
-                                     (and p (>= p start))))
-                                 pending-undo-list)))
-           (message "[emjupy] Undo history after the redrawn output was dropped: %s"
-                    (error-message-string err)))))
-      ;; Outside an undo the placeholders can go for good.
-      (unless (or undo-in-progress (consp pending-undo-list))
-        (when (consp buffer-undo-list)
-          (setq buffer-undo-list
-                (delete (list 'apply #'ignore :emjupy-dropped)
-                        buffer-undo-list)))))))
+  (let ((transform
+         (lambda (entry)
+           (let ((p (emjupy--undo-entry-position entry)))
+             (cond
+              ((null p) entry)
+              ((< p start) entry)
+              ((< p old-end)
+               ;; Text inside the region is gone, and an entry for it goes
+               ;; too.  Structural commands never get here: they are undone
+               ;; whole.  This is for redraws, such as output arriving.
+               :emjupy-drop)
+              (t (emjupy--undo-map-positions
+                  entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
+        (seen (make-hash-table :test 'eq)))
+    ;; In place: undo replays from a list `primitive-undo' holds, and the
+    ;; three lists share their cons cells, so changing those reaches each,
+    ;; once.  An entry to drop becomes one that does nothing.  All or nothing:
+    ;; every new entry is worked out first, or a failure would leave the
+    ;; history half shifted.
+    (let ((changes nil))
+      (condition-case err
+          (progn
+            (dolist (entries (list buffer-undo-list pending-undo-list))
+              (when (consp entries)
+                (let ((c entries))
+                  (while (consp c)
+                    (unless (gethash c seen)
+                      (puthash c t seen)
+                      (push (cons c (funcall transform (car c))) changes))
+                    (setq c (cdr c))))))
+            (pcase-dolist (`(,c . ,new) changes)
+              (setcar c (if (eq new :emjupy-drop)
+                            (list 'apply #'ignore :emjupy-dropped)
+                          new))))
+        ;; Anything else is a mode's own entry: the ones from START on are
+        ;; stale and go -- lost history is safe, wrong history is not.
+        (error
+         (emjupy--undo-drop-from start)
+         (when (consp pending-undo-list)
+           (setq pending-undo-list
+                 (cl-remove-if (lambda (e)
+                                 (let ((p (emjupy--undo-entry-position e)))
+                                   (and p (>= p start))))
+                               pending-undo-list)))
+         (message "[emjupy] Undo history after the redrawn output was dropped: %s"
+                  (error-message-string err)))))
+    ;; Outside an undo the placeholders can go for good.
+    (unless (or undo-in-progress (consp pending-undo-list))
+      (when (consp buffer-undo-list)
+        (setq buffer-undo-list
+              (delete (list 'apply #'ignore :emjupy-dropped)
+                      buffer-undo-list))))))
 
 (defun emjupy--undo-drop-from (pos)
   "Drop undo entries referring to POS or later in this buffer.

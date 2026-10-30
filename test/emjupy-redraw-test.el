@@ -527,6 +527,41 @@ cutting characters from another cell's code."
                                                      buffer-undo-list)))
                        before))))))
 
+
+(ert-deftest emjupy-test-a-step-leaves-the-history-before-it-intact ()
+  "A change to the cells, undone, leaves earlier edits undoable as made.
+Its redraws shift the history's entries in place -- right for an undo
+under way -- and the history before it is restored after: kept as a copy,
+not the list those redraws change.  Not so, the edit made before the
+step was undone at shifted places, cutting another cell's text."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1"
+                                  :outputs (vector (stream "one\ntwo\nthree\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 2 :type 'code :source "b = 2"
+                                  :metadata (make-hash-table :test 'equal)))
+        buf nb
+      (buffer-enable-undo)
+      (let ((cells (emjupy-notebook-cells nb)))
+        (emjupy--goto-cell (aref cells 1) 'end)
+        (insert " + 0")
+        (undo-boundary)
+        (emjupy--goto-cell (aref cells 0) 'beginning)
+        (emjupy-toggle-cell-output)
+        (undo-boundary)
+        (should (emjupy--cell-outputs-hidden-p (aref cells 0)))
+        (undo) (undo-boundary)
+        (should-not (emjupy--cell-outputs-hidden-p (aref cells 0)))
+        (undo-more 1) (undo-boundary)
+        (emjupy--sync-all-cells)
+        (should (equal (emjupy-cell-source (aref cells 1)) "b = 2"))
+        (should (equal (emjupy-cell-source (aref cells 0)) "a = 1"))))))
+
 (provide 'emjupy-redraw-test)
 
 ;;; emjupy-redraw-test.el ends here

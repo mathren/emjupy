@@ -1331,8 +1331,12 @@ The timer calling this stops once no cell runs anywhere."
 
 ;;;; Running cells
 
-(cl-defun emjupy-execute-cell-at-point ()
-  "Sync cell code and send to this notebook's kernel for execution."
+(cl-defun emjupy-execute-cell-at-point (&optional synced)
+  "Sync cell code and send to this notebook's kernel for execution.
+From Lisp, SYNCED says the caller has synced the cells already: cells
+run in a row are synced once, not once each -- a notebook run whole was
+read once per cell, slower with the square of its size.  It was a flag
+the caller bound, read here, unseen where it was bound."
   (interactive)
   ;; A markdown cell has nothing to run.  Jupyter treats running one as
   ;; rendering it, and sending its prose to Python produces a syntax error
@@ -1342,7 +1346,7 @@ The timer calling this stops once no cell runs anywhere."
     (cl-return-from emjupy-execute-cell-at-point nil))
   (let ((here (emjupy--cell-at-point)))
     (when (and here (eq (emjupy-cell-type here) 'markdown))
-      (emjupy--redraw-markdown-cell here)
+      (emjupy--redraw-markdown-cell here synced)
       (cl-return-from emjupy-execute-cell-at-point here))
     ;; A raw cell is not run, as in Jupyter: it is for other tools.
     (when (and here (eq (emjupy-cell-type here) 'raw))
@@ -1372,7 +1376,7 @@ The timer calling this stops once no cell runs anywhere."
 
       ;; 1.  Sync ALL cells: the code sent is read from the cell, and a fallback
       ;; redraw rebuilds the notebook from the cells.
-      (unless emjupy--cells-synced (emjupy--sync-all-cells))
+      (unless synced (emjupy--sync-all-cells))
       (run-hook-with-args 'emjupy-before-execute-functions cell)
 
       ;; 2.  Clear the previous output, in place as C-c C-l does: a full redraw
@@ -1449,13 +1453,12 @@ Raw cells are left alone, as Jupyter does; markdown ones are rendered.
 Point stays where it was."
   (emjupy--sync-all-cells)
   (save-excursion
-    ;; Synced once, the rules rebuilt once, for all of them.
-    (let ((emjupy--cells-synced t))
-      (emjupy--with-rules-once
-        (dolist (cell cells)
-          (unless (eq (emjupy-cell-type cell) 'raw)
-            (emjupy--goto-cell cell 'beginning)
-            (emjupy-execute-cell-at-point)))))))
+    ;; Synced once, above; the rules rebuilt once, for all of them.
+    (emjupy--with-rules-once
+      (dolist (cell cells)
+        (unless (eq (emjupy-cell-type cell) 'raw)
+          (emjupy--goto-cell cell 'beginning)
+          (emjupy-execute-cell-at-point 'synced))))))
 
 (defun emjupy--run-region ()
   "Run the cells the region touches, in order: Jupyter's run selected cells.

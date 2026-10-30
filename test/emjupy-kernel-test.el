@@ -1218,7 +1218,7 @@ RAN, in BODY, lists the ids of the cells run, in order."
        buf nb
      (let ((ran nil))
        (cl-letf (((symbol-function 'emjupy-execute-cell-at-point)
-                  (lambda ()
+                  (lambda (&optional _synced)
                     (push (emjupy-cell-id (emjupy--cell-at-point)) ran))))
          (cl-flet ((at (id) (emjupy--goto-cell
                              (cl-find id (emjupy-notebook-cells nb)

@@ -712,17 +712,14 @@ next line, outside the code."
 
 ;;;; Appearance
 
-(defvar emjupy--cells-synced nil
-  "Non-nil while cells are run in a row, synced once before them.
-Each run synced every cell: a notebook run whole was read once per
-cell, slower with the square of its size.")
-
-(defun emjupy--redraw-markdown-cell (cell)
+(defun emjupy--redraw-markdown-cell (cell &optional synced)
   "Redraw markdown CELL, its LaTeX included.
+SYNCED: the caller has synced the cells already -- see
+`emjupy-execute-cell-at-point'.
 
 What running a markdown cell means in Jupyter: there is no code in it,
 so the result is the rendered form rather than anything from a kernel."
-  (unless emjupy--cells-synced (emjupy--sync-all-cells))
+  (unless synced (emjupy--sync-all-cells))
   ;; Running a markdown cell means "show it formatted": its preview is turned on
   ;; if it was off.
   (unless emjupy-render-latex

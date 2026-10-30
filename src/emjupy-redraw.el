@@ -569,10 +569,14 @@ nothing."
   `(let* ((snapshot (progn (undo-boundary)
                            (emjupy--sync-all-cells)
                            (emjupy--snapshot-cells)))
-          (before buffer-undo-list)
-          ;; No earlier entry is shifted or dropped while BODY runs: the
-          ;; snapshot restores the text they describe.
-          (result (let ((emjupy--in-cell-step t)) ,@body)))
+          ;; A copy of the history's spine: BODY's redraws shift entries in
+          ;; place, as they must for an undo under way, but the snapshot
+          ;; restores the text the earlier entries describe -- unshifted.
+          ;; It was a flag bound around BODY, read deep in the redraws.
+          (before (if (listp buffer-undo-list)
+                      (copy-sequence buffer-undo-list)
+                    buffer-undo-list))
+          (result (progn ,@body)))
      (unless (or (eq buffer-undo-list t) undo-in-progress (null snapshot))
        ;; The snapshot undoes all BODY did.  BODY's own entries go: undone
        ;; after it -- undo takes the newest first -- they applied at
@@ -587,7 +591,6 @@ nothing."
   "Record SNAPSHOT as the state a rebuild can be undone to."
   (unless (or (eq buffer-undo-list t)
               emjupy--restoring-snapshot
-              emjupy--in-cell-step
               undo-in-progress
               (null snapshot))
     (push (list 'apply #'emjupy--restore-cells-snapshot snapshot)
