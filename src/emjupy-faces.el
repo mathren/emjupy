@@ -100,14 +100,14 @@ your figures have a different background."
   "How far to blend toward the foreground for an `auto' output colour.
 0 is invisible, 1 is the foreground colour itself."
   :type 'float
-  :group 'emjupy-appearance
+  :group 'emjupy-advanced
   :safe #'numberp)
 
 (defcustom emjupy-output-tint-blend 0.16
   "How far to blend toward red or yellow for `auto' tints.
 This applies to the error and warning  Larger is louder."
   :type 'float
-  :group 'emjupy-appearance
+  :group 'emjupy-advanced
   :safe #'numberp)
 
 (defcustom emjupy-box-width 'window
@@ -125,7 +125,7 @@ columns on a wide frame."
 (defcustom emjupy-box-min-width 60
   "Lower bound for a window-fitted `emjupy-box-width'."
   :type 'integer
-  :group 'emjupy-appearance
+  :group 'emjupy-advanced
   :safe #'natnump)
 
 (defcustom emjupy-box-right-margin 2
@@ -138,7 +138,7 @@ one or two.  Rather than guess, leave a couple spare.  Raise it if the
 rules still run past the edge in your setup, lower it to 0 if they stop
 short."
   :type 'integer
-  :group 'emjupy-appearance
+  :group 'emjupy-advanced
   :safe #'natnump)
 
 (defcustom emjupy-running-indicator ["|" "/" "-" "\\"]
@@ -147,12 +147,12 @@ short."
 A single-element vector such as [\"*\"] gives Jupyter's static marker
 instead of an animation."
   :type '(vector string)
-  :group 'emjupy-appearance)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-running-indicator-interval 0.2
   "Seconds between frames of the running indicator."
   :type 'number
-  :group 'emjupy-appearance)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-hidden-output-glyph "▼"
   "Glyph marking an output box that is collapsed."

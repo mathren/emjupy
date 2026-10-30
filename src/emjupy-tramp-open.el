@@ -31,7 +31,7 @@
 (defcustom emjupy-local-server-timeout 60
   "Seconds to wait for a Jupyter server emjupy starts to answer."
   :type 'number
-  :group 'emjupy-kernels)
+  :group 'emjupy-advanced)
 
 ;;;; An .ipynb file opened as text, opened as a notebook
 

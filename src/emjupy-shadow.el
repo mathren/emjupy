@@ -46,7 +46,7 @@ not the kernel's.  A setting, not inferred: behind `ssh -L' the server
 looks like localhost."
   :type '(choice (const :tag "Local temporary directory" nil)
                  (directory :tag "Directory (may be a TRAMP path)"))
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-sync-to-disk 'lazy
   "When to write the shadow file to disk.
@@ -61,7 +61,7 @@ over TRAMP measured 214 ms against ssh on localhost, and it lands on the
 completion and eldoc paths, once per keystroke."
   :type '(choice (const :tag "Once, when created" lazy)
                  (const :tag "On every edit" always))
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-host nil
   "TRAMP prefix reaching the machine the kernel runs on, or nil.
@@ -77,7 +77,7 @@ goes to a local temporary directory: \\[xref-find-definitions] misses
 your own modules, but nothing is written to a wrong path."
   :type '(choice (const :tag "Kernel runs on this machine" nil)
                  (string :tag "TRAMP prefix, e.g. /ssh:box:"))
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-beside-notebook t
   "When non-nil, keep the shadow file in the notebook's own directory.
@@ -89,7 +89,7 @@ the notebook.  The directory is the kernel's working directory, or
 machine and the notebook is on another: \"beside\" would make a local
 directory named after a remote path."
   :type 'boolean
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-retry-interval 30
   "Seconds to wait before retrying a shadow buffer that failed to set up.
@@ -99,7 +99,7 @@ building it fails -- an unreachable host, a directory that cannot be
 created -- retrying each time turns one slow failure into a hang, since
 each attempt blocks Emacs while TRAMP waits."
   :type 'number
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-timeout 2
   "Seconds to let shadow-buffer setup block Emacs before giving up.
@@ -108,7 +108,7 @@ Reached from eldoc and completion, so this is time the user spends
 waiting after an ordinary command.  Language-server support is worth a
 short pause and no more; editing and running cells do not depend on it."
   :type 'number
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-when-kernel-unreachable t
   "Non-nil means a local language server runs when the kernel is elsewhere.
@@ -123,7 +123,7 @@ Set it to nil to have no language support at all in that case rather
 than approximate support.  Either way, `emjupy-shadow-host' or
 `jupyter-lsp' on the server gives answers from the right machine."
   :type 'boolean
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 ;;;; Editing a cell in a buffer of its own
 

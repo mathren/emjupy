@@ -47,12 +47,12 @@ to nil to fall back to the Eglot shadow-file arrangement."
 
 Whatever `/lsp/status' lists.  \"pylsp\" is the usual Python one."
   :type 'string
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-lsp-retry-interval 30
   "Seconds to wait before trying the language server again after a failure."
   :type 'number
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-eglot-idle-command "cat"
   "Program stood up to satisfy Eglot's requirement for a process.
@@ -63,7 +63,7 @@ Nothing is written to this one and nothing is read from it -- the
 traffic goes over the WebSocket -- so the most inert program available
 meets the requirement."
   :type 'string
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-tell-server-where-modules-are t
   "When non-nil, name the notebook's own directory to the language server.
@@ -77,7 +77,7 @@ reached.  Saying where the modules are does not depend on that.
 Written for `python-lsp-server'.  Set to nil if your server takes its
 settings from elsewhere and would rather not be told."
   :type 'boolean
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 ;;;; The connection to jupyter-lsp
 

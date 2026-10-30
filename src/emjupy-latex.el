@@ -49,7 +49,7 @@ beyond what ships with Emacs, and falls back to `math-preview'."
   :type '(choice (const :tag "Whatever is available" auto)
                  (const :tag "org's built-in preview" org)
                  (const :tag "math-preview" math-preview))
-  :group 'emjupy-appearance)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-latex-foreground 'auto
   "Colour to draw rendered math in.

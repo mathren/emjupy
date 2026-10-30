@@ -153,6 +153,27 @@ builds.
 
 Pending on MELPA.
 
+** The least to set up
+
+Nothing, in Emacs: the defaults are meant to be kept.  Open a notebook
+file and =M-x emjupy-open-this-notebook=, or log in to a server with
+=M-x emjupy-login=.
+
+Where the kernel runs -- here, or on a machine reached through TRAMP --
+its Python environment needs:
+
+#+BEGIN_SRC sh
+  pip install jupyter-server ipykernel jupyter-lsp python-lsp-server
+#+END_SRC
+
+the last two for completion and documentation from the language server
+beside the kernel, which sees the environment's packages; without them
+one on this machine answers, and the mode line says =LSP: this machine=.
+The environment is asked for the first time in a folder, and remembered.
+
+=M-x customize-group RET emjupy= shows the options a user meets; the
+timings, retries and plumbing are under =Advanced=.
+
 * Landscape of other Emacs and Jupyter packages
 
 | Feature                                                           | =emjupy= | =ein= | =emacs-jupyter=  | =ob-jupyter= |

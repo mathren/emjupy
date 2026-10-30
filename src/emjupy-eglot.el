@@ -63,7 +63,7 @@ Eglot actually manages, with point at the matching position, and any
 edits it makes are pulled back into the cells.  Outside `emjupy-mode'
 the advice does nothing at all."
   :type '(repeat symbol)
-  :group 'emjupy-language-server)
+  :group 'emjupy-advanced)
 
 ;; Eglot is loaded with emjupy -- `emjupy-lsp' requires it for its server class
 ;; -- but not started: nothing connects until a shadow buffer asks.

@@ -43,7 +43,7 @@
   "The scripts a widget\\='s page loads: RequireJS, then the widget manager.
 Each a URL or a file name; a file needs no network."
   :type '(repeat string)
-  :group 'emjupy-figures)
+  :group 'emjupy-advanced)
 
 ;;;; State
 

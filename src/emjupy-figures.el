@@ -64,7 +64,7 @@ with emjupy cannot run.  Firefox opens a new window; Chromium an app
 window, without tabs or toolbar.  Another browser can be added: Chrome
 as (\"google-chrome\" \"--app=%s\"), say."
   :type '(repeat (repeat :tag "Program and arguments" string))
-  :group 'emjupy-figures)
+  :group 'emjupy-advanced)
 
 (defcustom emjupy-plotly-js 'kernel
   "Where the plotly.js a figure page loads comes from.
@@ -74,7 +74,7 @@ network, which also makes it work through a tunnel.  A string is used as
 the script's address instead -- a URL, such as a CDN's, or a file name."
   :type '(choice (const :tag "The kernel's own copy" kernel)
                  (string :tag "A URL or file name"))
-  :group 'emjupy-figures)
+  :group 'emjupy-advanced)
 
 ;;;; The figure window
 

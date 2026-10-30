@@ -57,6 +57,13 @@
   "Saving to the server, and keeping copies of unsaved edits."
   :group 'emjupy)
 
+(defgroup emjupy-advanced nil
+  "Tuning and plumbing, whose defaults suit almost everyone.
+Timings and retries, the language server's shadow file, where scripts
+come from, finer points of drawing; the options a user meets are in the
+other groups."
+  :group 'emjupy)
+
 (defun emjupy--colour-option-safe-p (value)
   "Return non-nil if VALUE is a harmless colour: auto, nil, or a name."
   (or (memq value '(auto nil)) (stringp value)))
@@ -82,7 +89,7 @@ is hard to attribute from the outside: this says which of emjupy's hooks
 is the slow one, or -- just as usefully -- that none of them is, and the
 time is going somewhere else entirely."
   :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
-  :group 'emjupy)
+  :group 'emjupy-advanced)
 
 ;;;; Shared state
 
