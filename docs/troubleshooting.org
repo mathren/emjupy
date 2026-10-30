@@ -9,6 +9,17 @@ kernel and what it is doing, its language server -- the server's or a
 fallback, and why -- the remote it is reached through, and emjupy's
 recent messages.  It is what to look at, and to send with a report.
 
+* Something changed on a machine
+
+emjupy remembers, for the session, what it learns of servers and
+machines -- which server answers, which has a language server, each
+machine's environments and conda -- not to ask them again at every
+opening.  When that changed under it -- an environment removed, a
+server reconfigured, jupyter-lsp installed -- =M-x
+emjupy-forget-remote-state= forgets it all, and it is asked again when
+next needed.  Live connections and tunnels are kept.  With =C-u=, the
+environment chosen for each folder is forgotten too.
+
 * Diagnosing slowness
 
 First find which part is slow.

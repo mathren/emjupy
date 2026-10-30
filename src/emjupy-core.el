@@ -196,6 +196,46 @@ cell it runs, until its reply and its closing idle have both come."
   ;; held meanwhile, newest first.  See `emjupy--begin-handshake'.
   handshake held)
 
+;;;; What a session learns
+
+(defvar emjupy--session-caches nil
+  "Variables holding what emjupy learnt this session, each a hash table.
+Of servers -- which answer, which have a language server -- and of
+machines -- their environments, conda.  `emjupy-forget-remote-state'
+empties them; define one with `emjupy--defcache'.")
+
+(defmacro emjupy--defcache (name test doc)
+  "Define NAME, a hash table compared with TEST, as a session cache.
+DOC documents it.  Registered in `emjupy--session-caches', it is emptied
+by `emjupy-forget-remote-state' with the rest: one place to forget all
+emjupy learnt, rather than tables of their own, in four files."
+  (declare (indent 2) (doc-string 3))
+  `(progn
+     (defvar ,name (make-hash-table :test ,test) ,doc)
+     (cl-pushnew ',name emjupy--session-caches)))
+
+(defvar emjupy-forget-functions nil
+  "Functions called with EVERYTHING by `emjupy-forget-remote-state'.
+Each forgets what its layer remembers beyond the session caches when
+EVERYTHING is non-nil -- the environment chosen for each folder, say.")
+
+(defun emjupy-forget-remote-state (&optional everything)
+  "Forget what emjupy learnt this session of servers and machines.
+Which servers answer and which have a language server; each machine's
+environments and conda.  Asked again when next needed -- after an
+environment was removed, a server reconfigured.  Live connections and
+tunnels are kept.  With prefix EVERYTHING, the environment remembered for each
+folder is forgotten too, and asked for at the next opening."
+  (interactive "P")
+  (let ((count 0))
+    (dolist (var emjupy--session-caches)
+      (setq count (+ count (hash-table-count (symbol-value var))))
+      (clrhash (symbol-value var)))
+    (run-hook-with-args 'emjupy-forget-functions everything)
+    (message "[emjupy] Forgot %d thing%s learnt this session%s" count
+             (if (= count 1) "" "s")
+             (if everything ", and every folder's environment" ""))))
+
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")
 

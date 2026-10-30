@@ -226,7 +226,7 @@ given -- dropped every error unseen.  Recorded too, in
     (setq emjupy--lsp-last-failure what)
     (message "[emjupy] Language server connection: %s" what)))
 
-(defvar emjupy--lsp-offered (make-hash-table :test 'equal)
+(emjupy--defcache emjupy--lsp-offered 'equal
   "Whether each server, by address, has the language server: `yes' or `no'.
 That is `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
 
@@ -236,7 +236,7 @@ That is `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
 `emjupy--ask-server-lsp'.  Not a predicate: `no' is true."
   (and server (gethash (emjupy-server-base-url server) emjupy--lsp-offered)))
 
-(defvar emjupy--lsp-asking (make-hash-table :test 'equal)
+(emjupy--defcache emjupy--lsp-asking 'equal
   "Servers, by address, being asked of their language server: attempts so far.")
 
 (defun emjupy--ask-server-lsp (server then)

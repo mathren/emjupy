@@ -477,6 +477,55 @@ route: TRAMP names it with its hops, or without them once it knows them."
   (should-not (equal (emjupy--environment-key "/ssh:u@node:/home/u/p/")
                      (emjupy--environment-key "/ssh:u@other:/home/u/p/"))))
 
+
+(ert-deftest emjupy-test-what-a-session-learnt-is-forgotten-on-request ()
+  "emjupy-forget-remote-state empties every table of what the session
+learnt, and says how much; the tunnels stay, and the environments chosen
+for folders, unless asked with a prefix.  An environment removed on a
+machine was found again only after a restart of Emacs."
+  (should (seq-every-p (lambda (v) (memq v emjupy--session-caches))
+                       '(emjupy--reachable-at emjupy--lsp-offered
+                         emjupy--lsp-asking emjupy--environment-jupyters
+                         emjupy--conda-environments-of)))
+  (let* ((file (make-temp-file "emjupy-environments" nil ".eld"))
+         (emjupy-environments-file file)
+         (emjupy--environments '(("@h:/p/" . "/e")))
+         (emjupy--remote-tunnels '((:port 5000)))
+         (emjupy--session-caches
+          (mapcar (lambda (v) (let ((table (make-hash-table :test 'equal)))
+                                (puthash "k" t table)
+                                (set (make-local-variable v) table)
+                                v))
+                  emjupy--session-caches))
+         (found 0) (said nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (push (apply #'format fmt args) said)))
+                  ((symbol-function 'emjupy--find-environment-jupyter)
+                   (lambda (&rest _) (cl-incf found) "/e/bin/jupyter")))
+          (emjupy--environment-jupyter "/e" "/ssh:h:/p/")
+          (let ((known (apply #'+ (mapcar (lambda (v)
+                                            (hash-table-count (symbol-value v)))
+                                          emjupy--session-caches))))
+            (emjupy-forget-remote-state)
+            (should (string-match-p (format "Forgot %d things" known)
+                                    (car said))))
+          (should (seq-every-p (lambda (v)
+                                 (zerop (hash-table-count (symbol-value v))))
+                               emjupy--session-caches))
+          (should emjupy--environments)
+          (should (equal emjupy--remote-tunnels '((:port 5000))))
+          ;; found again: asked anew
+          (emjupy--environment-jupyter "/e" "/ssh:h:/p/")
+          (should (= found 2))
+          (emjupy-forget-remote-state t)
+          (should-not emjupy--environments)
+          (should (equal (with-temp-buffer (insert-file-contents file)
+                                           (buffer-string))
+                         "nil")))
+      (delete-file file))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

@@ -71,7 +71,7 @@ credential ends up on screen and in the minibuffer history."
       (concat "localhost:" url)
     url))
 
-(defvar emjupy--reachable-at (make-hash-table :test 'eq)
+(emjupy--defcache emjupy--reachable-at 'eq
   "Servers that answered `emjupy--server-reachable-p', and when.")
 
 (defun emjupy--server-reachable-p (server)

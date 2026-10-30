@@ -85,7 +85,7 @@ of the PATH for each name, a round trip each -- 21 on a plain machine."
           (and (not (string-empty-p found))
                (concat (file-remote-p default-directory) found)))))))
 
-(defvar emjupy--conda-environments-of (make-hash-table :test 'equal)
+(emjupy--defcache emjupy--conda-environments-of 'equal
   "Conda's environments, by remote machine: asked once a session.")
 
 (defun emjupy--conda-environments (&optional where)
@@ -172,6 +172,17 @@ it knows it, so the same folder is named two ways; DIR expanded here."
         (let ((print-length nil) (print-level nil))
           (prin1 emjupy--environments (current-buffer)))))))
 
+(defun emjupy--forget-environments (everything)
+  "Forget the environment remembered for each folder, when EVERYTHING."
+  (when everything
+    (setq emjupy--environments nil)
+    (when emjupy-environments-file
+      (with-demoted-errors "[emjupy] Environments not saved: %S"
+        (with-temp-file emjupy-environments-file
+          (prin1 nil (current-buffer)))))))
+
+(add-hook 'emjupy-forget-functions #'emjupy--forget-environments)
+
 (defun emjupy--chosen-environment-jupyter (dir choose)
   "Return the jupyter of DIR's environment: as chosen last there, or asked.
 Asked the first time, or with CHOOSE, the last offered as the default;
@@ -213,7 +224,7 @@ here, a venv there was looked for on this machine, and not found."
       (concat (file-remote-p default-directory) env)
     (expand-file-name env)))
 
-(defvar emjupy--environment-jupyters (make-hash-table :test 'equal)
+(emjupy--defcache emjupy--environment-jupyters 'equal
   "The jupyter of each environment found, by machine and name.
 Asked over TRAMP, each a round trip or two at every opening.")
 
