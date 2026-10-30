@@ -171,7 +171,7 @@ happily passes them through -- so without this the output reads
   :safe #'booleanp)
 
 (defcustom emjupy-inline-figures t
-  "Whether figures -- image outputs -- are drawn in the notebook.
+  "Non-nil means figures -- image outputs -- are drawn in the notebook.
 nil shows each as a line instead, and opens it in a window of its own on
 \\<emjupy-mode-map>\\[emjupy-open-output] or a click, the way a plotting
 window would show it."

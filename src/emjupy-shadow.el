@@ -111,7 +111,7 @@ short pause and no more; editing and running cells do not depend on it."
   :group 'emjupy-language-server)
 
 (defcustom emjupy-shadow-when-kernel-unreachable t
-  "Whether to run a local language server when the kernel is elsewhere.
+  "Non-nil means a local language server runs when the kernel is elsewhere.
 
 The shadow file then sits on THIS machine, so what the server describes
 is this machine: its interpreter, its packages, and none of the modules
