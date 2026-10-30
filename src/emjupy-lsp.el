@@ -33,14 +33,13 @@
 ;;;; Options
 
 (defcustom emjupy-lsp-enabled t
-  "When non-nil, use the language server run by `jupyter-lsp'.
-
-That server lives next to the kernel and is reached over the Jupyter
-server's own WebSocket -- no file on disk, no second connection, and
-the environment it describes is the one the code will run in.  Set this
-to nil to fall back to the Eglot shadow-file arrangement."
+  "When nil, use a language server on this machine, not the server's.
+Obsolete: set `emjupy-language-support' to `local' instead -- one option
+says which language server, not two."
   :type 'boolean
   :group 'emjupy-language-server)
+(make-obsolete-variable 'emjupy-lsp-enabled
+                        "set `emjupy-language-support' to `local'." "0.3")
 
 (defcustom emjupy-lsp-server "pylsp"
   "Identifier of the language server to ask `jupyter-lsp' for.
@@ -50,7 +49,11 @@ Whatever `/lsp/status' lists.  \"pylsp\" is the usual Python one."
   :group 'emjupy-advanced)
 
 (defcustom emjupy-lsp-retry-interval 30
-  "Seconds to wait before trying the language server again after a failure."
+  "Seconds before a language server that failed is tried again.
+The server's, not reached; or the shadow buffer one here needs, not set
+up.  Completion and eldoc ask after every command: retrying each time
+turns one slow failure into a hang, each attempt blocking Emacs while
+TRAMP waits."
   :type 'number
   :group 'emjupy-advanced)
 

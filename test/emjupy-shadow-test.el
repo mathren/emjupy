@@ -43,8 +43,9 @@ language server can be started on the machine the kernel runs on.
 
 Computing the path must not touch the filesystem: with a TRAMP
 directory that would open an ssh connection just to ask for a name."
+  ;; Placement by these options is the fallback's: on the local route.
   (let ((nb (make-emjupy-notebook
-             :path "a.ipynb"
+             :path "a.ipynb" :lsp-route 'local
              :server (make-emjupy-server :base-url "localhost:18888"))))
     (let ((emjupy-shadow-directory nil))
       (should (string-prefix-p (emjupy--shadow-temporary-directory)
@@ -76,8 +77,9 @@ the file it is reading, so a shadow file in a temp directory cannot see
 the .py next to the notebook -- which is why looking up your own
 functions answered \"No definition found\"."
   (let* ((server (make-emjupy-server :base-url "localhost:8888" :token "t"))
+         ;; Beside the notebook is the fallback's place: the local route.
          (nb (make-emjupy-notebook :cells [] :path "sub/nb.ipynb"
-                                   :server server)))
+                                   :lsp-route 'local :server server)))
     ;; with a mapping, beside the notebook
     (let ((emjupy-remote-root "/tmp/proj")
           (emjupy-shadow-directory nil)
@@ -144,7 +146,7 @@ looks exactly like a hang."
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         ;; a shadow beside the notebook: the local route's
-        (setq emjupy--lsp-route 'local)
+        (setf (emjupy-notebook-lsp-route nb) 'local)
         (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
         (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/")
               (emjupy-shadow-retry-interval 60))
@@ -176,7 +178,7 @@ squarely on the user while they are running cells."
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         ;; the fallback's behaviour: on the local route
-        (setq emjupy--lsp-route 'local)
+        (setf (emjupy-notebook-lsp-route nb) 'local)
         (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
         (let ((emjupy-shadow-directory
                (expand-file-name "emjupy-connect-test"
@@ -243,12 +245,12 @@ socket that never opened."
     (let ((emjupy-shadow-host "/ssh:box:")
           (emjupy-remote-root "/ssh:box:~/"))
       ;; ordinarily the shadow follows the notebook, remote and all
-      (let ((emjupy--force-local-shadow nil))
-        (should (string-prefix-p "/ssh:" (emjupy--shadow-directory-for nb))))
+      (setf (emjupy-notebook-lsp-route nb) 'local)
+      (should (string-prefix-p "/ssh:" (emjupy--shadow-directory-for nb)))
       ;; but not when the socket is what will attach to it
-      (let ((emjupy--force-local-shadow t))
-        (should-not (string-prefix-p "/ssh:"
-                                     (emjupy--shadow-directory-for nb)))))))
+      (setf (emjupy-notebook-lsp-route nb) 'socket)
+      (should-not (string-prefix-p "/ssh:"
+                                   (emjupy--shadow-directory-for nb))))))
 
 ;;;; Performance
 
@@ -334,14 +336,13 @@ temp directory does the same job without inventing directories."
           (emjupy-remote-root "/ssh:box:~/")
           (emjupy-shadow-beside-notebook t))
       ;; with the socket attaching, neither remote nor a local look-alike
-      (let* ((emjupy--force-local-shadow t)
-             (dir (emjupy--shadow-directory-for nb)))
+      (setf (emjupy-notebook-lsp-route nb) 'socket)
+      (let* ((dir (emjupy--shadow-directory-for nb)))
         (should-not (file-remote-p dir))
         (should-not (string-match-p "somewhere-else" dir))
         (should (string-prefix-p (emjupy--shadow-temporary-directory) dir)))
       ;; and a directory that really is here is still used
-      (let* ((emjupy--force-local-shadow t)
-             (here (file-name-as-directory temporary-file-directory))
+      (let* ((here (file-name-as-directory temporary-file-directory))
              (nb-here (make-emjupy-notebook
                        :cells [] :path "n.ipynb" :kernel-cwd here
                        :server (make-emjupy-server :base-url "h" :token "t")))
@@ -361,9 +362,9 @@ was retired, and completion over TRAMP answered nothing."
     (let ((emjupy-shadow-beside-notebook t) (emjupy-shadow-directory nil))
       (cl-letf (((symbol-function 'emjupy--notebook-directory)
                  (lambda (_nb) "/ssh:somehost:/home/u/proj/")))
-        (setq emjupy--lsp-route 'local)
+        (setf (emjupy-notebook-lsp-route nb) 'local)
         (should (file-remote-p (emjupy--shadow-directory-for nb)))
-        (setq emjupy--lsp-route 'socket)
+        (setf (emjupy-notebook-lsp-route nb) 'socket)
         (should-not (file-remote-p (emjupy--shadow-directory-for nb)))))))
 
 (provide 'emjupy-shadow-test)

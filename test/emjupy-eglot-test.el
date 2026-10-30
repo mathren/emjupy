@@ -463,7 +463,7 @@ buffer is still built: editing all the code in one buffer needs no server."
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         ;; the fallback's behaviour: on the local route
-        (setq emjupy--lsp-route 'local)
+        (setf (emjupy-notebook-lsp-route nb) 'local)
         (goto-char (overlay-start (emjupy-cell-overlay cell)))
         (let ((emjupy-language-support nil))
           (should (= 0 (emjupy-test--counting-server-starts starts
@@ -950,7 +950,7 @@ SAID collects messages; ATTACHED is set when plain Eglot attaches."
 ordinary Eglot starts first -- it raced the right one, over TRAMP."
   (emjupy-test--routing t
     (emjupy-start-language-support nb)
-    (should (eq emjupy--lsp-route 'socket))
+    (should (eq (emjupy-notebook-lsp-route nb) 'socket))
     (emjupy--attach-plain-eglot nb buf)
     (should-not attached)
     (should-not (string-match-p "this machine" (emjupy--mode-line-status)))))
@@ -960,7 +960,7 @@ ordinary Eglot starts first -- it raced the right one, over TRAMP."
 the mode line for as long as it lasts."
   (emjupy-test--routing nil
     (emjupy-start-language-support nb)
-    (should (eq emjupy--lsp-route 'local))
+    (should (eq (emjupy-notebook-lsp-route nb) 'local))
     (should (seq-some (lambda (m) (string-match-p "LANGUAGE SERVER FALLBACK" m))
                       said))
     (let ((shown (emjupy--mode-line-status)))
@@ -973,7 +973,7 @@ the mode line for as long as it lasts."
 (ert-deftest emjupy-test-no-plain-eglot-before-the-route-is-known ()
   "Before the server is asked, no ordinary Eglot attaches."
   (emjupy-test--routing t
-    (should-not emjupy--lsp-route)
+    (should-not (emjupy-notebook-lsp-route nb))
     (emjupy--attach-plain-eglot nb buf)
     (should-not attached)))
 
@@ -994,7 +994,7 @@ slow first answer from jupyter-lsp left a notebook on it for good."
         (emjupy-start-language-support nb))
       (should (= asked 3))
       (should (= timers 2))
-      (should (eq emjupy--lsp-route 'local))
+      (should (eq (emjupy-notebook-lsp-route nb) 'local))
       (should (seq-some (lambda (m) (string-match-p "did not say" m)) said)))))
 
 
@@ -1011,7 +1011,7 @@ here, and lost its environment's."
         (setf (emjupy-notebook-kernel-cwd nb) "/tmp/")
         (emjupy-start-language-support nb)
         (emjupy-start-language-support nb))
-      (should (eq emjupy--lsp-route 'socket))
+      (should (eq (emjupy-notebook-lsp-route nb) 'socket))
       (should (= connects 0))
       (should-not attached)
       (should-not (seq-some (lambda (m) (string-match-p "FALLBACK" m)) said)))))
@@ -1041,8 +1041,8 @@ a line for every notebook instead."
   (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
                                                         :source "x"))
       buf nb
-    (setq emjupy--lsp-route 'local
-          emjupy--lsp-route-reason "the server offers no pylsp")
+    (setf (emjupy-notebook-lsp-route nb) 'local
+          (emjupy-notebook-lsp-reason nb) "the server offers no pylsp")
     (setf (emjupy-notebook-kernel nb)
           (make-emjupy-kernel :id "k1" :name "python3" :notebook nb
                               :pending (make-hash-table :test 'equal)))
@@ -1061,6 +1061,29 @@ a line for every notebook instead."
                        (string-match "^Recent messages" text)))))
         (emjupy-status t)
         (should (string-match-p "k1" (car said)))))))
+
+
+(ert-deftest emjupy-test-local-language-support-is-one-setting ()
+  "`emjupy-language-support' `local' is this machine's language server,
+the server never asked; as the obsolete `emjupy-lsp-enabled' nil was.
+And one wait before a failed language server is tried again, whichever
+-- `emjupy-shadow-retry-interval' is that one, by another name."
+  (dolist (setting '((emjupy-language-support . local)
+                     (emjupy-lsp-enabled . nil)))
+    (emjupy-test--routing t
+      (let ((asked 0))
+        (cl-letf (((symbol-function 'emjupy--ask-server-lsp)
+                   (lambda (&rest _) (cl-incf asked))))
+          (cl-progv (list (car setting)) (list (cdr setting))
+            (emjupy-start-language-support nb)))
+        (ert-info ((format "%s" setting))
+          (should (eq (emjupy-notebook-lsp-route nb) 'local))
+          (should (string-match-p "local\\|is off"
+                                  (emjupy-notebook-lsp-reason nb)))
+          (should (= asked 0))))))
+  (let ((emjupy-lsp-retry-interval 30))
+    (setq emjupy-shadow-retry-interval 45)
+    (should (= emjupy-lsp-retry-interval 45))))
 
 (provide 'emjupy-eglot-test)
 

@@ -27,12 +27,12 @@ machine the code runs on.
 
 ** Without =jupyter-lsp=, over SSH
 
-With no =jupyter-lsp= but SSH access, turn the WebSocket transport off
+With no =jupyter-lsp= but SSH access, use a language server of your own
 and name the host: emjupy puts the shadow file beside the notebook there,
 over TRAMP, and =eglot= starts the language server there.
 
 #+begin_src elisp
-(setq emjupy-lsp-enabled nil
+(setq emjupy-language-support 'local
       emjupy-shadow-host "/ssh:box:")
 #+end_src
 
@@ -40,8 +40,9 @@ over TRAMP, and =eglot= starts the language server there.
 kernel, so =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  Unset,
 the shadow file goes to a local temporary directory: =M-.= will not find
 your own modules, but nothing is written to a path meaning something
-else here.  It has no effect while =emjupy-lsp-enabled= is on, the shadow
-file being then always local.  =emjupy-shadow-directory= overrides where
+else here.  It has no effect while the server's language server is
+used, the shadow file being then always local: only on the local route,
+chosen or fallen back to.  =emjupy-shadow-directory= overrides where
 the file goes; =emjupy-shadow-beside-notebook= turns placing it beside the
 notebook off.
 

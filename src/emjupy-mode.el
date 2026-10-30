@@ -243,7 +243,8 @@ no kernel, disconnected, reconnecting."
                    (format " %s" (plist-get parts :host)))
                   (t ""))
             ;; The fallback, plain to see: its answers are this machine's.
-            (if (eq emjupy--lsp-route 'local)
+            (if (and (emjupy--notebook)
+                     (eq (emjupy-notebook-lsp-route (emjupy--notebook)) 'local))
                 (propertize " LSP: this machine" 'face 'error)
               ""))))
 

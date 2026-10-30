@@ -173,7 +173,7 @@ answers from the right machine.
 In the SSH arrangement the shadow file is remote, over TRAMP, and asked
 for after every command: an unreachable host would block every
 keystroke.  So setup gets =emjupy-shadow-timeout= seconds (2) and, on
-failure, is not retried for =emjupy-shadow-retry-interval= seconds (30),
+failure, is not retried for =emjupy-lsp-retry-interval= seconds (30),
 saying so once -- for creating the file, and for starting the language
 server, the costly half, which otherwise repeats per command when the
 host has no =pylsp=.  Editing and running cells never need the shadow
@@ -181,9 +181,11 @@ buffer: only completion, eldoc and =M-.= wait for the host.
 
 * Falling back
 
-=emjupy-lsp-enabled= nil selects the older arrangement, needing no
-=jupyter-lsp=: the language server runs on this machine, or over SSH
-beside the kernel -- see [[file:remote.org][Working with a remote server]].
+=emjupy-language-support= set to =local= chooses the older arrangement,
+needing no =jupyter-lsp=: the language server runs on this machine, or
+over SSH beside the kernel -- see [[file:remote.org][Working with a remote server]].  It is also
+what emjupy falls back to, saying so, when the server has none.  (The
+setting was once =emjupy-lsp-enabled= nil, which still works.)
 
 * Checking it from the shell
 

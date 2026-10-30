@@ -91,15 +91,9 @@ directory named after a remote path."
   :type 'boolean
   :group 'emjupy-advanced)
 
-(defcustom emjupy-shadow-retry-interval 30
-  "Seconds to wait before retrying a shadow buffer that failed to set up.
-
-Completion and eldoc ask for the shadow buffer after every command.  If
-building it fails -- an unreachable host, a directory that cannot be
-created -- retrying each time turns one slow failure into a hang, since
-each attempt blocks Emacs while TRAMP waits."
-  :type 'number
-  :group 'emjupy-advanced)
+(define-obsolete-variable-alias 'emjupy-shadow-retry-interval
+  'emjupy-lsp-retry-interval "0.3"
+  "One wait before trying a language server again, whichever failed.")
 
 (defcustom emjupy-shadow-timeout 2
   "Seconds to let shadow-buffer setup block Emacs before giving up.
@@ -223,51 +217,33 @@ using one raises a jsonrpc-error out of completion."
     (let ((server (eglot-current-server)))
       (and server (jsonrpc-running-p server) server))))
 
-(defvar emjupy--force-local-shadow nil
-  "Non-nil while the shadow file must be on this machine.
-The WebSocket transport never reads the file, and rewrites the paths it
-reports; building it over TRAMP would only be slow, or time out.")
+(defun emjupy--shadow-stays-here-p (nb)
+  "Return non-nil if NB's shadow file belongs on this machine.
+Unless NB's route is `local': the server's language server is sent the
+text, and never reads the file -- built over TRAMP, it would only be
+slow -- and while the route is undecided, nothing reads it yet.  Built
+beside a remote notebook then, it was written over TRAMP, only to move
+here once the socket route was found, and the server connected to it
+went with it.  Only the fallback, an ordinary Eglot, reads it there."
+  (not (eq (emjupy-notebook-lsp-route nb) 'local)))
 
 (defun emjupy--shadow-must-stay-here-p (nb)
   "Non-nil when NB's shadow belongs on this machine but its files do not.
 
 True exactly when the WebSocket transport is in use and the notebook is
 somewhere this machine cannot reach as a plain path."
-  (and emjupy--force-local-shadow
+  (and (emjupy--shadow-stays-here-p nb)
        (let ((dir (emjupy--notebook-directory nb)))
          (and dir (not (emjupy--local-directory-p dir))))))
 
-(defvar-local emjupy--lsp-route nil
-  "In a notebook buffer: how its language server is reached, once decided.
-`socket', the server's beside the kernel, in its environment; `local',
-one on this machine -- the fallback, marked in the mode line; nil until
-the server has been asked.  Nothing is attached while it is nil: an
-ordinary Eglot started first, over TRAMP, failed and blocked the right
-one, or answered from this machine's Python.")
-
-(defvar-local emjupy--lsp-route-reason nil
-  "In a notebook buffer: why its route is what it is, for `emjupy-status'.")
-
 (defun emjupy--shadow-directory-for (nb)
   "Return the directory NB's shadow file belongs in."
-  ;; Forcing local rejects REMOTE candidates only.  A directory set by hand
+  ;; Kept here rejects REMOTE candidates only.  A directory set by hand
   ;; that is already on this machine is still what the user asked for.
-  ;; Local unless on the local route, whoever asks: the server is sent the text
-  ;; Built by completion with the shadow beside a remote notebook, it moved
-  ;; there, and the connected server went with the buffer it left.
-  (let ((emjupy--force-local-shadow
-         (or emjupy--force-local-shadow
-             (let ((buf (emjupy-notebook-buffer nb)))
-               ;; and while undecided: built then, beside a remote notebook,
-               ;; it was written over TRAMP, a round trip a step, only to
-               ;; move back here once the socket route was found -- 8 s
-               ;; of a first completion.  Only the local route puts it there.
-               (and (buffer-live-p buf)
-                    (not (eq (buffer-local-value 'emjupy--lsp-route buf)
-                             'local)))))))
+  (let ((here (emjupy--shadow-stays-here-p nb)))
     (cl-flet ((usable (dir)
                 (and dir
-                     (not (and emjupy--force-local-shadow (file-remote-p dir)))
+                     (not (and here (file-remote-p dir)))
                      dir)))
       (let* ((explicit (usable (and emjupy-shadow-directory
                                     (file-name-as-directory
@@ -374,9 +350,9 @@ BUFFER is where the pause is recorded, by default the current one.  It
 must be the notebook buffer: the next request comes from there."
   (with-current-buffer (or buffer (current-buffer))
     (setq emjupy--shadow-blocked-until
-          (time-add (current-time) emjupy-shadow-retry-interval)))
+          (time-add (current-time) emjupy-lsp-retry-interval)))
   (message "[emjupy] Language-server setup failed (%s); pausing %ds.  %s"
-           reason emjupy-shadow-retry-interval
+           reason emjupy-lsp-retry-interval
            "Notebook editing and execution are unaffected."))
 
 ;; The back-off covers starting a language server, the slow or impossible

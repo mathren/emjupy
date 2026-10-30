@@ -270,6 +270,12 @@ SHADOW-BUFFER holds its code for the language server."
   path server kernel cells metadata buffer shadow-buffer
   ;; Live LSP session against the server `jupyter-lsp' runs, if any.
   lsp
+  ;; How its language server is reached, once decided: `socket', the
+  ;; server's beside the kernel, in its environment; `local', one on this
+  ;; machine -- the fallback, marked in the mode line; nil until the
+  ;; server has been asked.  LSP-REASON says why.  Where its shadow file
+  ;; goes, and whether an ordinary Eglot may attach, follow from it.
+  lsp-route lsp-reason
   ;; Where the kernel says it is running.  Absolute, on the kernel's own
   ;; filesystem, so only meaningful here when the kernel is local or
   ;; `emjupy-shadow-host' says how to reach it.

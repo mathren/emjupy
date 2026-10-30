@@ -230,7 +230,7 @@ up: the shadow buffer is a convenience, not the notebook."
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
         ;; a shadow beside the notebook: the local route's
-        (setq emjupy--lsp-route 'local)
+        (setf (emjupy-notebook-lsp-route nb) 'local)
         (setf (emjupy-notebook-path emjupy--buffer-notebook) "nb.ipynb")
         (let ((emjupy-shadow-directory "/ssh:nosuchhost.invalid:/tmp/x/"))
           (cl-letf (((symbol-function 'make-directory)

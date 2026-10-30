@@ -34,7 +34,11 @@
 ;;;; Options
 
 (defcustom emjupy-language-support t
-  "When non-nil, offer completion, eldoc and \\[xref-find-definitions].
+  "Which language server serves completion, eldoc and definitions.
+\\[xref-find-definitions] among them.  t: the one the notebook's server
+runs beside the kernel, through `jupyter-lsp', in the kernel's
+environment -- else one on this machine, the fallback, said and marked
+in the mode line.  `local': one on this machine, always.  nil: none.
 
 A single switch over every path that talks to a language server, on
 either transport: completion, eldoc, M-., starting one when a notebook
@@ -45,7 +49,9 @@ everything renders -- and nothing runs after each command except
 emjupy's own bookkeeping.  Editing all the code in one buffer, with
 \\[emjupy-edit-cell-externally], still works, without a server; set
 back to t, a server is started when next one is asked for."
-  :type 'boolean
+  :type '(choice (const :tag "The server's, else this machine's" t)
+                 (const :tag "This machine's" local)
+                 (const :tag "None" nil))
   :group 'emjupy-language-server)
 
 (defcustom emjupy-eglot-delegated-commands
@@ -99,21 +105,23 @@ the advice does nothing at all."
            (emjupy-start-language-support nb)))))))
 
 
+(defun emjupy--language-server-here-only-p ()
+  "Return non-nil if the language server is to be this machine's, as set.
+`emjupy-language-support' `local', or the obsolete `emjupy-lsp-enabled'
+nil, which meant it."
+  (or (eq emjupy-language-support 'local)
+      (and (boundp 'emjupy-lsp-enabled) (not emjupy-lsp-enabled))))
+
 (defun emjupy--lsp-fall-back (nb why)
   "Have NB use a language server on this machine, WHY the server's could not."
+  (setf (emjupy-notebook-lsp-route nb) 'local
+        (emjupy-notebook-lsp-reason nb) why)
   (let ((buf (emjupy-notebook-buffer nb)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
-        (setq emjupy--lsp-route 'local
-              emjupy--lsp-route-reason why)
         (force-mode-line-update)
         (message "[emjupy] LANGUAGE SERVER FALLBACK for %s: %s.  Using one on THIS machine: it does not see the notebook's environment or files.  M-x emjupy-lsp-diagnose"
                  (emjupy-notebook-path nb) why)))))
-
-(defvar emjupy--suppress-plain-eglot nil
-  "Non-nil while a WebSocket-backed Eglot is about to be attached.
-`emjupy--ensure-shadow-buffer' would otherwise start an ordinary Eglot
-first, and the WebSocket one would find it there and never attach.")
 
 (defun emjupy-start-language-support (&optional nb)
   "Begin language support for NB, without waiting for it.
@@ -142,23 +150,23 @@ hand.  Reports what it found rather than failing quietly."
 
 (defun emjupy--decide-lsp-route (nb)
   "Return how NB reaches its language server, deciding it the first time.
-`socket' or `local', as `emjupy--lsp-route'; nil while the server is
+`socket' or `local', as `emjupy-notebook-lsp-route'; nil while the server is
 being asked, without waiting -- this is called again once it answers,
 for a notebook still open, its kernel connected.  Nothing attaches
 before: an ordinary Eglot started first, over TRAMP, raced the right
 one and lost the environment's."
-  (with-current-buffer (emjupy-notebook-buffer nb)
-    (unless emjupy--lsp-route
+  (progn
+    (unless (emjupy-notebook-lsp-route nb)
       (let ((server (emjupy-notebook-server nb)))
         (cond
-         ((not (bound-and-true-p emjupy-lsp-enabled))
-          (emjupy--lsp-fall-back nb "emjupy-lsp-enabled is off"))
+         ((emjupy--language-server-here-only-p)
+          (emjupy--lsp-fall-back nb "emjupy-language-support is local"))
          ((null server)
           (emjupy--lsp-fall-back nb "the notebook has no server"))
          (t
           (pcase (emjupy--server-lsp-answer server)
-            ('yes (setq emjupy--lsp-route 'socket
-                        emjupy--lsp-route-reason
+            ('yes (setf (emjupy-notebook-lsp-route nb) 'socket
+                        (emjupy-notebook-lsp-reason nb)
                         (format "the server has %s, through jupyter-lsp"
                                 emjupy-lsp-server)))
             ('no (emjupy--lsp-fall-back
@@ -175,7 +183,7 @@ one and lost the environment's."
                     (when (and (buffer-live-p buf)
                                (with-current-buffer buf (emjupy--ws-live-p)))
                       (emjupy-start-language-support nb)))))))))))
-    emjupy--lsp-route))
+    (emjupy-notebook-lsp-route nb)))
 
 (defun emjupy--eglot-server-description (server)
   "Return what SERVER, an Eglot server, is, how it is reached, and if ready."
@@ -188,9 +196,7 @@ one and lost the environment's."
 
 (defun emjupy--language-server-status (nb)
   "Return the language-server section of NB's status."
-  (let* ((buf (emjupy-notebook-buffer nb))
-         (route (and (buffer-live-p buf)
-                     (buffer-local-value 'emjupy--lsp-route buf)))
+  (let* ((route (emjupy-notebook-lsp-route nb))
          (sb (emjupy-notebook-shadow-buffer nb))
          (server (and (buffer-live-p sb)
                       (with-current-buffer sb (eglot-current-server)))))
@@ -202,9 +208,7 @@ one and lost the environment's."
                         (_ (if emjupy-language-support "not yet decided"
                              "off: emjupy-language-support is nil")))
                       (when route
-                        (format "because %s"
-                                (buffer-local-value 'emjupy--lsp-route-reason
-                                                    buf)))
+                        (format "because %s" (emjupy-notebook-lsp-reason nb)))
                       (if server
                           (emjupy--eglot-server-description server)
                         (and route "none attached"))
@@ -220,10 +224,6 @@ not reached is the fallback, said.  Return the server attached, else the
 shadow buffer, or nil without one."
   (let* ((want-socket (and (eq route 'socket)
                            (emjupy-notebook-kernel-cwd nb)))
-         (emjupy--suppress-plain-eglot want-socket)
-         ;; Keep it local when the socket is what will read it -- which
-         ;; is to say, when nothing will read it.
-         (emjupy--force-local-shadow want-socket)
          (buffer (condition-case err
                      (emjupy--ensure-shadow-buffer nb)
                    (file-error
@@ -302,7 +302,7 @@ Unless one is attached, another is being, language support is off, or
 NB-BUFFER, the notebook's, is backing off."
   ;; No server, no other route: decided here, as no kernel will connect to
   ;; decide it.  Left undecided, nothing ever attached.
-  (when (and (null (buffer-local-value 'emjupy--lsp-route nb-buffer))
+  (when (and (null (emjupy-notebook-lsp-route nb))
              (null (emjupy-notebook-server nb)))
     (emjupy--lsp-fall-back nb "the notebook has no server"))
   (condition-case err
@@ -311,11 +311,9 @@ NB-BUFFER, the notebook's, is backing off."
       ;; set in the notebook buffer, where the next request comes from.  With
       ;; `emjupy-language-support' off the buffer is still built, for editing
       ;; the code, but nothing is attached.
-      (unless (or emjupy--suppress-plain-eglot
-                  (not emjupy-language-support)
+      (unless (or (not emjupy-language-support)
                   ;; only as the fallback, decided: never first, racing
-                  (not (eq (buffer-local-value 'emjupy--lsp-route nb-buffer)
-                           'local))
+                  (not (eq (emjupy-notebook-lsp-route nb) 'local))
                   (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
                   (and (boundp 'eglot--managed-mode) eglot--managed-mode))
         (with-timeout (emjupy-shadow-timeout
@@ -646,7 +644,7 @@ buffer current.  Return FN's value, or nil outside a code cell."
   ;; Only when the better transport is unavailable, not while it is still
   ;; connecting -- as it is whenever a notebook opens.
   (when (and emjupy--buffer-notebook
-             (or (not (bound-and-true-p emjupy-lsp-enabled))
+             (or (emjupy--language-server-here-only-p)
                  (emjupy--shadow-blocked-p))
              (not (emjupy--lsp-in-charge-p)))
     (emjupy--warn-shadow-is-local emjupy--buffer-notebook))
@@ -764,7 +762,8 @@ Run in NB's buffer: the back-off it reports is that buffer's."
      (format "kernel cwd      %s"
              (or (emjupy-notebook-kernel-cwd nb)
                  "unknown -- kernel has not answered"))
-     (format "lsp enabled     %s" (if emjupy-lsp-enabled "yes" "no"))
+     (format "lsp enabled     %s"
+             (if (emjupy--language-server-here-only-p) "no, as set" "yes"))
      (format "lsp url         %s"
              ;; Redacted: this report is written to be pasted into a
              ;; bug report, and the URL carries the token.
