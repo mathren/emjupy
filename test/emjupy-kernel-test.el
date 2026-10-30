@@ -1520,6 +1520,66 @@ the user's first cell 2."
       (should (eq (gethash "store_history" users) t))
       (should (eq (gethash "stop_on_error" users) t)))))
 
+
+;;;; A new connection hears the kernel before anything is sent
+
+(defmacro emjupy-test--handshaking (&rest body)
+  "Run BODY with KERNEL connected, SENT what went over its socket, in order."
+  (declare (indent 0))
+  `(let* ((kernel (make-emjupy-kernel :id "k" :ws 'ws
+                                      :pending (make-hash-table :test 'equal)))
+          (sent nil) (said nil) (timer nil))
+     (cl-letf (((symbol-function 'websocket-send-text)
+                (lambda (_ws payload) (setq sent (append sent (list payload)))))
+               ((symbol-function 'emjupy--ws-live-p) (lambda (&rest _) t))
+               ((symbol-function 'run-with-timer)
+                (lambda (_secs _rep fn &rest args) (setq timer (cons fn args))))
+               ((symbol-function 'message)
+                (lambda (fmt &rest args) (push (apply #'format fmt args) said))))
+       ,@body)))
+
+(defun emjupy-test--status-for (parent-id)
+  "A status frame answering PARENT-ID."
+  (json-serialize
+   (emjupy--json-object
+    "header" (emjupy--json-object "msg_type" "status" "msg_id" "s1")
+    "parent_header" (emjupy--json-object "msg_id" parent-id)
+    "channel" "iopub"
+    "content" (emjupy--json-object "execution_state" "idle")
+    "metadata" (make-hash-table))))
+
+(ert-deftest emjupy-test-a-new-connection-holds-until-it-hears ()
+  "What is sent before the kernel's output is heard is held, then sent in
+order, once a status answers the kernel_info_request asked first.  A
+first cell's output was lost otherwise."
+  (emjupy-test--handshaking
+    (emjupy--begin-handshake kernel)
+    (should (= (length sent) 1))
+    (should (string-match-p "kernel_info_request" (car sent)))
+    (emjupy--ws-send "first" kernel)
+    (emjupy--ws-send "second" kernel)
+    (should (= (length sent) 1))
+    ;; a status for another request does not end it
+    (emjupy--handle-ws-message kernel (emjupy-test--status-for "other"))
+    (should (= (length sent) 1))
+    (emjupy--handle-ws-message
+     kernel (emjupy-test--status-for (emjupy-kernel-handshake kernel)))
+    (should (equal (cdr sent) '("first" "second")))
+    (should-not (emjupy-kernel-handshake kernel))
+    ;; and after, sent at once
+    (emjupy--ws-send "third" kernel)
+    (should (equal (car (last sent)) "third"))))
+
+(ert-deftest emjupy-test-a-connection-not-heard-goes-on-saying-so ()
+  "No status in time: what was held is sent all the same, and said."
+  (emjupy-test--handshaking
+    (emjupy--begin-handshake kernel)
+    (emjupy--ws-send "first" kernel)
+    (apply (car timer) (cdr timer))
+    (should (equal (cdr sent) '("first")))
+    (should-not (emjupy-kernel-handshake kernel))
+    (should (seq-some (lambda (m) (string-match-p "not heard" m)) said))))
+
 (provide 'emjupy-kernel-test)
 
 ;;; emjupy-kernel-test.el ends here

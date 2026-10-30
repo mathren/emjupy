@@ -663,6 +663,11 @@ kernels never cross-talk."
                       (emjupy--ws-message-owner pending parent-id)))
          (internal (when parent-id (gethash parent-id
                                             emjupy--internal-requests))))
+    ;; The connection hears the kernel's output: what was held goes.
+    (when (and kernel (emjupy-kernel-handshake kernel)
+               (equal msg-type "status")
+               (equal parent-id (emjupy-kernel-handshake kernel)))
+      (emjupy--end-handshake kernel))
     ;; What it is doing, for the mode line: any status, whoever's request.
     (when (and kernel (equal msg-type "status"))
       (let ((state (gethash "execution_state" content)))
@@ -750,6 +755,7 @@ several notebooks -- from several servers -- stay live at once."
            :on-open (lambda (ws)
                       (emjupy--kernel-told kernel)
                       (unless (eq (websocket-client-data ws) 'refused)
+                        (emjupy--begin-handshake kernel)
                         (message "[emjupy] %s connected to kernel %s" label
                                  kernel-id)))
            :on-close (lambda (_ws)
@@ -922,9 +928,48 @@ attaching two notebooks to one kernel makes them share state."
     (and ws (websocket-p ws) (websocket-openp ws))))
 
 (defun emjupy--ws-send (payload &optional kernel)
-  "Send PAYLOAD, a string, over KERNEL's WebSocket."
+  "Send PAYLOAD, a string, over KERNEL's WebSocket.
+Held while the connection is not yet known to hear the kernel's output,
+then sent, in order: see `emjupy--begin-handshake'."
   (let ((kernel (or kernel (emjupy--kernel))))
-    (websocket-send-text (emjupy-kernel-ws kernel) payload)))
+    (if (emjupy-kernel-handshake kernel)
+        (push payload (emjupy-kernel-held kernel))
+      (websocket-send-text (emjupy-kernel-ws kernel) payload))))
+
+(defconst emjupy--handshake-timeout 5
+  "Seconds a new connection waits to hear the kernel before going on.")
+
+(defun emjupy--begin-handshake (kernel)
+  "Hold what is sent to KERNEL until its new connection hears its output.
+A kernel publishes its output on one channel and answers on another; a
+connection just opened can miss what is first published, while the
+answer comes.  So, as JupyterLab does, emjupy asks for the kernel's info
+first, and sends nothing else until a status for that request arrives:
+statuses come only on the output channel.  The first cell's output was
+lost otherwise, unless something whose output no one reads went first.
+No status within `emjupy--handshake-timeout' seconds: it goes on, saying
+so."
+  (let ((msg (emjupy--make-message "kernel_info_request"
+                                   (make-hash-table :test 'equal))))
+    (setf (emjupy-kernel-handshake kernel) (car msg)
+          (emjupy-kernel-held kernel) nil)
+    (websocket-send-text (emjupy-kernel-ws kernel) (cdr msg))
+    (run-with-timer emjupy--handshake-timeout nil
+                    (lambda ()
+                      (when (equal (emjupy-kernel-handshake kernel) (car msg))
+                        (message "[emjupy] Kernel %s: its output not heard in %d s; going on"
+                                 (emjupy-kernel-id kernel)
+                                 emjupy--handshake-timeout)
+                        (emjupy--end-handshake kernel))))))
+
+(defun emjupy--end-handshake (kernel)
+  "Send what was held for KERNEL, in order: its connection hears it now."
+  (let ((held (reverse (emjupy-kernel-held kernel))))
+    (setf (emjupy-kernel-handshake kernel) nil
+          (emjupy-kernel-held kernel) nil)
+    (when (emjupy--ws-live-p kernel)
+      (dolist (payload held)
+        (websocket-send-text (emjupy-kernel-ws kernel) payload)))))
 
 ;;;; Once connected
 

@@ -183,7 +183,11 @@ cell it runs, until its reply and its closing idle have both come."
   heard
   ;; What it last said it is doing -- \"idle\", \"busy\", \"starting\":
   ;; the mode line shows it.
-  state)
+  state
+  ;; While a new connection is not yet known to hear the kernel's output:
+  ;; the id of the kernel_info_request asked to prove it, and the messages
+  ;; held meanwhile, newest first.  See `emjupy--begin-handshake'.
+  handshake held)
 
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")
