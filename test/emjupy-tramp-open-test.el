@@ -415,6 +415,68 @@ processes only; with no runtime file, jupyter's own list."
             (should (= 1 (length (split-string out "\n" t))))))
       (delete-directory dir t))))
 
+
+(ert-deftest emjupy-test-a-folders-environment-is-remembered ()
+  "A folder's environment is asked the first time, then used as last
+chosen, saying so; asked again with a prefix argument, the last offered;
+one gone, forgotten and asked; and remembered across sessions, in
+`emjupy-environments-file'.  Asked at every opening, it cost a
+keystroke, and the remote its lookups."
+  (let* ((file (make-temp-file "emjupy-environments" nil ".eld"))
+         (emjupy-environments-file file)
+         (emjupy--environments 'unread)
+         (gone nil) (asked nil) (said nil) (answer "/e/sci"))
+    (unwind-protect
+        (cl-letf (((symbol-function 'emjupy--read-environment)
+                   (lambda (dir)
+                     (push (cons dir (cdr (assoc (emjupy--environment-key dir)
+                                                 (emjupy--environments))))
+                           asked)
+                     answer))
+                  ((symbol-function 'emjupy--environment-jupyter)
+                   (lambda (env &rest _)
+                     (when (member env gone)
+                       (user-error "No jupyter in %s" env))
+                     (concat env "/bin/jupyter")))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args)
+                     (push (apply #'format fmt args) said))))
+          (should (equal (emjupy--chosen-environment-jupyter "/p/" nil)
+                         "/e/sci/bin/jupyter"))
+          (should (= (length asked) 1))
+          ;; again: not asked, and said
+          (should (equal (emjupy--chosen-environment-jupyter "/p/" nil)
+                         "/e/sci/bin/jupyter"))
+          (should (= (length asked) 1))
+          (should (string-match-p "as last time here" (car said)))
+          ;; C-u: asked, the last offered
+          (setq answer "/e/plain")
+          (should (equal (emjupy--chosen-environment-jupyter "/p/" t)
+                         "/e/plain/bin/jupyter"))
+          (should (equal (car asked) '("/p/" . "/e/sci")))
+          ;; another session: read from the file
+          (setq emjupy--environments 'unread)
+          (should (equal (emjupy--chosen-environment-jupyter "/p/" nil)
+                         "/e/plain/bin/jupyter"))
+          (should (= (length asked) 2))
+          ;; gone: forgotten, said, asked
+          (setq gone '("/e/plain") answer "/e/sci")
+          (should (equal (emjupy--chosen-environment-jupyter "/p/" nil)
+                         "/e/sci/bin/jupyter"))
+          (should (= (length asked) 3))
+          (should (seq-some (lambda (m) (string-match-p "asking again" m))
+                            said)))
+      (delete-file file))))
+
+
+(ert-deftest emjupy-test-a-folder-is-remembered-by-its-machine ()
+  "A remote folder is remembered by its machine and path, whatever the
+route: TRAMP names it with its hops, or without them once it knows them."
+  (should (equal (emjupy--environment-key "/ssh:bastion|ssh:u@node:/home/u/p/")
+                 (emjupy--environment-key "/ssh:u@node:/home/u/p/")))
+  (should-not (equal (emjupy--environment-key "/ssh:u@node:/home/u/p/")
+                     (emjupy--environment-key "/ssh:u@other:/home/u/p/"))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

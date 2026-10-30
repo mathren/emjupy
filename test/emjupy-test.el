@@ -47,6 +47,9 @@
 (require 'emjupy-widgets-test)
 
 
+;; Tests never write the user's remembered environments.
+(setq emjupy-environments-file nil)
+
 (provide 'emjupy-test)
 
 ;;; emjupy-test.el ends here

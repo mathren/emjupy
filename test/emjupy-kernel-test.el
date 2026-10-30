@@ -1535,7 +1535,8 @@ the user's first cell 2."
                ((symbol-function 'run-with-timer)
                 (lambda (_secs _rep fn &rest args) (setq timer (cons fn args))))
                ((symbol-function 'message)
-                (lambda (fmt &rest args) (push (apply #'format fmt args) said))))
+                (lambda (fmt &rest args)
+                  (push (apply #'format fmt args) said))))
        ,@body)))
 
 (defun emjupy-test--status-for (parent-id)

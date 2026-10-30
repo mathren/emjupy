@@ -129,6 +129,72 @@ machine of WHERE, a directory -- one through TRAMP asks the remote."
                                      "base")
                                    dir))))))))
 
+(defcustom emjupy-environments-file
+  (locate-user-emacs-file "emjupy-environments.eld")
+  "File remembering the environment each folder's notebooks opened in.
+nil remembers them for the session only."
+  :type '(choice file (const :tag "This session only" nil))
+  :group 'emjupy)
+
+(defvar emjupy--environments 'unread
+  "Each folder's environment, as last chosen: an alist, or `unread'.")
+
+(defun emjupy--environments ()
+  "Return the remembered environments, read from their file the first time."
+  (when (eq emjupy--environments 'unread)
+    (setq emjupy--environments
+          (or (and emjupy-environments-file
+                   (file-readable-p emjupy-environments-file)
+                   (ignore-errors
+                     (with-temp-buffer
+                       (insert-file-contents emjupy-environments-file)
+                       (read (current-buffer)))))
+              nil)))
+  emjupy--environments)
+
+(defun emjupy--environment-key (dir)
+  "Return the name DIR is remembered by: its machine's, not its route's.
+user@host:path for a remote one -- TRAMP shortens a route of hops once
+it knows it, so the same folder is named two ways; DIR expanded here."
+  (if (file-remote-p dir)
+      (format "%s@%s:%s" (or (file-remote-p dir 'user) "")
+              (file-remote-p dir 'host) (file-remote-p dir 'localname))
+    (file-name-as-directory (expand-file-name dir))))
+
+(defun emjupy--remember-environment (dir env)
+  "Remember ENV as DIR's environment, or forget DIR's when ENV is nil."
+  (let* ((key (emjupy--environment-key dir))
+         (rest (assoc-delete-all key (copy-sequence (emjupy--environments)))))
+    (setq emjupy--environments (if env (cons (cons key env) rest) rest)))
+  (when emjupy-environments-file
+    (with-demoted-errors "[emjupy] Environments not saved: %S"
+      (with-temp-file emjupy-environments-file
+        (let ((print-length nil) (print-level nil))
+          (prin1 emjupy--environments (current-buffer)))))))
+
+(defun emjupy--chosen-environment-jupyter (dir choose)
+  "Return the jupyter of DIR's environment: as chosen last there, or asked.
+Asked the first time, or with CHOOSE, the last offered as the default;
+remembered once found.  One remembered and gone is forgotten, said, and
+asked for.  Asked at every opening, the question cost the user a
+keystroke and the remote its conda and environment.yml lookups."
+  (let ((known (and (not choose)
+                    (cdr (assoc (emjupy--environment-key dir)
+                                (emjupy--environments))))))
+    (if known
+        (condition-case err
+            (prog1 (emjupy--environment-jupyter known dir)
+              (message "[emjupy] Environment %s, as last time here; C-u M-x emjupy-open-this-notebook to choose another"
+                       (if (string-empty-p known) "first on the PATH" known)))
+          (user-error
+           (message "[emjupy] %s: asking again" (error-message-string err))
+           (emjupy--remember-environment dir nil)
+           (emjupy--chosen-environment-jupyter dir t)))
+      (let* ((env (emjupy--read-environment dir))
+             (jupyter (emjupy--environment-jupyter env dir)))
+        (emjupy--remember-environment dir env)
+        jupyter))))
+
 (defun emjupy--read-environment (dir)
   "Ask for the Python environment to run a notebook in DIR with.
 Offered first: the environment named in an environment.yml beside it."
@@ -558,16 +624,16 @@ starts one.  ROUTE names the machine, for the messages."
       (message "[emjupy] Starting a Jupyter server on %s..." host)
       (emjupy--start-remote-server dir jupyter))))
 
-(defun emjupy--open-remote-notebook (file)
+(defun emjupy--open-remote-notebook (file &optional choose)
   "Open FILE, an .ipynb through TRAMP, as a notebook on its own machine.
+CHOOSE: ask for the environment even if one is remembered for its folder.
 Finds a Jupyter server already serving its folder there, or starts one
 in the environment asked for; opens a tunnel to it, through every hop;
 and opens the notebook on it.  Return the notebook\\='s buffer."
   (let* ((route (emjupy--ssh-route file))
          (prefix (emjupy--remote-prefix file))
          (dir (file-name-directory file))
-         (jupyter (emjupy--environment-jupyter (emjupy--read-environment dir)
-                                               dir))
+         (jupyter (emjupy--chosen-environment-jupyter dir choose))
          (remote (emjupy--remote-server dir jupyter route))
          (local-port (emjupy--open-tunnel route (plist-get remote :port)))
          (server (emjupy--intern-server (format "127.0.0.1:%d" local-port)
@@ -661,12 +727,14 @@ saying so when the path is open from another server there."
       same)))
 
 ;;;###autoload
-(defun emjupy-open-this-notebook ()
+(defun emjupy-open-this-notebook (&optional choose)
   "Open the .ipynb file this buffer visits as a notebook, on its machine.
-For a notebook opened as a file -- its JSON shown as text.  Asks for the
-Python environment to run it in, offered first the one an
-environment.yml beside it names; starts a Jupyter server there, for the
-notebook\\='s directory; and replaces this buffer with the notebook.
+For a notebook opened as a file -- its JSON shown as text.  Runs it in
+the Python environment chosen last in its folder, saying so; the first
+time there, or with a prefix argument CHOOSE, asks for one, offered
+first the one an environment.yml beside it names.  Starts a Jupyter
+server there, for the notebook\\='s directory, and replaces this buffer
+with the notebook.
 
 On this machine, the server listens here only, and stops when the last
 notebook it serves is closed, and with Emacs.  Through TRAMP -- over
@@ -676,7 +744,7 @@ notebook closes the tunnel, and leaves the server, and its kernels,
 running, to come back to.  A notebook already open from the same machine,
 from the server on the same port there, is the same notebook: its buffer
 is reused, its edits kept."
-  (interactive)
+  (interactive "P")
   (let ((file buffer-file-name))
     (unless (and file (string-suffix-p ".ipynb" file t))
       (user-error "This buffer is not visiting a .ipynb file"))
@@ -687,10 +755,10 @@ is reused, its edits kept."
         (user-error "Not opened: save the file, or revert it, first")))
     (let* ((remote (file-remote-p file))
            (opened (if remote
-                       (emjupy--open-remote-notebook file)
+                       (emjupy--open-remote-notebook file choose)
                      (let* ((dir (file-name-directory file))
-                            (jupyter (emjupy--environment-jupyter
-                                      (emjupy--read-environment dir)))
+                            (jupyter (emjupy--chosen-environment-jupyter
+                                      dir choose))
                             (server (emjupy--start-local-server dir jupyter)))
                        ;; A kernel for the notebook to open on, as logging in
                        ;; binds one: a server just started has none of its own.

@@ -44,7 +44,12 @@ window, on a kernel of its own on this machine:
 - it asks for the Python environment: a conda environment's name,
   completed from =conda env list=, or a venv's or conda prefix's
   directory; empty means the =jupyter= first on the =PATH=.  An
-  =environment.yml= beside the notebook names the one offered;
+  =environment.yml= beside the notebook names the one offered.  Asked
+  once in a folder: its notebooks open after in the one chosen last,
+  saying so -- =C-u M-x emjupy-open-this-notebook= asks again, the last
+  offered.  One gone is forgotten, and asked for.
+  =emjupy-environments-file= keeps them across sessions; nil, for the
+  session only;
 - it starts =jupyter server= from it, serving the notebook's directory,
   on this machine only, on a free port, with its own token -- or uses the
   one it started there already;
@@ -61,8 +66,9 @@ The same command works on an =.ipynb= opened through TRAMP over SSH --
 behind a bastion: =/ssh:bastion|ssh:node7:/home/you/project/analysis.ipynb=.
 It opens on its own machine:
 
-- the environment is asked for there, an =environment.yml= beside it
-  offered and conda's environments completed.  On a cluster, conda and
+- the environment is asked for there, the first time in its folder, an
+  =environment.yml= beside it offered and conda's environments
+  completed; remembered after, as here.  On a cluster, conda and
   modules often set up =PATH= only in a login shell, which TRAMP's is
   not: name the environment's directory, a path on that machine --
   =~/envs/analysis= or =/home/you/envs/analysis=;
