@@ -61,7 +61,11 @@ grep -aE "^Ran |FAILED  " /tmp/check-suite.log | head -8
 base="${XDG_CACHE_HOME:-$HOME/.cache}/emjupy-check/skipped-$MODE.txt"
 mkdir -p "$(dirname "$base")"
 grep -aE "^ +skipped +[0-9]+/[0-9]+ " /tmp/check-suite.log | awk '{print $3}' | sort -u > /tmp/check-skipped.txt
-if [ -f "$base" ]; then
+# Only a suite that finished says what it skipped: one stopped partway
+# skipped nothing yet, and recorded so once, the record was emptied.
+if ! grep -qa "^Ran " /tmp/check-suite.log; then
+  echo "the suite did not finish: skipped tests not compared, nor recorded"; status=1
+elif [ -f "$base" ]; then
   new=$(comm -13 "$base" /tmp/check-skipped.txt)
   if [ -n "$new" ]; then
     echo "skipped, newly -- a regression until explained (if meant: rm $base):"
