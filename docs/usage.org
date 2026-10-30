@@ -64,7 +64,8 @@ It opens on its own machine:
 - the environment is asked for there, an =environment.yml= beside it
   offered and conda's environments completed.  On a cluster, conda and
   modules often set up =PATH= only in a login shell, which TRAMP's is
-  not: name the environment's directory;
+  not: name the environment's directory, a path on that machine --
+  =~/envs/analysis= or =/home/you/envs/analysis=;
 - a Jupyter server serving its folder, or one above, is used, or one is
   started from that environment;
 - a tunnel to it opens, through every hop, and the notebook on it, its

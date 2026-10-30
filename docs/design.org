@@ -80,8 +80,11 @@ the shadow's directory and the kernel's working directory, so the server
 resolves =import mylib= beside the notebook; it is also told that
 directory, as where to look for modules.
 
-When that server cannot be reached, =emjupy= falls back to one on this
-machine; the cost is in [[file:language-server.org][Language server support]].
+Which it is, is decided once, before anything attaches: the server is
+asked, without waiting, whether it has the language server.  Having
+none, not answering, or its not connecting, and =emjupy= falls back to
+one on this machine, saying so and marking it in the mode line; the
+cost is in [[file:language-server.org][Language server support]].
 
 ** Mapping positions
 
