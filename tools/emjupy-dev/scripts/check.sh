@@ -55,5 +55,22 @@ fi
 echo "$([ "$MODE" = full ] && echo "make check" || echo "make test"): exit $s"
 grep -aE "^Ran |FAILED  " /tmp/check-suite.log | head -8
 [ $s -ne 0 ] && status=1
+# Skipped tests are results: one skipped now that was not last time is a
+# regression until explained -- six Eglot tests once went from passing to
+# skipping, and the suite said 0 unexpected.
+base="${XDG_CACHE_HOME:-$HOME/.cache}/emjupy-check/skipped-$MODE.txt"
+mkdir -p "$(dirname "$base")"
+grep -aE "^ +skipped +[0-9]+/[0-9]+ " /tmp/check-suite.log | awk '{print $3}' | sort -u > /tmp/check-skipped.txt
+if [ -f "$base" ]; then
+  new=$(comm -13 "$base" /tmp/check-skipped.txt)
+  if [ -n "$new" ]; then
+    echo "skipped, newly -- a regression until explained (if meant: rm $base):"
+    echo "$new" | sed 's/^/  /'; status=1
+  else
+    echo "skipped: $(wc -l < /tmp/check-skipped.txt), none newly"; cp /tmp/check-skipped.txt "$base"
+  fi
+else
+  echo "skipped: $(wc -l < /tmp/check-skipped.txt), recorded in $base for the next run"; cp /tmp/check-skipped.txt "$base"
+fi
 make -s clean >/dev/null 2>&1
 exit $status
