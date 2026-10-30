@@ -68,7 +68,8 @@ buffer of it does.  Set to nil to leave the buffer with
   (let ((map (make-sparse-keymap)))
     ;; Commands of the files above this one, in emjupy-notebook.el, are named
     ;; with a plain quote: a binding is resolved when the key is pressed.
-    ;; Execution
+
+    ;; Running cells
     (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-and-goto-next)
     ;; Shift-RET runs the cell and stays put, the way a notebook front-end
     ;; does. Bound in both spellings: a terminal Emacs reports it as
@@ -77,63 +78,66 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "<S-return>") #'emjupy-execute-cell-at-point)
     (define-key map (kbd "C-c C-e")    #'emjupy-execute-cell-at-point)
 
-    ;; Cell Operations (EIN style)
-    (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
-    (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
-    (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
-    (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
-    (define-key map (kbd "C-c C-d")     emjupy-debug-map)
-    (define-key map (kbd "C-c C-q")     #'emjupy-toc)
-    (define-key map (kbd "C-c C-i")     #'emjupy-toggle-cell-code)
-    ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
-    (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
-    (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
-    ;; A prefix of control characters, `C-c C-u C-l', not a plain letter.
-    (define-key map (kbd "C-c C-u C-l") #'emjupy-clear-all-outputs)
-    (define-key map (kbd "C-c C-s") #'emjupy-split-cell)
-    (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
-    (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
-    (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
-    ;; Deleting against a rendered formula reveals it.  Both spellings: a
-    ;; configuration binding <backspace> itself would never reach DEL.
-    (define-key map (kbd "DEL")         #'emjupy-latex-unrender-or-delete)
-    (define-key map (kbd "<backspace>") #'emjupy-latex-unrender-or-delete)
-    (define-key map (kbd "C-$")     #'emjupy-show-traceback)
-    (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
-    (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)
-    (define-key map (kbd "C-c <up>")   #'emjupy-move-cell-up)
-    (define-key map (kbd "C-c <down>") #'emjupy-move-cell-down)
-    (define-key map (kbd "C-c '")    #'emjupy-edit-cell-externally)
-
-    ;; Kernel
+    ;; The kernel
+    ;; C-c C-z stops what is running, like C-c in a terminal; picking a
+    ;; kernel is the rarer act and moves one modifier away.
+    (define-key map (kbd "C-c C-z") #'emjupy-interrupt-kernel)
+    (define-key map (kbd "C-c M-z") #'emjupy-connect-kernel-interactive)
     (define-key map (kbd "C-c C-x C-r") #'emjupy-restart-kernel)
     (define-key map (kbd "C-c C-x C-c") #'emjupy-reconnect-kernel)
 
-    ;; Multiple notebooks / servers
-    (define-key map (kbd "C-c C-x b") 'emjupy-switch-notebook)
-    (define-key map (kbd "C-c C-x s") 'emjupy-status)
-    (define-key map (kbd "C-c C-x l") 'emjupy-login)
-    (define-key map (kbd "C-c C-x C-e") 'emjupy-export-py)
-
-    ;; Navigation
+    ;; Moving among cells
     (define-key map (kbd "C-c C-n") #'emjupy-next-cell)
     (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
     (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
+    (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
     ;; Same axis one level out: C-c moves within this cell, M- moves to a
     ;; neighbouring one.
     (define-key map (kbd "M-<prior>") #'emjupy-beginning-of-previous-cell)
     (define-key map (kbd "M-<next>")  #'emjupy-end-of-previous-cell)
     (define-key map (kbd "M-<up>")    #'emjupy-beginning-of-next-cell)
     (define-key map (kbd "M-<down>")  #'emjupy-end-of-next-cell)
-    (define-key map (kbd "C-c C-x C-l") #'emjupy-re-render)
-    (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
 
-    ;; Persistence & Server/Kernel Connection
-    (define-key map (kbd "C-x C-s") 'emjupy-save-notebook)
-    ;; C-c C-z stops what is running, like C-c in a terminal; picking a
-    ;; kernel is the rarer act and moves one modifier away.
-    (define-key map (kbd "C-c C-z") #'emjupy-interrupt-kernel)
-    (define-key map (kbd "C-c M-z") #'emjupy-connect-kernel-interactive)
+    ;; Changing cells
+    (define-key map (kbd "C-c C-a") #'emjupy-insert-cell-above)
+    (define-key map (kbd "C-c C-b") #'emjupy-insert-cell-below)
+    (define-key map (kbd "C-c C-k") #'emjupy-delete-cell)
+    (define-key map (kbd "C-c C-s") #'emjupy-split-cell)
+    (define-key map (kbd "C-c C-j") #'emjupy-join-cell-above)
+    (define-key map (kbd "C-c C-t") #'emjupy-cycle-cell-type)
+    (define-key map (kbd "C-c C-w") #'emjupy-copy-cell)
+    (define-key map (kbd "C-c C-y") #'emjupy-yank-cell)
+    (define-key map (kbd "C-c <up>")   #'emjupy-move-cell-up)
+    (define-key map (kbd "C-c <down>") #'emjupy-move-cell-down)
+    (define-key map (kbd "C-c '")    #'emjupy-edit-cell-externally)
+    (define-key map (kbd "TAB")     #'emjupy-indent-or-cycle)
+
+    ;; Output, and what a cell shows
+    (define-key map (kbd "C-c C-l")     #'emjupy-clear-cell-output)
+    ;; A prefix of control characters, `C-c C-u C-l', not a plain letter.
+    (define-key map (kbd "C-c C-u C-l") #'emjupy-clear-all-outputs)
+    ;; Not `C-c h': keys of the form C-c <letter> are reserved for users.
+    (define-key map (kbd "C-c C-o")     #'emjupy-toggle-cell-output)
+    (define-key map (kbd "C-c C-i")     #'emjupy-toggle-cell-code)
+    (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
+    (define-key map (kbd "C-$")     #'emjupy-show-traceback)
+    ;; Deleting against a rendered formula reveals it.  Both spellings: a
+    ;; configuration binding <backspace> itself would never reach DEL.
+    (define-key map (kbd "DEL")         #'emjupy-latex-unrender-or-delete)
+    (define-key map (kbd "<backspace>") #'emjupy-latex-unrender-or-delete)
+    (define-key map (kbd "C-c C-x C-l") #'emjupy-re-render)
+
+    ;; The notebook, its outline and its servers
+    ;; The command, not its key: whichever key saves, saves the notebook.
+    (define-key map [remap save-buffer] 'emjupy-save-notebook)
+    (define-key map (kbd "C-c C-q")     #'emjupy-toc)
+    (define-key map (kbd "C-c C-x b") 'emjupy-switch-notebook)
+    (define-key map (kbd "C-c C-x s") 'emjupy-status)
+    (define-key map (kbd "C-c C-x l") 'emjupy-login)
+    (define-key map (kbd "C-c C-x C-e") 'emjupy-export-py)
+
+    ;; The debugger, and the menu of everything
+    (define-key map (kbd "C-c C-d")     emjupy-debug-map)
     ;; The menu.  Not `C-c C-h': `C-h' after a prefix is reserved for the
     ;; list of that prefix's bindings, which is the very thing this improves
     ;; on, so taking the key would remove the fallback.

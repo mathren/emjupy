@@ -287,6 +287,67 @@ unseen until then."
                   broken)))))
     (should-not (nreverse broken))))
 
+
+;;;; The key reference and the keymap agree
+
+(defun emjupy-test--key-name (key)
+  "Return KEY's description as the reference writes it."
+  (pcase key
+    ("C-c TAB" "C-c C-i")
+    ("<backspace>" "DEL")
+    ("<S-return>" "S-<return>")
+    ("<remap> <save-buffer>" "C-x C-s")
+    (_ key)))
+
+(defun emjupy-test--bindings ()
+  "Return `emjupy-mode-map''s bindings, as (KEY . COMMAND), keys as written."
+  (let (rows)
+    (cl-labels ((walk (map prefix)
+                  (map-keymap
+                   (lambda (ev def)
+                     (let ((k (vconcat prefix (vector ev))))
+                       (cond ((keymapp def) (walk def k))
+                             ((and def (symbolp def))
+                              (push (cons (emjupy-test--key-name
+                                           (key-description k))
+                                          def)
+                                    rows)))))
+                   map)))
+      (walk emjupy-mode-map []))
+    rows))
+
+(ert-deftest emjupy-test-the-key-reference-is-the-keymap ()
+  "keybindings.org lists every key of a notebook buffer with its command,
+and its notebook-buffer section binds nothing the keymap does not.  The
+reference had drifted once, the keymap regrouped without it."
+  (skip-unless (file-directory-p emjupy-test--docs-directory))
+  (let* ((text (with-temp-buffer
+                 (insert-file-contents
+                  (expand-file-name "keybindings.org"
+                                    emjupy-test--docs-directory))
+                 (buffer-string)))
+         (rows (let ((start 0) found)
+                 (while (string-match "^| =\\([^=]+\\)= *| =\\([^=]+\\)= "
+                                      text start)
+                   (push (cons (match-beginning 0)
+                               (cons (match-string 1 text)
+                                     (intern (match-string 2 text))))
+                         found)
+                   (setq start (match-end 0)))
+                 found))
+         (section-end (string-match "^\\* The outline" text))
+         (bound (emjupy-test--bindings)))
+    (dolist (b bound)
+      (ert-info ((format "bound, not in the reference: %s %s" (car b) (cdr b)))
+        (should (member b (mapcar #'cdr rows)))))
+    (dolist (row rows)
+      (let ((key (cadr row)))
+        (when (and (< (car row) section-end)
+                   (not (string-prefix-p "M-x " key)))
+          (ert-info ((format "in the reference, not bound: %s %s"
+                             key (cddr row)))
+            (should (member (cdr row) bound))))))))
+
 (provide 'emjupy-package-test)
 
 ;;; emjupy-package-test.el ends here
