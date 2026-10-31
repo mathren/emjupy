@@ -249,6 +249,11 @@ link syntax, they are not links."
              "[ \t]*\\(?::[[:alnum:]_@#%:]+:[ \t]*\\)?$")
      nil t)))
 
+(defconst emjupy-test--docs-built-files '("dependencies.svg")
+  "Files `make docs' writes beside the pages, which git ignores.
+Linked to before they are built: a fresh clone has none, and a link to
+one is not broken for it.")
+
 (ert-deftest emjupy-test-every-link-in-the-docs-leads-somewhere ()
   "Every internal link in the docs' Org sources resolves: its file exists,
 and the heading it names is in it -- an image, in the site the docs are
@@ -279,7 +284,10 @@ unseen until then."
                                          (expand-file-name
                                           "../html-content/"
                                           emjupy-test--docs-directory))))
-          (unless (and into (file-exists-p into)
+          (unless (and into
+                       (or (file-exists-p into)
+                           (member (file-name-nondirectory into)
+                                   emjupy-test--docs-built-files))
                        (or (null heading)
                            (emjupy-test--org-has-heading-p into heading)))
             (push (format "%s:%d: %s" (file-name-nondirectory file) (car link)
