@@ -5,7 +5,7 @@
 ;; Author: Mathieu Renzo <mrenzo@arizona.edu>
 ;; Assisted-by: Claude:claude-opus-5.5 and other free-tier LLMs
 ;; Maintainer: Mathieu Renzo <mrenzo@arizona.edu>
-;; Version: 0.2.1
+;; Version: 0.2.2
 ;; Package-Requires: ((emacs "30.1") (websocket "1.15"))
 ;; Keywords: languages, tools, python, jupyter
 ;; URL: https://github.com/mathren/emjupy
@@ -83,7 +83,7 @@
 
 ;;;; Version
 
-(defconst emjupy-version "0.2.1"
+(defconst emjupy-version "0.2.2"
   "Version of emjupy, kept in step with the Version: header above.")
 
 (defun emjupy--source-directory ()
