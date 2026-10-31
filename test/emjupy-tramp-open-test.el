@@ -392,10 +392,13 @@ processes only; with no runtime file, jupyter's own list."
                                             (concat "HOME=" dir))
                                       process-environment))
          (run (lambda ()
-                (with-temp-buffer
-                  (call-process "sh" nil t nil "-c"
-                                (emjupy--server-list-command jupyter))
-                  (buffer-string)))))
+                ;; From the test's own folder, an absolute name: with HOME
+                ;; moved, a current directory written ~/... was not found.
+                (let ((default-directory (file-name-as-directory dir)))
+                  (with-temp-buffer
+                    (call-process "sh" nil t nil "-c"
+                                  (emjupy--server-list-command jupyter))
+                    (buffer-string))))))
     (unwind-protect
         (progn
           (with-temp-file jupyter (insert "#!/bin/sh\necho FROM-JUPYTER\n"))
