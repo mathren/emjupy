@@ -3,7 +3,7 @@
 #+NEXT_PAGE: limitations.org
 
 =emjupy= is a multi-file Emacs package, developed with Claude Opus 5.5
-and other LLMs. Build a tar and install it:
+and other LLMs.  Build a tar and install it:
 
 #+begin_src bash
 make package                 # generates emjupy-i.j.k.tar
@@ -29,7 +29,7 @@ it: [[file:reading-the-code.org][Reading the code]] lists them in that order, wi
 and draws the graph of their requires. =emjupy-pkg.el= is the package
 metadata for =make package= (MELPA makes its own);
 =emjupy-figure-window.py= the window interactive figures open in,
-shipped with them. Tests in =test/=: the unit tests of each file in
+shipped with them.  Tests in =test/=: the unit tests of each file in
 =emjupy-FILE-test.el=, what they share in =emjupy-test-helpers.el=; the
 notebooks they read in =test_notebooks/=.
 
@@ -40,8 +40,8 @@ notebooks they read in =test_notebooks/=.
 No file calls or names anything defined in a file below it in the
 table -- except a keymap, which names its commands wherever they are
 defined, with a plain quote: a binding is resolved when the key is
-pressed, and a keymap reads best whole. There are no =declare-function=
-forms for emjupy's own functions. Each file requires the files whose
+pressed, and a keymap reads best whole.  There are no =declare-function=
+forms for emjupy's own functions.  Each file requires the files whose
 functions it uses, and only those; each loads on its own -- =(require
 'emjupy-lsp)= in a fresh Emacs works -- which is what makes this
 checkable.
@@ -60,15 +60,15 @@ A lower layer tells a higher one something happened by running a hook:
   changed, so the kernel is told.
 - =emjupy-comm-functions=, run with each comm message, and
   =emjupy-output-owner-functions=, asked which cell an output answering
-  no cell's request belongs to. The widgets layer keeps its models
+  no cell's request belongs to.  The widgets layer keeps its models
   from the first, and claims with the second the output a moved slider
   causes.
 - =emjupy-widget-view-functions=: the drawing layer asks for a widget's
   controls; the widgets layer answers.
 
 They are wired when a notebook buffer starts -- =emjupy-mode= turns each
-layer on -- not when a file loads. Only hooks run upward; nothing is
-set to one function for a layer below to call. The rest follows from
+layer on -- not when a file loads.  Only hooks run upward; nothing is
+set to one function for a layer below to call.  The rest follows from
 where things are put:
 
 - A redraw happens whole or is put right by redrawing from the cells.
@@ -132,7 +132,7 @@ The code follows the Elisp manual's [[https://www.gnu.org/software/emacs/manual/
 Lisp style guide]]: requires and compiler declarations at the top,
 Emacs's own indentation, =#'= for a function passed, =when= and =unless= for
 one branch, a docstring for every variable with a value, no code
-commented out, lines of 80 columns. Beyond them, emjupy's own:
+commented out, lines of 80 columns.  Beyond them, emjupy's own:
 
 - Loading a file only defines things: hooks go in a layer's =-enable=
   function, which =emjupy-mode= calls.  An optional or heavy library --
@@ -279,7 +279,7 @@ make coverage               # prints a per-file table; lcov in coverage/
 #+end_src
 
 With the integration variables set it covers the server-facing code
-too, as CI runs it. Tests tagged =:timing= are left out: instrumented,
+too, as CI runs it.  Tests tagged =:timing= are left out: instrumented,
 time means nothing.
 
 The docs, with CI's link check -- every page and anchor linked to must

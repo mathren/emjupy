@@ -133,7 +133,7 @@ would fight the faces on tracebacks and rich output."
                  emjupy-output-warning emjupy-output-image))
     (should (eq (face-attribute face :inherit nil nil) 'unspecified))
     ;; NOT :extend -- that runs the background to the window edge, past the
-    ;; cell outline. The band is padded to the border instead.
+    ;; cell outline.  The band is padded to the border instead.
     (should (eq (face-attribute face :extend nil nil) 'unspecified))
     (dolist (attr '(:foreground :weight :slant :underline :box :inverse-video))
       (should (eq (face-attribute face attr nil t) 'unspecified)))))

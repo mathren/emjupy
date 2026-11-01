@@ -17,11 +17,11 @@ where each step of the main flows happens.
 - *The code files are layers of =emjupy=.* Each file requires only files
   below it, the order of the table below; a lower layer reaches a
   higher one only through a hook list -- =emjupy-comm-functions= and its
-  kind -- which the higher one joins. Keymap and menu name commands
+  kind -- which the higher one joins.  Keymap and menu name commands
   of files above them and are an exception.
 - *Loading a file does nothing.* Each layer has an =-enable= function that
   wires it into a notebook buffer, and =emjupy-mode= calls them, in
-  order, when the buffer starts. So a side effect is always in a
+  order, when the buffer starts.  So a side effect is always in a
   function, never at the top level.
 
 * The files, in reading order
@@ -69,7 +69,7 @@ it requires; lines a longer path implies are left out:
 * The main flows
 
 Each flow follows a command one call at a time, each function's file
-in parentheses. Read them in this order and the rest of each file
+in parentheses.  Read them in this order and the rest of each file
 falls into place around them.
 
 ** Opening a notebook

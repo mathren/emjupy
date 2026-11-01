@@ -72,7 +72,7 @@ buffer of it does.  Set to nil to leave the buffer with
     ;; Running cells
     (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-and-goto-next)
     ;; Shift-RET runs the cell and stays put, the way a notebook front-end
-    ;; does. Bound in both spellings: a terminal Emacs reports it as
+    ;; does.  Bound in both spellings: a terminal Emacs reports it as
     ;; "S-<return>" only if the terminal distinguishes it at all.
     (define-key map (kbd "S-<return>") #'emjupy-execute-cell-at-point)
     (define-key map (kbd "<S-return>") #'emjupy-execute-cell-at-point)

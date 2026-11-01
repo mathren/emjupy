@@ -321,7 +321,7 @@ box says that it is collapsed rather than absent."
 ;; --- Markdown highlighting -------------------------------------------------
 
 (defconst emjupy--markdown-fallback-rules
-  ;; (REGEXP GROUP FACE). Applied in order with `add-face-text-property', so
+  ;; (REGEXP GROUP FACE).  Applied in order with `add-face-text-property', so
   ;; emphasis nested inside a heading composes rather than overwriting.
   '(;; fenced code blocks
     ("^[ \t]*\\(```\\|~~~\\)\\(?:.\\|\n\\)*?^[ \t]*\\1[ \t]*$" 0

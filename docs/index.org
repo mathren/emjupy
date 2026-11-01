@@ -2,7 +2,7 @@
 #+PREVIOUS_PAGE: limitations.org
 #+NEXT_PAGE:     usage.org
 
-=emjupy= edits and runs Jupyter notebooks in Emacs. Plots and widgets
+=emjupy= edits and runs Jupyter notebooks in Emacs.  Plots and widgets
 can be shown inline or in an external window or browser (see
 [[file:usage.org::*Interactive output][Interactive output]]).  =emjupy= uses Emacs's own
 tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with whatever completion setup
@@ -22,9 +22,9 @@ Jupyter tool opens.
 [[file:images/quickstart.gif]]
 
 
-Without touching your own Emacs configuration. The repository ships a
+Without touching your own Emacs configuration.  The repository ships a
 small notebook, =test_notebooks/test.ipynb=, with a module beside it, so
-there is something real to run. To test with your own notebooks, jump
+there is something real to run.  To test with your own notebooks, jump
 to step 4.
 
 1. *Get emjupy.*

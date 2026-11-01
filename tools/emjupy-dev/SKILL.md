@@ -1,6 +1,6 @@
 ---
 name: "emjupy-dev"
-description: Maintain and develop emjupy, the Emacs Jupyter notebook package (github.com/mathren/emjupy) -- fixes, features, refactors, reviews, docs, tests, CI and MELPA packaging, delivered as git mbox patches on the exact current main. Use this skill whenever the user mentions emjupy, its Elisp files (emjupy-*.el), its docs (docs/*.org), its tests, its CI or release workflows, or asks for a patch, mbox, review, fuzz test, refactor or docs pass on it -- even when the request is short, such as "fix the docs", "get the last commit and ...", or "continue".
+description: Maintain and develop emjupy, the Emacs Jupyter notebook package (github.com/mathren/emjupy) -- fixes, features, refactors, reviews, docs, tests, CI and MELPA packaging, delivered as git mbox patches on the exact current main.  Use this skill whenever the user mentions emjupy, its Elisp files (emjupy-*.el), its docs (docs/*.org), its tests, its CI or release workflows, or asks for a patch, mbox, review, fuzz test, refactor or docs pass on it -- even when the request is short, such as "fix the docs", "get the last commit and ...", or "continue".
 ---
 
 # emjupy: maintenance and development
