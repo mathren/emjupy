@@ -3,7 +3,7 @@
 #+NEXT_PAGE: limitations.org
 
 =emjupy= is a multi-file Emacs package, developed with Claude Opus 5.5
-and other LLMs.  Build a tar and install it:
+and other LLMs. Build a tar and install it:
 
 #+begin_src bash
 make package                 # generates emjupy-i.j.k.tar
@@ -12,38 +12,39 @@ make package                 # generates emjupy-i.j.k.tar
 then =M-x package-install-file RET emjupy-i.j.k.tar
 RET=, =i.j.k= being the version.
 
-It needs Emacs 30.1+ and =websocket= (1.15+).  Installed as a package,
+It needs Emacs 30.1+ and =websocket= (1.15+). Installed as a package,
 the commands you start from -- =emjupy-login=, =emjupy-open-notebook=,
 =emjupy-server-dashboard= -- are autoloaded: no =require= needed.
 
 * Which Emacs to develop against
 
 Emacs 30.1: the minimum the package declares, what CI runs, what most
-users have.  =make versions= says which Emacs is in use, and whether it
+users have. =make versions= says which Emacs is in use, and whether it
 is the target.
 
 * Source layout
 
 Sources in =src/=, a layer to a file, each requiring only those below
 it: [[file:reading-the-code.org][Reading the code]] lists them in that order, with what each holds,
-and draws the graph of their requires.  =emjupy-pkg.el= is the package
+and draws the graph of their requires. =emjupy-pkg.el= is the package
 metadata for =make package= (MELPA makes its own);
 =emjupy-figure-window.py= the window interactive figures open in,
-shipped with them.  Tests in =test/=: the
-unit tests of each file in =emjupy-FILE-test.el=, what they share in
-=emjupy-test-helpers.el=; the notebooks they read in =test_notebooks/=.
+shipped with them. Tests in =test/=: the unit tests of each file in
+=emjupy-FILE-test.el=, what they share in =emjupy-test-helpers.el=; the
+notebooks they read in =test_notebooks/=.
 
 * Code rules
 
 ** Dependencies run one way
 
-No file calls or names anything defined in a file below it in the table
--- except a keymap, which names its commands wherever they are defined,
-with a plain quote: a binding is resolved when the key is pressed, and a
-keymap reads best whole.  There are no =declare-function= forms for
-emjupy's own functions.  Each file requires the files whose functions it
-uses, and only those; each loads on its own -- =(require 'emjupy-lsp)=
-in a fresh Emacs works -- which is what makes this checkable.
+No file calls or names anything defined in a file below it in the
+table -- except a keymap, which names its commands wherever they are
+defined, with a plain quote: a binding is resolved when the key is
+pressed, and a keymap reads best whole. There are no =declare-function=
+forms for emjupy's own functions. Each file requires the files whose
+functions it uses, and only those; each loads on its own -- =(require
+'emjupy-lsp)= in a fresh Emacs works -- which is what makes this
+checkable.
 
 The graph of these requires is in [[file:reading-the-code.org][Reading the code]], drawn from the
 code by =tools/dependency-graph.py= when the site is built (=make
@@ -52,28 +53,28 @@ for Graphviz.
 
 A lower layer tells a higher one something happened by running a hook:
 
-- =emjupy-kernel-connected-functions=: a kernel attached.  =emjupy-mode=
+- =emjupy-kernel-connected-functions=: a kernel attached. =emjupy-mode=
   hangs two handlers on it: ask the kernel where it runs, for the
   language server; tell it the cell width.
 - =emjupy-box-width-changed-functions=: the width cells are drawn at
   changed, so the kernel is told.
 - =emjupy-comm-functions=, run with each comm message, and
   =emjupy-output-owner-functions=, asked which cell an output answering
-  no cell's request belongs to.  The widgets layer keeps its models from
-  the first, and claims with the second the output a moved slider
+  no cell's request belongs to. The widgets layer keeps its models
+  from the first, and claims with the second the output a moved slider
   causes.
 - =emjupy-widget-view-functions=: the drawing layer asks for a widget's
   controls; the widgets layer answers.
 
 They are wired when a notebook buffer starts -- =emjupy-mode= turns each
-layer on -- not when a file loads.  Only hooks run upward; nothing is set
-to one function for a layer below to call.  The rest follows from where
-things are put:
+layer on -- not when a file loads. Only hooks run upward; nothing is
+set to one function for a layer below to call. The rest follows from
+where things are put:
 
 - A redraw happens whole or is put right by redrawing from the cells.
-  The redraws needing that -- a cell's output in place, every output on
-  a width change -- are in the redraw layer, so putting one right is a
-  plain call.
+  The redraws needing that -- a cell's output in place, every output
+  on a width change -- are in the redraw layer, so putting one right
+  is a plain call.
 - Undo is in two files, on purpose: [[file:reading-the-code.org][Reading the code]] says why.
 - A keymap is defined whole where it is made: the output maps in the
   drawing layer, the mode's map in emjupy-mode.el, the menu in
@@ -123,14 +124,15 @@ Every file starts with the same header.  A Lisp file:
 ;;; Code:
 #+end_src
 
+
 The licence is given by its SPDX identifier alone.  Python, shell and the
 Makefile carry the copyright and SPDX lines as comments, after any =#!=.
 
-The code follows the Elisp manual's [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Tips.html][Tips and Conventions]] and the
-[[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs Lisp style guide]]: requires and compiler declarations at the top,
-Emacs's own indentation, =#'= for a function passed, =when= and =unless=
-for one branch, a docstring for every variable with a value, no code
-commented out, lines of 80 columns.  Beyond them, emjupy's own:
+The code follows the Elisp manual's [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Tips.html][Tips and Conventions]] and the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs
+Lisp style guide]]: requires and compiler declarations at the top,
+Emacs's own indentation, =#'= for a function passed, =when= and =unless= for
+one branch, a docstring for every variable with a value, no code
+commented out, lines of 80 columns. Beyond them, emjupy's own:
 
 - Loading a file only defines things: hooks go in a layer's =-enable=
   function, which =emjupy-mode= calls.  An optional or heavy library --
@@ -172,34 +174,34 @@ keep the names users know: =emjupy-re-render= redraws the notebook,
 
 * Makefile targets
 
-| Target               | Effect                                                                        |
-|----------------------+-------------------------------------------------------------------------------|
-| =make compile=       | byte-compile the sources, with =src/= first on the load path                  |
-| =make test=          | the unit tests; integration tests skip without a server                       |
-| =make check=         | unit and integration tests; refuses to run without a server                   |
+| Target             | Effect                                                                     |
+|--------------------+----------------------------------------------------------------------------|
+| =make compile=       | byte-compile the sources, with =src/= first on the load path                 |
+| =make test=          | the unit tests; integration tests skip without a server                    |
+| =make check=         | unit and integration tests; refuses to run without a server                |
 | =make lint=          | checkdoc and package-lint, both required: =make checkdoc=, =make package-lint= |
-| =make docs=          | export =docs/*.org= to the site in =html-content/=                            |
-| =make package=       | build =emjupy-VERSION.tar=                                                    |
-| =make install=       | install that tar via =package-install-file=                                   |
-| =make coverage=      | line coverage of the suite, as lcov, with a per-file table                    |
-| =make set-version=   | write a new version everywhere: =make set-version X.Y.Z= (or =VERSION=X.Y.Z=) |
-| =make check-version= | the version header, =emjupy-version= and the pkg file agree                   |
-| =make versions=      | which Emacs this is, against the one development targets                      |
-| =make clean=         | remove =.elc= files and the tar                                               |
-| =make timestamps=    | touch every source, to force a full rebuild                                   |
-| =make skill=         | the Claude skill in =tools/emjupy-dev/=, as =emjupy-dev.skill=                |
+| =make docs=          | export =docs/*.org= to the site in =html-content/=                             |
+| =make package=       | build =emjupy-VERSION.tar=                                                   |
+| =make install=       | install that tar via =package-install-file=                                  |
+| =make coverage=      | line coverage of the suite, as lcov, with a per-file table                 |
+| =make set-version=   | write a new version everywhere: =make set-version X.Y.Z= (or =VERSION=X.Y.Z=)  |
+| =make check-version= | the version header, =emjupy-version= and the pkg file agree                  |
+| =make versions=      | which Emacs this is, against the one development targets                   |
+| =make clean=         | remove =.elc= files and the tar                                              |
+| =make timestamps=    | touch every source, to force a full rebuild                                |
+| =make skill=         | the Claude skill in =tools/emjupy-dev/=, as =emjupy-dev.skill=                 |
 
 * Continuous integration
 
 Each check runs once per event:
 
-| Event                                     | Runs                                                                                                           |
-|-------------------------------------------+----------------------------------------------------------------------------------------------------------------|
-| pull request                              | =build-package.yml=: check (lint, the recipe compiled, package, docs), melpazoid, and the tests, unit and live |
-| push to =main=                            | =build-package.yml=: check and melpazoid                                                                       |
+| Event                               | Runs                                                                                                         |
+|-------------------------------------+--------------------------------------------------------------------------------------------------------------|
+| pull request                        | =build-package.yml=: check (lint, the recipe compiled, package, docs), melpazoid, and the tests, unit and live |
+| push to =main=                        | =build-package.yml=: check and melpazoid                                                                       |
 | push to =main= changing =src/= or =test/= | and =coverage.yml=: the tests, unit and live, once, instrumented -- what fails them fails it                   |
-| tag                                       | =release.yml= only                                                                                             |
-| by hand                                   | =set-version.yml=, or any of the above from the Actions tab                                                    |
+| tag                                 | =release.yml= only                                                                                             |
+| by hand                             | =set-version.yml=, or any of the above from the Actions tab                                                    |
 
 Everything needing only Emacs is one job, =check=.  On =main= the tests
 run once, in =coverage.yml=; the timing tests, skipped there, run on pull
@@ -276,9 +278,9 @@ export EMJUPY_UNDERCOVER_PATH=~/src/undercover:~/src/dash:~/src/shut-up
 make coverage               # prints a per-file table; lcov in coverage/
 #+end_src
 
-With the integration variables set it covers the server-facing code too,
-as CI runs it.  Tests tagged =:timing= are left out: instrumented, time
-means nothing.
+With the integration variables set it covers the server-facing code
+too, as CI runs it. Tests tagged =:timing= are left out: instrumented,
+time means nothing.
 
 The docs, with CI's link check -- every page and anchor linked to must
 exist:

@@ -14,15 +14,15 @@ where each step of the main flows happens.
   changes the buffer; =emjupy--sync-all-cells= reads it back into the
   cells.  Saving writes the cells, never the buffer.  When the two
   disagree, the cells win: the buffer is redrawn from them.
-- *The files are layers.*  Each file requires only files below it, the
-  order of the table below; a lower layer reaches a higher one only
-  through a hook list -- =emjupy-comm-functions= and its kind -- which the
-  higher one joins.  One exception: a keymap, and the menu, name commands
-  of files above them.
-- *Loading a file does nothing.*  Definitions only.  Each layer has an
-  =-enable= function that wires it into a notebook buffer, and
-  =emjupy-mode= calls them, in order, when the buffer starts.  So a side
-  effect is always in a function, never at the top level.
+- *The code files are layers of =emjupy=.* Each file requires only files
+  below it, the order of the table below; a lower layer reaches a
+  higher one only through a hook list -- =emjupy-comm-functions= and its
+  kind -- which the higher one joins. Keymap and menu name commands
+  of files above them and are an exception.
+- *Loading a file does nothing.* Each layer has an =-enable= function that
+  wires it into a notebook buffer, and =emjupy-mode= calls them, in
+  order, when the buffer starts. So a side effect is always in a
+  function, never at the top level.
 
 * The files, in reading order
 
@@ -30,15 +30,15 @@ Bottom up.  Skim each file's =;;;;= headings before its code: every file
 has a commentary, its options under =;;;; Options= if it has any, then
 one section per part.
 
-| Order | File                    | Read for                                          |
-|-------+-------------------------+---------------------------------------------------|
+| Order | File                  | Read for                                          |
+|-------+-----------------------+---------------------------------------------------|
 |     1 | =emjupy-core.el=        | the structs, a parsed address, trust, lookups     |
 |     2 | =emjupy-terminal.el=    | escape codes and carriage returns, string in, out |
 |     3 | =emjupy-ipynb.el=       | nbformat JSON read and written, the .py export    |
 |     4 | =emjupy-latex.el=       | LaTeX previews, org loaded only when asked        |
 |     5 | =emjupy-undo.el=        | undo positions shifted by a redraw: read slowly   |
 |     6 | =emjupy-faces.el=       | appearance options, faces, theme colours          |
-|     7 | =emjupy-http.el=        | requests, errors (=emjupy-http-error=), XSRF      |
+|     7 | =emjupy-http.el=        | requests, errors (=emjupy-http-error=), XSRF        |
 |     8 | =emjupy-render.el=      | drawing a cell and its output, the rules          |
 |     9 | =emjupy-cells.el=       | syncing the buffer into the cells, checks         |
 |    10 | =emjupy-redraw.el=      | every redraw, and the undo step: read slowly      |
@@ -68,9 +68,9 @@ it requires; lines a longer path implies are left out:
 
 * The main flows
 
-Each flow follows a command one call at a time, each function's file in
-parentheses.  Read them in this order and the rest of each file falls
-into place around them.
+Each flow follows a command one call at a time, each function's file
+in parentheses. Read them in this order and the rest of each file
+falls into place around them.
 
 ** Opening a notebook
 1. =emjupy-login= (notebook) works out the server's token with
@@ -195,7 +195,8 @@ them deserves the slowest reading:
 
 * Reviewing a change
 
-The rules, in full, are in [[file:development.org][Building and development]]; what to look for:
+[[file:development.org][Building and development]] specifies code style and rules. what to look
+for:
 
 - *Layers.*  No new require against the layers -- =make
   dependency-graph= fails on one -- and a file requires what it uses.
