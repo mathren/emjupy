@@ -48,10 +48,12 @@ with one command: tested and read through TRAMP, three round trips."
   (if (file-remote-p dir)
       (with-temp-buffer
         (let ((default-directory dir))
-          (ignore-errors
-            (process-file "sh" nil t nil "-c"
-                          (concat "cat environment.yml 2>/dev/null"
-                                  " || cat environment.yaml 2>/dev/null"))))
+          ;; The machine not reached: no file to offer from.
+          (condition-case nil
+              (process-file "sh" nil t nil "-c"
+                            (concat "cat environment.yml 2>/dev/null"
+                                    " || cat environment.yaml 2>/dev/null"))
+            (file-error nil)))
         (goto-char (point-min))
         (emjupy--environment-yml-name-here))
     (cl-loop for file in '("environment.yml" "environment.yaml")
@@ -78,9 +80,11 @@ of the PATH for each name, a round trip each -- 21 on a plain machine."
       (or (executable-find "conda") (executable-find "mamba")
           (executable-find "micromamba"))
     (with-temp-buffer
-      (when (eq 0 (ignore-errors
-                    (process-file "sh" nil t nil "-c"
-                                  "command -v conda || command -v mamba || command -v micromamba")))
+      (when (eq 0 (condition-case nil
+                      (process-file "sh" nil t nil "-c"
+                                    "command -v conda || command -v mamba || command -v micromamba")
+                    ;; The machine not reached: no conda found there.
+                    (file-error nil)))
         (let ((found (string-trim (buffer-string))))
           (and (not (string-empty-p found))
                (concat (file-remote-p default-directory) found)))))))
@@ -145,10 +149,15 @@ nil remembers them for the session only."
     (setq emjupy--environments
           (or (and emjupy-environments-file
                    (file-readable-p emjupy-environments-file)
-                   (ignore-errors
-                     (with-temp-buffer
-                       (insert-file-contents emjupy-environments-file)
-                       (read (current-buffer)))))
+                   (condition-case err
+                       (with-temp-buffer
+                         (insert-file-contents emjupy-environments-file)
+                         (read (current-buffer)))
+                     ((file-error end-of-file invalid-read-syntax)
+                      (message "[emjupy] %s unreadable, remembering afresh: %s"
+                               emjupy-environments-file
+                               (error-message-string err))
+                      nil)))
               nil)))
   emjupy--environments)
 
@@ -181,7 +190,7 @@ it knows it, so the same folder is named two ways; DIR expanded here."
         (with-temp-file emjupy-environments-file
           (prin1 nil (current-buffer)))))))
 
-(add-hook 'emjupy-forget-functions #'emjupy--forget-environments)
+(emjupy--add-forgetter #'emjupy--forget-environments)
 
 (defun emjupy--chosen-environment-jupyter (dir choose)
   "Return the jupyter of DIR's environment: as chosen last there, or asked.
@@ -636,7 +645,7 @@ JUPYTER's own list."
                               (and env (format "remembered for %s: %s"
                                                root env)))))))))))
 
-(add-hook 'emjupy-status-functions #'emjupy--remote-status 30)
+(emjupy--add-status-section #'emjupy--remote-status 30)
 
 (defun emjupy--remote-server (dir jupyter route)
   "Return the Jupyter server serving DIR on its machine, started if need be.

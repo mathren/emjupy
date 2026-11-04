@@ -974,7 +974,7 @@ so."
 ;;;; Once connected
 
 (defun emjupy--kernel-status (nb)
-  "Return the kernel section of NB's status: see `emjupy-status-functions'."
+  "Return the kernel section of NB's status: see `emjupy--status-sections'."
   (let ((k (emjupy-notebook-kernel nb))
         (buf (emjupy-notebook-buffer nb)))
     (cons "Kernel"
@@ -1000,7 +1000,7 @@ so."
                                     (if emjupy--reconnect-timer
                                         "; reconnecting" ""))))))))))
 
-(add-hook 'emjupy-status-functions #'emjupy--kernel-status 10)
+(emjupy--add-status-section #'emjupy--kernel-status 10)
 
 (defvar emjupy-kernel-connected-functions nil
   "Functions called with a notebook once a kernel is attached to it.

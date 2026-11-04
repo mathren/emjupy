@@ -215,7 +215,7 @@ one and lost the environment's."
                       (when (buffer-live-p sb)
                         (format "shadow %s" (buffer-file-name sb))))))))
 
-(add-hook 'emjupy-status-functions #'emjupy--language-server-status 20)
+(emjupy--add-status-section #'emjupy--language-server-status 20)
 
 (defun emjupy--attach-language-server (nb route)
   "Attach NB's shadow buffer to its language server, reached by ROUTE.

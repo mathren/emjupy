@@ -110,10 +110,13 @@ debugpy."
                      (cadr err))))
     (emjupy--debug-clear-arrow)
     (setq emjupy--debug-stopped nil)
-    (ignore-errors
-      (emjupy--debug-request "disconnect"
-                             (emjupy--json-object "restart" :false
-                                                   "terminateDebuggee" :false)))))
+    ;; The kernel gone, there is no session to end; said, not hidden.
+    (condition-case err
+        (emjupy--debug-request
+         "disconnect"
+         (emjupy--json-object "restart" :false "terminateDebuggee" :false))
+      (error (message "[emjupy] Debugger: not disconnected: %s"
+                      (error-message-string err))))))
 
 ;;;; Requests and replies
 

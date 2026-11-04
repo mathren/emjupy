@@ -1085,6 +1085,23 @@ And one wait before a failed language server is tried again, whichever
     (setq emjupy-shadow-retry-interval 45)
     (should (= emjupy-lsp-retry-interval 45))))
 
+
+(ert-deftest emjupy-test-a-status-section-that-fails-says-so ()
+  "A section of the status that fails shows its error in the report,
+the other sections with it; it was dropped without a word."
+  (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                        :source "x"))
+      buf nb
+    (let ((emjupy--status-sections
+           (list (cons 5 (lambda (_nb) (error "Something broke")))
+                 (cons 6 (lambda (_nb) '("Fine" "all well"))))))
+      (cl-letf (((symbol-function 'display-buffer) #'ignore))
+        (emjupy-status))
+      (with-current-buffer "*emjupy status*"
+        (should (string-match-p "could not tell: Something broke"
+                                (buffer-string)))
+        (should (string-match-p "all well" (buffer-string)))))))
+
 (provide 'emjupy-eglot-test)
 
 ;;; emjupy-eglot-test.el ends here

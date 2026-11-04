@@ -214,10 +214,16 @@ emjupy learnt, rather than tables of their own, in four files."
      (defvar ,name (make-hash-table :test ,test) ,doc)
      (cl-pushnew ',name emjupy--session-caches)))
 
-(defvar emjupy-forget-functions nil
-  "Functions called with EVERYTHING by `emjupy-forget-remote-state'.
+(defvar emjupy--forgetters nil
+  "Functions `emjupy-forget-remote-state' calls with EVERYTHING.
 Each forgets what its layer remembers beyond the session caches when
-EVERYTHING is non-nil -- the environment chosen for each folder, say.")
+EVERYTHING is non-nil -- the environment chosen for each folder, say.
+A registry, filled by `emjupy--add-forgetter' as each layer loads: not
+a hook, which loading a package should rarely add to.")
+
+(defun emjupy--add-forgetter (function)
+  "Have `emjupy-forget-remote-state' call FUNCTION too."
+  (cl-pushnew function emjupy--forgetters))
 
 (defun emjupy-forget-remote-state (&optional everything)
   "Forget what emjupy learnt this session of servers and machines.
@@ -231,10 +237,26 @@ folder is forgotten too, and asked for at the next opening."
     (dolist (var emjupy--session-caches)
       (setq count (+ count (hash-table-count (symbol-value var))))
       (clrhash (symbol-value var)))
-    (run-hook-with-args 'emjupy-forget-functions everything)
+    (dolist (forget emjupy--forgetters) (funcall forget everything))
     (message "[emjupy] Forgot %d thing%s learnt this session%s" count
              (if (= count 1) "" "s")
              (if everything ", and every folder's environment" ""))))
+
+(defvar emjupy--status-sections nil
+  "Sections of a notebook's status, as (DEPTH . FUNCTION), lowest first.
+FUNCTION is called with a notebook and gives (TITLE . LINES), strings,
+or nil for nothing to say.  Layers above this one add theirs -- the
+kernel, the language server, the remote -- with
+`emjupy--add-status-section'.  A registry, not a hook: loading a
+package should rarely add to hooks.")
+
+(defun emjupy--add-status-section (function depth)
+  "Add FUNCTION's section to `emjupy-status', at DEPTH among the others."
+  (setq emjupy--status-sections
+        (sort (cons (cons depth function)
+                    (seq-remove (lambda (s) (eq (cdr s) function))
+                                emjupy--status-sections))
+              (lambda (x y) (< (car x) (car y))))))
 
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")
@@ -315,10 +337,13 @@ from \"iopub.execute_input\" to \"shell.execute_reply\"."
                      (gethash "iopub.execute_input" times)))
          (end (and (hash-table-p times) (gethash "shell.execute_reply" times))))
     (when (and (stringp start) (stringp end))
-      (ignore-errors
-        (let ((seconds (- (float-time (encode-time (iso8601-parse end t)))
-                          (float-time (encode-time (iso8601-parse start t))))))
-          (and (>= seconds 0) seconds))))))
+      ;; Times another tool wrote, not in ISO 8601: no time to show.
+      (condition-case nil
+          (let ((seconds
+                 (- (float-time (encode-time (iso8601-parse end t)))
+                    (float-time (encode-time (iso8601-parse start t))))))
+            (and (>= seconds 0) seconds))
+        ((wrong-type-argument error) nil)))))
 
 (defun emjupy--format-duration (seconds)
   "Return SECONDS as a short duration: 85 ms, 1.2 s, 3m 05s, 1h 02m."

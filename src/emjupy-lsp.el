@@ -231,10 +231,10 @@ given -- dropped every error unseen.  Recorded too, in
 
 (emjupy--defcache emjupy--lsp-offered 'equal
   "Whether each server, by address, has the language server: `yes' or `no'.
-That is `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
+That is the option `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
 
 (defun emjupy--server-lsp-answer (server)
-  "Return what SERVER said of having `emjupy-lsp-server', via jupyter-lsp.
+  "Return what SERVER said of having option `emjupy-lsp-server'.
 `yes', `no', `unanswered', or nil when not yet asked: see
 `emjupy--ask-server-lsp'.  Not a predicate: `no' is true."
   (and server (gethash (emjupy-server-base-url server) emjupy--lsp-offered)))
@@ -243,7 +243,7 @@ That is `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
   "Servers, by address, being asked of their language server: attempts so far.")
 
 (defun emjupy--ask-server-lsp (server then)
-  "Ask SERVER, without waiting, whether it has `emjupy-lsp-server'; THEN.
+  "Ask SERVER, not waiting, whether it has option `emjupy-lsp-server'; THEN.
 THEN is called with no argument once it has answered.  An answer is
 remembered: offered, not offered, or 404 -- no jupyter-lsp.  A failure,
 the network's, a timeout -- jupyter-lsp finds its servers on the first
@@ -503,7 +503,7 @@ same cells holding the same source objects build the same content."
 (defvar emjupy--eglot-pending nil
   "Plist for the next server to be built.
 `eglot--connect' decides the initargs, so the WebSocket is left here
-for the server class, `emjupy-eglot-server', to collect.")
+for the server class, symbol `emjupy-eglot-server', to collect.")
 
 (defclass emjupy-eglot-server (eglot-lsp-server)
   ((ws :initform nil :accessor emjupy-eglot-server-ws)

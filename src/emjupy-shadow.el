@@ -212,7 +212,7 @@ is UTF-8 anyway.")
 (defun emjupy--eglot-live-server (&optional buffer)
   "Return the live Eglot server for BUFFER, or nil.
 `eglot-current-server' can return a server whose process has died, and
-using one raises a jsonrpc-error out of completion."
+using one raises a `jsonrpc-error' out of completion."
   (with-current-buffer (or buffer (current-buffer))
     (let ((server (eglot-current-server)))
       (and server (jsonrpc-running-p server) server))))

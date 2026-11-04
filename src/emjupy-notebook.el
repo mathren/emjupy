@@ -497,11 +497,6 @@ file name works there, if you would rather push it somewhere else."
     (switch-to-buffer (completing-read "Notebook: " names nil t nil
                                        'emjupy--notebook-history))))
 
-(defvar emjupy-status-functions nil
-  "Functions called with a notebook, each giving a section of its status.
-A section is (TITLE . LINES), strings; nil for nothing to say.  Layers
-above this one add theirs: the kernel, the language server, the remote.")
-
 (defun emjupy-status (&optional all)
   "Show the state of this notebook: server, kernel, language server, remote.
 In a buffer of its own, ending with emjupy's recent messages -- what to
@@ -517,8 +512,16 @@ a notebook, a line for every notebook open."
   "Show NB's status in the buffer *emjupy status*."
   (let ((server (emjupy-notebook-server nb))
         (sections
-         (delq nil (mapcar (lambda (fn) (ignore-errors (funcall fn nb)))
-                           emjupy-status-functions))))
+         (delq nil (mapcar (lambda (section)
+                             ;; A section that fails says so, in the report
+                             ;; that is read when something is wrong.
+                             (condition-case err
+                                 (funcall (cdr section) nb)
+                               (error
+                                (list (format "%s" (cdr section))
+                                      (format "could not tell: %s"
+                                              (error-message-string err))))))
+                           emjupy--status-sections))))
     (with-current-buffer (get-buffer-create "*emjupy status*")
       (let ((inhibit-read-only t))
         (erase-buffer)
