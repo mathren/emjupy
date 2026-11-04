@@ -265,6 +265,24 @@ margin is the knob for setups where the rule still runs past the edge."
         (let ((emjupy-box-right-margin (car pair)))
           (should (= (emjupy--box-width) (cdr pair))))))))
 
+(ert-deftest emjupy-test-line-numbers-are-taken-off-once ()
+  "The line-number column is taken off the box's width once: by Emacs,
+once the window is shown -- `window-max-chars-per-line' counts it -- and
+by emjupy only before, while Emacs reports it 0 wide.  Taken off by
+both, the rules stopped ten columns short of the edge."
+  (with-temp-buffer
+    (insert (make-string 120 ?\n))
+    (setq-local display-line-numbers t)
+    (let ((win (selected-window)))
+      (set-window-buffer win (current-buffer))
+      (dolist (case '((4.0 . 0) (0 . 5)))
+        (cl-letf (((symbol-function 'line-number-display-width)
+                   (lambda (&rest _) (car case))))
+          (ert-info ((format "Emacs counts %s" (car case)))
+            (should (= (emjupy--line-number-columns win) (cdr case))))))
+      (setq-local display-line-numbers nil)
+      (should (= (emjupy--line-number-columns win) 0)))))
+
 (ert-deftest emjupy-test-output-band-stops-at-the-cell-border ()
   "The tint fills each output line to the cell's right border and no
 further.  `:extend' would run it to the WINDOW edge, spilling the colour

@@ -150,9 +150,10 @@ straight off disk; both must render."
 ;;;; Eglot / completion-framework integration
 
 (ert-deftest emjupy-test-window-width-excludes-line-numbers ()
-  "The line-number column is drawn inside the text area, so
-`window-body-width' counts it -- and a rule sized from that overshoots
-the right edge by the width of the numbers."
+  "The width a rule may take leaves out the line-number column, once.
+`window-max-chars-per-line' does so itself once the window is shown;
+before, Emacs reports the column 0 wide, and emjupy works it out.  This
+test once took it off on top of Emacs's count: the rules stopped short."
   (let ((win (selected-window)))
     (with-current-buffer (window-buffer win)
       (cl-letf (((symbol-function 'window-max-chars-per-line)
@@ -160,9 +161,14 @@ the right edge by the width of the numbers."
         (setq-local display-line-numbers nil)
         (should (= (emjupy--window-text-width win) 200))
         (setq-local display-line-numbers t)
+        ;; shown: Emacs counted the column, 200 already leaves it out
         (cl-letf (((symbol-function 'line-number-display-width)
                    (lambda (&rest _) 6)))
-          (should (= (emjupy--window-text-width win) 194)))
+          (should (= (emjupy--window-text-width win) 200)))
+        ;; not yet shown: Emacs reports 0, emjupy takes its own estimate off
+        (cl-letf (((symbol-function 'line-number-display-width)
+                   (lambda (&rest _) 0)))
+          (should (< (emjupy--window-text-width win) 200)))
         (setq-local display-line-numbers nil)))))
 
 (ert-deftest emjupy-test-running-indicator ()

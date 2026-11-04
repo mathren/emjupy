@@ -45,27 +45,29 @@ redraw, so it is better refused than silently lost."
 ;;;; Width
 
 (defun emjupy--line-number-columns (win)
-  "Return how many columns WIN's line numbers take, or 0 without them.
-Read from the window's buffer rather than by selecting it: Emacs reports
-the column's width for the selected window only, so for any other it is
-worked out from the last line's number."
+  "Return how many line-number columns Emacs has not taken off WIN's width.
+Emacs takes the column off itself, in `window-max-chars-per-line', once
+WIN has been shown;
+until then it reports the column as 0 wide, and a notebook is drawn
+before it is shown -- so then the width is worked out from the last
+line's number.  Taken off again once Emacs had, the rules stopped short
+of the edge by the column's width, ten columns in all with the margin."
   (with-current-buffer (window-buffer win)
-    (if (bound-and-true-p display-line-numbers)
-        ;; Emacs's figure or the line-number column's, whichever is more:
-        ;; Emacs reports 0 until the window has been shown, and leaves out
-        ;; the gap.
-        (max (if (eq win (selected-window))
-                 (line-number-display-width)
-               0)
-             (+ 2 (max (length (number-to-string
-                                (line-number-at-pos (point-max) t)))
-                       (or (bound-and-true-p display-line-numbers-width)
-                           0))))
-      0)))
+    (if (not (bound-and-true-p display-line-numbers))
+        0
+      (let ((counted (with-selected-window win
+                       (line-number-display-width 'columns))))
+        (if (> counted 0)
+            0
+          (+ 2 (max (length (number-to-string
+                             (line-number-at-pos (point-max) t)))
+                    (or (bound-and-true-p display-line-numbers-width)
+                        0))))))))
 
 (defun emjupy--window-text-width (win)
   "Return how many columns of text WIN can show without wrapping.
-Not `window-body-width', which includes the line-number column."
+Not `window-body-width', which includes the line-number column:
+`window-max-chars-per-line', which does not, once WIN is shown."
   (if (not (window-live-p win))
       ;; A window can die between a resize being scheduled and this
       ;; running; a dead one has no width to give, so the default stands.

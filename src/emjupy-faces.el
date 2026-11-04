@@ -128,15 +128,14 @@ columns on a wide frame."
   :group 'emjupy-advanced
   :safe #'natnump)
 
-(defcustom emjupy-box-right-margin 2
+(defcustom emjupy-box-right-margin 1
   "Columns left free at the right edge when fitting rules to the window.
 
 Emacs cannot always be asked exactly how many columns are usable: a
-right margin, a `fill-column' indicator, a scroll bar the toolkit reports
-oddly, or a line-number width that is off by the separator can each eat
-one or two.  Rather than guess, leave a couple spare.  Raise it if the
-rules still run past the edge in your setup, lower it to 0 if they stop
-short."
+right margin, a `fill-column' indicator or a scroll bar the toolkit
+reports oddly can eat one.  So one is left spare: a thin spine between
+the rules and the edge.  Raise it if the rules still run past the edge
+in your setup, lower it to 0 if they stop short."
   :type 'integer
   :group 'emjupy-advanced
   :safe #'natnump)
