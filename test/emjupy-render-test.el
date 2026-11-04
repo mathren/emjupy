@@ -673,6 +673,70 @@ was redrawn N times, slower with each cell added."
     (let ((emjupy--running-cells (list 1)))
       (should-not (string-match-p " s python" (emjupy--cell-label cell))))))
 
+
+;;;; Where point can be shown
+
+(ert-deftest emjupy-test-point-is-kept-off-separators-and-padding ()
+  "Point is kept off what only draws: a separator between cells, the
+padding that takes an output's band to the border.  Shown there, it sat
+at the end of a border's line.  The start of the next cell, and the end
+of an output's text, stay places to be."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "print(1)"
+                                  :exec-count 1 :outputs (vector (stream "1\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 2 :type 'code :source "y = 2"
+                                  :metadata (make-hash-table :test 'equal)))
+        buf nb
+      (should cursor-intangible-mode)
+      (let* ((cells (emjupy-notebook-cells nb))
+             (next (overlay-start (emjupy-cell-overlay (aref cells 1))))
+             (pad (text-property-any (point-min) (point-max) 'emjupy-pad t)))
+        ;; the separator, just before the next cell
+        (should (get-pos-property (1- next) 'cursor-intangible))
+        (should-not (get-pos-property next 'cursor-intangible))
+        ;; the padding, after the output's text
+        (should pad)
+        (should (get-pos-property pad 'cursor-intangible))
+        (should-not (get-pos-property (1+ pad) 'cursor-intangible))))))
+
+(ert-deftest emjupy-test-the-end-of-a-cell-shows-at-the-end-of-its-code ()
+  "Rules after a cell's last line are drawn in place of its newline, the
+first newline of theirs taking point: point at the end of the code shows
+there, not after the rules.  Drawn before the newline, it showed on the
+rule -- after the last cell, and before every output.  Where no separator
+follows, the string ends with the newline it replaces: the lines below
+stay where they were."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "print(1)"
+                                  :exec-count 1 :outputs (vector (stream "1\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 2 :type 'code :source "y = 2"
+                                  :metadata (make-hash-table :test 'equal)))
+        buf nb
+      (dolist (cell (append (emjupy-notebook-cells nb) nil))
+        (let* ((ov (emjupy-cell-overlay cell))
+               (rules (seq-find (lambda (o) (overlay-get o 'emjupy-rules-of))
+                                (overlays-in (1- (overlay-end ov))
+                                             (overlay-end ov)))))
+          (ert-info ((emjupy-cell-source cell))
+            (should rules)
+            (should-not (overlay-get rules 'before-string))
+            (let ((text (overlay-get rules 'display)))
+              (should (string-prefix-p "\n" text))
+              (should (get-text-property 0 'cursor text))
+              (should (string-suffix-p "\n" text)))))))))
+
 (provide 'emjupy-render-test)
 
 ;;; emjupy-render-test.el ends here

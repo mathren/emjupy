@@ -166,15 +166,18 @@ its overlay strings, for the rules to be hung again."
                     (push ov boxes))))
     (sort boxes (lambda (a b) (< (overlay-start a) (overlay-start b))))))
 
-(defun emjupy--hang-rules (box anchor rules property)
+(defun emjupy--hang-rules (box anchor rules &optional keep-newline)
   "Hang RULES on the newline at ANCHOR, BOX's last, as continuation lines.
-PROPERTY is `display', drawn in place of the newline, or `before-string',
-before it.  The overlay is BOX's companion, deleted with its rules."
+Drawn in place of the newline, with KEEP-NEWLINE ending in one too: when
+no separator follows to end the line, as after the last box, or before
+an output.  The overlay is BOX's companion, deleted with its rules.
+Drawn before the newline instead, a string shows point there after it:
+on the rule, not at the end of the code."
   (let ((o (make-overlay anchor (1+ anchor) nil t nil))
-        (text (concat "\n" rules)))
+        (text (concat "\n" rules (if keep-newline "\n" ""))))
     ;; point there shows at the end of the text, before the rule
     (put-text-property 0 1 'cursor t text)
-    (overlay-put o property text)
+    (overlay-put o 'display text)
     (overlay-put o 'emjupy-overlay 'rules)
     (overlay-put o 'emjupy-rules-of box)
     (push o (overlay-get box 'emjupy-companions))
@@ -246,7 +249,7 @@ buffer's structure; it rebuilds every rule."
                ;; is hidden -- by a `display', as Emacs draws no overlay string
                ;; at a hidden position.
                ((and gap-end (< (overlay-end prev) gap-end))
-                (let ((o (emjupy--hang-rules prev anchor rules 'display)))
+                (let ((o (emjupy--hang-rules prev anchor rules)))
                   ;; A cell whose code is hidden, nothing below it to
                   ;; draw: its newline is none, or an empty line shows.
                   (when (and (string-empty-p rules)
@@ -256,8 +259,7 @@ buffer's structure; it rebuilds every rule."
                ;; Followed at once by another box -- a cell by its output --
                ;; or the last box: the rules hang on its own last line.
                ((not (string-empty-p rules))
-                (let ((o (emjupy--hang-rules prev anchor rules
-                                             'before-string)))
+                (let ((o (emjupy--hang-rules prev anchor rules 'keep-newline)))
                   (when ov (overlay-put ov 'emjupy-header-carrier o)))))))
            ;; the first box, or one whose line above cannot carry it
            (ov (overlay-put ov 'before-string header)
@@ -768,6 +770,9 @@ the window's edge."
           (goto-char eol)
           (insert (propertize " "
                               'emjupy-pad t
+                              ;; Drawn, not output: point is moved off it, as
+                              ;; off a separator -- see `emjupy-mode'.
+                              'cursor-intangible t
                               'face face
                               ;; Also as `font-lock-face': font-lock removes
                               ;; `face' from what it refontifies, and leaves
@@ -1247,11 +1252,21 @@ in its place: not its last newline, where the next cell's edge hangs."
 (defun emjupy--make-read-only (start end)
   "Refuse edits between START and END, without walling off the cells.
 `rear-nonsticky', so text typed just after a protected region, at the
-start of a cell, is not refused with it."
+start of a cell, is not refused with it.  `cursor-intangible' sticks the
+same way: a separator, or padding, keeps point off the place before it,
+not the start of the cell after it."
   (add-text-properties start end
                        '(read-only emjupy
-                         front-sticky (read-only)
-                         rear-nonsticky (read-only))))
+                         front-sticky (read-only cursor-intangible)
+                         rear-nonsticky (read-only cursor-intangible))))
+
+(defun emjupy--make-intangible (pos)
+  "Keep point off the separator at POS, if it is one: a newline outside cells.
+Shown, point there sat at the end of a border's line, nothing there to
+edit; `cursor-intangible-mode' moves it on, the way it was going."
+  (when (and (eq (char-after pos) ?\n)
+             (not (get-text-property pos 'emjupy-cell)))
+    (put-text-property pos (1+ pos) 'cursor-intangible t)))
 
 (defun emjupy--protect-non-cell-regions ()
   "Mark every region that is not a cell's source read-only.
@@ -1269,10 +1284,12 @@ Then put every header and footer where its cell now is."
       (let ((pos (point-min)))
         (dolist (span spans)
           (when (< pos (car span))
-            (emjupy--make-read-only pos (car span)))
+            (emjupy--make-read-only pos (car span))
+            (emjupy--make-intangible (1- (car span))))
           (setq pos (max pos (cdr span))))
         (when (< pos (point-max))
-          (emjupy--make-read-only pos (point-max))))))
+          (emjupy--make-read-only pos (point-max))
+          (emjupy--make-intangible (1- (point-max)))))))
   ;; Run after every change to the buffer's structure, as this is; so the
   ;; rules are put back where their cells are here too, whether or not the
   ;; gaps are protected.

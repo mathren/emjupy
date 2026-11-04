@@ -251,6 +251,9 @@ no kernel, disconnected, reconnecting."
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
   (emjupy--warn-about-strays)
+  ;; Point is moved off separators and padding, which show it at the end
+  ;; of a border's line: to the next place to write, the way it was going.
+  (cursor-intangible-mode 1)
   ;; The kernel's state and the server's port beside the mode's name.
   (setq mode-name '("emjupy" (:eval (emjupy--mode-line-status))))
   (setq-local line-move-ignore-invisible t)
