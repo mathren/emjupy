@@ -267,10 +267,11 @@ The notebook is rebuilt instead when the buffer and the cells disagree."
     (when cells (emjupy--sync-all-cells))
     ;; every cell redrawn, then the rules rebuilt once
     (if (and cells (emjupy--overlays-sane-p)
-             (emjupy--with-rules-once
-               (cl-every (lambda (cell)
-                           (emjupy--redraw-cell-output cell))
-                         cells)))
+             (emjupy--keeping-view
+               (emjupy--with-rules-once
+                 (cl-every (lambda (cell)
+                             (emjupy--redraw-cell-output cell))
+                           cells))))
         t
       (emjupy--redraw-notebook-keeping-point))))
 
@@ -380,16 +381,37 @@ would repeat its last command."
 
 ;;;; Adding output to a cell
 
+(defun emjupy--mark-output-stale (cell)
+  "Keep CELL's output up, dimmed, until its run gives new output.
+Or until the run ends without any: see `emjupy--clear-stale-output'."
+  (when (> (length (or (emjupy-cell-outputs cell) [])) 0)
+    (puthash cell 'run emjupy--clear-before-next-output)
+    (let ((out (emjupy-cell-output-ov cell)))
+      (when (overlayp out)
+        (overlay-put out 'face 'emjupy-output-stale)))))
+
+(defun emjupy--clear-stale-output (cell)
+  "Clear CELL's outputs if they wait to be cleared; return non-nil if so.
+A run clears them all; a kernel's `clear_output' with wait keeps the
+widgets, the controls being outside the area an `interact' clears."
+  (let ((why (gethash cell emjupy--clear-before-next-output)))
+    (when why
+      (remhash cell emjupy--clear-before-next-output)
+      (let ((out (emjupy-cell-output-ov cell)))
+        (when (overlayp out) (overlay-put out 'face nil)))
+      (setf (emjupy-cell-outputs cell)
+            (if (eq why 'run)
+                []
+              (vconcat (seq-filter #'emjupy--widget-view-output-p
+                                   (append (or (emjupy-cell-outputs cell)
+                                               []) nil)))))
+      t)))
+
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK's buffer."
-  ;; `clear_output' with wait: the clear happens now, as the new output
-  ;; arrives, so the old one stays up until there is something to replace it
-  (when (gethash cell emjupy--clear-before-next-output)
-    (remhash cell emjupy--clear-before-next-output)
-    (setf (emjupy-cell-outputs cell)
-          (vconcat (seq-filter #'emjupy--widget-view-output-p
-                               (append (or (emjupy-cell-outputs cell)
-                                           []) nil)))))
+  ;; What waits to be cleared is cleared now, as the new output arrives,
+  ;; so the old one stays up until there is something to replace it.
+  (emjupy--clear-stale-output cell)
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
     ;; Stream text starting an output of its own still has carriage returns
@@ -554,6 +576,9 @@ redrawing it on every reply, a notebook run whole was redrawn once per
 cell."
   (setf (emjupy-cell-exec-count cell) (gethash "execution_count" content))
   (emjupy--request-half-seen id 'reply pending)
+  ;; A run ended with no new output: its old one goes now.
+  (when (eq (gethash cell emjupy--clear-before-next-output) 'run)
+    (emjupy--clear-stale-output cell))
   (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook)))
               ((buffer-live-p buf)))
     (emjupy--mark-done cell buf)
@@ -1099,7 +1124,7 @@ meanwhile to the same session."
                               (emjupy-kernel-id kernel)
                               (emjupy-kernel-name kernel)
                               (+ (float-time) emjupy-reconnect-window) label)))
-      (message "[emjupy] %s: kernel connection dropped; reconnecting%s..." label
+      (emjupy--say buf "[emjupy] %s: kernel connection dropped; reconnecting%s..." label
                (if cells (format ", %d running cell%s kept" (length cells)
                                  (if (cdr cells) "s" ""))
                  ""))))))
@@ -1136,7 +1161,7 @@ ended as a closed connection ends them."
                (equal (emjupy-kernel-id kernel) kernel-id))
           (cancel-timer emjupy--reconnect-timer)
           (setq emjupy--reconnect-timer nil)
-          (message "[emjupy] %s: reconnected to kernel %s." label kernel-id)
+          (emjupy--say buf "[emjupy] %s: reconnected to kernel %s." label kernel-id)
           (emjupy--run-waiting-cells nb))
          ((> (float-time) deadline)
           (cancel-timer emjupy--reconnect-timer)
@@ -1149,8 +1174,8 @@ ended as a closed connection ends them."
             (setq emjupy--kept-runs nil)
             (when emjupy--runs-waiting
               (let ((n (length emjupy--runs-waiting)))
-                (message "[emjupy] %s: %d cell%s run while reconnecting did not run."
-                         label n (if (= n 1) "" "s")))
+                (emjupy--say buf "[emjupy] %s: %d cell%s run while reconnecting did not run."
+                             label n (if (= n 1) "" "s")))
               (setq emjupy--runs-waiting nil))
             (emjupy--end-runs
              cells buf label
@@ -1271,8 +1296,8 @@ the notebook called LABEL is left without a kernel, for a new one."
       (setq emjupy--kept-runs nil)
       (when emjupy--runs-waiting
         (let ((n (length emjupy--runs-waiting)))
-          (message "[emjupy] %s: %d cell%s run while reconnecting did not run."
-                   label n (if (= n 1) "" "s")))
+          (emjupy--say nil "[emjupy] %s: %d cell%s run while reconnecting did not run."
+                       label n (if (= n 1) "" "s")))
         (setq emjupy--runs-waiting nil))
       (let* ((nb emjupy--buffer-notebook)
              (kernel (and nb (emjupy-notebook-kernel nb))))
@@ -1379,12 +1404,10 @@ the caller bound, read here, unseen where it was bound."
       (unless synced (emjupy--sync-all-cells))
       (run-hook-with-args 'emjupy-before-execute-functions cell)
 
-      ;; 2.  Clear the previous output, in place as C-c C-l does: a full redraw
-      ;; would move every position held in the buffer -- markers, other windows'
-      ;; points -- and record an undo step for a command that edits nothing.
-      (setf (emjupy-cell-outputs cell) [])
-      (unless (emjupy--redraw-cell-output cell)
-        (emjupy--redraw-notebook cell))
+      ;; 2.  The previous output stays, dimmed, until the new one replaces it,
+      ;; or the run ends with none.  Cleared at once, everything below went
+      ;; up, then down again as the new output came.
+      (emjupy--mark-output-stale cell)
 
       ;; 3. Build execution payload
       (let* ((code (emjupy-cell-source cell))
@@ -1622,7 +1645,7 @@ nil."
         (let ((problems (emjupy--check-invariants)))
           (when problems
             (emjupy--redraw-notebook)
-            (message "[emjupy] Buffer and cells were out of step after reconnecting; redrawn.")
+            (emjupy--say buf "[emjupy] Buffer and cells were out of step after reconnecting; redrawn.")
             problems))))))
 
 (defun emjupy-reconnect-kernel ()

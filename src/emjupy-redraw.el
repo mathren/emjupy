@@ -122,14 +122,93 @@ line last drawn, and no carriage return or colour escape in it."
         (emjupy--draw-stream-gain out pieces last-out
                                   (substring new (length old)))))))
 
+(defun emjupy--views ()
+  "Return, for each window on this buffer, what to keep in its view.
+For each: the window; a marker at its anchor's line -- the cursor's
+when it is in view, else the window's first -- and how far down the
+window that line is, in pixels."
+  (let (views)
+    (dolist (w (get-buffer-window-list (current-buffer) nil t))
+      (let* ((start (window-start w))
+             (wpoint (window-point w))
+             (anchor (save-excursion
+                       (goto-char (if (pos-visible-in-window-p wpoint w)
+                                      wpoint
+                                    start))
+                       (line-beginning-position)))
+             (seen (pos-visible-in-window-p anchor w t)))
+        (when (and seen (>= anchor start))
+          (push (list w (copy-marker anchor) (nth 1 seen)) views))))
+    views))
+
+(defun emjupy--anchor-y (w anchor)
+  "Return ANCHOR's distance from window W's top, in pixels; nil if hidden."
+  (nth 1 (pos-visible-in-window-p anchor w t)))
+
+(defun emjupy--restore-views (views)
+  "Put each anchor of VIEWS, from `emjupy--views', back where it was.
+To the pixel, as the display engine places it: the window's start moved
+a screen line at a time towards it, and scrolled into its first line by
+what remains -- a figure is one line, too tall to start above or below
+and keep the cursor where it was.  Computed instead, from lines counted
+or their heights summed, it drifted: the rules are continuation lines."
+  (dolist (view views)
+    (pcase-let ((`(,w ,anchor ,distance) view))
+      (when (and (window-live-p w) (eq (window-buffer w) (current-buffer))
+                 (marker-buffer anchor))
+        (set-window-vscroll w 0 t)
+        (let ((tries 30) y)
+          (while (and (> tries 0)
+                      (setq y (emjupy--anchor-y w anchor))
+                      (/= y distance))
+            (setq tries (1- tries))
+            (let* ((start (window-start w))
+                   (step (if (> y distance) 1 -1))
+                   (next (save-excursion
+                           (goto-char start)
+                           (vertical-motion step w)
+                           (point))))
+              (if (= next start)
+                  (setq tries 0)          ; the buffer's start or end
+                (set-window-start w next t)
+                (let ((now (emjupy--anchor-y w anchor)))
+                  (cond
+                   ;; Gone past, moving up: the line above is taller than
+                   ;; what was left.  Scrolled into by the difference.
+                   ((and (< step 0) now (> now distance))
+                    (set-window-vscroll w (- now distance) t)
+                    (setq tries 0))
+                   ;; Gone past, moving down -- a step of two rows, a rule's
+                   ;; continuation lines: back, scrolled into by what was left.
+                   ((and (> step 0) now (< now distance))
+                    (set-window-start w start t)
+                    (set-window-vscroll w (- y distance) t)
+                    (setq tries 0))))))))
+        (unless (emjupy--anchor-y w anchor)
+          ;; never left out of view by keeping it
+          (set-window-vscroll w 0 t)))
+      (set-marker anchor nil))))
+
+(defmacro emjupy--keeping-view (&rest body)
+  "Run BODY, each window on this buffer kept showing what it showed.
+Output drawn, grown or cleared above the cursor pushed it down the
+screen, and everything with it: its line now stays on its screen line,
+or, the cursor out of view, the window's first line stays first."
+  (declare (indent 0) (debug t))
+  (let ((views (make-symbol "views")))
+    `(let ((,views (emjupy--views)))
+       (prog1 (progn ,@body)
+         (emjupy--restore-views ,views)))))
+
 (defun emjupy--redraw-cell-output (cell)
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
 Return non-nil when that could be done; nil means the caller should
-redraw the notebook."
+redraw the notebook.  What the windows show stays where it was."
   ;; Output that only grew at its end is added to; done is done, and says
   ;; so -- nil here means "redraw the whole notebook instead".
-  (emjupy--with-rules-once
-    (emjupy--redraw-cell-output-1 cell)))
+  (emjupy--keeping-view
+    (emjupy--with-rules-once
+      (emjupy--redraw-cell-output-1 cell))))
 
 (defun emjupy--redraw-cell-output-1 (cell)
   "Redraw CELL's output box, the rules rebuilt by the caller's batch."

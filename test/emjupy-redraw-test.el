@@ -562,6 +562,88 @@ step was undone at shifted places, cutting another cell's text."
         (should (equal (emjupy-cell-source (aref cells 1)) "b = 2"))
         (should (equal (emjupy-cell-source (aref cells 0)) "a = 1"))))))
 
+
+;;;; Output appearing keeps the view
+
+(defmacro emjupy-test--view (heights &rest body)
+  "Run BODY in a buffer of lines of HEIGHTS pixels, shown in a window.
+The display engine's answer -- where a position shows -- is the sum of
+the heights of the lines from the window's start to it, less the
+window's vscroll; VSCROLL is what was set last."
+  (declare (indent 1))
+  `(with-temp-buffer
+     (dotimes (i (length ,heights)) (insert (format "line %d\n" i)))
+     (set-window-buffer (selected-window) (current-buffer))
+     (let ((vscroll 0) (heights ,heights))
+       (cl-letf (((symbol-function 'emjupy--anchor-y)
+                  (lambda (w anchor)
+                    (let ((from (1- (line-number-at-pos (window-start w))))
+                          (to (1- (line-number-at-pos anchor))))
+                      (and (>= to from)
+                           (- (apply #'+ (seq-subseq heights from to))
+                              vscroll)))))
+                 ((symbol-function 'set-window-vscroll)
+                  (lambda (_w v &rest _) (setq vscroll v)))
+                 ((symbol-function 'vertical-motion)
+                  (lambda (n &rest _) (forward-line n) 0)))
+         ,@body))))
+
+(ert-deftest emjupy-test-output-above-keeps-the-cursors-line-in-place ()
+  "Output drawn above the cursor leaves its line where it was on screen, to
+the pixel: the window starts later by what was added.  Before, every
+line streamed above pushed the cursor down, and a figure by its height."
+  (emjupy-test--view (make-list 20 18)
+    (set-window-start (selected-window) (point-min))
+    (let ((anchor (copy-marker (save-excursion (goto-char (point-min))
+                                               (forward-line 5) (point)))))
+      ;; three lines appear above it: it shows 54 px lower
+      (setcar (nthcdr 2 heights) (* 3 18))
+      (emjupy--restore-views
+       (list (list (selected-window) (copy-marker anchor) 90)))
+      (should (= (emjupy--anchor-y (selected-window) anchor) 90))
+      (should (= vscroll 0)))))
+
+(ert-deftest emjupy-test-a-tall-line-is-scrolled-into ()
+  "A line taller than the gap -- a figure, one line -- is scrolled into by
+the difference, the cursor's line kept to the pixel: the window could
+start only above it or below it."
+  (emjupy-test--view (list 18 300 18 18 18 18)
+    (set-window-start (selected-window) (point-min))
+    (let ((anchor (copy-marker (save-excursion (goto-char (point-min))
+                                               (forward-line 3) (point)))))
+      ;; wanted 100 px down; from the top it is 354
+      (emjupy--restore-views
+       (list (list (selected-window) (copy-marker anchor) 100)))
+      (should (= (emjupy--anchor-y (selected-window) anchor) 100))
+      (should (> vscroll 0)))))
+
+(ert-deftest emjupy-test-a-step-past-is-scrolled-back-into ()
+  "Moving the start down a line overshooting -- a rule's two continuation
+rows at once -- it goes back, and is scrolled into by what was left."
+  (emjupy-test--view (list 36 18 18 18 18)
+    (set-window-start (selected-window) (point-min))
+    (let ((anchor (copy-marker (save-excursion (goto-char (point-min))
+                                               (forward-line 3) (point)))))
+      ;; at 72 from the top; wanted 54: a step of 36 would land at 36
+      (emjupy--restore-views
+       (list (list (selected-window) (copy-marker anchor) 54)))
+      (should (= (emjupy--anchor-y (selected-window) anchor) 54)))))
+
+(ert-deftest emjupy-test-output-redraws-keep-the-view ()
+  "A cell's output redrawn in place, alone or with others waiting, keeps
+the view: both ways in which output reaches the buffer."
+  (let ((kept 0))
+    (cl-letf (((symbol-function 'emjupy--views) (lambda () (cl-incf kept) nil)))
+      (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                            :source "x"))
+          buf nb
+        (emjupy--redraw-cell-output (aref (emjupy-notebook-cells nb) 0))
+        (should (= kept 1))
+        (setq emjupy--cells-awaiting-output
+              (list (aref (emjupy-notebook-cells nb) 0)))
+        (emjupy--redraw-pending-output)
+        (should (>= kept 2))))))
+
 (provide 'emjupy-redraw-test)
 
 ;;; emjupy-redraw-test.el ends here

@@ -773,7 +773,7 @@ which lost the race to a cell run straight away."
           (should (= sent 2)))))))          ; a new one is
 
 (ert-deftest emjupy-test-running-a-cell-does-not-redraw-the-notebook ()
-  "Running a cell clears its old output in place, not by a whole redraw.
+  "Running a cell leaves its old output, dimmed, not redrawing the notebook.
 
 Only that cell's output changes.  A whole redraw moved every position
 held in the buffer to its start -- the fake cursors of multiple-cursors,
@@ -804,8 +804,11 @@ command that edits nothing."
             (goto-char (overlay-start (emjupy-cell-overlay c2)))
             (emjupy-execute-cell-at-point))
           (should (= rebuilds 0))
-          ;; the old output is gone from the buffer
-          (should-not (string-match-p "old output" (buffer-string)))
+          ;; the old output stays, dimmed, until the new one replaces it:
+          ;; cleared at once, everything below jumped up, then down again
+          (should (string-match-p "old output" (buffer-string)))
+          (should (eq (overlay-get (emjupy-cell-output-ov c2) 'face)
+                      'emjupy-output-stale))
           ;; and the marker still sits where it was, in cell 1's text
           (should (equal (buffer-substring-no-properties
                           (overlay-start (emjupy-cell-overlay c1)) mark)
@@ -1580,6 +1583,38 @@ first cell's output was lost otherwise."
     (should (equal (cdr sent) '("first")))
     (should-not (emjupy-kernel-handshake kernel))
     (should (seq-some (lambda (m) (string-match-p "not heard" m)) said))))
+
+
+(ert-deftest emjupy-test-a-rerun-keeps-its-output-until-replaced ()
+  "A cell run again keeps its output up, dimmed, until the new output
+replaces it -- widgets too -- or the run ends with none, when it goes.
+Cleared at once, the output collapsed and grew again: everything below
+it jumped up, then down."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (let ((cell (make-emjupy-cell :id 1 :type 'code :source "x"
+                                  :outputs (vector (stream "old\n")))))
+      ;; new output replaces the old, all of it
+      (emjupy--mark-output-stale cell)
+      (should (equal (emjupy--mime-text
+                      (gethash "text" (aref (emjupy-cell-outputs cell) 0)))
+                     "old\n"))
+      (should (emjupy--clear-stale-output cell))
+      (should (equal (emjupy-cell-outputs cell) []))
+      (should-not (emjupy--clear-stale-output cell))
+      ;; a run with no output: its reply clears the old
+      (setf (emjupy-cell-outputs cell) (vector (stream "old\n")))
+      (emjupy--mark-output-stale cell)
+      (cl-letf (((symbol-function 'emjupy--request-half-seen) #'ignore))
+        (emjupy--cell-replied cell (emjupy--json-object "execution_count" 2)
+                              "id" nil nil))
+      (should (equal (emjupy-cell-outputs cell) []))
+      ;; nothing to keep: nothing waits
+      (emjupy--mark-output-stale cell)
+      (should-not (gethash cell emjupy--clear-before-next-output)))))
 
 (provide 'emjupy-kernel-test)
 

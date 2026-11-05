@@ -205,6 +205,11 @@ still holds exactly what the kernel sent, and is saved back to the
   "Background behind ordinary cell output."
   :group 'emjupy)
 
+(defface emjupy-output-stale '((t :inherit shadow))
+  "Face of a cell's output while the cell runs again.
+Kept up, dimmed, until the new output replaces it."
+  :group 'emjupy-appearance)
+
 (defface emjupy-output-error '((t))
   "Background behind an error output."
   :group 'emjupy)
