@@ -1140,6 +1140,53 @@ Redrawn together, the cells acted on drew over the one between."
             (funcall command)
             (whole)))))))
 
+
+(ert-deftest emjupy-test-lines-are-moved-by-column-kept-over-separators ()
+  "C-n and C-p move by the buffer's lines, keeping the column, never
+stopping on a separator; at the end, they stay and say so.  Moving by
+screen lines, the first C-n at the end of a cell went into the border's
+lines and did nothing; and the column was lost across cells."
+  (cl-flet ((stream (text) (let ((o (make-hash-table :test 'equal)))
+                             (puthash "output_type" "stream" o)
+                             (puthash "name" "stdout" o)
+                             (puthash "text" text o)
+                             o)))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "x = 1\nprint(x)"
+                                  :exec-count 1 :outputs (vector (stream "1\n"))
+                                  :metadata (make-hash-table :test 'equal))
+                (make-emjupy-cell :id 2 :type 'code :source "y = 2\nz = y + 1"
+                                  :metadata (make-hash-table :test 'equal)))
+        buf nb
+      (should (eq (key-binding (kbd "C-n")) 'emjupy-next-line))
+      (should (eq (key-binding (kbd "C-p")) 'emjupy-previous-line))
+      (let ((last-command nil) (this-command nil) (seen nil))
+        (cl-flet ((press (command)
+                    (setq last-command this-command
+                          this-command command)
+                    (call-interactively command)
+                    (should-not (emjupy--separator-at-p (point)))
+                    (push (list (emjupy-cell-source (emjupy--cell-at-point))
+                                (current-column))
+                          seen)))
+          (search-forward "print")
+          (goto-char (+ (line-beginning-position) 3))
+          (press 'emjupy-next-line)             ; the output's line
+          (should (get-text-property (point) 'read-only))
+          (press 'emjupy-next-line)             ; the next cell, column 3
+          (should (equal (car seen) '("y = 2\nz = y + 1" 3)))
+          (should (looking-at " 2"))
+          (press 'emjupy-next-line)
+          (should (looking-at (regexp-quote " y + 1")))
+          (let ((here (point)))
+            (should-error (press 'emjupy-next-line) :type 'end-of-buffer)
+            (should (= (point) here)))
+          (press 'emjupy-previous-line)
+          (should (looking-at " 2"))
+          (press 'emjupy-previous-line)         ; the output's line
+          (press 'emjupy-previous-line)         ; back, column 3
+          (should (looking-at "nt(x)")))))))
+
 (provide 'emjupy-commands-test)
 
 ;;; emjupy-commands-test.el ends here

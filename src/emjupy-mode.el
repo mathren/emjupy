@@ -91,6 +91,10 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
     (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
     (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
+    ;; Line by line, the column kept, never stopping on a separator:
+    ;; whatever keys move by lines.
+    (define-key map [remap next-line] 'emjupy-next-line)
+    (define-key map [remap previous-line] 'emjupy-previous-line)
     ;; To a neighbouring cell, the way each key points: Up and Page Up back,
     ;; Down and Page Down forward; an arrow lands at the cell's start, a
     ;; Page key at its end.  M-<up> went forward once, against every key.

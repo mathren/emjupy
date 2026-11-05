@@ -244,12 +244,14 @@ failed in the full suite one run in two."
        (- (float-time) start))))
 
 (defconst emjupy-test--menu-exempt
-  '(emjupy-menu emjupy-indent-or-cycle emjupy-latex-unrender-or-delete)
+  '(emjupy-menu emjupy-indent-or-cycle emjupy-latex-unrender-or-delete
+    emjupy-next-line emjupy-previous-line)
   "Commands that belong on a key but not in the menu.
 
 The menu itself; TAB, which indents and is not a thing one goes looking
-for; and DEL, which reveals a rendered formula and only makes sense with
-point already on one.")
+for; DEL, which reveals a rendered formula and only makes sense with
+point already on one; and the keys moving by lines, which stand in for
+`next-line' and `previous-line' on whatever keys those are.")
 
 (defun emjupy-test--menu-commands ()
   "Return the commands offered by `emjupy-menu'."

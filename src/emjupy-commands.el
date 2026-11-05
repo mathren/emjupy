@@ -676,6 +676,47 @@ next line, outside the code."
   (interactive)
   (emjupy--goto-cell (emjupy--sibling-cell -1) 'end))
 
+;;;; Line by line
+
+(defun emjupy-next-line (&optional arg)
+  "Move to the next line, the column kept: one of a cell's or an output's.
+With ARG, that many.  Never a separator's: it shows the cursor at the
+end of a border.  By lines of the buffer, not of the screen: a cell's
+borders are drawn on screen lines no text is under, and moving into one
+moved nowhere -- the first \\[next-line] at the end of a cell did nothing.
+Bound in place of `next-line', whatever keys it is on."
+  (interactive "^p")
+  (emjupy--line-move (or arg 1)))
+
+(defun emjupy-previous-line (&optional arg)
+  "Move to the previous line, the column kept, as `emjupy-next-line'.
+With ARG, that many."
+  (interactive "^p")
+  (emjupy--line-move (- (or arg 1))))
+
+(defun emjupy--line-move (n)
+  "Move N lines, by the buffer's lines, over separators, the column kept.
+With nothing but separators beyond, stay, and signal the buffer's end
+or beginning, as `next-line' does."
+  (let ((start (point))
+        (line-move-visual nil)
+        (step (if (< n 0) -1 1)))
+    ;; As `next-line', for `line-move' to keep the goal column from one
+    ;; press to the next: it does so after those two commands only.
+    (setq this-command (if (< n 0) 'previous-line 'next-line))
+    (line-move n)
+    (while (emjupy--separator-at-p (point))
+      (if (if (< step 0) (bobp) (save-excursion (forward-line 1) (eobp)))
+          (progn (goto-char start)
+                 (signal (if (< step 0) 'beginning-of-buffer 'end-of-buffer)
+                         nil))
+        (line-move step)))))
+
+(defun emjupy--separator-at-p (pos)
+  "Return non-nil if POS is a separator's, a line between cells."
+  (and (eq (char-after pos) ?\n)
+       (get-pos-property pos 'cursor-intangible)))
+
 (defun emjupy-beginning-of-next-cell ()
   "Move point to the start of the next cell."
   (interactive)

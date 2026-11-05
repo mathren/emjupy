@@ -305,6 +305,8 @@ unseen until then."
     ("<backspace>" "DEL")
     ("<S-return>" "S-<return>")
     ("<remap> <save-buffer>" "C-x C-s")
+    ("<remap> <next-line>" "C-n")
+    ("<remap> <previous-line>" "C-p")
     (_ key)))
 
 (defun emjupy-test--bindings ()
