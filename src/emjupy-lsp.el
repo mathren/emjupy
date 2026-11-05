@@ -33,9 +33,9 @@
 ;;;; Options
 
 (defcustom emjupy-lsp-enabled t
-  "When nil, use a language server on this machine, not the server's.
-Obsolete: set `emjupy-language-support' to `local' instead -- one option
-says which language server, not two."
+  "Non-nil means the server's language server is used, when it has one.
+nil, one on this machine.  Obsolete: set `emjupy-language-support' to
+`local' instead -- one option says which language server, not two."
   :type 'boolean
   :group 'emjupy-language-server)
 (make-obsolete-variable 'emjupy-lsp-enabled
