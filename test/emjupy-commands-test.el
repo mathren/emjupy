@@ -1187,6 +1187,86 @@ lines and did nothing; and the column was lost across cells."
           (press 'emjupy-previous-line)         ; back, column 3
           (should (looking-at "nt(x)")))))))
 
+
+;;;; Scrolling
+
+(ert-deftest emjupy-test-a-notebook-scrolls-just-enough ()
+  "A notebook scrolls just enough, two lines of context kept, never
+recentring -- unless the user set Emacs's own, or set the option to nil.
+Before, moving out of view recentred: half a window at a time."
+  (cl-flet ((open () (with-temp-buffer (emjupy-mode)
+                                       (list scroll-conservatively
+                                             scroll-margin))))
+    (should (equal (open) '(101 2)))
+    (let ((emjupy-scroll-margin nil))
+      (should (equal (open) '(0 0))))
+    (let ((default (default-value 'scroll-margin)))
+      (unwind-protect
+          (progn (setq-default scroll-margin 5)
+                 (should (equal (open) '(101 5))))
+        (setq-default scroll-margin default)))))
+
+(ert-deftest emjupy-test-a-cell-moved-to-is-shown-without-centring ()
+  "A cell moved to is not scrolled to if it shows; above, the window
+starts at its header; below, its line goes third from the bottom; with
+another buffer in the selected window, nothing.  Never centred."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1")
+              (make-emjupy-cell :id 2 :type 'code :source "b = 2"))
+      buf nb
+    (let (calls (visible t) (start (point-min)))
+      (cl-letf (((symbol-function 'pos-visible-in-window-p)
+                 (lambda (&rest _) visible))
+                ((symbol-function 'window-start) (lambda (&rest _) start))
+                ((symbol-function 'set-window-start)
+                 (lambda (_w pos &rest _) (push (list 'start pos) calls)))
+                ((symbol-function 'recenter)
+                 (lambda (&optional n &rest _)
+                   (push (list 'recenter n) calls))))
+        (set-window-buffer (selected-window) buf)
+        (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 1) 'beginning)
+        ;; shown: nothing
+        (emjupy--show-cell-at-point)
+        (should-not calls)
+        ;; below: third from the bottom
+        (setq visible nil)
+        (emjupy--show-cell-at-point)
+        (should (equal (pop calls) '(recenter -3)))
+        ;; above: the window starts at its header, before the cell
+        (setq start (point-max))
+        (emjupy--show-cell-at-point)
+        (let ((call (pop calls)))
+          (should (eq (car call) 'start))
+          (should (< (cadr call) (point))))
+        ;; another buffer shown: nothing -- checked there, Emacs putting
+        ;; the notebook back as the buffer goes sets the start itself
+        (with-temp-buffer
+          (set-window-buffer (selected-window) (current-buffer))
+          (setq calls nil)
+          (with-current-buffer buf (emjupy--show-cell-at-point))
+          (should-not calls))))))
+
+(ert-deftest emjupy-test-every-cell-move-is-shown-the-same-way ()
+  "Each command moving to a cell shows it by the same rule."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1")
+              (make-emjupy-cell :id 2 :type 'code :source "b = 2")
+              (make-emjupy-cell :id 3 :type 'code :source "c = 3"))
+      buf nb
+    (let ((shown 0))
+      (cl-letf (((symbol-function 'emjupy--show-cell-at-point)
+                 (lambda () (cl-incf shown))))
+        (dolist (command '(emjupy-next-cell emjupy-previous-cell
+                           emjupy-beginning-of-next-cell
+                           emjupy-end-of-next-cell
+                           emjupy-beginning-of-previous-cell
+                           emjupy-end-of-previous-cell))
+          (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 1) 'beginning)
+          (let ((before shown))
+            (call-interactively command)
+            (ert-info ((symbol-name command))
+              (should (= shown (1+ before))))))))))
+
 (provide 'emjupy-commands-test)
 
 ;;; emjupy-commands-test.el ends here

@@ -252,11 +252,32 @@ no kernel, disconnected, reconnecting."
                 (propertize " LSP: this machine" 'face 'error)
               ""))))
 
+(defcustom emjupy-scroll-margin 2
+  "Lines of context kept above and below the cursor in a notebook.
+The window then scrolls just enough to keep it, `scroll-conservatively'
+101, never recentring: moving the cursor out of view recentred it,
+the view jumping half a window.  nil leaves Emacs's own scrolling as it
+is; so does having changed `scroll-margin' or `scroll-conservatively'."
+  :type '(choice (integer :tag "Lines") (const :tag "Emacs's own" nil))
+  :group 'emjupy)
+
+(defun emjupy--set-scrolling ()
+  "Scroll just enough, with `emjupy-scroll-margin' lines of context.
+Unless the user set those of Emacs, which stay as they are."
+  (when emjupy-scroll-margin
+    (when (and (eql (default-value 'scroll-conservatively) 0)
+               (not (local-variable-p 'scroll-conservatively)))
+      (setq-local scroll-conservatively 101))
+    (when (and (eql (default-value 'scroll-margin) 0)
+               (not (local-variable-p 'scroll-margin)))
+      (setq-local scroll-margin emjupy-scroll-margin))))
+
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
   (emjupy--warn-about-strays)
   ;; What was kept quiet while it was hidden is mentioned when it is shown.
   (add-hook 'window-buffer-change-functions #'emjupy--tell-unseen nil t)
+  (emjupy--set-scrolling)
   ;; Point is moved off separators and padding, which show it at the end
   ;; of a border's line: to the next place to write, the way it was going.
   (cursor-intangible-mode 1)

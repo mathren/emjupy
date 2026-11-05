@@ -669,12 +669,14 @@ next line, outside the code."
 (defun emjupy-beginning-of-previous-cell ()
   "Move point to the start of the previous cell."
   (interactive)
-  (emjupy--goto-cell (emjupy--sibling-cell -1) 'beginning))
+  (emjupy--goto-cell (emjupy--sibling-cell -1) 'beginning)
+  (emjupy--show-cell-at-point))
 
 (defun emjupy-end-of-previous-cell ()
   "Move point to the end of the previous cell's source."
   (interactive)
-  (emjupy--goto-cell (emjupy--sibling-cell -1) 'end))
+  (emjupy--goto-cell (emjupy--sibling-cell -1) 'end)
+  (emjupy--show-cell-at-point))
 
 ;;;; Line by line
 
@@ -720,12 +722,14 @@ or beginning, as `next-line' does."
 (defun emjupy-beginning-of-next-cell ()
   "Move point to the start of the next cell."
   (interactive)
-  (emjupy--goto-cell (emjupy--sibling-cell 1) 'beginning))
+  (emjupy--goto-cell (emjupy--sibling-cell 1) 'beginning)
+  (emjupy--show-cell-at-point))
 
 (defun emjupy-end-of-next-cell ()
   "Move point to the end of the next cell's source."
   (interactive)
-  (emjupy--goto-cell (emjupy--sibling-cell 1) 'end))
+  (emjupy--goto-cell (emjupy--sibling-cell 1) 'end)
+  (emjupy--show-cell-at-point))
 
 (defun emjupy-next-cell ()
   "Move point to the next cell."
@@ -736,7 +740,8 @@ or beginning, as `next-line' does."
         (let ((pos (overlay-end ov)))
           (when (< pos (point-max))
             (goto-char (1+ pos))))
-      (goto-char (point-min)))))
+      (goto-char (point-min)))
+    (emjupy--show-cell-at-point)))
 
 (defun emjupy-previous-cell ()
   "Move point to the previous cell."
@@ -749,7 +754,8 @@ or beginning, as `next-line' does."
             (let ((prev-cell (get-text-property (1- pos) 'emjupy-cell)))
               (when (and prev-cell (emjupy-cell-overlay prev-cell))
                 (goto-char (overlay-start (emjupy-cell-overlay prev-cell)))))))
-      (goto-char (point-min)))))
+      (goto-char (point-min)))
+    (emjupy--show-cell-at-point)))
 
 ;;;; Appearance
 

@@ -101,7 +101,7 @@ yet synced are seen; a # in a fenced code block is no heading."
       (let ((window (get-buffer-window notebook)))
         (if window (select-window window) (pop-to-buffer notebook)))
       (goto-char marker)
-      (recenter 0))))
+      (emjupy--show-cell-at-point))))
 
 (defun emjupy-toc-refresh ()
   "Draw the outline panel anew, from its notebook as it is now."

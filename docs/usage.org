@@ -147,6 +147,16 @@ If the display looks wrong, =C-c C-x C-l= (=emjupy-re-render=) rebuilds it
 from the cells, keeping pending edits; the notebook on the server is not
 touched.
 
+** Moving and scrolling
+
+The window scrolls just enough to keep the cursor in view, with two
+lines of context around it, never recentring: =scroll-conservatively=
+101 and =scroll-margin= 2, in notebooks only, and only if you have not
+set those yourself.  =emjupy-scroll-margin= sets the context; nil leaves
+Emacs's own scrolling as it is.  Moving to a cell -- the next or
+previous, from the outline, or after running one -- does not scroll at
+all if it shows; otherwise it shows its header, and two lines below.
+
 ** Editable regions
 
 Only cell source is editable.  Rules, gutters and output boxes are

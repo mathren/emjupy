@@ -462,6 +462,33 @@ they change; else every rule is rebuilt."
     (emjupy--redraw-cell-header cell)
     (emjupy--start-spinner)))
 
+(defun emjupy--show-cell-at-point ()
+  "Scroll the selected window just enough to show point, in context.
+Not at all if it shows already: its line, two below it, and, at a
+cell's first line, the cell's header above.  Above the window, the
+window starts at that header; below, point's line goes third from the
+bottom.  Never centred: moving to a cell out of view put it in the
+middle of the window, the view jumping half a window.  Nothing, when
+the selected window shows another buffer."
+  (let* ((w (selected-window))
+         (cell (emjupy--cell-at-point))
+         (ov (and cell (emjupy-cell-overlay cell)))
+         (line (line-beginning-position))
+         (top (if (and ov (= line (save-excursion
+                                    (goto-char (overlay-start ov))
+                                    (line-beginning-position))))
+                  (save-excursion (goto-char line) (vertical-motion -1 w)
+                                  (point))
+                line))
+         (bottom (save-excursion (vertical-motion 3 w) (point))))
+    ;; Only the window looked at: a command run from Lisp, the notebook
+    ;; not in the selected window, has nothing to show.
+    (cond ((not (eq (window-buffer w) (current-buffer))))
+          ((and (pos-visible-in-window-p top w)
+                (pos-visible-in-window-p bottom w)))
+          ((< top (window-start w)) (set-window-start w top))
+          (t (recenter -3)))))
+
 (defun emjupy--mark-done (cell &optional buffer)
   "Mark CELL as no longer executing in BUFFER."
   (with-current-buffer (or buffer (current-buffer))
