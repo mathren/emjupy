@@ -560,7 +560,7 @@ A server not reached by a tunnel of emjupy's is left alone."
                                (number-to-string (plist-get tn :port)))))
                  emjupy--remote-tunnels)))
     (when (and tunnel (not (process-live-p (plist-get tunnel :process))))
-      (message "[emjupy] Reopening the tunnel to %s..."
+      (emjupy--say nil "[emjupy] Reopening the tunnel to %s..."
                (plist-get (plist-get tunnel :route) :host))
       (setf (plist-get tunnel :process)
             (emjupy--start-tunnel (plist-get tunnel :route)

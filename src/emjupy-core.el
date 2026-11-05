@@ -258,6 +258,37 @@ package should rarely add to hooks.")
                                 emjupy--status-sections))
               (lambda (x y) (< (car x) (car y))))))
 
+(defvar-local emjupy--unseen-messages 0
+  "In a notebook buffer: messages kept quiet since it was last shown.")
+
+(defun emjupy--say (buffer format &rest args)
+  "Say FORMAT, with ARGS, about BUFFER's notebook: aloud if it is shown.
+Else only into *Messages*, where `emjupy-status' finds it, counted for
+`emjupy--tell-unseen' to mention when BUFFER is shown again.  For what
+emjupy does on its own -- saving, reconnecting -- not asked: a notebook
+restored with the session, its tunnel not open yet, warned it could not
+be saved while something else was being worked on.  BUFFER nil, or not
+a notebook's, is the current buffer, and shown."
+  (let* ((buffer (or buffer (current-buffer)))
+         (quiet (and (buffer-live-p buffer)
+                     (buffer-local-value 'emjupy--buffer-notebook buffer)
+                     (not (get-buffer-window buffer 'visible)))))
+    (let ((inhibit-message quiet))
+      (apply #'message format args))
+    (when quiet
+      (with-current-buffer buffer
+        (setq emjupy--unseen-messages (1+ emjupy--unseen-messages))))))
+
+(defun emjupy--tell-unseen (window)
+  "Say how many messages were kept quiet while WINDOW's buffer was hidden."
+  (with-current-buffer (window-buffer window)
+    (when (> emjupy--unseen-messages 0)
+      (message "[emjupy] %s: %d message%s while not shown; %s"
+               (buffer-name) emjupy--unseen-messages
+               (if (= emjupy--unseen-messages 1) "" "s")
+               (substitute-command-keys "\\[emjupy-status] shows them."))
+      (setq emjupy--unseen-messages 0))))
+
 (defvar emjupy--next-cell-id 0
   "Monotonically increasing counter for assigning stable `emjupy-cell' ids.")
 

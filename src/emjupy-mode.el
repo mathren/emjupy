@@ -255,6 +255,8 @@ no kernel, disconnected, reconnecting."
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
   (emjupy--warn-about-strays)
+  ;; What was kept quiet while it was hidden is mentioned when it is shown.
+  (add-hook 'window-buffer-change-functions #'emjupy--tell-unseen nil t)
   ;; Point is moved off separators and padding, which show it at the end
   ;; of a border's line: to the next place to write, the way it was going.
   (cursor-intangible-mode 1)

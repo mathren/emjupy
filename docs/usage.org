@@ -199,6 +199,14 @@ tens of milliseconds to draw.  =M-x emjupy-flush-output= forces a pending
 redraw.  Stream output continues its output, as in Jupyter: a thousand
 printed lines are one output.
 
+Output appearing does not move what you look at.  Output drawn, grown or
+cleared above the cursor leaves the cursor's line where it was on
+screen, to the pixel, a figure included; with the cursor out of view,
+the window's first line stays first.  A cell run again keeps its output
+up, dimmed (face =emjupy-output-stale=), until the new output replaces
+it, or the run ends with none: cleared at once, everything below went
+up, then down again.
+
 ** Hiding output
 
 =C-c C-o= collapses the output of the cell at point, and restores it.  A
@@ -368,6 +376,12 @@ asking first.  A notebook with unsaved edits is also saved every
 =emjupy-autosave-interval= seconds (120), when Emacs is idle, without
 Emacs waiting; edits made meanwhile wait for the next save.  =C-x C-s=
 lets an automatic save under way finish first.
+
+What emjupy does on its own -- saving, reconnecting, reopening a tunnel
+-- is said aloud only about a notebook in view.  About one not shown, a
+notebook restored with the session whose tunnel is not open yet, say,
+it goes to =*Messages*= only; shown again, the notebook says how many
+there were, and =M-x emjupy-status= lists them.
 
 A save never overwrites a copy changed elsewhere since it was opened --
 from JupyterLab, or by someone else: =C-x C-s= asks first, and automatic

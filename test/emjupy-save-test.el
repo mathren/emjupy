@@ -228,6 +228,48 @@ what the save by hand replaces."
       (should (equal not-waited
                      '(("POST" "/api/contents/a.ipynb/checkpoints")))))))
 
+
+(ert-deftest emjupy-test-a-hidden-notebook-speaks-quietly ()
+  "What emjupy does on its own about a notebook not shown -- an auto-save
+failing, a reconnect -- goes to *Messages* only, counted, and is
+mentioned once the notebook is shown again.  A notebook restored with
+the session, its tunnel not open, warned it could not be saved while
+something else was worked on."
+  (let ((echoed nil) (logged nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (let ((text (apply #'format fmt args)))
+                   ;; emjupy's own; python-mode's guesses are not ours
+                   (when (string-prefix-p "[emjupy]" text)
+                     (push text logged)
+                     (unless inhibit-message (push text echoed)))
+                   text))))
+      (emjupy-test--with-notebook (vector (make-emjupy-cell :id 1 :type 'code
+                                                            :source "x"))
+          buf nb
+        (setf (emjupy-notebook-path nb) "a.ipynb")
+        ;; hidden: an auto-save failing says nothing aloud
+        (with-temp-buffer
+          (set-window-buffer (selected-window) (current-buffer))
+          (emjupy--autosave-failed nb '(file-error "No tunnel"))
+          (should (string-match-p "Could not save a.ipynb" (car logged)))
+          (should-not echoed)
+          (should (= (buffer-local-value 'emjupy--unseen-messages buf) 1)))
+        ;; shown again: said once, then forgotten
+        (set-window-buffer (selected-window) buf)
+        (emjupy--tell-unseen (selected-window))
+        (should (string-match-p "1 message while not shown" (car echoed)))
+        (should (= emjupy--unseen-messages 0))
+        ;; shown: aloud, as before
+        (setq echoed nil)
+        (emjupy--autosave-failed nb '(file-error "No tunnel"))
+        (should (string-match-p "Could not save" (car echoed)))
+        (should (= emjupy--unseen-messages 0))
+        ;; a buffer not a notebook's: aloud
+        (setq echoed nil)
+        (with-temp-buffer (emjupy--say nil "[emjupy] Reopening the tunnel"))
+        (should echoed)))))
+
 (provide 'emjupy-save-test)
 
 ;;; emjupy-save-test.el ends here

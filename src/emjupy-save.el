@@ -93,8 +93,9 @@ stops until it is saved by hand.  nil never saves on its own."
 (defun emjupy--autosave-failed (nb err)
   "End NB's auto-save, which failed with ERR, saying so."
   (emjupy--autosave-done nb)
-  (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
-           (emjupy-notebook-path nb) (error-message-string err)))
+  (emjupy--say (emjupy-notebook-buffer nb)
+               "[emjupy] Could not save %s (%s); a recovery copy is kept."
+               (emjupy-notebook-path nb) (error-message-string err)))
 
 (defun emjupy--autosave-upload (nb body tick)
   "Send BODY, NB as it was at its buffer's modification TICK, not waiting.
@@ -145,8 +146,10 @@ made meanwhile leave the notebook unsaved, for the next save."
              (emjupy--autosave-done nb)
              (when (buffer-live-p buf)
                (with-current-buffer buf (setq emjupy--autosave-paused t)))
-             (message "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
-                      path (substitute-command-keys "\\[emjupy-save-notebook] asks what to do.")))))
+             (emjupy--say
+              buf "[emjupy] %s changed on the server since it was opened; not saved over.  %s"
+              path (substitute-command-keys
+                    "\\[emjupy-save-notebook] asks what to do.")))))
        (lambda (err)
          ;; gone from the server: nothing there to overwrite
          (if (eql (emjupy--http-status-of err) 404)
@@ -276,9 +279,9 @@ said and left: the recovery copy, written first, keeps the changes."
         (unless (eql emjupy--recovery-tick (buffer-modified-tick))
           (condition-case err
               (emjupy--recovery-write nb)
-            (file-error (message "[emjupy] Could not write a recovery copy of %s: %s"
-                                 (emjupy-notebook-path nb)
-                                 (error-message-string err)))))
+            (file-error (emjupy--say nil "[emjupy] Could not write a recovery copy of %s: %s"
+                                     (emjupy-notebook-path nb)
+                                     (error-message-string err)))))
         (when (and emjupy-autosave-interval (not emjupy--autosave-paused)
                    (not emjupy--autosave-in-flight)
                    (>= (- (float-time) (or emjupy--autosave-last 0))
@@ -289,9 +292,9 @@ said and left: the recovery copy, written first, keeps the changes."
               (emjupy--autosave-async nb)
             (file-error
              (setq emjupy--autosave-in-flight nil)
-             (message "[emjupy] Could not save %s (%s); a recovery copy is kept."
-                      (emjupy-notebook-path nb)
-                      (error-message-string err)))))))))
+             (emjupy--say nil "[emjupy] Could not save %s (%s); a recovery copy is kept."
+                          (emjupy-notebook-path nb)
+                          (error-message-string err)))))))))
 
 (defun emjupy--recovery-write-all ()
   "Copy every notebook with unsaved edits for recovery, as Emacs quits."
