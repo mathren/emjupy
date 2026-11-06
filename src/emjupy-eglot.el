@@ -692,15 +692,44 @@ cell in the notebook, automatically."
                 ;; Eglot's collection is called again later, from the notebook
                 ;; buffer, but needs the shadow buffer's context: force it on
                 ;; every call.
+                ;; Called later, as candidates are listed, the server
+                ;; there may be gone: no candidates then, not an error.
                 (wrapped (if (functionp orig-collection)
                              (lambda (string pred action)
-                               (with-current-buffer buf
-                                 (funcall orig-collection string pred action)))
+                               (condition-case err
+                                   (with-current-buffer buf
+                                     (funcall orig-collection
+                                              string pred action))
+                                 (jsonrpc-error
+                                  (message "[emjupy] completion unavailable: %s"
+                                           (error-message-string err))
+                                  nil)))
                            orig-collection)))
            (append (list (+ cell-start (- (nth 0 result) shadow-start))
                          (+ cell-start (- (nth 1 result) shadow-start))
                          wrapped)
-                   (nthcdr 3 result))))))))
+                   (emjupy--completion-properties (nthcdr 3 result) buf))))))))
+
+(defun emjupy--completion-properties (plist shadow)
+  "Return PLIST, Eglot's completion properties, usable from the notebook.
+Its functions are called once the candidates are listed or one chosen,
+in the notebook's buffer, where Eglot has no server: it raised \"No
+current JSON-RPC connection\" at the end of each completion.  Each runs
+in SHADOW, where the server is -- but `:exit-function', which may edit
+the text it completed, runs where it is; with no server it does nothing,
+the candidate inserted."
+  (cl-loop for (key value) on plist by #'cddr
+           append (list key
+                        (if (functionp value)
+                            (let ((fn value) (here (eq key :exit-function)))
+                              (lambda (&rest args)
+                                (condition-case nil
+                                    (if here
+                                        (apply fn args)
+                                      (with-current-buffer shadow
+                                        (apply fn args)))
+                                  (jsonrpc-error nil))))
+                          value))))
 
 (defun emjupy--eglot-capable-p (&rest capabilities)
   "Return non-nil if the current Eglot server advertises CAPABILITIES.

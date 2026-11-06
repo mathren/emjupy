@@ -1102,6 +1102,42 @@ the other sections with it; it was dropped without a word."
                                 (buffer-string)))
         (should (string-match-p "all well" (buffer-string)))))))
 
+
+(defun emjupy-test--capf-of-a-gone-server ()
+  "Answer as Eglot does, its functions raising: the server is gone."
+  (list 1 4 (lambda (&rest _)
+              (jsonrpc-error "No current JSON-RPC connection"))
+        :exit-function (lambda (&rest _)
+                         (jsonrpc-error "No current JSON-RPC connection"))))
+
+(ert-deftest emjupy-test-completion-with-its-server-gone-offers-nothing ()
+  "Completion whose language server has gone by the time the candidates
+are listed offers none, and says so: it raised \"No current JSON-RPC
+connection\" at the user -- found by the fuzz test.  Eglot's collection
+is called later than its completion function, out of the guard that
+caught the error there."
+  (let ((shadow (generate-new-buffer " shadow")))
+    (unwind-protect
+        (progn
+          (with-current-buffer shadow
+            (insert "pri")
+            (setq-local completion-at-point-functions
+                        (list #'emjupy-test--capf-of-a-gone-server)))
+          (cl-letf (((symbol-function 'emjupy--cell-shadow-delegate)
+                     (lambda (fn)
+                       (with-current-buffer shadow (funcall fn 1 1 shadow))))
+                    ((symbol-function 'emjupy--eglot-live-server)
+                     (lambda (&rest _) t)))
+            (let* ((result (emjupy--cell-completion-at-point))
+                   (collection (nth 2 result)))
+              (should (functionp collection))
+              (should-not (funcall collection "pri" nil t))
+              (should-not (funcall collection "pri" nil nil))
+              ;; nor, the candidate chosen, its exit function
+              (should-not (funcall (plist-get (nthcdr 3 result) :exit-function)
+                                   "print" 'finished)))))
+      (kill-buffer shadow))))
+
 (provide 'emjupy-eglot-test)
 
 ;;; emjupy-eglot-test.el ends here
