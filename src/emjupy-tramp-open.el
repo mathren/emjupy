@@ -177,6 +177,11 @@ it knows it, so the same folder is named two ways; DIR expanded here."
     (setq emjupy--environments (if env (cons (cons key env) rest) rest)))
   (when emjupy-environments-file
     (with-demoted-errors "[emjupy] Environments not saved: %S"
+      ;; Its folder made if need be: a user with no ~/.emacs.d yet was
+      ;; told at every opening that nothing could be remembered.
+      (make-directory (file-name-directory
+                       (expand-file-name emjupy-environments-file))
+                      t)
       (with-temp-file emjupy-environments-file
         (let ((print-length nil) (print-level nil))
           (prin1 emjupy--environments (current-buffer)))))))

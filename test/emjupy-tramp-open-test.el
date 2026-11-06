@@ -544,6 +544,19 @@ machine was found again only after a restart of Emacs."
                          "nil")))
       (delete-file file))))
 
+
+(ert-deftest emjupy-test-environments-are-saved-into-a-new-folder ()
+  "The environments file is written even where its folder is not yet:
+with no ~/.emacs.d, every opening said nothing could be remembered."
+  (let* ((dir (make-temp-file "emjupy-envs" t))
+         (emjupy-environments-file (expand-file-name "new/sub/envs.eld" dir))
+         (emjupy--environments nil))
+    (unwind-protect
+        (progn
+          (emjupy--remember-environment "/tmp/proj/" "/opt/env")
+          (should (file-exists-p emjupy-environments-file)))
+      (delete-directory dir t))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here
