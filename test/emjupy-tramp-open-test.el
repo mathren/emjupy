@@ -545,6 +545,84 @@ machine was found again only after a restart of Emacs."
       (delete-file file))))
 
 
+;;;; Opening without waiting for the server
+
+(ert-deftest emjupy-test-a-server-is-awaited-without-holding-emacs ()
+  "A server just started is asked again every half second, without
+waiting: answering, ON-READY is called once; not by the deadline,
+ON-FAIL.  Waited for in a loop, Emacs froze three seconds and more."
+  (let ((asks 0) (ready 0) (failed 0) (timers nil))
+    (cl-letf (((symbol-function 'emjupy--http-request-async)
+               (lambda (_m _s _p _b on-done on-fail)
+                 (cl-incf asks)
+                 (if (< asks 3) (funcall on-fail '(error "refused"))
+                   (funcall on-done nil))))
+              ((symbol-function 'run-with-timer)
+               (lambda (_secs _repeat fn &rest args)
+                 (push (cons fn args) timers))))
+      (emjupy--await-server 'server (+ (float-time) 60)
+                            (lambda () (cl-incf ready))
+                            (lambda () (cl-incf failed)))
+      (while timers (let ((tm (pop timers))) (apply (car tm) (cdr tm))))
+      (should (= asks 3))
+      (should (= ready 1))
+      (should (= failed 0))
+      ;; past its deadline: given up
+      (setq asks -100)
+      (emjupy--await-server 'server (- (float-time) 1)
+                            (lambda () (cl-incf ready))
+                            (lambda () (cl-incf failed)))
+      (should (= failed 1)))))
+
+(ert-deftest emjupy-test-a-notebook-shows-at-once-and-fills-when-ready ()
+  "Opened by a key, a server just started: the notebook's buffer shows at
+once, saying the server is starting, and is filled -- the same buffer --
+when it answers, unmodified; if it does not, it says why; killed
+meanwhile, the tunnel goes."
+  (let* ((server (make-emjupy-server :base-url "127.0.0.1:5555" :token "t"))
+         (name (emjupy--notebook-buffer-name "a.ipynb" server))
+         (text (generate-new-buffer "a.ipynb (text)"))
+         (shown nil) (closed nil) (ready nil) (fail nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'emjupy--tunnel-of)
+                   (lambda (_) '(:route (:host "rbox"))))
+                  ((symbol-function 'emjupy--show-opened-notebook)
+                   (lambda (opened _remote _text _window)
+                     (setq shown opened)
+                     (let ((buf (get-buffer name)))
+                       (should-not (buffer-modified-p buf))
+                       buf)))
+                  ((symbol-function 'emjupy--close-tunnel-if-unused)
+                   (lambda (s) (setq closed s))))
+          (let ((buf (emjupy--open-when-server-answers
+                      (list server "a.ipynb"
+                            (lambda (on-ready on-fail)
+                              (setq ready on-ready fail on-fail)))
+                      text (selected-window))))
+            (should (equal (buffer-name buf) name))
+            (should (eq (window-buffer (selected-window)) buf))
+            (should (with-current-buffer buf buffer-read-only))
+            (should (string-match-p "Starting the Jupyter server on rbox"
+                                    (with-current-buffer buf (buffer-string))))
+            ;; the server answers: the same buffer, filled
+            (funcall ready)
+            (should (equal shown (list server "a.ipynb")))
+            (should (buffer-live-p buf))
+            ;; again, failing: it says why
+            (with-current-buffer buf
+              (let ((inhibit-read-only t)) (erase-buffer)))
+            (funcall fail "The Jupyter server on rbox did not answer")
+            (should (string-match-p "did not answer"
+                                    (with-current-buffer buf (buffer-string))))
+            ;; killed meanwhile: no notebook, the tunnel closed
+            (setq shown nil)
+            (kill-buffer buf)
+            (funcall ready)
+            (should-not shown)
+            (should (eq closed server))))
+      (when (buffer-live-p text) (kill-buffer text))
+      (when (get-buffer name) (kill-buffer name)))))
+
 (ert-deftest emjupy-test-environments-are-saved-into-a-new-folder ()
   "The environments file is written even where its folder is not yet:
 with no ~/.emacs.d, every opening said nothing could be remembered."

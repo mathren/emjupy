@@ -47,7 +47,7 @@ notebooks: `sci` (numpy 2, matplotlib), `plain` (no numpy), `py311`
 - **Replays**: a stale runtime file whose PID a process of the remote
   user's holds when the list is taken.
 
-### Open: opening the first notebook freezes Emacs for about 7 s
+### Fixed in part: opening the first notebook froze Emacs for about 7 s
 
 - **Seen**: in every run, the longest Emacs went without running a timer
   was 6 to 7 s, opening the first notebook.
@@ -65,11 +65,18 @@ notebooks: `sci` (numpy 2, matplotlib), `plain` (no numpy), `py311`
 
 - **Half is Emacs's**, for any remote file; version control's probing a
   user can turn off for remote files (`vc-handled-backends`).
-- **emjupy's to take**: the wait for a server it started blocks Emacs --
-  `sleep-for` in a loop, no keys read meanwhile.  Asynchronous, opening
-  would return before the server answers, the buffer saying so: a change
-  to how opening returns its buffer, not made yet.  Later notebooks, a
-  server found running, open in 3 to 5 s.
+- **emjupy's, taken**: the wait for a server it started blocked Emacs --
+  `sleep-for` in a loop, no keys read.  Opened by a key now, it is not
+  waited for: the notebook's buffer shows at once, saying the server is
+  starting, and fills when it answers.  A server answering in 6 s,
+  simulated: the command returns after 2.3 s, where it took 6.9 s; the
+  notebook drawn in the same buffer, its kernel connected at 7 s.  From
+  Lisp, the notebook is still returned ready.  Tests:
+  `emjupy-test-a-server-is-awaited-without-holding-emacs`,
+  `emjupy-test-a-notebook-shows-at-once-and-fills-when-ready`.
+- **Found measuring it**: with no `~/.emacs.d`, every opening said
+  "Environments not saved": the file's folder is made now.  Test:
+  `emjupy-test-environments-are-saved-into-a-new-folder`.
 
 ### Not emjupy's: what the driver got wrong, and fixed
 
