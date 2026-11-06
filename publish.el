@@ -37,7 +37,9 @@
 (require 'ox-publish)
 
 (defun mr/org-html-src-block-with-meta (orig-fun src-block contents info)
-  "Wrap org src-block HTML with a language badge and copy-to-clipboard button."
+  "Wrap org src-block HTML with a language badge and copy-to-clipboard button.
+Example blocks too -- keystrokes, a program's output -- with no badge,
+as a source block with no language had."
   (let* ((lang  (org-element-property :language src-block))
          (inner (funcall orig-fun src-block contents info)))
     (format
@@ -54,6 +56,7 @@
      inner)))
 
 (advice-add 'org-html-src-block :around #'mr/org-html-src-block-with-meta)
+(advice-add 'org-html-example-block :around #'mr/org-html-src-block-with-meta)
 
 (defun mr/get-modified-org-files ()
   "Return a list of Org files modified since the last commit."

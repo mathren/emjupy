@@ -522,12 +522,13 @@ button:hover {
 
 /* stitch header to code block */
 .src-block-wrapper .org-src-container { margin-top: 0;}
-.src-block-wrapper pre.src            {
+.src-block-wrapper pre.src,
+.src-block-wrapper pre.example        {
     border-radius: 0 0 5px 0px;
     margin-top: 0; margin-bottom:0;
 }
 
-pre.src {
+pre.src, pre.example {
     color: var(--block-color);
     background-color: var(--block-background);
     border: none;
@@ -537,7 +538,7 @@ pre.src {
 }
 
 /* remove background from text */
-pre.src span {
+pre.src span, pre.example span {
   background-color: transparent;
 }
 
