@@ -127,7 +127,8 @@ failure, logging the step, what came before and where point was; and
 ends by restarting each kernel and running every cell, then saving and
 comparing the file saved with the buffer.  Fresh notebooks each run --
 `tools/fuzz/make-notebooks.py` -- as a run saves them.  Seeds fixed, so
-a failure replays; the seeds used: 4711, 90210, 31337, 1, 2, 3, 42, 1234.
+a failure replays; the seeds used: 4711, 90210, 31337, 1, 2, 3, 42, 1234,
+7, 8, 9, 10, 11, 99, 2026, 31415.
 
 - A FAILURE is emjupy's or the driver's: check which before fixing.  The
   driver was wrong three times -- see `tools/fuzz/FINDINGS.org`.

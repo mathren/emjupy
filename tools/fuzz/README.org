@@ -72,7 +72,8 @@ emacs -batch -Q -L src -L WEBSOCKET -l tools/fuzz/emjupy-fuzz.el
 ~EMJUPY_FUZZ_EGLOT=0~ turns language support off; =EMJUPY_FUZZ_KEEP_GOING=
 goes on after a failure.  The exit status is 1 if anything failed.  A
 run of 200 steps over three notebooks takes about a minute and a half;
-the seeds used so far: 4711, 90210, 31337, 1, 2, 3, 42, 1234.
+the seeds used so far: 4711, 90210, 31337, 1, 2, 3, 42, 1234, 7, 8, 9,
+10, 11, 99, 2026, 31415.
 
 * Reading a run
 
@@ -83,7 +84,9 @@ the seeds used so far: 4711, 90210, 31337, 1, 2, 3, 42, 1234.
   output; and running one buffer's redisplay functions for another's
   window.
 - =PROBLEM=: what a user would see go wrong but is not emjupy's: a cell
-  moved below the one it needs, raising =NameError= in the final run.
+  moved below the one it needs, raising =NameError= in the final run; a
+  markdown cell the random cell-type cycling turned into code, raising
+  =SyntaxError=.
 - =the longest Emacs was blocked=: opening the first notebook, a
   server started over two slowed hops, blocks about 7 s.
 

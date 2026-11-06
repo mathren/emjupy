@@ -4,6 +4,18 @@ What =emjupy-fuzz.el= found, newest first.  Each: what a user saw, the
 cause, the fix and its test, and how it replays.  The testbed and how to
 run: [[file:README.org][README.org]].
 
+* 2026-11: after opening stopped waiting, and a review
+
+Seeds 7, 8, 9, 10, 11, 99, 2026, 31415; 200 steps each over the same
+three notebooks, Emacs 30.1, Eglot on, the testbed brought up by
+=testbed-up.sh= after the sandbox had restarted.  No failure.
+
+Problems, all the driver's doing: =NameError=, a cell moved below the
+one it needs; =SyntaxError=, a markdown cell the random cell-type
+cycling turned into code, run as Python.  The longest block, about 7 s,
+is the first notebook's opening: the driver opens from Lisp, which
+waits, through TRAMP's connection.
+
 * 2026-11: the driver rebuilt; Emacs 30.1, TRAMP over two slowed hops, three environments, Eglot on
 
 Seeds 4711, 90210, 31337, 1, 2, 3, 42, 1234; 200 steps each, over three
