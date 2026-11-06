@@ -87,4 +87,4 @@ the seeds used so far: 4711, 90210, 31337, 1, 2, 3, 42, 1234.
 - `the longest Emacs was blocked`: opening the first notebook, a
   server started over two slowed hops, blocks about 7 s.
 
-Findings so far are in `FINDINGS.md`.
+Findings so far are in `FINDINGS.org`.
