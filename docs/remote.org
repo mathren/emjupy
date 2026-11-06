@@ -8,11 +8,9 @@ Running notebooks on another machine, over a tunnel or otherwise.
 
 An =.ipynb= opened through TRAMP opens on its own machine with
 =emjupy-open-this-notebook=, which makes a server and a tunnel to it,
-through any hops -- see [[file:usage.org][Using a notebook]].  A server it has to start is not
-waited for: the notebook's buffer shows at once, saying the server is
-starting, and fills when it answers -- Emacs is yours meanwhile.  If the
-server never answers, the buffer says why, with the end of its log.
-What follows is for a server you started and tunnelled to yourself.
+through any hops -- see [[file:usage.org][Using a notebook]], where a server it has to start is
+not waited for, here or there.  What follows is for a server you started
+and tunnelled to yourself.
 
 Nothing needs configuring for a kernel elsewhere: it is reached over the
 Jupyter server's WebSocket, and so is the language server, with

@@ -211,6 +211,22 @@ wait for their answer and those that do not, so both read it alike."
       (prog1 (cons status (buffer-substring-no-properties (point) (point-max)))
         (kill-buffer buffer)))))
 
+(defun emjupy--server-listening-p (server)
+  "Return non-nil if something listens on SERVER's port.
+Asked by a connection, closed at once.  Answered at once on this
+machine, where a server started, or a tunnel to one, is: refused or
+taken.  Asked before an HTTP request to a server that may not listen
+yet, which the url library retried, nested, until Emacs ran out of Lisp
+depth."
+  (condition-case nil
+      (progn (delete-process
+              (make-network-process :name "emjupy-listening"
+                                    :host (emjupy-server-host server)
+                                    :service (emjupy-server-port server)
+                                    :noquery t))
+             t)
+    (file-error nil)))
+
 (defun emjupy--http-request-async (method server path body on-done on-fail)
   "Send a request to SERVER without waiting for it.
 METHOD, PATH and BODY are as for `emjupy--http-request'.  ON-DONE is

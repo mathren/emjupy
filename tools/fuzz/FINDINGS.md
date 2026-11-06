@@ -74,6 +74,14 @@ notebooks: `sci` (numpy 2, matplotlib), `plain` (no numpy), `py311`
   Lisp, the notebook is still returned ready.  Tests:
   `emjupy-test-a-server-is-awaited-without-holding-emacs`,
   `emjupy-test-a-notebook-shows-at-once-and-fills-when-ready`.
+- **Here too**: a notebook on this machine waited the same way for the
+  server started for it.  One way now, `emjupy--server-ready`, for both:
+  by a key, the command returns in 0.12 s, where it took 1.3 s.  Asked
+  too early, a server here refuses the connection, and the url library
+  retried it nested until Emacs ran out of Lisp depth: its port is asked
+  first now, `emjupy--server-listening-p`.  Tests:
+  `emjupy-test-a-server-is-made-ready-one-way-here-and-there`,
+  `emjupy-test-a-local-notebook-shows-at-once-too`.
 - **Found measuring it**: with no `~/.emacs.d`, every opening said
   "Environments not saved": the file's folder is made now.  Test:
   `emjupy-test-environments-are-saved-into-a-new-folder`.

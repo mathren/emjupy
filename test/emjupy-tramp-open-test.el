@@ -559,8 +559,9 @@ ON-FAIL.  Waited for in a loop, Emacs froze three seconds and more."
                    (funcall on-done nil))))
               ((symbol-function 'run-with-timer)
                (lambda (_secs _repeat fn &rest args)
-                 (push (cons fn args) timers))))
-      (emjupy--await-server 'server (+ (float-time) 60)
+                 (push (cons fn args) timers)))
+              ((symbol-function 'emjupy--server-listening-p) (lambda (_) t)))
+      (emjupy--await-server (quote server) (+ (float-time) 60) #'always
                             (lambda () (cl-incf ready))
                             (lambda () (cl-incf failed)))
       (while timers (let ((tm (pop timers))) (apply (car tm) (cdr tm))))
@@ -569,10 +570,19 @@ ON-FAIL.  Waited for in a loop, Emacs froze three seconds and more."
       (should (= failed 0))
       ;; past its deadline: given up
       (setq asks -100)
-      (emjupy--await-server 'server (- (float-time) 1)
+      (emjupy--await-server (quote server) (- (float-time) 1) #'always
                             (lambda () (cl-incf ready))
                             (lambda () (cl-incf failed)))
-      (should (= failed 1)))))
+      (should (= failed 1))
+      ;; not listening yet: no HTTP request -- url retried a refused
+      ;; connection, nested, until Emacs ran out of Lisp depth
+      (setq asks 0 timers nil)
+      (cl-letf (((symbol-function 'emjupy--server-listening-p)
+                 (lambda (_) nil)))
+        (emjupy--await-server 'server (+ (float-time) 60) #'always
+                              #'ignore #'ignore)
+        (should (= asks 0))
+        (should timers)))))
 
 (ert-deftest emjupy-test-a-notebook-shows-at-once-and-fills-when-ready ()
   "Opened by a key, a server just started: the notebook's buffer shows at
@@ -598,7 +608,7 @@ meanwhile, the tunnel goes."
                       (list server "a.ipynb"
                             (lambda (on-ready on-fail)
                               (setq ready on-ready fail on-fail)))
-                      text (selected-window))))
+                      t text (selected-window))))
             (should (equal (buffer-name buf) name))
             (should (eq (window-buffer (selected-window)) buf))
             (should (with-current-buffer buf buffer-read-only))
@@ -634,6 +644,72 @@ with no ~/.emacs.d, every opening said nothing could be remembered."
           (emjupy--remember-environment "/tmp/proj/" "/opt/env")
           (should (file-exists-p emjupy-environments-file)))
       (delete-directory dir t))))
+
+
+(ert-deftest emjupy-test-a-local-notebook-shows-at-once-too ()
+  "Opened here, a server just started: the same, the buffer saying it is
+this machine's; given up, the server here stopped -- not a tunnel closed."
+  (let* ((server (make-emjupy-server :base-url "127.0.0.1:5556" :token "t"))
+         (name (emjupy--notebook-buffer-name "b.ipynb" server))
+         (text (generate-new-buffer "b.ipynb (text)"))
+         (stopped nil) (ready nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'emjupy--stop-local-server-if-unused)
+                   (lambda (s) (setq stopped s)))
+                  ((symbol-function 'emjupy--close-tunnel-if-unused)
+                   (lambda (_) (error "No tunnel here"))))
+          (let ((buf (emjupy--open-when-server-answers
+                      (list server "b.ipynb"
+                            (lambda (on-ready _) (setq ready on-ready)))
+                      nil text (selected-window))))
+            (should (string-match-p "on this machine"
+                                    (with-current-buffer buf (buffer-string))))
+            (kill-buffer buf)
+            (funcall ready)
+            (should (eq stopped server))))
+      (when (buffer-live-p text) (kill-buffer text))
+      (when (get-buffer name) (kill-buffer name)))))
+
+(ert-deftest emjupy-test-a-server-is-made-ready-one-way-here-and-there ()
+  "One way to have a server ready, here and through TRAMP: with NO-WAIT
+and the server silent, a function to wait with; without, waited for,
+its kernel bound; a server here whose process has ended, failed at
+once, as it said why.  Each kind had its own wait."
+  (let* ((server (make-emjupy-server :base-url "127.0.0.1:5557" :token "t"))
+         (answers nil) (bound 0))
+    (cl-letf (((symbol-function 'emjupy--server-reachable-p)
+               (lambda (_) answers))
+              ((symbol-function 'emjupy--bind-server-kernel)
+               (lambda (_) (cl-incf bound))))
+      ;; silent, not waited for: a function to wait with
+      (let ((opened (emjupy--server-ready server "a.ipynb" t
+                                          (lambda () "silent"))))
+        (should (equal (seq-take opened 2) (list server "a.ipynb")))
+        (should (functionp (nth 2 opened)))
+        (should (= bound 0)))
+      ;; answering: ready, its kernel bound
+      (setq answers t)
+      (should (equal (emjupy--server-ready server "a.ipynb" t
+                                           (lambda () "silent"))
+                     (list server "a.ipynb")))
+      (should (= bound 1))
+      ;; a process here that has ended: failed at once, waited for or not
+      (setq answers nil)
+      (should-error (emjupy--server-ready server "a.ipynb" nil
+                                          (lambda () "it said: no")
+                                          #'ignore)
+                    :type 'user-error)
+      (let ((failed nil))
+        (cl-letf (((symbol-function 'emjupy--http-request-async)
+                   (lambda (_m _s _p _b _done on-fail)
+                     (funcall on-fail '(error "refused"))))
+                  ((symbol-function 'emjupy--server-listening-p)
+                   (lambda (_) t)))
+          (funcall (nth 2 (emjupy--server-ready server "a.ipynb" t
+                                                (lambda () "it said: no")
+                                                #'ignore))
+                   #'ignore (lambda (why) (setq failed why))))
+        (should (equal failed "it said: no"))))))
 
 (provide 'emjupy-tramp-open-test)
 

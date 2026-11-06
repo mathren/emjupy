@@ -56,6 +56,13 @@ window, on a kernel of its own on this machine:
 - it replaces the text with the notebook, and stops the server when its
   last notebook closes, or Emacs quits.
 
+A server it starts is not waited for: the notebook's buffer shows at
+once, saying the server is starting, and fills when it answers -- Emacs
+is yours meanwhile, here or on another machine.  If the server never
+answers, the buffer says why, with what it said.  Killed meanwhile, the
+opening is given up.  Called from Lisp, the command returns the notebook
+ready.
+
 The environment needs =jupyter-server= and =ipykernel=.  Unsaved edits to
 the text are saved first, or the command stops: it reads the file.
 

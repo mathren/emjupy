@@ -297,7 +297,8 @@ for on the machine of WHERE, a directory, and named as it names it."
   "Return a Jupyter server serving DIR, run by JUPYTER, started if need be.
 One already started for DIR with the same JUPYTER is used again.  It
 listens on this machine only, on a free port, with a token of its own,
-and is stopped when the last notebook it serves is closed."
+and is stopped when the last notebook it serves is closed.  Not waited
+for: `emjupy--server-ready' does, or not."
   (or (cl-loop for s in emjupy--local-servers
                when (and (equal (plist-get s :dir) dir)
                          (equal (plist-get s :jupyter) jupyter)
@@ -324,24 +325,37 @@ and is stopped when the last notebook it serves is closed."
                                  ;; Jupyter refuses to run as root without it
                                  (and (eql (user-uid) 0)
                                       (list "--allow-root")))))
-             (server (emjupy--intern-server (format "127.0.0.1:%d" port) token))
-             (deadline (+ (float-time) emjupy-local-server-timeout)))
+             (server (emjupy--intern-server (format "127.0.0.1:%d" port)
+                                           token)))
         (message "[emjupy] Starting a Jupyter server for %s..."
                  (abbreviate-file-name dir))
-        (while (and (process-live-p process) (< (float-time) deadline)
-                    (not (emjupy--server-reachable-p server)))
-          (accept-process-output process 0.25))
-        (unless (and (process-live-p process)
-                     (emjupy--server-reachable-p server))
-          (let ((said (with-current-buffer output
-                        (buffer-substring-no-properties
-                         (max (point-min) (- (point-max) 600))
-                         (point-max)))))
-            (when (process-live-p process) (delete-process process))
-            (user-error "The Jupyter server did not start:\n%s" said)))
-        (push (list :dir dir :jupyter jupyter :process process :server server)
+        (push (list :dir dir :jupyter jupyter :process process :server server
+                    :output output)
               emjupy--local-servers)
         server)))
+
+(defun emjupy--local-server-record (server)
+  "Return SERVER's record, as `emjupy--start-local-server' made it, or nil."
+  (cl-find server emjupy--local-servers
+           :key (lambda (s) (plist-get s :server))))
+
+(defun emjupy--local-server-alive-p (server)
+  "Return non-nil if the process of SERVER, started here, is live."
+  (process-live-p (plist-get (emjupy--local-server-record server) :process)))
+
+(defun emjupy--local-server-failure (server)
+  "Stop SERVER, started here, as having failed; return why, as it said."
+  (let* ((record (emjupy--local-server-record server))
+         (process (plist-get record :process))
+         (output (plist-get record :output))
+         (said (if (buffer-live-p output)
+                   (with-current-buffer output
+                     (buffer-substring-no-properties
+                      (max (point-min) (- (point-max) 600)) (point-max)))
+                 "")))
+    (when (process-live-p process) (delete-process process))
+    (setq emjupy--local-servers (delq record emjupy--local-servers))
+    (format "The Jupyter server did not start:\n%s" said)))
 
 (defun emjupy--server-in-use-p (server)
   "Return non-nil if a notebook buffer other than this one is on SERVER."
@@ -700,8 +714,7 @@ seconds and more went by with Emacs frozen."
          (local-port (emjupy--open-tunnel route (plist-get remote :port)))
          (server (emjupy--intern-server (format "127.0.0.1:%d" local-port)
                                         (plist-get remote :token)))
-         (root (plist-get remote :root_dir))
-         (deadline (+ (float-time) emjupy-local-server-timeout)))
+         (root (plist-get remote :root_dir)))
     (let ((tunnel (cl-find local-port emjupy--remote-tunnels
                            :key (lambda (s) (plist-get s :port)))))
       (setq emjupy--remote-tunnels
@@ -720,39 +733,54 @@ seconds and more went by with Emacs frozen."
                                           dir (format "tail -n 15 %s"
                                                       (plist-get remote :log)))
                                        (file-error "")))
-                           ""))))
-          ;; Bound already, by an earlier opening: asking again lists its
-          ;; kernels, a round trip, to come to the same one.
-          (bind (lambda ()
-                  (unless (emjupy-server-kernel-id server)
-                    (emjupy--bind-server-kernel server)))))
-      (if (or (not no-wait) (emjupy--server-reachable-p server))
-          (progn
-            (while (and (< (float-time) deadline)
-                        (not (emjupy--server-reachable-p server)))
-              (sleep-for 0.5))
-            (unless (emjupy--server-reachable-p server)
-              (user-error "%s" (funcall why)))
-            (funcall bind)
-            (list server path))
+                           "")))))
+      (emjupy--server-ready server path no-wait why))))
+
+(defun emjupy--server-ready (server path no-wait why &optional alive)
+  "Return (SERVER PATH), SERVER answering and its kernel bound.
+With NO-WAIT, SERVER not answering yet -- just started -- is not waited
+for: the list has a third element then, a function of ON-READY and
+ON-FAIL that waits without holding Emacs and calls one of them, ON-FAIL
+with why.  WHY returns why SERVER did not answer; ALIVE, if given,
+whether its process still runs, a server started here.  For servers here
+and through TRAMP alike: each had its own wait, holding Emacs."
+  (let ((deadline (+ (float-time) emjupy-local-server-timeout))
+        (alive (or alive #'always))
+        ;; Bound already, by an earlier opening: asking again lists its
+        ;; kernels, a round trip, to come to the same one.
+        (bind (lambda ()
+                (unless (emjupy-server-kernel-id server)
+                  (emjupy--bind-server-kernel server)))))
+    (if (and no-wait (not (emjupy--server-reachable-p server)))
         (list server path
               (lambda (on-ready on-fail)
                 (emjupy--await-server
-                 server deadline
+                 server deadline alive
                  (lambda () (funcall bind) (funcall on-ready))
-                 (lambda () (funcall on-fail (funcall why))))))))))
+                 (lambda () (funcall on-fail (funcall why))))))
+      (while (and (funcall alive) (< (float-time) deadline)
+                  (not (emjupy--server-reachable-p server)))
+        (accept-process-output nil 0.25))
+      (unless (and (funcall alive) (emjupy--server-reachable-p server))
+        (user-error "%s" (funcall why)))
+      (funcall bind)
+      (list server path))))
 
-(defun emjupy--await-server (server deadline on-ready on-fail)
-  "Call ON-READY once SERVER answers, ON-FAIL if not by DEADLINE.
-Asked without waiting, again every half second: Emacs is not held."
-  (emjupy--http-request-async
-   "GET" server "/api/status" nil
-   (lambda (_) (funcall on-ready))
-   (lambda (_)
-     (if (> (float-time) deadline)
-         (funcall on-fail)
-       (run-with-timer 0.5 nil #'emjupy--await-server
-                       server deadline on-ready on-fail)))))
+(defun emjupy--await-server (server deadline alive on-ready on-fail)
+  "Call ON-READY once SERVER answers; ON-FAIL if not by DEADLINE.
+Or as soon as ALIVE, a function, says its process has ended.  Asked
+without waiting, again every half second: Emacs is not held.  Its port
+first, then its status: see `emjupy--server-listening-p'."
+  (let ((again (lambda ()
+                 (if (or (> (float-time) deadline) (not (funcall alive)))
+                     (funcall on-fail)
+                   (run-with-timer 0.5 nil #'emjupy--await-server
+                                   server deadline alive on-ready on-fail)))))
+    (if (emjupy--server-listening-p server)
+        (emjupy--http-request-async "GET" server "/api/status" nil
+                                    (lambda (_) (funcall on-ready))
+                                    (lambda (_) (funcall again)))
+      (funcall again))))
 
 (defun emjupy--tunnel-of (server)
   "Return the record of the tunnel SERVER is reached through, or nil."
@@ -856,15 +884,23 @@ ready."
                             (jupyter (emjupy--chosen-environment-jupyter
                                       dir choose))
                             (server (emjupy--start-local-server dir jupyter)))
-                       ;; A kernel for the notebook to open on, as logging in
-                       ;; binds one: a server just started has none of its own.
-                       (emjupy--bind-server-kernel server)
-                       (list server (file-name-nondirectory file)))))
+                       (emjupy--server-ready
+                        server (file-name-nondirectory file) no-wait
+                        (lambda () (emjupy--local-server-failure server))
+                        (lambda () (emjupy--local-server-alive-p server))))))
            (text (current-buffer))
            (window (selected-window)))
       (if (nth 2 opened)
-          (emjupy--open-when-server-answers opened text window)
+          (emjupy--open-when-server-answers opened remote text window)
         (emjupy--show-opened-notebook opened remote text window)))))
+
+(defun emjupy--release-server (server remote)
+  "Release SERVER, when no notebook is left on it.
+REMOTE: its tunnel closed, the server left running there; else, started
+here, it is stopped."
+  (if remote
+      (emjupy--close-tunnel-if-unused server)
+    (emjupy--stop-local-server-if-unused server)))
 
 (defun emjupy--show-opened-notebook (opened remote text window)
   "Open OPENED, (SERVER PATH), its server answering, in place of TEXT.
@@ -879,9 +915,7 @@ the .ipynb's own buffer, is killed.  Return the notebook's buffer."
     (when (buffer-live-p notebook)
       (with-current-buffer notebook
         (add-hook 'kill-buffer-hook
-                  (if remote
-                      (lambda () (emjupy--close-tunnel-if-unused server))
-                    (lambda () (emjupy--stop-local-server-if-unused server)))
+                  (lambda () (emjupy--release-server server remote))
                   nil t))
       (when (window-live-p window) (set-window-buffer window notebook))
       ;; In place: the text is the same file, and would go stale as the
@@ -889,15 +923,19 @@ the .ipynb's own buffer, is killed.  Return the notebook's buffer."
       (when (buffer-live-p text) (kill-buffer text)))
     notebook))
 
-(defun emjupy--open-when-server-answers (opened text window)
+(defun emjupy--open-when-server-answers (opened remote text window)
   "Show OPENED's notebook buffer now, filled once its server answers.
-OPENED is (SERVER PATH WAIT), WAIT from `emjupy--open-remote-notebook'.
-The buffer says the server is starting; WINDOW shows it in place of
-TEXT.  Filled, no window is changed: one showing it shows the notebook.
-Killed meanwhile, the opening is given up.  Return the buffer."
+OPENED is (SERVER PATH WAIT), WAIT from `emjupy--server-ready'; REMOTE:
+its server reached through a tunnel.  The buffer says the server is
+starting; WINDOW shows it in place of TEXT.  Filled, no window is
+changed: one showing it shows the notebook.  Killed meanwhile, the
+opening is given up, the server let go.  Return the buffer."
   (pcase-let* ((`(,server ,path ,wait) opened)
-               (host (plist-get (plist-get (emjupy--tunnel-of server) :route)
-                                :host))
+               (host (if remote
+                         (plist-get (plist-get (emjupy--tunnel-of server)
+                                               :route)
+                                    :host)
+                       "this machine"))
                (buf (get-buffer-create
                      (emjupy--notebook-buffer-name path server))))
     (with-current-buffer buf
@@ -916,7 +954,7 @@ Killed meanwhile, the opening is given up.  Return the buffer."
      wait
      (lambda ()
        (if (not (buffer-live-p buf))
-           (emjupy--close-tunnel-if-unused server)
+           (emjupy--release-server server remote)
          (with-current-buffer buf
            (let ((inhibit-read-only t)) (erase-buffer))
            ;; Unmodified: else taken for the notebook open with unsaved
@@ -925,7 +963,7 @@ Killed meanwhile, the opening is given up.  Return the buffer."
            (setq buffer-read-only nil))
          (let ((notebook (save-window-excursion
                            (emjupy--show-opened-notebook
-                            (list server path) t text nil))))
+                            (list server path) remote text nil))))
            ;; adopted: another buffer has it -- shown where this one was
            (when (and (buffer-live-p notebook) (not (eq notebook buf)))
              (dolist (w (get-buffer-window-list buf nil t))
