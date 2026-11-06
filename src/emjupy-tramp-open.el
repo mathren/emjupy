@@ -606,9 +606,13 @@ imports Jupyter -- seconds, for a server opened a moment ago."
 (defun emjupy--server-list-command (jupyter)
   "Return a shell command printing the running servers, as JUPYTER's list.
 The runtime files the list is made of, one JSON line for each server
-whose process is alive -- `jupyter server list' starts a Python and
-imports Jupyter for it, a second or more.  No runtime file where Jupyter
-puts them on Linux or macOS, or where JUPYTER_RUNTIME_DIR says: then
+whose process is alive, and a Jupyter's -- `jupyter server list' starts
+a Python and imports Jupyter for it, a second or more.  A Jupyter's: a
+server gone leaves its file, and after a restart its number is soon
+another process's -- TRAMP's own shell, once -- which `kill -0' took for
+it; opening then waited on a port nothing served, and failed.  Without
+`ps', alive is all that is asked.  No runtime file where Jupyter puts
+them on Linux or macOS, or where JUPYTER_RUNTIME_DIR says: then
 JUPYTER's own list."
   (concat
    "found=; for d in \"${JUPYTER_RUNTIME_DIR:-}\" "
@@ -617,7 +621,10 @@ JUPYTER's own list."
    "[ -n \"$d\" ] || continue; "
    "for f in \"$d\"/jpserver-*.json; do [ -f \"$f\" ] || continue; found=1; "
    "p=${f##*jpserver-}; p=${p%.json}; "
-   "kill -0 \"$p\" 2>/dev/null && { tr -d '\\n' < \"$f\"; echo; }; done; done; "
+   "{ if command -v ps >/dev/null 2>&1; "
+   "then ps -p \"$p\" -o args= 2>/dev/null | grep -q jupyter; "
+   "else kill -0 \"$p\" 2>/dev/null; fi; } && "
+   "{ tr -d '\\n' < \"$f\"; echo; }; done; done; "
    "[ -n \"$found\" ] || "
    (shell-quote-argument jupyter) " server list --json"))
 

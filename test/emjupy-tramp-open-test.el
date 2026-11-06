@@ -384,7 +384,7 @@ each was a round trip or more at every opening."
 
 (ert-deftest emjupy-test-servers-are-listed-from-their-runtime-files ()
   "Running servers are read from their runtime files, those of live
-processes only; with no runtime file, jupyter's own list."
+Jupyter processes only; with no runtime file, jupyter's own list."
   (let* ((dir (make-temp-file "emjupy-runtime" t))
          (jupyter (expand-file-name "fake-jupyter" dir))
          ;; HOME too: this machine's own runtime files are not the test's
@@ -405,17 +405,32 @@ processes only; with no runtime file, jupyter's own list."
           (set-file-modes jupyter #o755)
           ;; none: jupyter's own list
           (should (string-match-p "FROM-JUPYTER" (funcall run)))
-          ;; a live server's file read, a dead one's not
-          (with-temp-file (expand-file-name
-                           (format "jpserver-%d.json" (emacs-pid)) dir)
-            (insert "{\"port\": 8888,\n \"root_dir\": \"/r\"}"))
-          (with-temp-file (expand-file-name "jpserver-999999.json" dir)
-            (insert "{\"port\": 9999}"))
-          (let ((out (funcall run)))
-            (should (string-match-p "\"port\": 8888" out))
-            (should-not (string-match-p "9999" out))
-            (should-not (string-match-p "FROM-JUPYTER" out))
-            (should (= 1 (length (split-string out "\n" t))))))
+          ;; a live server's file read; a dead one's not, nor one whose
+          ;; number another process has since -- after a restart, TRAMP's
+          ;; own shell had it: taken for the server, its port waited on
+          (let* ((server-script (expand-file-name "jupyter-server-fake" dir))
+                 (server nil))
+            (with-temp-file server-script (insert "#!/bin/sh\nsleep 60\n"))
+            (set-file-modes server-script #o755)
+            (setq server (start-process "fake-jupyter" nil server-script))
+            (unwind-protect
+                (progn
+                  (with-temp-file (expand-file-name
+                                   (format "jpserver-%d.json"
+                                           (process-id server)) dir)
+                    (insert "{\"port\": 8888,\n \"root_dir\": \"/r\"}"))
+                  (with-temp-file (expand-file-name "jpserver-999999.json" dir)
+                    (insert "{\"port\": 9999}"))
+                  (with-temp-file (expand-file-name
+                                   (format "jpserver-%d.json" (emacs-pid)) dir)
+                    (insert "{\"port\": 7777}"))
+                  (let ((out (funcall run)))
+                    (should (string-match-p "\"port\": 8888" out))
+                    (should-not (string-match-p "9999" out))
+                    (should-not (string-match-p "7777" out))
+                    (should-not (string-match-p "FROM-JUPYTER" out))
+                    (should (= 1 (length (split-string out "\n" t))))))
+              (delete-process server))))
       (delete-directory dir t))))
 
 
