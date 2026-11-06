@@ -24,7 +24,7 @@
 ;;
 ;; Run it as a user who cannot read the remote files: run as root, a
 ;; remote path taken for a local one goes unnoticed.  The exit status is
-;; 1 if anything failed.  tools/fuzz/README.md sets up the testbed.
+;; 1 if anything failed.  tools/fuzz/README.org sets up the testbed.
 
 ;;; Code:
 

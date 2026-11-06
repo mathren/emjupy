@@ -33,6 +33,13 @@ history.
 
 ## Org docs
 
+- Every document the project writes is Org: `docs/`, `README.org`, and
+  the tools' own -- `tools/fuzz/README.org`, `tools/fuzz/FINDINGS.org`.
+  Source blocks as `#+begin_src`, verbatim `=...=` (`~...~` when it holds
+  an `=`), links `[[file:...][...]]`.  Markdown only where a format
+  demands it: this skill (SKILL.md and its references) and GitHub's own
+  files.  A tool's README or a findings log written in Markdown was
+  converted, asked: "this is an Emacs project".
 - The opening paragraph is shared by `src/emjupy.el`'s Commentary,
   `README.org` and `docs/index.org`; the maintainer chooses its words.
 - Link to sections by title: `[[*Title]]` within a page,

@@ -59,8 +59,16 @@ environment on the remote, Eglot on, and the first hop slowed.
   slow as it is).  Point local's `Host bhost` at Port 2223; put it back
   after.  An SSH command over both hops then takes about 1.5 s.
 - Up: `scripts/testbed-up.sh` starts what is down -- sshd, the proxy,
-  server A.  Run it before any live run: processes die between turns.
-  Do not pipe it: what it starts keeps the pipe open.
+  server A, server B and its tunnel -- and says what answers.  Run it
+  before any live run: the sandbox restarts now and then, every process
+  with it (`uptime` tells), while /tmp stays.  Do not pipe it: what it
+  starts keeps the pipe open, and the command never returns.
+- Accounts: `useradd` makes them locked; with PAM off, sshd refuses even
+  a key to a locked account.  `usermod -p '*' USER` unlocks it, with no
+  password.
+- Fresh notebooks before each fuzz run: `tools/fuzz/make-notebooks.py
+  ~/proj-sci sci`, and plain, py311, as remote.  Logs where `local` can
+  write: a folder of its own.
 - Open through `emjupy-int--open-through-tramp` FILE ENV, as `local`;
   each environment gets a server of its own, and its language server is
   the server's, through jupyter-lsp.  A language server is ready when its

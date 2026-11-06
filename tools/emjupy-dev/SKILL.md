@@ -135,6 +135,8 @@ seconds: run `check.sh REPO full`, and an Emacs build, in the background
   timeouts; the cause is often a real race (see `references/pitfalls.md`).
 - **Remote behaviour**: the two-hop SSH testbed in
   `references/testbeds.md`.
+- **A user's random session**: `tools/fuzz/` -- the driver, its README
+  and the findings log, all Org; `references/verification.md`, Fuzzing.
 
 Report test counts and what passed or failed, honestly: a test that
 failed once and passed on rerun is named as flaky, with its cause if

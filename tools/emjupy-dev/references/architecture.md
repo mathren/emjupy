@@ -36,7 +36,7 @@ short form, plus mechanisms that have bitten before.
 | `test/emjupy-FILE-test.el` | the unit tests of src/emjupy-FILE.el; `emjupy-package-test.el` for the package as a whole, the docs' names and file references |
 | `test/emjupy-test-helpers.el`, `test/emjupy-test.el` | what the tests share; the file loading them all |
 | `test/emjupy-integration-test.el`, `test/emjupy-robustness-test.el`, `test/emjupy-run-tests.el` | live tests, generated inputs, the runner |
-| `tools/` | `dependency-graph.py`, `check-links.py`, `check-recipe.sh`, `lint-package.el`, `checkdoc.el`, `make-notebook-corpus.py`, `faultproxy.py` |
+| `tools/` | `dependency-graph.py`, `check-links.py`, `check-recipe.sh`, `lint-package.el`, `checkdoc.el`, `make-notebook-corpus.py`, `faultproxy.py`; `fuzz/`: the fuzz driver, `make-notebooks.py`, `README.org`, `FINDINGS.org` |
 | `docs/*.org` + `publish.el` | the site, built into `html-content/` |
 | `.github/melpa-recipe` | lists every shipped file explicitly |
 

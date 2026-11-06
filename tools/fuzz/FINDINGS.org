@@ -2,7 +2,7 @@
 
 What =emjupy-fuzz.el= found, newest first.  Each: what a user saw, the
 cause, the fix and its test, and how it replays.  The testbed and how to
-run: [[file:README.md][README.md]].
+run: [[file:README.org][README.org]].
 
 * 2026-11: the driver rebuilt; Emacs 30.1, TRAMP over two slowed hops, three environments, Eglot on
 

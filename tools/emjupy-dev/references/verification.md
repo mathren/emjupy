@@ -117,13 +117,26 @@ early) before lengthening a timeout.
 
 ## Fuzzing
 
-Fuzz on the standard testbed (testbeds.md): through TRAMP, several
-environments, Eglot on, latency.  A run checks the buffer after every
-step (sync first: typed text reaches the cells lazily), stops at the
-first failure with the step's action and what came before, and ends by
-restarting each kernel and running every cell, then saving and comparing
-the server's copy with the buffer.  Fresh notebooks each run: a run
-saves them.  Seeds fixed, so a failure replays.
+`tools/fuzz/emjupy-fuzz.el`, set up and run as `tools/fuzz/README.org`
+says, on the standard testbed (testbeds.md): through TRAMP, several
+environments, Eglot on, latency.  A run plays a user's session through
+the commands a user runs, the command loop's hooks around each; checks
+every notebook after every step (sync first: typed text reaches the
+cells lazily), and errors from timers and processes; stops at the first
+failure, logging the step, what came before and where point was; and
+ends by restarting each kernel and running every cell, then saving and
+comparing the file saved with the buffer.  Fresh notebooks each run --
+`tools/fuzz/make-notebooks.py` -- as a run saves them.  Seeds fixed, so
+a failure replays; the seeds used: 4711, 90210, 31337, 1, 2, 3, 42, 1234.
+
+- A FAILURE is emjupy's or the driver's: check which before fixing.  The
+  driver was wrong three times -- see `tools/fuzz/FINDINGS.org`.
+- Replay a failure with instrumentation loaded before the driver
+  (`-l instr.el -l tools/fuzz/emjupy-fuzz.el`): a backtrace, taken by
+  `handler-bind` around the command, found the completion bug at once.
+- Log each finding in `tools/fuzz/FINDINGS.org`: what a user saw, the
+  cause, the fix and its test, how it replays.  The long runs go in the
+  background, polled: 200 steps over three notebooks take 90 s.
 
 ## Skipped tests are results
 

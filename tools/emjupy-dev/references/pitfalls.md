@@ -139,3 +139,35 @@
   cold, over TRAMP at 80 ms.  The cost is per completion -- pylsp
   resolves the first candidates' signatures -- not loading the module.
   Tried and taken out; pylsp's own settings are the place to look.
+
+## Met fuzzing, and making opening wait for nothing
+
+- **`pkill -f PATTERN` kills its own shell** when the pattern is in the
+  command line that runs it -- `su - remote -c 'pkill -f ...'` did, and
+  stopped before the server.  Bracket one letter: `[e]nvs/sci/...`.
+- **`called-interactively-p 'interactive` is nil in batch**, so a
+  behaviour keyed on it cannot be tested there.  An explicit argument
+  the interactive spec passes -- `(interactive (list current-prefix-arg t))`
+  -- is testable, and plainer.
+- **The url library recurses on a refused connection**, retrying inside
+  its own callbacks until Lisp runs out of depth.  A server here not
+  listening yet refuses; a tunnel accepts.  Ask the port first
+  (`emjupy--server-listening-p`) before an HTTP request to a server that
+  may not listen yet.
+- **PIDs are reused after a restart.**  A dead Jupyter server's runtime
+  file names a PID that, soon after, is some other process -- TRAMP's own
+  shell once.  Alive is not enough: check it is a Jupyter's (`ps -p PID
+  -o args=`).
+- **A batch driver is not the command loop.**  Run `pre-command-hook`
+  and `post-command-hook` around each command, and
+  `pre-redisplay-functions` for each window with its own buffer current
+  -- `cursor-intangible-mode` works there; run for another buffer's
+  window, positions were out of range.
+- **`emjupy--cell-at-point` answers which cell a command acts on**, the
+  nearest from an output or a separator -- not whether text can go at
+  point.
+- **A stub of `set-window-start` sees Emacs's own calls**: a temporary
+  buffer killed, `switch-to-prev-buffer` sets the window's start.  Check
+  inside the case, right after the call.
+- **Time a freeze by the command's return**, not only by a timer's
+  lateness: `sleep-for` runs timers but reads no keys.
