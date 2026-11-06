@@ -41,14 +41,17 @@ refuses even a key to it.  Keys: `local` to `bastion` and `remote`,
 latency proxy); `bastion`'s names `rbox`.  Then:
 
 ```bash
-/usr/sbin/sshd -p 2222 -o PasswordAuthentication=no -o UsePAM=no
+mkdir -p /run/sshd
+setsid nohup /usr/sbin/sshd -D -e -p 2222 -o PasswordAuthentication=no -o UsePAM=no &
 python3 tools/emjupy-dev/scripts/latency.py 2223 2222 0.04 &
 su - local -c 'ssh -J bhost rbox whoami'          # remote, in about 1.5 s
 su - remote -c tools/emjupy-dev/scripts/make-envs.sh   # ~/envs/sci, plain, py311
 ```
 
 `sshd` and the proxy stop now and then -- check both answer before a
-run.  Fresh notebooks before each run, which saves over them:
+run; started in the foreground under `setsid nohup`, as above, `sshd`
+has lasted.  A TRAMP test failing in a hundredth of a second is
+`sshd` down, not emjupy.  Fresh notebooks before each run, which saves over them:
 
 ```bash
 su - remote -c 'python3 tools/fuzz/make-notebooks.py ~/proj-sci sci'

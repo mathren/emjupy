@@ -50,11 +50,26 @@ notebooks: `sci` (numpy 2, matplotlib), `plain` (no numpy), `py311`
 ### Open: opening the first notebook freezes Emacs for about 7 s
 
 - **Seen**: in every run, the longest Emacs went without running a timer
-  was 6 to 7 s, opening the first notebook: a server started on the
-  remote, over two hops slowed to 1.4 s a command.
-- **Not yet looked at**: which of those round trips must block.  Later
-  notebooks open in 3 to 5 s, and steps never block more than a fraction
-  of a second.
+  was 6 to 7 s, opening the first notebook.
+- **Where the time goes**, its server stopped first, timing each remote
+  command (12 s in all, over two hops slowed to 1.4 s a command):
+
+  | Stage | Time | Whose |
+  |---|---|---|
+  | TRAMP's connection through both hops, 22 setup commands | 3.5 s | Emacs's |
+  | `find-file`: the file read; version control probed, bzr, git, hg | 2.9 s | Emacs's |
+  | The environment remembered for the folder, checked | 0.4 s | emjupy |
+  | The servers listed; one started | 0.5 s | emjupy |
+  | The tunnel, through both hops | 1.3 s | emjupy |
+  | The new server waited for: asked, `sleep-for` 0.5 s, five times | 2.8 s | emjupy |
+
+- **Half is Emacs's**, for any remote file; version control's probing a
+  user can turn off for remote files (`vc-handled-backends`).
+- **emjupy's to take**: the wait for a server it started blocks Emacs --
+  `sleep-for` in a loop, no keys read meanwhile.  Asynchronous, opening
+  would return before the server answers, the buffer saying so: a change
+  to how opening returns its buffer, not made yet.  Later notebooks, a
+  server found running, open in 3 to 5 s.
 
 ### Not emjupy's: what the driver got wrong, and fixed
 
