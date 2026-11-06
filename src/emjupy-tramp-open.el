@@ -741,9 +741,10 @@ seconds and more went by with Emacs frozen."
 With NO-WAIT, SERVER not answering yet -- just started -- is not waited
 for: the list has a third element then, a function of ON-READY and
 ON-FAIL that waits without holding Emacs and calls one of them, ON-FAIL
-with why.  WHY returns why SERVER did not answer; ALIVE, if given,
-whether its process still runs, a server started here.  For servers here
-and through TRAMP alike: each had its own wait, holding Emacs."
+with why.  WHY is a function returning why SERVER did not answer;
+ALIVE, if given, a function returning whether SERVER's process still
+runs -- for a server started here.  For servers here and through TRAMP
+alike: each had its own wait, holding Emacs."
   (let ((deadline (+ (float-time) emjupy-local-server-timeout))
         (alive (or alive #'always))
         ;; Bound already, by an earlier opening: asking again lists its

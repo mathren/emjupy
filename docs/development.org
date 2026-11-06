@@ -399,10 +399,10 @@ Faults found by fuzzing a running notebook that are not yet fixed are
 
 Every failure of a randomised test names its run's seed:
 
-#+begin_src
+#+begin_example
 Info: EMJUPY_FUZZ_SEED=4, case 5
 Info: after (insert-above insert-below delete-char split move-down)
-#+end_src
+#+end_example
 
 Set it to replay the run; =EMJUPY_FUZZ_ITERATIONS= sets the cases per
 test, by default ten to two hundred:

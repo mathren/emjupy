@@ -263,12 +263,13 @@ package should rarely add to hooks.")
 
 (defun emjupy--say (buffer format &rest args)
   "Say FORMAT, with ARGS, about BUFFER's notebook: aloud if it is shown.
-Else only into *Messages*, where `emjupy-status' finds it, counted for
-`emjupy--tell-unseen' to mention when BUFFER is shown again.  For what
-emjupy does on its own -- saving, reconnecting -- not asked: a notebook
-restored with the session, its tunnel not open yet, warned it could not
-be saved while something else was being worked on.  BUFFER nil, or not
-a notebook's, is the current buffer, and shown."
+If not, only into *Messages*, where `emjupy-status' finds it, and
+counted, for `emjupy--tell-unseen' to mention once BUFFER is shown.
+For what emjupy does on its own, unasked -- saving, reconnecting: a
+notebook restored with the session, its tunnel not open yet, warned it
+could not be saved while something else was being worked on.  BUFFER
+nil means the current buffer; a buffer not a notebook's always speaks
+aloud."
   (let* ((buffer (or buffer (current-buffer)))
          (quiet (and (buffer-live-p buffer)
                      (buffer-local-value 'emjupy--buffer-notebook buffer)

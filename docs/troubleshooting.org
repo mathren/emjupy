@@ -38,11 +38,11 @@ taking longer, naming the function.
 
 If neither points anywhere, measure:
 
-#+begin_src
+#+begin_example
 M-x profiler-start RET cpu RET
   ... move the point around until it feels slow ...
 M-x profiler-report
-#+end_src
+#+end_example
 
 Top entries that are emjupy functions are a bug worth reporting, with the
 report.  emjupy's own per-command work is small -- a cursor move well

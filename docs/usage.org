@@ -56,12 +56,12 @@ window, on a kernel of its own on this machine:
 - it replaces the text with the notebook, and stops the server when its
   last notebook closes, or Emacs quits.
 
-A server it starts is not waited for: the notebook's buffer shows at
-once, saying the server is starting, and fills when it answers -- Emacs
-is yours meanwhile, here or on another machine.  If the server never
-answers, the buffer says why, with what it said.  Killed meanwhile, the
-opening is given up.  Called from Lisp, the command returns the notebook
-ready.
+A server started for the notebook, here or on another machine, is not
+waited for: the notebook's buffer appears at once, saying the server is
+starting, and fills in when the server answers.  Emacs stays yours
+meanwhile.  If the server never answers, the buffer says why, with what
+the server printed.  Killing the buffer meanwhile cancels the opening.
+Called from Lisp, the command returns the notebook ready.
 
 The environment needs =jupyter-server= and =ipykernel=.  Unsaved edits to
 the text are saved first, or the command stops: it reads the file.
@@ -161,8 +161,9 @@ lines of context around it, never recentring: =scroll-conservatively=
 101 and =scroll-margin= 2, in notebooks only, and only if you have not
 set those yourself.  =emjupy-scroll-margin= sets the context; nil leaves
 Emacs's own scrolling as it is.  Moving to a cell -- the next or
-previous, from the outline, or after running one -- does not scroll at
-all if it shows; otherwise it shows its header, and two lines below.
+previous, from the outline, or after running one -- does not scroll if
+the cell is in view; otherwise the window scrolls just enough to show
+the cell's header and two lines below it.
 
 ** Editable regions
 
@@ -216,13 +217,12 @@ tens of milliseconds to draw.  =M-x emjupy-flush-output= forces a pending
 redraw.  Stream output continues its output, as in Jupyter: a thousand
 printed lines are one output.
 
-Output appearing does not move what you look at.  Output drawn, grown or
-cleared above the cursor leaves the cursor's line where it was on
-screen, to the pixel, a figure included; with the cursor out of view,
-the window's first line stays first.  A cell run again keeps its output
-up, dimmed (face =emjupy-output-stale=), until the new output replaces
-it, or the run ends with none: cleared at once, everything below went
-up, then down again.
+Output appearing does not move what you look at.  When output is drawn,
+grows or is cleared above the cursor, the cursor's line stays where it
+is on screen, to the pixel, even when a figure appears; with the cursor
+out of view, the window's first line stays first.  A cell run again
+keeps its previous output, dimmed (face =emjupy-output-stale=), until
+its new output replaces it, or until the run ends without output.
 
 ** Hiding output
 
@@ -394,11 +394,12 @@ asking first.  A notebook with unsaved edits is also saved every
 Emacs waiting; edits made meanwhile wait for the next save.  =C-x C-s=
 lets an automatic save under way finish first.
 
-What emjupy does on its own -- saving, reconnecting, reopening a tunnel
--- is said aloud only about a notebook in view.  About one not shown, a
-notebook restored with the session whose tunnel is not open yet, say,
-it goes to =*Messages*= only; shown again, the notebook says how many
-there were, and =M-x emjupy-status= lists them.
+Messages about what emjupy does on its own -- saving, reconnecting,
+reopening a tunnel -- appear in the echo area only for a notebook in
+view.  For a notebook not shown, such as one restored with your session
+whose tunnel is not open yet, they go to =*Messages*= only; when the
+notebook is shown again, it says how many there were, and =M-x
+emjupy-status= lists them.
 
 A save never overwrites a copy changed elsewhere since it was opened --
 from JupyterLab, or by someone else: =C-x C-s= asks first, and automatic
@@ -473,10 +474,10 @@ running programs or reaching files and hosts ask first.
 and, in a checkout, the revision; in a notebook buffer, the kernel's
 working directory and which language server answers:
 
-#+begin_src
+#+begin_example
 emjupy 0.2.2, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
 kernel cwd /home/you/project; language server beside the kernel
-#+end_src
+#+end_example
 
 "On this machine" means the fallback server answers: for a kernel
 elsewhere, =M-.= will not find your own modules.  See

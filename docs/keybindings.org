@@ -25,8 +25,8 @@
 
 | Key                             | Command                             | Effect                                                                                                                 |
 |---------------------------------+-------------------------------------+------------------------------------------------------------------------------------------------------------------------|
-| =C-n=                           | =emjupy-next-line=                  | Next line, column kept; over separators                                                                                |
-| =C-p=                           | =emjupy-previous-line=              | Previous line, column kept; over separators                                                                            |
+| =C-n=                           | =emjupy-next-line=                  | Next line, keeping the column; skips separators                                                                        |
+| =C-p=                           | =emjupy-previous-line=              | Previous line, keeping the column; skips separators                                                                    |
 | =C-c C-n=                       | =emjupy-next-cell=                  | Move point to the next cell                                                                                            |
 | =C-c C-p=                       | =emjupy-previous-cell=              | Move point to the previous cell                                                                                        |
 | =C-c <prior>=                   | =emjupy-beginning-of-cell=          | Go to the start of this cell                                                                                           |

@@ -213,11 +213,11 @@ wait for their answer and those that do not, so both read it alike."
 
 (defun emjupy--server-listening-p (server)
   "Return non-nil if something listens on SERVER's port.
-Asked by a connection, closed at once.  Answered at once on this
-machine, where a server started, or a tunnel to one, is: refused or
-taken.  Asked before an HTTP request to a server that may not listen
-yet, which the url library retried, nested, until Emacs ran out of Lisp
-depth."
+A connection is tried, and closed at once.  On this machine -- a server
+started here, or the end of a tunnel -- it is accepted or refused at
+once, without waiting.  Ask this before an HTTP request to a server
+that may not listen yet: the url library retried a refused connection,
+nested, until Emacs ran out of Lisp depth."
   (condition-case nil
       (progn (delete-process
               (make-network-process :name "emjupy-listening"

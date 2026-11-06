@@ -8,9 +8,9 @@ Running notebooks on another machine, over a tunnel or otherwise.
 
 An =.ipynb= opened through TRAMP opens on its own machine with
 =emjupy-open-this-notebook=, which makes a server and a tunnel to it,
-through any hops -- see [[file:usage.org][Using a notebook]], where a server it has to start is
-not waited for, here or there.  What follows is for a server you started
-and tunnelled to yourself.
+through any hops -- see [[file:usage.org][Using a notebook]], which also says what you see while
+the server starts.  What follows is for a server you started and
+tunnelled to yourself.
 
 Nothing needs configuring for a kernel elsewhere: it is reached over the
 Jupyter server's WebSocket, and so is the language server, with
@@ -117,10 +117,10 @@ kernel its WebSocket and table of requests in flight.  So several
 notebooks, from several servers -- several =ssh= tunnels on different
 local ports -- can be open at once.  Run =emjupy-login= once per tunnel:
 
-#+begin_src
+#+begin_example
 M-x emjupy-login RET 8888 RET     ;; tunnel to machine A
 M-x emjupy-login RET 9999 RET     ;; tunnel to machine B
-#+end_src
+#+end_example
 
 The workflow it is built around:
 
@@ -185,11 +185,11 @@ it out: the kernel reports the directory it runs in, the notebook's own,
 and the Contents API the notebook's path relative to the root.  Take the
 second off the end of the first:
 
-#+BEGIN_SRC
+#+begin_example
  kernel cwd     /home/you/project/analysis
  notebook path  analysis/run.ipynb
  root           /home/you/project
-#+END_SRC
+#+end_example
 
 So =emjupy-remote-root= rarely needs setting: once a notebook's kernel
 starts, browsing that server's files works.  Set it when the derived

@@ -681,12 +681,13 @@ next line, outside the code."
 ;;;; Line by line
 
 (defun emjupy-next-line (&optional arg)
-  "Move to the next line, the column kept: one of a cell's or an output's.
-With ARG, that many.  Never a separator's: it shows the cursor at the
-end of a border.  By lines of the buffer, not of the screen: a cell's
-borders are drawn on screen lines no text is under, and moving into one
-moved nowhere -- the first \\[next-line] at the end of a cell did nothing.
-Bound in place of `next-line', whatever keys it is on."
+  "Move to the next line, keeping the column.
+With ARG, move that many lines.  Only lines of cells and outputs count:
+the separator between two cells is skipped, as the cursor there showed
+at the end of a border.  Lines are the buffer's, not the screen's: a
+cell's borders are drawn on screen lines with no text, and moving into
+one went nowhere.  Bound in place of `next-line', on whatever keys that
+is."
   (interactive "^p")
   (emjupy--line-move (or arg 1)))
 
