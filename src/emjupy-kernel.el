@@ -1430,6 +1430,16 @@ the caller bound, read here, unseen where it was bound."
     (when (and here (eq (emjupy-cell-type here) 'raw))
       (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
+    ;; Dropped, and not yet noticed -- a laptop just woken, its connection
+    ;; dead before its close is read: the drop is handled now, as when the
+    ;; close comes, and the cell held below.  It was refused, "reconnect
+    ;; by hand", a moment before emjupy reconnected by itself.
+    (when (and kernel (emjupy-kernel-id kernel)
+               (not (emjupy--ws-live-p kernel))
+               (not emjupy--reconnect-timer) emjupy-reconnect-window
+               (not (emjupy-kernel-closing kernel)))
+      (emjupy--kernel-connection-closed
+       kernel (emjupy-notebook-path (emjupy--notebook))))
     ;; Reconnecting after a dropped connection: the kernel is there, and the
     ;; cell runs on it when the connection is back.
     (when (and (not (emjupy--ws-live-p kernel)) emjupy--reconnect-timer)

@@ -1000,12 +1000,15 @@ tunnel, needing a moment to come back."
 
 (ert-deftest emjupy-test-a-cell-on-a-dropped-connection-says-so ()
   "Running a cell whose kernel's connection is down says so, not \"no kernel\".
-The kernel is there; \\[emjupy-reconnect-kernel] reaches it again."
+The kernel is there; \\[emjupy-reconnect-kernel] reaches it again.  With
+reconnecting off: on, running the cell reconnects and waits for it."
   (emjupy-test--reconnecting live sent
     (ignore sent)
     (cancel-timer emjupy--reconnect-timer)
     (setq emjupy--reconnect-timer nil)
-    (let ((err (should-error (emjupy-execute-cell-at-point) :type 'user-error)))
+    (let ((err (let ((emjupy-reconnect-window nil))
+                 (should-error (emjupy-execute-cell-at-point)
+                               :type 'user-error))))
       ;; ' or ', as `format-message' quotes it in the locale
       (should (string-match-p "connection to this notebook.s kernel is down"
                               (cadr err))))))
@@ -1658,6 +1661,33 @@ it again.  It was said to have ended while disconnected; the user waited."
                  (substitute-command-keys
                   "\\<emjupy-mode-map>\\[emjupy-execute-cell-at-point]")
                  text))))))
+
+
+(ert-deftest emjupy-test-a-cell-run-on-an-unnoticed-drop-waits ()
+  "A cell run on a connection dead but not yet noticed -- a laptop just
+woken -- starts the reconnecting and waits for it, as one run while
+reconnecting does.  It was refused, \"reconnect by hand\", a moment before
+emjupy reconnected by itself."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "print(1)"))
+      buf nb
+    (let ((kernel (make-emjupy-kernel :id "k" :notebook nb
+                                      :pending (make-hash-table :test 'equal)))
+          (started nil))
+      (setf (emjupy-notebook-kernel nb) kernel
+            (emjupy-notebook-path nb) "a.ipynb")
+      (cl-letf (((symbol-function 'emjupy--ws-live-p) #'ignore)
+                ((symbol-function 'emjupy--kernel) (lambda () kernel))
+                ((symbol-function 'run-with-timer)
+                 (lambda (&rest _) (setq started t) 'a-timer))
+                ((symbol-function 'message) #'ignore))
+        (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 0) 'beginning)
+        (should (eq (emjupy-execute-cell-at-point)
+                    (aref (emjupy-notebook-cells nb) 0)))
+        (should started)
+        (should (equal emjupy--runs-waiting
+                       (list (aref (emjupy-notebook-cells nb) 0))))
+        (setq emjupy--reconnect-timer nil emjupy--runs-waiting nil)))))
 
 (provide 'emjupy-kernel-test)
 

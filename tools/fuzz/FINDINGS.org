@@ -38,7 +38,7 @@ seed again: 164 shown, none of =url='s, none of "connected" about a
 notebook not in view; the tunnel's reopening shown for the notebook in
 view's server only.
 
-** In part: a cell run just after a laptop wakes may not run
+** Fixed: a cell run just after a laptop wakes did not run
 
 - *Seen*: after the suspend -- the daemon frozen, the network changed --
   every notebook reconnected within 9 s, but none ran the cell run at
@@ -61,9 +61,20 @@ view's server only.
   cell on a shared kernel -- reached, run unheard, the server's replay
   of what it missed going to the other notebook's connection only.
   Test: =emjupy-test-a-run-never-heard-of-is-said-to-run-again=.
-- *Still open*: two notebooks, on kernels of their own, kept their cell
-  running past 150 s, nothing said: settling put off, or the kernel not
-  idle -- to find out.
+- *Fixed, the rest*: the two notebooks thought to keep their cell
+  running did not: their kept runs had ended, the server replaying what
+  they missed.  A trace of the hand-over, the settling, every run and
+  every error it raised (=EXTRA= loads such a file into the daemon)
+  showed the cells run on waking *refused*: "The connection to this
+  notebook's kernel is down: C-c C-x C-c reconnects" -- the connection
+  known dead, its close not yet read, emjupy reconnecting by itself a
+  moment later.  A cell run so now starts the reconnecting -- the drop
+  handled as when its close comes -- and waits for it, as one run while
+  reconnecting does: "Reconnecting to the kernel; the cell runs when it
+  is back."  Refused only with reconnecting off.  Test:
+  =emjupy-test-a-cell-run-on-an-unnoticed-drop-waits=.  Live, the same
+  seed: every notebook ran its cell 9.4 s after waking, where none had
+  in 150 s.
 - *Replays*: =daemon-fuzz.sh 4242 120=, the suspend at step 105.
 
 * 2026-11: after opening stopped waiting, and a review

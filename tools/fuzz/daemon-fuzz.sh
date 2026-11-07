@@ -6,6 +6,8 @@
 #
 #   daemon-fuzz.sh SEED [STEPS]
 #
+# EXTRA names an Emacs Lisp file the daemon loads first: instrumentation
+# for a replay.
 # Notebooks: EMJUPY_FUZZ_NOTEBOOKS, as for emjupy-fuzz.el; the first two
 # in one folder and environment, for the second to share the first's
 # kernel.  Logs in $LOGS (/tmp/fzlog): daemon-SEED.log, the session;
@@ -64,7 +66,7 @@ as_local "cd $repo && env DISPLAY=$DISPLAY PATH=/opt/jenv/bin:\$PATH \
   EMJUPY_FUZZ_NOTEBOOKS='$EMJUPY_FUZZ_NOTEBOOKS' EMJUPY_FUZZ_SEED=$seed \
   EMJUPY_FUZZ_LOG=$log EMJUPY_FUZZ_MESSAGES=$LOGS/daemon-$seed.messages \
   $EMACS --daemon=fzd -Q -L src -L tools/fuzz -L $WEBSOCKET \
-  --eval \"(require 'emjupy-fuzz-daemon)\"" > "$LOGS/daemon-$seed.out" 2>&1
+  ${EXTRA:+-l $EXTRA} --eval \"(require 'emjupy-fuzz-daemon)\"" > "$LOGS/daemon-$seed.out" 2>&1
 call setup "(fzd-setup)" 300
 
 for i in $(seq 1 "$steps"); do
