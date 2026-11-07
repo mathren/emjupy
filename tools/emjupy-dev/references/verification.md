@@ -115,6 +115,20 @@ alone 5 times out of 5 is flaky: say so, and look for the race (drawing
 from a timer, replies overtaking output, a timer settling things
 early) before lengthening a timeout.
 
+## From under a home folder
+
+The maintainer runs the suite from a checkout under his home folder;
+here it runs from /tmp, where no path is written with `~`.  A test
+changing `HOME` failed on his machine twice, passing here.  Before
+delivering, run the unit suite once from a copy under a home folder:
+
+```bash
+rm -rf ~/emjupy-copy && cp -r REPO ~/emjupy-copy && cd ~/emjupy-copy
+emacs -batch -Q -L src -L test -L WEBSOCKET \
+  --eval '(setq default-directory (abbreviate-file-name default-directory))' \
+  -l test/emjupy-run-tests.el
+```
+
 ## Fuzzing
 
 `tools/fuzz/emjupy-fuzz.el`, set up and run as `tools/fuzz/README.org`

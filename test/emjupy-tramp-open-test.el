@@ -386,19 +386,21 @@ each was a round trip or more at every opening."
   "Running servers are read from their runtime files, those of live
 Jupyter processes only; with no runtime file, jupyter's own list."
   (let* ((dir (make-temp-file "emjupy-runtime" t))
+         ;; Every process the test starts, from its own folder, named in
+         ;; full: with HOME moved below, a current directory written ~/...
+         ;; is looked for in the test's folder, and is not there.  Bound
+         ;; around one command only, the next process started failed.
+         (default-directory (file-name-as-directory dir))
          (jupyter (expand-file-name "fake-jupyter" dir))
          ;; HOME too: this machine's own runtime files are not the test's
          (process-environment (append (list (concat "JUPYTER_RUNTIME_DIR=" dir)
                                             (concat "HOME=" dir))
                                       process-environment))
          (run (lambda ()
-                ;; From the test's own folder, an absolute name: with HOME
-                ;; moved, a current directory written ~/... was not found.
-                (let ((default-directory (file-name-as-directory dir)))
-                  (with-temp-buffer
-                    (call-process "sh" nil t nil "-c"
-                                  (emjupy--server-list-command jupyter))
-                    (buffer-string))))))
+                (with-temp-buffer
+                  (call-process "sh" nil t nil "-c"
+                                (emjupy--server-list-command jupyter))
+                  (buffer-string)))))
     (unwind-protect
         (progn
           (with-temp-file jupyter (insert "#!/bin/sh\necho FROM-JUPYTER\n"))

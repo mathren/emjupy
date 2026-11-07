@@ -171,3 +171,10 @@
   inside the case, right after the call.
 - **Time a freeze by the command's return**, not only by a timer's
   lateness: `sleep-for` runs timers but reads no keys.
+- **A test that moves `HOME` moves `~`.**  Emacs expands `~` from the
+  `HOME` it finds in `process-environment`, and the maintainer's current
+  directory is written `~/Documents/...`: every process the test starts
+  looks for it under the fake home, and fails -- "Setting current
+  directory".  Bind `default-directory` to the test's own folder, named
+  in full, around the whole body: bound around one command, the next
+  process added to the test failed, the same way, on his machine.
