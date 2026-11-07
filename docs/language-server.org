@@ -35,11 +35,11 @@ dependencies:
   - python-lsp-server
 #+end_src
 
-| Package             | Purpose                                     |
-|---------------------+---------------------------------------------|
-| =jupyter-lsp=         | adds the =/lsp/= endpoints to Jupyter         |
-| =jupyterlab-lsp=      | JupyterLab front end; requires =jupyter-lsp=  |
-| =python-lsp-server=   | the Python language server                  |
+| Package           | Purpose                                    |
+|-------------------+--------------------------------------------|
+| =jupyter-lsp=       | adds the =/lsp/= endpoints to Jupyter        |
+| =jupyterlab-lsp=    | JupyterLab front end; requires =jupyter-lsp= |
+| =python-lsp-server= | the Python language server                 |
 
 =jupyterlab-lsp= installs no language server: alone, it gives the
 endpoints with nothing behind them.

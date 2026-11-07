@@ -9,13 +9,13 @@ redrawing the WHOLE notebook moves its fake cursors to the start of the
 buffer, where the next edit lands.  Measured with cursors on three lines
 of one cell:
 
-| While the cursors are active              | Result                        |
-|-------------------------------------------+-------------------------------|
-| output arrives in another cell            | edits land at every cursor    |
-| another cell is run, clearing its output  | edits land at every cursor    |
-| a cell is inserted                        | edits land at every cursor    |
-| a cell's type is changed (=C-c C-t=)      | cursors collapse to the start |
-| =M-x emjupy-re-render=                    | cursors collapse to the start |
+| While the cursors are active             | Result                        |
+|------------------------------------------+-------------------------------|
+| output arrives in another cell           | edits land at every cursor    |
+| another cell is run, clearing its output | edits land at every cursor    |
+| a cell is inserted                       | edits land at every cursor    |
+| a cell's type is changed (=C-c C-t=)       | cursors collapse to the start |
+| =M-x emjupy-re-render=                     | cursors collapse to the start |
 
 Rendering a markdown cell and undoing a structural change redraw the
 whole notebook too.  To edit across cells, =C-c '= opens every code cell
@@ -82,11 +82,3 @@ for the tunnel, with no terminal for a password: it needs a login
 without a prompt -- a key, in an agent if it has a passphrase.  One
 asking for a password fails, and emjupy says why and what to do.
 Handling a password, or reusing TRAMP's connection, is not done yet.
-
-* Emacs 30.1 or later
-
-Emacs 29 is not supported: see [[file:development.org][Building and development]].
-
-* Open issues
-
-Faults known but not yet fixed are kept as [[https://github.com/mathren/emjupy/issues][issues on GitHub]].

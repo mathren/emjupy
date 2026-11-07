@@ -20,11 +20,11 @@ socket with paths rewritten to the kernel's working directory, so
 completion, documentation and =M-.= into your own modules describe the
 machine the code runs on.
 
-| Kernel runs     | =jupyter-lsp= on the server | =M-.= into your modules |
-|-----------------+-----------------------------+-------------------------|
-| this machine    | either                      | works                   |
-| another machine | installed                   | works                   |
-| another machine | not installed               | no -- the fallback server here cannot see them |
+| Kernel runs     | =jupyter-lsp= on the server | =M-.= into your modules                          |
+|-----------------+---------------------------+------------------------------------------------|
+| this machine    | either                    | works                                          |
+| another machine | installed                 | works                                          |
+| another machine | not installed             | no -- the fallback server here cannot see them |
 
 ** Without =jupyter-lsp=, over SSH
 
@@ -98,13 +98,13 @@ time, by name.
 =RET= on a file in the server dashboard opens it, by what emjupy can
 address:
 
-| Condition                          | Result                     |
-|------------------------------------+----------------------------|
-| =emjupy-remote-root= set             | the file, writable         |
-| the address names a real host      | the file over TRAMP, writable |
-| server runs on this machine        | the file, writable         |
-| the server's root is known         | read-only copy over HTTP   |
-| none of the above                  | an error saying what to set |
+| Condition                     | Result                        |
+|-------------------------------+-------------------------------|
+| =emjupy-remote-root= set        | the file, writable            |
+| the address names a real host | the file over TRAMP, writable |
+| server runs on this machine   | the file, writable            |
+| the server's root is known    | read-only copy over HTTP      |
+| none of the above             | an error saying what to set   |
 
 The HTTP copy uses the Contents API, needing only a kernel to have
 reported where the server's files are (see [[*Where the server's files are][below]]); read-only, its header

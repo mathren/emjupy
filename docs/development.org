@@ -351,12 +351,12 @@ running server.  They catch what only a live server shows -- an image
 this Emacs cannot display, a WebSocket URL dropping its base path, a
 saved notebook no other tool opens.
 
-| Variable             | Meaning                                                     |
-|----------------------+-------------------------------------------------------------|
+| Variable           | Meaning                                                   |
+|--------------------+-----------------------------------------------------------|
 | =EMJUPY_TEST_URL=    | =host:port= of a running server (the LOCAL end of a tunnel) |
-| =EMJUPY_TEST_TOKEN=  | its token                                                   |
-| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test           |
-| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests                 |
+| =EMJUPY_TEST_TOKEN=  | its token                                                 |
+| =EMJUPY_TEST_ROOT=   | server root dir, for the nbformat-validation test         |
+| =EMJUPY_TEST_URL2=   | a SECOND server, for the multi-server tests               |
 | =EMJUPY_TEST_TOKEN2= | its token (defaults to =EMJUPY_TEST_TOKEN=)                 |
 
 For the *remote* path, point =EMJUPY_TEST_URL= at the local end of an ssh
