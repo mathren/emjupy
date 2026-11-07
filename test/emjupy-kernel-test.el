@@ -872,6 +872,8 @@ output."
          (ended nil))
     (puthash "req-old" adopted pending)
     (puthash "req-new" newer pending)
+    ;; heard working on: it ran, unseen -- not a run that never arrived
+    (puthash "req-old" t emjupy--requests-heard)
     (unwind-protect
         (cl-letf (((symbol-function 'emjupy--http-request)
                    (lambda (&rest _)
@@ -1187,6 +1189,8 @@ cells.  Quiet and idle, the runs end."
            (kernel (make-emjupy-kernel :id "k" :notebook nb :pending pending))
            (later nil) (ended nil))
       (puthash "m1" (aref (emjupy-notebook-cells nb) 0) pending)
+      ;; heard working on: it ran, unseen -- not a run that never arrived
+      (puthash "m1" t emjupy--requests-heard)
       (setf (emjupy-notebook-kernel nb) kernel
             (emjupy-notebook-server nb) (make-emjupy-server :base-url "127.0.0.1:1"))
       (cl-letf (((symbol-function 'emjupy--http-request)
@@ -1615,6 +1619,45 @@ it jumped up, then down."
       ;; nothing to keep: nothing waits
       (emjupy--mark-output-stale cell)
       (should-not (gethash cell emjupy--clear-before-next-output)))))
+
+
+(ert-deftest emjupy-test-a-run-never-heard-of-is-said-to-run-again ()
+  "A run kept across a dropped connection that the kernel was never heard
+working on may not have reached it -- sent as a laptop woke, the
+connection dead -- and is said so, naming the cell and the key that runs
+it again.  It was said to have ended while disconnected; the user waited."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code
+                                :source "import sys\nprint(1)"))
+      buf nb
+    (let* ((pending (make-hash-table :test 'equal))
+           (kernel (make-emjupy-kernel :id "k" :notebook nb :pending pending))
+           (said nil) (ended nil))
+      (setf (emjupy-notebook-path nb) "a.ipynb")
+      (puthash "lost" (aref (emjupy-notebook-cells nb) 0) pending)
+      (remhash "lost" emjupy--requests-heard)
+      (set-window-buffer (selected-window) buf)
+      (cl-letf (((symbol-function 'emjupy--http-request)
+                 (lambda (&rest _) (let ((h (make-hash-table :test 'equal)))
+                                     (puthash "execution_state" "idle" h) h)))
+                ((symbol-function 'emjupy--end-runs)
+                 (lambda (cells &rest _) (setq ended cells)))
+                ((symbol-function 'emjupy--mark-done) #'ignore)
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format fmt args) said))))
+        (emjupy--settle-adopted-runs kernel '("lost")))
+      (should-not ended)
+      (should-not (gethash "lost" pending))
+      (let ((text (seq-find (lambda (m) (string-search "may not have run" m))
+                            said)))
+        (should text)
+        (should (string-search "\"import sys\"" text))
+        (should (string-search "again" text))
+        (should (string-search
+                 (substitute-command-keys
+                  "\\<emjupy-mode-map>\\[emjupy-execute-cell-at-point]")
+                 text))))))
 
 (provide 'emjupy-kernel-test)
 

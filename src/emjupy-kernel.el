@@ -519,6 +519,16 @@ For emjupy's own questions -- \"where are you?\" -- not for user code."
 (defvar emjupy--request-halves (make-hash-table :test 'equal)
   "Requests for which one of execute_reply and the closing idle has come.")
 
+(defvar emjupy--requests-heard (make-hash-table :test 'equal)
+  "Requests the kernel has been heard working on: any message for them.
+One kept across a dropped connection and never heard from may not have
+reached the kernel -- sent as the connection died, a laptop just woken.")
+
+(defun emjupy--forget-request (id)
+  "Forget request ID: its halves seen, and that it was heard from."
+  (remhash id emjupy--request-halves)
+  (remhash id emjupy--requests-heard))
+
 (defun emjupy--request-half-seen (id part pending)
   "Note that PART of request ID has arrived; forget the request once both have.
 PART is `reply' for execute_reply and `idle' for the status that
@@ -528,7 +538,7 @@ forgotten only when both have come.  PENDING is the kernel's table of
 requests awaiting output."
   (let ((seen (gethash id emjupy--request-halves)))
     (if (and seen (not (eq seen part)))
-        (progn (remhash id emjupy--request-halves)
+        (progn (emjupy--forget-request id)
                (remhash id pending))
       (puthash id part emjupy--request-halves))))
 
@@ -686,6 +696,7 @@ kernels never cross-talk."
          (cell (progn (when kernel
                         (setf (emjupy-kernel-heard kernel) (float-time)))
                       (emjupy--ws-message-owner pending parent-id)))
+         (_heard (when cell (puthash parent-id t emjupy--requests-heard)))
          (internal (when parent-id (gethash parent-id
                                             emjupy--internal-requests))))
     ;; The connection hears the kernel's output: what was held goes.
@@ -1081,10 +1092,41 @@ is still folded where the box ends."
   "End CELLS in BUF, for the notebook called LABEL, and say WHY."
   (when (buffer-live-p buf)
     (dolist (cell cells) (emjupy--mark-done cell buf)))
-  (message "[emjupy] %s: %s%s." label why
-           (if cells (format "; %d running cell%s stopped" (length cells)
-                             (if (cdr cells) "s" ""))
-             "")))
+  (emjupy--say buf "[emjupy] %s: %s%s." label why
+               (if cells (format "; %d running cell%s stopped" (length cells)
+                                 (if (cdr cells) "s" ""))
+                 "")))
+
+(defun emjupy--end-unsent-runs (cells buf label)
+  "End CELLS in BUF, never heard of by the kernel; suggest running them again.
+For the notebook called LABEL.  Sent as the connection died -- a laptop
+just woken -- they did not reach the kernel; or queued there, behind a
+cell of another notebook on the same kernel, they ran unheard.  Which,
+nothing says: so \"may not have run\", and the key that runs them again.
+Said to have ended while disconnected, a user waited on them."
+  (when (buffer-live-p buf)
+    (dolist (cell cells) (emjupy--mark-done cell buf)))
+  (let ((first (car (split-string (string-trim
+                                   (or (emjupy-cell-source (car (last cells)))
+                                       ""))
+                                  "\n")))
+        (key (if (buffer-live-p buf)
+                 (with-current-buffer buf
+                   (substitute-command-keys
+                    "\\[emjupy-execute-cell-at-point]"))
+               "M-x emjupy-execute-cell-at-point")))
+    (emjupy--say buf (concat "[emjupy] %s: %s may not have run -- the "
+                             "connection dropped as %s sent or queued, "
+                             "and any output is lost; %s runs %s again.")
+                 label
+                 (if (cdr cells)
+                     (format "%d cells, the first \"%s\"," (length cells)
+                             (truncate-string-to-width first 30 nil nil "..."))
+                   (format "the cell \"%s\""
+                           (truncate-string-to-width first 30 nil nil "...")))
+                 (if (cdr cells) "they were" "it was")
+                 key
+                 (if (cdr cells) "each" "it"))))
 
 (defun emjupy--kernel-connection-closed (kernel label)
   "Note that KERNEL's connection closed, LABEL naming its notebook.
@@ -1112,7 +1154,7 @@ meanwhile to the same session."
      ((or (emjupy-kernel-closing kernel) (not emjupy-reconnect-window)
           (not (buffer-live-p buf)) (not (emjupy-kernel-id kernel)))
       (when (hash-table-p pending)
-        (maphash (lambda (id _) (remhash id emjupy--request-halves)) pending)
+        (maphash (lambda (id _) (emjupy--forget-request id)) pending)
         (clrhash pending))
       (emjupy--end-runs cells buf label "kernel connection closed"))
      (t
@@ -1172,7 +1214,7 @@ ended as a closed connection ends them."
           (let ((cells nil))
             (when emjupy--kept-runs
               (maphash (lambda (id cell) (push cell cells)
-                         (remhash id emjupy--request-halves))
+                         (emjupy--forget-request id))
                        (cdr emjupy--kept-runs)))
             (setq emjupy--kept-runs nil)
             (when emjupy--runs-waiting
@@ -1242,13 +1284,21 @@ and is asked again later."
                      ;; unknown: the cells stay running, as they may be
                      (emjupy-http-error nil))))
         (when (equal state "idle")
-          (let ((cells nil))
+          ;; Heard working on: it ran, unseen.  Never heard of: it may not
+          ;; have reached the kernel -- to be run again, not taken as done.
+          (let ((ran nil) (unsent nil))
             (dolist (id left)
-              (push (gethash id pending) cells)
+              (if (gethash id emjupy--requests-heard)
+                  (push (gethash id pending) ran)
+                (push (gethash id pending) unsent))
               (remhash id pending)
-              (remhash id emjupy--request-halves))
-            (emjupy--end-runs (delete-dups cells) buf (emjupy-notebook-path nb)
-                              "a run ended while the connection was down, its output perhaps incomplete")))))))
+              (emjupy--forget-request id))
+            (when ran
+              (emjupy--end-runs (delete-dups ran) buf (emjupy-notebook-path nb)
+                                "a run ended while the connection was down, its output perhaps incomplete"))
+            (when unsent
+              (emjupy--end-unsent-runs (delete-dups unsent) buf
+                                       (emjupy-notebook-path nb)))))))))
 
 (defun emjupy--ws-session-id (notebook kernel-id)
   "Return the session id NOTEBOOK's connections to KERNEL-ID go under.
@@ -1294,7 +1344,7 @@ the notebook called LABEL is left without a kernel, for a new one."
     (let ((cells nil))
       (when emjupy--kept-runs
         (maphash (lambda (id cell) (push cell cells)
-                   (remhash id emjupy--request-halves))
+                   (emjupy--forget-request id))
                  (cdr emjupy--kept-runs)))
       (setq emjupy--kept-runs nil)
       (when emjupy--runs-waiting
@@ -1308,7 +1358,7 @@ the notebook called LABEL is left without a kernel, for a new one."
           (let ((pending (emjupy-kernel-pending kernel)))
             (when (hash-table-p pending)
               (maphash (lambda (id cell) (push cell cells)
-                         (remhash id emjupy--request-halves))
+                         (emjupy--forget-request id))
                        pending)
               (clrhash pending)))
           (emjupy--disconnect-kernel nb)
@@ -1428,7 +1478,7 @@ the caller bound, read here, unseen where it was bound."
           (maphash (lambda (id c) (when (eq c cell) (push id earlier))) pending)
           (dolist (id earlier)
             (remhash id pending)
-            (remhash id emjupy--request-halves))
+            (emjupy--forget-request id))
           (puthash msg-id cell pending))
         (emjupy--ws-send json-payload kernel)
         ;; Its outputs from now on are the user's own, and drawn.

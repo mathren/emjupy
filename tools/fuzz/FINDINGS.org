@@ -38,7 +38,7 @@ seed again: 164 shown, none of =url='s, none of "connected" about a
 notebook not in view; the tunnel's reopening shown for the notebook in
 view's server only.
 
-** Open: a cell run just after a laptop wakes may not run
+** In part: a cell run just after a laptop wakes may not run
 
 - *Seen*: after the suspend -- the daemon frozen, the network changed --
   every notebook reconnected within 9 s, but none ran the cell run at
@@ -52,10 +52,18 @@ view's server only.
   as having run unseen -- it never reached the kernel.  Why two stayed
   running is not yet known: settling is put off while the kernel was
   heard from in the last 3 s.
-- *Not decided*: telling a request the kernel never heard from one it
-  ran unseen -- nothing at all heard for it -- and then either sending it
-  again or saying it did not run.  Sending it again could run a cell
-  twice, which is worse than not running it: to be decided with care.
+- *Done*: a run kept across the drop that the kernel was never heard
+  working on is ended and said so, naming the cell and the key that runs
+  it again -- "the cell \"import sys\" may not have run -- the connection
+  dropped as it was sent or queued, and any output is lost; C-c C-e runs
+  it again".  Not sent again: it may have run, which would run it twice.
+  "May": the same session found one queued behind another notebook's
+  cell on a shared kernel -- reached, run unheard, the server's replay
+  of what it missed going to the other notebook's connection only.
+  Test: =emjupy-test-a-run-never-heard-of-is-said-to-run-again=.
+- *Still open*: two notebooks, on kernels of their own, kept their cell
+  running past 150 s, nothing said: settling put off, or the kernel not
+  idle -- to find out.
 - *Replays*: =daemon-fuzz.sh 4242 120=, the suspend at step 105.
 
 * 2026-11: after opening stopped waiting, and a review
