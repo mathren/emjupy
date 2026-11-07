@@ -568,6 +568,18 @@ Return its process; what ssh says goes to its buffer."
                   :noquery t
                   :command (emjupy--tunnel-command route port remote-port))))
 
+(defun emjupy--server-buffer (server)
+  "Return a notebook buffer on SERVER, one in view if any, or nil.
+For what is said of a server, not a notebook: aloud if any notebook on
+it is in view -- it was, or not, as the current buffer happened to be."
+  (let ((on-it (seq-filter
+                (lambda (b)
+                  (let ((nb (buffer-local-value 'emjupy--buffer-notebook b)))
+                    (and nb (eq (emjupy-notebook-server nb) server))))
+                (buffer-list))))
+    (or (seq-find (lambda (b) (get-buffer-window b 'visible)) on-it)
+        (car on-it))))
+
 (defun emjupy--reopen-tunnel (server)
   "Reopen the tunnel SERVER is reached by, on the same port, if it died.
 Not waited for: the reconnect calling this finds it up on a later try.
@@ -579,7 +591,8 @@ A server not reached by a tunnel of emjupy's is left alone."
                                (number-to-string (plist-get tn :port)))))
                  emjupy--remote-tunnels)))
     (when (and tunnel (not (process-live-p (plist-get tunnel :process))))
-      (emjupy--say nil "[emjupy] Reopening the tunnel to %s..."
+      (emjupy--say (emjupy--server-buffer server)
+                   "[emjupy] Reopening the tunnel to %s..."
                (plist-get (plist-get tunnel :route) :host))
       (setf (plist-get tunnel :process)
             (emjupy--start-tunnel (plist-get tunnel :route)

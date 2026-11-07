@@ -711,6 +711,28 @@ once, as it said why.  Each kind had its own wait."
                    #'ignore (lambda (why) (setq failed why))))
         (should (equal failed "it said: no"))))))
 
+
+(ert-deftest emjupy-test-a-server-speaks-through-a-notebook-in-view ()
+  "What is said of a server goes through a notebook on it, one in view if
+any: aloud then, else only to *Messages*.  Through the current buffer
+instead, the same tunnel's reopening was shown or not by chance."
+  (let* ((server (make-emjupy-server :base-url "127.0.0.1:5558" :token "t"))
+         (other (make-emjupy-server :base-url "127.0.0.1:5559" :token "t"))
+         (a (generate-new-buffer "nb a")) (b (generate-new-buffer "nb b")))
+    (unwind-protect
+        (progn
+          (dolist (buf (list a b))
+            (with-current-buffer buf
+              (setq-local emjupy--buffer-notebook
+                          (make-emjupy-notebook :server server :buffer buf))))
+          (with-temp-buffer
+            (set-window-buffer (selected-window) (current-buffer))
+            (should (memq (emjupy--server-buffer server) (list a b))))
+          (set-window-buffer (selected-window) b)
+          (should (eq (emjupy--server-buffer server) b))
+          (should-not (emjupy--server-buffer other)))
+      (kill-buffer a) (kill-buffer b))))
+
 (provide 'emjupy-tramp-open-test)
 
 ;;; emjupy-tramp-open-test.el ends here

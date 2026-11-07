@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write fresh fuzzing notebooks: make-notebooks.py DIR KIND.
+"""Write fresh fuzzing notebooks: make-notebooks.py DIR KIND [NAME].
 
 KIND is sci (numpy, a matplotlib figure), plain (the standard library
 only) or py311 (numpy below 2).  A fuzz run saves over them: make them
@@ -27,6 +27,9 @@ def notebook(kind):
         cells += [cell("code", "import numpy as np\nprint(np.__version__, np.arange(4).sum())")]
     else:
         cells += [cell("code", "import json\nprint(json.dumps({'total': total}))")]
+    # A cell running a few seconds, printing as it goes: notebooks run at
+    # once, and a connection lost under it.
+    cells.append(cell("code", "import time\nfor i in range(6):\n    print('tick', i, flush=True)\n    time.sleep(0.5)"))
     cells.append(cell("code", "print('done')"))
     return {"cells": cells, "nbformat": 4, "nbformat_minor": 5,
             "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}}}
@@ -34,7 +37,8 @@ def notebook(kind):
 if __name__ == "__main__":
     directory, kind = sys.argv[1], sys.argv[2]
     os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, {"sci": "a", "plain": "b", "py311": "c"}[kind] + ".ipynb")
+    name = sys.argv[3] if len(sys.argv) > 3 else {"sci": "a", "plain": "b", "py311": "c"}[kind]
+    path = os.path.join(directory, name + ".ipynb")
     with open(path, "w") as f:
         json.dump(notebook(kind), f, indent=1)
     print(path)

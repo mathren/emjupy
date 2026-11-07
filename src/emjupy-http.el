@@ -77,6 +77,7 @@ Raw, not through `emjupy--http-request': these answer with HTML."
                             (when (and token (not (string-empty-p token)))
                               `(("Authorization" .
                                  ,(format "token %s" token)))))
+                           (url-show-status nil)
                            (buffer (url-retrieve-synchronously
                                     (concat root path) t nil 5)))
                       (when buffer
@@ -303,6 +304,9 @@ any refusal is."
          ;; refuse the pair.
          (url-cookie-storage nil)
          (url-cookie-secure-storage nil)
+         ;; Its "Contacting host" for every request, in the background
+         ;; too: seventeen in one session of the fuzz test.
+         (url-show-status nil)
          (url-request-extra-headers (emjupy--http-headers server))
          (full-url (emjupy--http-url server method path)))
     (if callback

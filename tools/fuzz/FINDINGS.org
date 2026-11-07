@@ -4,6 +4,60 @@ What =emjupy-fuzz.el= found, newest first.  Each: what a user saw, the
 cause, the fix and its test, and how it replays.  The testbed and how to
 run: [[file:README.org][README.org]].
 
+* 2026-11: one daemon, notebooks together, the network lost
+
+=daemon-fuzz.sh=, seed 4242: four notebooks -- two sharing a folder,
+an environment and, attached, a kernel -- slow cells run in all at
+once, and the network lost three ways.  Emacs 30.1, Eglot on, two hops.
+
+** Timings
+
+- Opening the four: 26 s.  A step's =emacsclient= call: 0.29 s median,
+  0.45 s at the 90th percentile -- the driver's own pause included.
+- Completion: 2.8 s on average, 4.8 s at worst, the first ones -- the
+  remote =pylsp= cold.  Eglot's completion waits: Emacs held as long.
+- Outage, 25 s: steps went on at 0.2 to 0.5 s, Emacs answering; every
+  notebook ran a cell 1.1 s after.  Network change: 8.2 s.
+
+** Fixed: messages about notebooks not in view
+
+186 messages shown, 42 of them about a notebook not in view.  Most are
+the opening of the others, which one asks for.  Not so:
+
+- =url='s "Contacting host: 127.0.0.1:PORT", 17 times, for emjupy's
+  requests in the background: =url-show-status= is nil for them now.
+- "NB connected to kernel ID", for every notebook at every reconnect:
+  through =emjupy--say= now, aloud only for a notebook in view.
+- "Reopening the tunnel": shown or not as the current buffer happened to
+  be -- now aloud if a notebook on that server is in view
+  (=emjupy--server-buffer=).
+
+Tests: =emjupy-test-requests-do-not-announce-themselves=,
+=emjupy-test-a-server-speaks-through-a-notebook-in-view=.  The same
+seed again: 164 shown, none of =url='s, none of "connected" about a
+notebook not in view; the tunnel's reopening shown for the notebook in
+view's server only.
+
+** Open: a cell run just after a laptop wakes may not run
+
+- *Seen*: after the suspend -- the daemon frozen, the network changed --
+  every notebook reconnected within 9 s, but none ran the cell run at
+  once on waking, in 150 s.  Two said "a run ended while the connection
+  was down, its output perhaps incomplete; 1 running cell stopped"; the
+  other two kept it running until the kernel was restarted.
+- *Cause, as far as seen*: run on waking, before the dead connection is
+  noticed, the request goes into a socket nobody hears.  The cell is
+  kept across the reconnect, as a run in progress is;
+  =emjupy--settle-adopted-runs= then finds the kernel idle and ends it
+  as having run unseen -- it never reached the kernel.  Why two stayed
+  running is not yet known: settling is put off while the kernel was
+  heard from in the last 3 s.
+- *Not decided*: telling a request the kernel never heard from one it
+  ran unseen -- nothing at all heard for it -- and then either sending it
+  again or saying it did not run.  Sending it again could run a cell
+  twice, which is worse than not running it: to be decided with care.
+- *Replays*: =daemon-fuzz.sh 4242 120=, the suspend at step 105.
+
 * 2026-11: after opening stopped waiting, and a review
 
 Seeds 7, 8, 9, 10, 11, 99, 2026, 31415; 200 steps each over the same

@@ -135,6 +135,10 @@ a failure replays; the seeds used: 4711, 90210, 31337, 1, 2, 3, 42, 1234,
 - Replay a failure with instrumentation loaded before the driver
   (`-l instr.el -l tools/fuzz/emjupy-fuzz.el`): a backtrace, taken by
   `handler-bind` around the command, found the completion bug at once.
+- Concurrency and disconnection: `tools/fuzz/daemon-fuzz.sh`, the same
+  session in one daemon -- notebooks together, a shared kernel, slow
+  cells at once, an outage, a network change, a laptop suspended -- each
+  emacsclient call timed, every message logged with the buffer in view.
 - Log each finding in `tools/fuzz/FINDINGS.org`: what a user saw, the
   cause, the fix and its test, how it replays.  The long runs go in the
   background, polled: 200 steps over three notebooks take 90 s.

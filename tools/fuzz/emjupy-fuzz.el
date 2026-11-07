@@ -19,6 +19,8 @@
 ;;   EMJUPY_FUZZ_EGLOT      0 for no language support (on)
 ;;   EMJUPY_FUZZ_LOG        where the log goes (/tmp/emjupy-fuzz.log)
 ;;   EMJUPY_FUZZ_KEEP_GOING non-empty: go on after a failure
+;;   EMJUPY_FUZZ_LIBRARY    non-empty: load the functions only -- see
+;;                          emjupy-fuzz-daemon.el
 ;;
 ;;   emacs -batch -Q -L src -L WEBSOCKET -l tools/fuzz/emjupy-fuzz.el
 ;;
@@ -384,14 +386,23 @@ on, the nearest one from an output or a separator."
 
 ;;;; The session
 
-(defun fz-main ()
-  "Run the session; exit 1 if anything failed."
-  (write-region "" nil fz-log-file nil 'silent)
-  (setq emjupy-language-support
-        (not (equal (fz-env "EMJUPY_FUZZ_EGLOT" "1") "0")))
-  (fz-log "seed %d, %d steps, Emacs %s, language support %s"
-          fz-seed fz-steps emacs-version emjupy-language-support)
-  (fz-watch-blocking)
+(defun fz-one-step (step)
+  "Do STEP, a random action as a user would, then check every notebook."
+  (let* ((action (fz-weighted fz-actions))
+         (where (buffer-name))
+         (t0 (float-time)))
+    (setq fz-step-name (format "step %d %s" step action))
+    (let ((how (fz-act action)))
+      (fz-pump (/ (+ 5 (fz-random 40)) 100.0))
+      (push (format "%d %s %s" step action how) fz-history)
+      (fz-log "step %d %s: %s, %s (%.2f s)" step where action how
+              (- (float-time) t0)))
+    (dolist (err (fz-new-async-errors))
+      (fz-fail "step %d: %s" step err))
+    (dolist (nb fz-notebooks) (fz-check (nth 2 nb)))))
+
+(defun fz-open-all ()
+  "Open the notebooks EMJUPY_FUZZ_NOTEBOOKS names, each timed."
   (dolist (spec (split-string (fz-env "EMJUPY_FUZZ_NOTEBOOKS" "")))
     (pcase-let ((`(,file ,env) (split-string spec "=")))
       (let* ((t0 (float-time))
@@ -405,24 +416,23 @@ on, the nearest one from an output or a separator."
           (push (list file env buffer) fz-notebooks)))))
   (setq fz-notebooks (nreverse fz-notebooks))
   (unless fz-notebooks
-    (fz-fail "no notebook opened: set EMJUPY_FUZZ_NOTEBOOKS"))
+    (fz-fail "no notebook opened: set EMJUPY_FUZZ_NOTEBOOKS")))
+
+(defun fz-main ()
+  "Run the session; exit 1 if anything failed."
+  (write-region "" nil fz-log-file nil 'silent)
+  (setq emjupy-language-support
+        (not (equal (fz-env "EMJUPY_FUZZ_EGLOT" "1") "0")))
+  (fz-log "seed %d, %d steps, Emacs %s, language support %s"
+          fz-seed fz-steps emacs-version emjupy-language-support)
+  (fz-watch-blocking)
+  (fz-open-all)
   (fz-new-async-errors)
   (when fz-notebooks
     (fz-show (nth 2 (car fz-notebooks)))
     (cl-loop for step from 1 to fz-steps
              while (or fz-keep-going (null fz-failures))
-             do (let* ((action (fz-weighted fz-actions))
-                       (where (buffer-name))
-                       (t0 (float-time)))
-                  (setq fz-step-name (format "step %d %s" step action))
-                  (let ((how (fz-act action)))
-                    (fz-pump (/ (+ 5 (fz-random 40)) 100.0))
-                    (push (format "%d %s %s" step action how) fz-history)
-                    (fz-log "step %d %s: %s, %s (%.2f s)" step where action how
-                            (- (float-time) t0)))
-                  (dolist (err (fz-new-async-errors))
-                    (fz-fail "step %d: %s" step err))
-                  (dolist (nb fz-notebooks) (fz-check (nth 2 nb)))))
+             do (fz-one-step step))
     (setq fz-step-name "the end")
     (when (or fz-keep-going (null fz-failures))
       (dolist (nb fz-notebooks)
@@ -439,6 +449,9 @@ on, the nearest one from an output or a separator."
           (length fz-problems))
   (kill-emacs (if fz-failures 1 0)))
 
-(fz-main)
+(provide 'emjupy-fuzz)
+
+;; As a library -- emjupy-fuzz-daemon.el, in a daemon -- nothing is run.
+(unless (fz-env "EMJUPY_FUZZ_LIBRARY" nil) (fz-main))
 
 ;;; emjupy-fuzz.el ends here

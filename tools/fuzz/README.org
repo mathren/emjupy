@@ -75,6 +75,38 @@ run of 200 steps over three notebooks takes about a minute and a half;
 the seeds used so far: 4711, 90210, 31337, 1, 2, 3, 42, 1234, 7, 8, 9,
 10, 11, 99, 2026, 31415.
 
+* In one daemon, the network lost under it
+
+=daemon-fuzz.sh= runs the same session in one Emacs daemon, as one
+works: a graphical frame on a virtual display, the notebooks open in it
+together, one step at a time sent with =emacsclient=.  Between steps the
+daemon is idle: output, reconnections and timers run as they do between
+keys.  It also
+
+- has two notebooks share a folder and an environment, so one server,
+  and attaches the second to the first's kernel;
+- starts a slow cell in every notebook at once, three times;
+- loses the network three ways: an outage, the latency proxy frozen
+  25 s while work goes on; a network change, every SSH connection
+  broken; a laptop suspended, the daemon frozen while the network
+  changes -- and after each, runs a cell in every notebook and times
+  how long until all have answered.
+
+Run as root, from the repository, the testbed up -- it pauses and
+restarts the proxy and the daemon:
+
+#+begin_src bash
+H='/ssh:bhost|ssh:rbox:/home/remote'
+export EMJUPY_FUZZ_NOTEBOOKS="$H/proj-sci/a.ipynb=/home/remote/envs/sci $H/proj-sci/a2.ipynb=/home/remote/envs/sci $H/proj-plain/b.ipynb=/home/remote/envs/plain $H/proj-311/c.ipynb=/home/remote/envs/py311"
+tools/fuzz/daemon-fuzz.sh 4242 120
+#+end_src
+
+In =/tmp/fzlog=: =daemon-SEED.log=, the session; =daemon-SEED.times=,
+each =emacsclient= call's seconds -- how long Emacs took to answer -- and
+each recovery; =daemon-SEED.messages=, every message, timed, with the
+buffer in view and whether it was shown: what reached the user about a
+notebook not in view is there to count.
+
 * Reading a run
 
 - =FAILURE=: emjupy's, or the driver's -- check which before fixing.

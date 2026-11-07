@@ -584,6 +584,19 @@ One opening asked three times, a round trip each."
       (should (emjupy--server-reachable-p server))
       (should (= asked 3)))))
 
+
+(ert-deftest emjupy-test-requests-do-not-announce-themselves ()
+  "emjupy's requests leave url's \"Contacting host\" out: in the
+background too, it was shown -- seventeen times in one fuzz session."
+  (let ((status 'unset))
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _) (setq status url-show-status) nil)))
+      (ignore-errors
+        (emjupy--http-request "GET" (make-emjupy-server
+                                     :base-url "127.0.0.1:5560" :token "t")
+                              "/api/status")))
+    (should (null status))))
+
 (provide 'emjupy-http-test)
 
 ;;; emjupy-http-test.el ends here

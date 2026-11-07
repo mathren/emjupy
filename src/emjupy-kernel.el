@@ -781,8 +781,11 @@ several notebooks -- from several servers -- stay live at once."
                       (emjupy--kernel-told kernel)
                       (unless (eq (websocket-client-data ws) 'refused)
                         (emjupy--begin-handshake kernel)
-                        (message "[emjupy] %s connected to kernel %s" label
-                                 kernel-id)))
+                        ;; on every reconnect too: said of a notebook not
+                        ;; in view only to *Messages*
+                        (emjupy--say (emjupy-notebook-buffer notebook)
+                                     "[emjupy] %s connected to kernel %s"
+                                     label kernel-id)))
            :on-close (lambda (_ws)
                        (emjupy--kernel-connection-closed kernel label))
            :on-error (lambda (ws type err)
