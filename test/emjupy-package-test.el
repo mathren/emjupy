@@ -358,6 +358,21 @@ reference had drifted once, the keymap regrouped without it."
                              key (cddr row)))
             (should (member (cdr row) bound))))))))
 
+
+(ert-deftest emjupy-test-test-files-are-not-byte-compiled ()
+  "Every test file says `no-byte-compile: t' on its first line.
+Installed from the repository, the package's directory is compiled whole,
+with only src/ on the load path: a test file without the mark fails to
+find the test helpers.  Two did, in the maintainer's Emacs."
+  (let ((dir (file-name-directory (or load-file-name buffer-file-name
+                                      (locate-library "emjupy-test-helpers")))))
+    (dolist (file (directory-files dir t "\\.el\\'"))
+      (with-temp-buffer
+        (insert-file-contents file nil 0 300)
+        (should (string-match-p "no-byte-compile: t"
+                                (buffer-substring (point-min)
+                                                  (line-end-position))))))))
+
 (provide 'emjupy-package-test)
 
 ;;; emjupy-package-test.el ends here
