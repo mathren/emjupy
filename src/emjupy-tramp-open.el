@@ -43,8 +43,8 @@
 
 (defun emjupy--environment-yml-name (dir)
   "Return the `name:' of the conda environment file in DIR, or nil.
-That is environment.yml, or environment.yaml.  On another machine read
-with one command: tested and read through TRAMP, three round trips."
+That is environment.yml, or environment.yaml.  On another machine, read
+it with one command rather than three TRAMP round trips."
   (if (file-remote-p dir)
       (with-temp-buffer
         (let ((default-directory dir))
@@ -72,10 +72,10 @@ with one command: tested and read through TRAMP, three round trips."
     (match-string 1)))
 
 (defun emjupy--find-conda (remote)
-  "Return conda, mamba or micromamba, the first there is, or nil.
-On the machine of `default-directory'; REMOTE when that is another.
-There, one command asks: `executable-find' over TRAMP tests each folder
-of the PATH for each name, a round trip each -- 21 on a plain machine."
+  "Return conda, mamba or micromamba, the first found, or nil.
+Look on the machine of `default-directory'; REMOTE means that is another
+machine.  There, ask with one command: `executable-find' over TRAMP
+would test each PATH folder for each name, a round trip each."
   (if (not remote)
       (or (executable-find "conda") (executable-find "mamba")
           (executable-find "micromamba"))
@@ -94,9 +94,8 @@ of the PATH for each name, a round trip each -- 21 on a plain machine."
 
 (defun emjupy--conda-environments (&optional where)
   "Return conda's environments on WHERE's machine, as name and directory.
-See `emjupy--ask-conda-environments'.  A remote machine's, asked once:
-a round trip or two, at every opening, for an answer that rarely
-changes."
+See `emjupy--ask-conda-environments'.  A remote machine's are asked once
+per session, since the answer rarely changes."
   (let ((machine (file-remote-p (or where temporary-file-directory))))
     (if (not machine)
         (emjupy--ask-conda-environments where)
@@ -107,8 +106,8 @@ changes."
 
 (defun emjupy--ask-conda-environments (&optional where)
   "Return conda's environments as an alist of name and directory, or nil.
-nil when there is no conda, mamba or micromamba to ask.  Asked on the
-machine of WHERE, a directory -- one through TRAMP asks the remote."
+Return nil when there is no conda, mamba or micromamba.  Ask on the
+machine of WHERE, a directory, which may be remote through TRAMP."
   (let* ((default-directory (or where temporary-file-directory))
          (remote (and (file-remote-p default-directory) t))
          (conda (emjupy--find-conda remote)))
@@ -117,9 +116,9 @@ machine of WHERE, a directory -- one through TRAMP asks the remote."
         (when (eq 0 (process-file (or (file-remote-p conda 'localname) conda)
                                   nil '(t nil) nil "env" "list" "--json"))
           (goto-char (point-min))
-          ;; Output that is not JSON -- a warning first, an old conda -- is
-          ;; no list of environments: none are offered, and a name or a
-          ;; path can still be typed.
+          ;; Output that is not JSON, such as a leading warning or an old conda,
+          ;; is not a list of environments: offer none; a name or a path can
+          ;; still be typed.
           (let ((envs (condition-case nil
                           (gethash "envs"
                                    (json-parse-buffer :object-type 'hash-table))
@@ -162,9 +161,9 @@ nil remembers them for the session only."
   emjupy--environments)
 
 (defun emjupy--environment-key (dir)
-  "Return the name DIR is remembered by: its machine's, not its route's.
-user@host:path for a remote one -- TRAMP shortens a route of hops once
-it knows it, so the same folder is named two ways; DIR expanded here."
+  "Return the key DIR is remembered by: its machine, not its route.
+For a remote DIR, user@host:path: TRAMP shortens a route of hops once it
+knows it, so one folder can have two names.  A local DIR is expanded."
   (if (file-remote-p dir)
       (format "%s@%s:%s" (or (file-remote-p dir 'user) "")
               (file-remote-p dir 'host) (file-remote-p dir 'localname))
@@ -186,7 +185,7 @@ it knows it, so the same folder is named two ways; DIR expanded here."
           (prin1 emjupy--environments (current-buffer)))))))
 
 (defun emjupy--forget-environments (everything)
-  "Forget the environment remembered for each folder, when EVERYTHING."
+  "Forget the environment remembered for each folder, if EVERYTHING."
   (when everything
     (setq emjupy--environments nil)
     (when emjupy-environments-file
@@ -197,11 +196,10 @@ it knows it, so the same folder is named two ways; DIR expanded here."
 (emjupy--add-forgetter #'emjupy--forget-environments)
 
 (defun emjupy--chosen-environment-jupyter (dir choose)
-  "Return the jupyter of DIR's environment: as chosen last there, or asked.
-Asked the first time, or with CHOOSE, the last offered as the default;
-remembered once found.  One remembered and gone is forgotten, said, and
-asked for.  Asked at every opening, the question cost the user a
-keystroke and the remote its conda and environment.yml lookups."
+  "Return the jupyter of DIR's environment, as last chosen there, or ask.
+Ask the first time, or with CHOOSE, offering the last choice as the
+default, and remember the answer.  If a remembered environment is gone,
+forget it, say so, and ask again."
   (let ((known (and (not choose)
                     (cdr (assoc (emjupy--environment-key dir)
                                 (emjupy--environments))))))
@@ -221,7 +219,7 @@ keystroke and the remote its conda and environment.yml lookups."
 
 (defun emjupy--read-environment (dir)
   "Ask for the Python environment to run a notebook in DIR with.
-Offered first: the environment named in an environment.yml beside it."
+Offer first the environment that an environment.yml next to it names."
   (let* ((named (emjupy--environment-yml-name dir))
          (envs (emjupy--conda-environments dir)))
     (completing-read
@@ -229,10 +227,9 @@ Offered first: the environment named in an environment.yml beside it."
      (mapcar #'car envs) nil nil nil 'emjupy--environment-history named)))
 
 (defun emjupy--environment-directory (env remote)
-  "The directory ENV names, on the machine of `default-directory'.
-REMOTE when that machine is not this one: an absolute name, or one from
-the home directory, is then that machine's, not this one's -- expanded
-here, a venv there was looked for on this machine, and not found."
+  "Return the directory ENV names, on the machine of `default-directory'.
+REMOTE means that machine is not this one; an absolute name, or one from
+the home directory, then names a directory there, not here."
   (if (and remote (file-name-absolute-p env))
       (concat (file-remote-p default-directory) env)
     (expand-file-name env)))
@@ -243,12 +240,13 @@ Asked over TRAMP, each a round trip or two at every opening.")
 
 (defun emjupy--environment-jupyter (env &optional where)
   "Return the `jupyter' program of the environment ENV, on WHERE's machine.
-See `emjupy--find-environment-jupyter'; on a remote machine, found once."
+See `emjupy--find-environment-jupyter'.  On a remote machine, look it up
+once per session."
   (let* ((default-directory (or where default-directory))
          (machine (file-remote-p default-directory))
          (key (list machine env)))
     (if (not machine)
-        ;; Here a look is cheap, and an environment may change under it.
+        ;; Locally, look every time: it is cheap, and an environment may change.
         (emjupy--find-environment-jupyter env where)
       (or (gethash key emjupy--environment-jupyters)
           (puthash key (emjupy--find-environment-jupyter env where)
@@ -256,9 +254,10 @@ See `emjupy--find-environment-jupyter'; on a remote machine, found once."
 
 (defun emjupy--find-environment-jupyter (env &optional where)
   "Return the `jupyter' program of the environment ENV.
-ENV is a conda environment's name, an environment's directory -- a venv
-or a conda prefix -- or empty for the one first on the PATH.  Looked
-for on the machine of WHERE, a directory, and named as it names it."
+ENV is a conda environment's name, an environment's directory (a venv
+or a conda prefix), or empty for the one first on the PATH.  Look on
+the machine of WHERE, a directory, and return the name as it is written
+there."
   (let* ((default-directory (or where default-directory))
          (remote (and (file-remote-p default-directory) t))
          (here (lambda (path) (or (file-remote-p path 'localname) path)))
@@ -293,11 +292,11 @@ for on the machine of WHERE, a directory, and named as it names it."
       (delete-process probe))))
 
 (defun emjupy--start-local-server (dir jupyter)
-  "Return a Jupyter server serving DIR, run by JUPYTER, started if need be.
-One already started for DIR with the same JUPYTER is used again.  It
-listens on this machine only, on a free port, with a token of its own,
-and is stopped when the last notebook it serves is closed.  Not waited
-for: `emjupy--server-ready' does, or not."
+  "Return a Jupyter server serving DIR, run by JUPYTER, started if needed.
+Reuse one already started for DIR with the same JUPYTER.  It listens on
+this machine only, on a free port, with a token of its own, and stops
+when the last notebook it serves is closed.  This does not wait for the
+server to answer; `emjupy--server-ready' does."
   (or (cl-loop for s in emjupy--local-servers
                when (and (equal (plist-get s :dir) dir)
                          (equal (plist-get s :jupyter) jupyter)
@@ -387,9 +386,8 @@ Each a plist of :key, naming the route and the remote port; :process;
 
 (defun emjupy--tramp-chain (file)
   "Return the machines on TRAMP's way to FILE, its own machine last.
-Asked of TRAMP, not read from FILE's name: once TRAMP has gone through a
-hop it names the file without it, and remembers the way: read from the
-name, the hop -- the bastion -- would be lost."
+Ask TRAMP rather than read FILE's name: once TRAMP has gone through a
+hop, it names the file without it, so the name alone would lose the hop."
   (tramp-compute-multi-hops (tramp-dissect-file-name file)))
 
 (defun emjupy--tramp-address (v &optional for-ssh)
@@ -520,8 +518,8 @@ of them again finds it, and its kernels, as they were."
 
 (defun emjupy--open-tunnel (route remote-port)
   "Return a live tunnel's local port to REMOTE-PORT along ROUTE.
-One already open is used again.  A login that wanted a password gets a
-message saying so: they are not handled yet."
+Reuse one already open.  If the login needs a password, say so:
+passwords are not supported yet."
   (let ((key (format "%S:%d" route remote-port)))
     (or (cl-loop for tunnel in emjupy--remote-tunnels
                  when (and (equal (plist-get tunnel :key) key)
@@ -581,8 +579,8 @@ notebook on that server is visible."
 
 (defun emjupy--reopen-tunnel (server)
   "Reopen the tunnel SERVER is reached by, on the same port, if it died.
-Not waited for: the reconnect calling this finds it up on a later try.
-A server not reached by a tunnel of emjupy's is left alone."
+Do not wait: the reconnect calling this finds it up on a later try.
+Leave alone a server not reached through one of emjupy's tunnels."
   (let ((tunnel (cl-find-if
                  (lambda (tn)
                    (and (equal (emjupy-server-host server) "127.0.0.1")
@@ -615,10 +613,10 @@ The server itself, on the other machine, keeps running."
 
 (defun emjupy--known-remote-server (dir jupyter route)
   "Return a server this Emacs reaches, on ROUTE's machine, serving DIR.
-In JUPYTER's environment, its root DIR or a folder above it, and
-answering, through its tunnel: as `emjupy--remote-server-for' returns
-one.  Asking the machine, `jupyter server list' starts a Python and
-imports Jupyter -- seconds, for a server opened a moment ago."
+It runs in JUPYTER's environment, serves DIR or a folder above it, and
+answers through its tunnel, as `emjupy--remote-server-for' returns one.
+Asking the machine instead runs `jupyter server list', which starts
+Python and imports Jupyter: seconds, for a server opened a moment ago."
   (cl-loop for tn in emjupy--remote-tunnels
            for server = (plist-get tn :server)
            for root = (and server (emjupy-server-files-root server))
@@ -635,16 +633,15 @@ imports Jupyter -- seconds, for a server opened a moment ago."
                                    (or (file-remote-p root 'localname) root)))))
 
 (defun emjupy--server-list-command (jupyter)
-  "Return a shell command printing the running servers, as JUPYTER's list.
-The runtime files the list is made of, one JSON line for each server
-whose process is alive, and a Jupyter's -- `jupyter server list' starts
-a Python and imports Jupyter for it, a second or more.  A Jupyter's: a
-server gone leaves its file, and after a restart its number is soon
-another process's -- TRAMP's own shell, once -- which `kill -0' took for
-it; opening then waited on a port nothing served, and failed.  Without
-`ps', alive is all that is asked.  No runtime file where Jupyter puts
-them on Linux or macOS, or where JUPYTER_RUNTIME_DIR says: then
-JUPYTER's own list."
+  "Return a shell command printing the running servers, as JUPYTER lists them.
+Read the runtime files the list is made of, printing one JSON line for
+each server whose process is alive and is a Jupyter's: `jupyter server
+list' would start Python and import Jupyter, a second or more.  A dead
+server leaves its file behind, and after a restart its process number
+may belong to another process, so check that the process is a
+Jupyter's; without `ps', only check that it is alive.  With no runtime
+files where Jupyter puts them on Linux or macOS, or where
+JUPYTER_RUNTIME_DIR says, use JUPYTER's own list."
   (concat
    "found=; for d in \"${JUPYTER_RUNTIME_DIR:-}\" "
    "\"$HOME/.local/share/jupyter/runtime\" "
