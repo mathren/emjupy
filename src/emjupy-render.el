@@ -33,11 +33,11 @@
 ;;;; Options
 
 (defcustom emjupy-protect-non-cell-regions t
-  "When non-nil, make everything outside a cell's source read-only.
+  "Non-nil means make everything outside a cell's source read-only.
 
-The rules, the gutters between cells and the output boxes belong to no
-cell.  Text typed there is stored nowhere and disappears at the next
-redraw, so it is better refused than silently lost."
+The borders, the gutters between cells and the output boxes belong to
+no cell: text typed there would be lost at the next redraw, so it is
+refused instead."
   :type 'boolean
   :group 'emjupy-editing
   :safe #'booleanp)
@@ -46,12 +46,10 @@ redraw, so it is better refused than silently lost."
 
 (defun emjupy--line-number-columns (win)
   "Return how many line-number columns Emacs has not taken off WIN's width.
-Emacs takes the column off itself, in `window-max-chars-per-line', once
-WIN has been shown;
-until then it reports the column as 0 wide, and a notebook is drawn
-before it is shown -- so then the width is worked out from the last
-line's number.  Taken off again once Emacs had, the rules stopped short
-of the edge by the column's width, ten columns in all with the margin."
+Once WIN has been shown, `window-max-chars-per-line' already excludes
+the line-number column, so return 0.  Before then, Emacs reports the
+column as 0 wide, and a notebook is drawn before it is shown, so
+estimate the width from the last line's number."
   (with-current-buffer (window-buffer win)
     (if (not (bound-and-true-p display-line-numbers))
         0
@@ -66,27 +64,27 @@ of the edge by the column's width, ten columns in all with the margin."
 
 (defun emjupy--window-text-width (win)
   "Return how many columns of text WIN can show without wrapping.
-Not `window-body-width', which includes the line-number column:
-`window-max-chars-per-line', which does not, once WIN is shown."
+Use `window-max-chars-per-line', which excludes the line-number column
+once WIN is shown, rather than `window-body-width', which includes it."
   (if (not (window-live-p win))
       ;; A window can die between a resize being scheduled and this
       ;; running; a dead one has no width to give, so the default stands.
       emjupy-box-min-width
-    ;; Measured keeping point: `window-max-chars-per-line' selects WIN, which
-    ;; moves point to the window's.
+    ;; Keep point while measuring: `window-max-chars-per-line' selects WIN,
+    ;; which moves point to the window's point.
     (save-excursion
       (max 1 (- (window-max-chars-per-line win)
                 (emjupy--line-number-columns win))))))
 
 (defvar emjupy--box-width-memo nil
-  "A cons holding the width worked out for the redraw in progress, or nil.
-Bound by a redraw: the width cannot change during one, and working it out
-measures each window, which selects it -- six times a cell.")
+  "A cons holding the width computed for the redraw in progress, or nil.
+A redraw binds it: the width cannot change during one, and measuring
+selects each window, which would otherwise happen six times per cell.")
 
 (defun emjupy--box-width ()
   "Return the column width to draw cell outlines at.
-Fitting the window, the narrowest window showing the buffer wins: a
-rule too wide for a window wraps."
+When fitting the window, use the narrowest window showing the buffer,
+since a rule too wide for a window wraps."
   (cond
    ((integerp emjupy-box-width) emjupy-box-width)
    ((and (consp emjupy--box-width-memo) (car emjupy--box-width-memo)))
@@ -109,7 +107,7 @@ rule too wide for a window wraps."
 
 ;;;; Labels and rules
 
-;; The frame the running indicator, below, has reached: the label draws it.
+;; The current frame of the running indicator, below, which the label shows.
 (defvar-local emjupy--spinner-frame 0
   "Index into `emjupy-running-indicator'.")
 
@@ -149,9 +147,9 @@ rule too wide for a window wraps."
   (or (overlay-get ov 'after-string) (overlay-get ov 'emjupy-footer)))
 
 (defun emjupy--rule-boxes ()
-  "Return every box in this buffer, in buffer order, its rules taken in.
-Each keeps its rules in `emjupy-header' and `emjupy-footer', and loses
-its overlay strings, for the rules to be hung again."
+  "Return every box in this buffer, in buffer order, with its rules removed.
+Each box keeps its rules in `emjupy-header' and `emjupy-footer'; its
+overlay strings are removed so the rules can be drawn again."
   (let ((boxes nil))
     (cl-loop for cell across
              (or (emjupy-notebook-cells emjupy--buffer-notebook) [])
@@ -211,15 +209,15 @@ time.  Nested, only the outermost rebuilds."
 (defun emjupy--reconcile-rules-now ()
   "Draw every rule as the continuation of the content line above it.
 `display-line-numbers-mode' numbers the first screen line of each line,
-so a header drawn on a cell's first line took the code's number.  Each
-box's footer, and the header of the box after it, are drawn instead as
-continuation lines of the box's last line, never numbered, and the empty
-separator line is hidden.  The first cell's header has no line above it
-and stays.
+so a header drawn on a cell's first line would take the code's number.
+Instead, each box's footer and the next box's header are drawn as
+continuation lines of the box's last line, which are never numbered,
+and the empty separator line is hidden.  The first cell's header has no
+line above it, and stays.
 
 The rule strings are kept on each box in `emjupy-header' and
-`emjupy-footer'.  Run after anything that redraws a box or changes the
-buffer's structure; it rebuilds every rule."
+`emjupy-footer'.  Run this after anything that redraws a box or changes
+the buffer's structure; it rebuilds every rule."
   (when (bound-and-true-p emjupy--buffer-notebook)
 
     (let ((boxes (emjupy--rule-boxes))
@@ -250,8 +248,8 @@ buffer's structure; it rebuilds every rule."
                ;; at a hidden position.
                ((and gap-end (< (overlay-end prev) gap-end))
                 (let ((o (emjupy--hang-rules prev anchor rules)))
-                  ;; A cell whose code is hidden, nothing below it to
-                  ;; draw: its newline is none, or an empty line shows.
+                  ;; A cell whose code is hidden, with nothing below it:
+                  ;; draw no newline, or an empty line would show.
                   (when (and (string-empty-p rules)
                              (overlay-get prev 'emjupy-code-hidden))
                     (overlay-put o 'display ""))
@@ -275,8 +273,8 @@ CORNER is the left corner glyph; with LABEL nil a footer is returned."
                  (emjupy--box-footer label)))
          (end (if (string-suffix-p "\n" text) (1- (length text))
                 (length text))))
-    ;; Not the closing newline: one with a background paints a column of its own
-    ;; past the rule.
+    ;; Not on the closing newline: a newline with a background paints an
+    ;; extra column past the rule.
     (put-text-property 0 end 'face 'emjupy-box-line text)
     text))
 
@@ -364,8 +362,8 @@ box says that it is collapsed rather than absent."
 
 (defun emjupy--cell-executing-p (cell)
   "Return non-nil if CELL is the one its kernel is executing now.
-The kernel runs cells in the order sent: of those running, the first
-sent -- the last of `emjupy--running-cells', newest first."
+The kernel runs cells in the order sent, so of the cells running it is
+the first sent: the last of `emjupy--running-cells', newest first."
   (and cell (eql (emjupy-cell-id cell) (car (last emjupy--running-cells)))))
 
 (defun emjupy--cell-running-p (cell)
@@ -414,10 +412,10 @@ not disturbed."
     (setq emjupy--spinner-timer nil)))
 
 (defun emjupy--rehang-header (ov rule)
-  "Show RULE as OV's header in the rules it hangs with, if they are known.
-Only that one carrier's text changes: no rebuild of every rule.  Return
-non-nil if done; nil when OV has no carrier -- the first box, or rules
-not built yet."
+  "Show RULE as OV's header in the rules drawn with it, if they are known.
+Only that drawn text changes, without rebuilding every rule.  Return
+non-nil if done; nil when OV has none, as for the first box, or when
+the rules are not built yet."
   (let* ((carrier (overlay-get ov 'emjupy-header-carrier))
          (prev (and (overlayp carrier) (overlay-buffer carrier)
                     (overlay-get carrier 'emjupy-rules-of))))
@@ -444,7 +442,7 @@ not enter the undo history.  Where the rules carrying it are known, only
 they change; else every rule is rebuilt."
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
-      ;; hidden, its one line shows the change: count, running
+      ;; with its code hidden, its one line shows the change: count, running
       (when (emjupy--cell-source-hidden-p cell) (emjupy--hide-code-of cell))
       (let ((rule (emjupy--cell-header cell "┌")))
         (unless (emjupy--rehang-header ov rule)
@@ -549,7 +547,7 @@ highlights."
 
 (defun emjupy--apply-faces-from (string start)
   "Copy the `face' properties of STRING onto the buffer text at START.
-As `font-lock-face' too, which font-lock does not remove when it
+Set them as `font-lock-face' too, which font-lock keeps when it
 refontifies."
   (let ((i 0) (len (length string)))
     ;; Padding is never source: the pads carry a mark of their own, kept even if
@@ -622,9 +620,9 @@ the character before it."
                            (and (< end (point-max))
                                 (get-text-property end 'emjupy-cell)))))
             (when cell (emjupy--refontify-cell cell)))
-        ;; Caught: an error in a change hook makes Emacs remove the hook,
-        ;; and highlighting would stop for the rest of the session.  But
-        ;; said, not swallowed.
+        ;; Catch errors: Emacs removes a change hook that signals one, which
+        ;; would stop highlighting for the rest of the session.  Report them
+        ;; rather than swallow them.
         (error (message "[emjupy] Could not highlight the edit: %s"
                         (error-message-string err)))))))
 
@@ -636,7 +634,7 @@ the character before it."
 Kept in the cell's own metadata under the key Jupyter uses, so the state
 survives saving and means the same thing to other front ends."
   (or (emjupy-cell-size-hidden cell)
-      ;; its code hidden, its output goes with it
+      ;; with its code hidden, its output is hidden too
       (emjupy--cell-source-hidden-p cell)
       (let* ((meta (emjupy-cell-metadata cell))
              (jupyter (and (hash-table-p meta) (gethash "jupyter" meta))))
@@ -720,9 +718,9 @@ A cell whose code is hidden has none: its code shows as one line instead
     (emjupy--rule (emjupy--cell-label cell) corner)))
 
 (defun emjupy--hidden-code-line (cell)
-  "Return the one line shown for CELL's hidden code, and its output.
-Its label, how much is hidden, and a marker a click on shows it by --
-drawn with ends of its own, so as not to read as an empty box."
+  "Return the one line shown for CELL's hidden code and its output.
+It shows the label, how much is hidden, and a marker to click to show
+it, with ends of its own so that it does not look like an empty box."
   (let* ((glyph (copy-sequence "▸"))
          (lines (1+ (cl-count ?\n (or (emjupy-cell-source cell) ""))))
          (outputs (length (or (emjupy-cell-outputs cell) []))))
@@ -954,8 +952,8 @@ callback would leave the box silently empty."
           (progn (insert-image (emjupy--render-image-output (nth 2 image)
                                                             (nth 1 image)))
                  (insert "\n"))
-        ;; Everything: the image is the notebook's data, which may be
-        ;; anything, and what Emacs makes of bad data is a plain error.
+        ;; Catch any error: the image is the notebook's data, which may be
+        ;; anything, and Emacs reports bad image data as a plain `error'.
         (error
          (insert (format "[emjupy: could not render %s: %s]\n"
                          (nth 0 image) (error-message-string err)))
@@ -1085,8 +1083,8 @@ the same text the same way."
                                          'font-lock-face face)
         ;; Fill out to the border, not to the window edge.
         (goto-char (emjupy--pad-output-lines piece-start (point) face))
-        ;; A newline still carrying the face paints one more column after
-        ;; the padding ends, so the band poked out past the right-hand rule.
+        ;; Remove the face from newlines: one still carrying it paints a
+        ;; column past the padding, beyond the right-hand rule.
         (emjupy--unface-newlines piece-start (point))))
     widest))
 
@@ -1147,8 +1145,8 @@ WIDEST is its widest line before folding, PIECES the outputs drawn."
 
 (defun emjupy--draw-cell-output (cell)
   "Insert CELL's output box at point and give it its overlay.
-Apart from `emjupy--draw-cell' so output arriving redraws one box,
-not the notebook."
+Kept apart from `emjupy--draw-cell', so arriving output redraws one box
+rather than the notebook."
   (let ((outputs (emjupy-cell-outputs cell)))
     (when (and outputs (> (length outputs) 0))
       (let ((out-start (point))
@@ -1185,8 +1183,9 @@ not the notebook."
 
 (defun emjupy--hide-code-of (cell)
   "Show CELL's code as one line if it is hidden; else as it is.
-The code is not removed -- it is the notebook -- but shown as that line,
-in its place: not its last newline, where the next cell's edge hangs."
+The code stays in the buffer, as part of the notebook, but is displayed
+as that line instead, except for its last newline, where the next
+cell's border is drawn."
   (let ((ov (emjupy-cell-overlay cell)))
     (when (overlayp ov)
       (remove-overlays (overlay-start ov) (overlay-end ov)
@@ -1199,13 +1198,13 @@ in its place: not its last newline, where the next cell's edge hangs."
           (overlay-put hide 'display (emjupy--hidden-code-line cell))
           (overlay-put hide 'evaporate t)
           (overlay-put hide 'emjupy-hidden-code t)
-          ;; Code out of sight is not to be typed into.
+          ;; Refuse typing into hidden code.
           (overlay-put hide 'modification-hooks '(emjupy--refuse-hidden-edit))
           (overlay-put hide 'insert-in-front-hooks
                        '(emjupy--refuse-hidden-edit)))))))
 
 (defun emjupy--refuse-hidden-edit (&rest _)
-  "Refuse an edit of hidden code, but emjupy's own redrawing."
+  "Refuse an edit of hidden code, except by emjupy's own redrawing."
   (unless inhibit-read-only
     (user-error "This cell's code is hidden: click its marker to show it")))
 
@@ -1226,13 +1225,14 @@ in its place: not its last newline, where the next cell's edge hangs."
       ;; Faces are applied as plain (non-sticky) `face' properties so that
       ;; text typed at a cell edge does not inherit the neighbouring face.
       (remove-text-properties src-start (point) '(rear-nonsticky nil))
-      ;; An empty cell's line to type on is no source: marked, sync skips
-      ;; it, typed on or not.  Not passed on to what is typed.
+      ;; An empty cell's line to type on is not source: it is marked so
+      ;; sync skips it, and typed text does not inherit the mark.
       (when (string-empty-p source)
         (add-text-properties src-start (1+ src-start)
                              '(emjupy-placeholder t rear-nonsticky t))))
-    ;; Always one newline after the source, which sync removes; added only when
-    ;; missing, a source ending in a newline lost it on the first save.
+    ;; Always insert one newline after the source, which sync removes, even
+    ;; if the source ends in a newline: otherwise that newline is lost on
+    ;; saving.
     (insert "\n")
 
     (put-text-property src-start (point) 'emjupy-cell cell)
@@ -1252,7 +1252,7 @@ in its place: not its last newline, where the next cell's edge hangs."
            ;; footer says so.
            (hidden (and has-outputs (emjupy--cell-outputs-hidden-p cell)))
            (footer (cond
-                    ;; its code hidden, the header line is all there is
+                    ;; with its code hidden, only the header line is drawn
                     ((emjupy--cell-source-hidden-p cell) "")
                     (hidden (emjupy--rule
                              (emjupy--hidden-output-label cell) 'footer))
@@ -1292,8 +1292,8 @@ not the start of the cell after it."
 was moving, so the cursor is never shown at the end of a border."
   (when (and (eq (char-after pos) ?\n)
              (not (get-text-property pos 'emjupy-cell)))
-    ;; A property for the cursor, not an edit: recorded in the undo
-    ;; history, undo replayed it after cells had moved, and corrupted them.
+    ;; A property for the cursor, not an edit: set silently, so it is not
+    ;; in the undo history, where undo would replay it at moved positions.
     (with-silent-modifications
       (put-text-property pos (1+ pos) 'cursor-intangible t))))
 
@@ -1319,9 +1319,9 @@ Then put every header and footer where its cell now is."
         (when (< pos (point-max))
           (emjupy--make-read-only pos (point-max))
           (emjupy--make-intangible (1- (point-max)))))))
-  ;; Run after every change to the buffer's structure, as this is; so the
-  ;; rules are put back where their cells are here too, whether or not the
-  ;; gaps are protected.
+  ;; This runs after every change to the buffer's structure, so put the
+  ;; rules back where their cells are here too, whether or not the gaps
+  ;; are protected.
   (emjupy--reconcile-rules))
 
 ;;;; Text leaving and entering the buffer
@@ -1341,7 +1341,7 @@ Faces stay, so yanked code still looks like code."
     copy))
 
 (defun emjupy--filter-buffer-substring (beg end &optional delete)
-  "Return the text between BEG and END, fit to leave this buffer.
+  "Return the text between BEG and END, without emjupy's internal properties.
 DELETE is passed through to `buffer-substring--filter'."
   (emjupy--strip-internal-properties
    (buffer-substring--filter beg end delete)))
