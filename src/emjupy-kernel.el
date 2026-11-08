@@ -794,8 +794,8 @@ several notebooks -- from several servers -- stay live at once."
                       (emjupy--kernel-told kernel)
                       (unless (eq (websocket-client-data ws) 'refused)
                         (emjupy--begin-handshake kernel)
-                        ;; Also said on every reconnect: shown only for a notebook
-                        ;; in view.
+                        ;; Also said on every reconnect: shown only
+                        ;; for a notebook in view.
                         (emjupy--say (emjupy-notebook-buffer notebook)
                                      "[emjupy] %s connected to kernel %s"
                                      label kernel-id)))

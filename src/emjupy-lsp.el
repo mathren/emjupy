@@ -49,11 +49,11 @@ Whatever `/lsp/status' lists.  \"pylsp\" is the usual Python one."
   :group 'emjupy-advanced)
 
 (defcustom emjupy-lsp-retry-interval 30
-  "Seconds before a language server that failed is tried again.
-The server's, not reached; or the shadow buffer one here needs, not set
-up.  Completion and eldoc ask after every command: retrying each time
-turns one slow failure into a hang, each attempt blocking Emacs while
-TRAMP waits."
+  "Seconds before retrying a language server that failed.
+That is, the server's, when it cannot be reached, or the local one the
+shadow buffer needs, when it cannot be set up.  Completion and eldoc
+ask after every command, so retrying each time would turn one slow
+failure into a hang, each attempt blocking Emacs while TRAMP waits."
   :type 'number
   :group 'emjupy-advanced)
 
@@ -69,16 +69,16 @@ meets the requirement."
   :group 'emjupy-advanced)
 
 (defcustom emjupy-tell-server-where-modules-are t
-  "When non-nil, name the notebook's own directory to the language server.
+  "Non-nil means tell the language server the notebook's own directory.
 
-A language server finds `import mylib' by looking beside the file that
-imports it.  Beside a notebook there is no file: there is a shadow whose
-name the server is told and whose contents it is sent, and whether it
-can be read from that directory is a question of how the notebook is
-reached.  Saying where the modules are does not depend on that.
+A language server finds `import mylib' by looking next to the importing
+file.  A notebook has no such file, only a shadow, whose name and
+contents the server is sent; whether the server can read from the
+notebook's directory depends on how the notebook is reached.  Telling
+it where the modules are does not.
 
-Written for `python-lsp-server'.  Set to nil if your server takes its
-settings from elsewhere and would rather not be told."
+Written for `python-lsp-server'.  Set it to nil if your server takes its
+settings from elsewhere."
   :type 'boolean
   :group 'emjupy-advanced)
 
@@ -223,9 +223,9 @@ than leaving the user to find out that anything did.")
 
 (defun emjupy--lsp-socket-error (_ws type err)
   "Report ERR, raised in the language server WebSocket's TYPE callback.
-Given as the socket's error handler, which otherwise -- an empty one was
-given -- dropped every error unseen.  Recorded too, in
-`emjupy--lsp-last-failure', for when the echo area has moved on."
+This is the socket's error handler, so that errors are not dropped
+unseen.  Also record ERR in `emjupy--lsp-last-failure', for when the
+echo area has moved on."
   (let ((what (format "%s: %s" type (error-message-string err))))
     (setq emjupy--lsp-last-failure what)
     (message "[emjupy] Language server connection: %s" what)))
@@ -244,13 +244,12 @@ That is the option `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
   "Servers, by address, being asked of their language server: attempts so far.")
 
 (defun emjupy--ask-server-lsp (server then)
-  "Ask SERVER, not waiting, whether it has option `emjupy-lsp-server'; THEN.
-THEN is called with no argument once it has answered.  An answer is
-remembered: offered, not offered, or 404 -- no jupyter-lsp.  A failure,
-the network's, a timeout -- jupyter-lsp finds its servers on the first
-asking, which can be slow -- is no answer: asked again, three times, and
-only then taken as none, saying so.  Taken as none at once, a slow first
-answer left a notebook on the fallback for good."
+  "Ask SERVER, without waiting, whether it has option `emjupy-lsp-server'; THEN.
+Call THEN with no argument once the server has answered.  Remember the
+answer: offered, not offered, or 404, meaning no jupyter-lsp.  A failure
+of the network, or a timeout, is no answer, since jupyter-lsp finds its
+servers on the first request, which can be slow: ask again, up to three
+times, and only then take it as none, and say so."
   (let* ((key (emjupy-server-base-url server))
          (tries (gethash key emjupy--lsp-asking 0)))
     (puthash key (1+ tries) emjupy--lsp-asking)

@@ -75,12 +75,12 @@ credential ends up on screen and in the minibuffer history."
   "Servers that answered `emjupy--server-reachable-p', and when.")
 
 (defun emjupy--server-reachable-p (server)
-  "Return non-nil if SERVER accepts SERVER's credentials.
-Probes /api/contents: some jupyter_server versions answer /api/status
-without authentication.  With content=0: the root's model, not its
-listing, whose size grew with the folder.  A yes holds for 2 s -- the
-several askings of one opening, a round trip each, are one; a no is
-asked again, a server being waited for."
+  "Return non-nil if SERVER accepts its credentials.
+Probe /api/contents, since some jupyter_server versions answer
+/api/status without authentication, with content=0, which returns the
+root's model rather than a listing that grows with the folder.  Cache a
+yes for 2 seconds, so the several checks of one opening cost one round
+trip; do not cache a no, as the server may still be starting."
   (let ((at (gethash server emjupy--reachable-at)))
     (or (and at (< (- (float-time) at) 2))
         (let ((inhibit-message t)

@@ -107,17 +107,15 @@ instead; this is only the fallback for things like `emjupy-login'.")
   "The `emjupy-notebook' struct associated with the current buffer.")
 
 (defvar emjupy-probe-environment t
-  "When non-nil, emjupy may look at the machine it is running on.
+  "Non-nil means emjupy may inspect the machine it runs on.
 
-Two things depend on it: finding the host of an SSH tunnel by reading
-the process list, and deciding whether LaTeX can be rendered by looking
-for the programs that do it.  Both are right in use and wrong in a test,
-where they make the result depend on what the machine happens to have --
-a test asking what a tunnelled server resolves to found the tunnels of
-whichever machine ran it, and passed or failed accordingly.
+Two things depend on it: finding the host of an SSH tunnel from the
+process list, and deciding whether LaTeX can be rendered by looking for
+the programs that do it.  Both are right in use but wrong in tests,
+where the result would depend on the machine running them.
 
 The unit tests bind this to nil, so a test that depends on the machine
-gets a definite answer rather than a local one.")
+gets a definite answer.")
 
 ;;;; Structures
 
@@ -433,9 +431,9 @@ same object, so notebooks already pointing at it stay valid."
 ;;;; A folder of one's own
 
 (defun emjupy--private-directory (dir purpose)
-  "Make DIR, readable by the user alone, unless it exists; then check it.
-Signal a `file-error' unless DIR is a directory of the user's own,
-not a symbolic link: in a shared /tmp another user could have made it,
+  "Create DIR, readable by the user only, unless it exists; then check it.
+Signal a `file-error' unless DIR is a directory owned by the user and
+not a symbolic link: in a shared /tmp, another user could have made it,
 or left a link there.  PURPOSE says what is written in it, for the
 message."
   (let ((dir (directory-file-name dir)))

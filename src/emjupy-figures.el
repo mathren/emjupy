@@ -30,13 +30,13 @@
 
 (defcustom emjupy-figure-viewer 'window
   "Where `emjupy-open-output' shows an interactive figure.
-`window' is a window of its own, one per figure -- see
-`emjupy-figure-window-command'.  `browser' is the browser, which most
-often means a tab in one already open.  `xwidget' is inside Emacs, and
-`auto' an xwidget when this Emacs has them; neither is the default:
-Emacs 30.1 refuses WebKitGTK from 2.41.92, and a build made to take a
-newer one aborts as the figure opens -- seen with 2.52 -- so only choose
-an xwidget on a build that works with it."
+`window' means a window of its own, one per figure; see
+`emjupy-figure-window-command'.  `browser' means the browser, usually a
+tab in one already open.  `xwidget' shows it inside Emacs, and `auto'
+uses an xwidget when this Emacs supports them.  Neither is the default:
+Emacs 30.1 refuses WebKitGTK 2.41.92 and later, and a build made to
+accept a newer one crashes when the figure opens, so choose an xwidget
+only on a build that works with it."
   :type '(choice (const :tag "A window of its own" window)
                  (const :tag "The browser" browser)
                  (const :tag "An xwidget" xwidget)

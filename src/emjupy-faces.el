@@ -34,11 +34,12 @@ shows it.  nil never hides output for this reason."
   :group 'emjupy-appearance)
 
 (defcustom emjupy-large-output-lines 100
-  "Lines of text a cell's output may have before it is hidden on opening.
-The Jupyter Notebook scrolls an output past 100 lines; a large output,
-drawn, makes a notebook slow to open and to redraw.  Hidden for drawing
-only, not marked in the notebook; \\[emjupy-toggle-cell-output] shows
-it.  nil never hides for this."
+  "Number of output lines above which a cell's output is hidden on opening.
+The Jupyter Notebook scrolls an output longer than 100 lines; a large
+output drawn in full makes a notebook slow to open and redraw.  Hidden
+output is only not drawn; the notebook is unchanged, and
+\\[emjupy-toggle-cell-output] shows it.  nil never hides output for this
+reason."
   :type '(choice (const :tag "Never" nil) natnum)
   :safe (lambda (v) (or (null v) (natnump v)))
   :group 'emjupy-appearance)
@@ -177,14 +178,13 @@ window would show it."
   :safe #'booleanp)
 
 (defcustom emjupy-deduplicate-image-outputs t
-  "When non-nil, render a repeated identical image only once per cell.
+  "Non-nil means draw a repeated identical image only once per cell.
 
-A cell whose last expression is a figure gets the SAME picture twice
-from the kernel: once as the `execute_result' repr and again as the
-inline backend's `display_data'.  That is kernel-side behaviour, so the
-duplicate is dropped only at render time -- the cell's `outputs' vector
-still holds exactly what the kernel sent, and is saved back to the
-.ipynb unchanged, so the file stays byte-faithful for other clients."
+A cell whose last expression is a figure gets the same picture twice
+from the kernel: as the `execute_result' and as the inline backend's
+`display_data'.  Only the drawing drops the duplicate: the cell's
+outputs keep exactly what the kernel sent, and are saved unchanged, so
+other clients see the same file."
   :type 'boolean
   :group 'emjupy-appearance
   :safe #'booleanp)

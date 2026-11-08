@@ -359,7 +359,9 @@ it.  Checked in a fresh Emacs, where nothing else is loaded."
                                  nil t nil "-Q" "--batch" "-L" here "-L"
                                  websocket
                                  "-l" "emjupy-notebook"
-                                 "--eval" "(prin1 (list (fboundp 'emjupy-mode) (featurep 'emjupy)))")
+                                 "--eval"
+                                 (concat "(prin1 (list (fboundp 'emjupy-mode)"
+                                         " (featurep 'emjupy)))"))
                    (goto-char (point-max))
                    (backward-sexp)
                    (read (current-buffer)))))
