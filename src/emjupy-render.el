@@ -1292,7 +1292,10 @@ not the start of the cell after it."
 was moving, so the cursor is never shown at the end of a border."
   (when (and (eq (char-after pos) ?\n)
              (not (get-text-property pos 'emjupy-cell)))
-    (put-text-property pos (1+ pos) 'cursor-intangible t)))
+    ;; A property for the cursor, not an edit: recorded in the undo
+    ;; history, undo replayed it after cells had moved, and corrupted them.
+    (with-silent-modifications
+      (put-text-property pos (1+ pos) 'cursor-intangible t))))
 
 (defun emjupy--protect-non-cell-regions ()
   "Mark every region that is not a cell's source read-only.

@@ -737,6 +737,32 @@ stay where they were."
               (should (get-text-property 0 'cursor text))
               (should (string-suffix-p "\n" text)))))))))
 
+
+(ert-deftest emjupy-test-marking-a-separator-is-not-an-edit ()
+  "Making a separator cursor-intangible records no undo entry, leaves the
+buffer unmodified, and runs no change hooks.  Recorded, undo replayed it
+after cells had moved, and two cells overlapped (EMJUPY_FUZZ_SEED=370945
+in the robustness fuzz test)."
+  (emjupy-test--with-notebook
+      (vector (make-emjupy-cell :id 1 :type 'code :source "a = 1")
+              (make-emjupy-cell :id 2 :type 'code :source "b = 2"))
+      buf nb
+    (buffer-enable-undo)
+    (set-buffer-modified-p nil)
+    (let* ((next (overlay-start (emjupy-cell-overlay
+                                 (aref (emjupy-notebook-cells nb) 1))))
+           (sep (1- next))
+           (undo-before buffer-undo-list)
+           (changed nil)
+           (after-change-functions (list (lambda (&rest _) (setq changed t)))))
+      (with-silent-modifications
+        (remove-text-properties sep (1+ sep) '(cursor-intangible nil)))
+      (emjupy--make-intangible sep)
+      (should (get-text-property sep 'cursor-intangible))
+      (should (eq buffer-undo-list undo-before))
+      (should-not (buffer-modified-p))
+      (should-not changed))))
+
 (provide 'emjupy-render-test)
 
 ;;; emjupy-render-test.el ends here
