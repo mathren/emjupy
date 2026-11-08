@@ -34,21 +34,20 @@
 ;;;; Options
 
 (defcustom emjupy-language-support t
-  "Which language server serves completion, eldoc and definitions.
-\\[xref-find-definitions] among them.  t: the one the notebook's server
-runs beside the kernel, through `jupyter-lsp', in the kernel's
-environment -- else one on this machine, the fallback, said and marked
-in the mode line.  `local': one on this machine, always.  nil: none.
+  "Which language server provides completion, eldoc and definitions.
 
-A single switch over every path that talks to a language server, on
-either transport: completion, eldoc, M-., starting one when a notebook
-opens, and the commands that ask one for something.  Set it to nil to
-find out whether a slowdown comes from language support or from
-somewhere else: the notebook keeps working -- cells run, output arrives,
-everything renders -- and nothing runs after each command except
-emjupy's own bookkeeping.  Editing all the code in one buffer, with
-\\[emjupy-edit-cell-externally], still works, without a server; set
-back to t, a server is started when next one is asked for."
+t means the one the notebook's server runs beside the kernel, through
+`jupyter-lsp', in the kernel's environment; if there is none, one on
+this machine is used instead, with a message and a mark in the mode
+line.  `local' means always one on this machine.  nil means none.
+
+This one switch covers every use of a language server: completion,
+eldoc, \\[xref-find-definitions], starting one when a notebook opens, and
+the commands that query one.  Setting it to nil shows whether a slowdown
+comes from language support: the notebook keeps working, and nothing
+runs after each command but emjupy's own bookkeeping.
+\\[emjupy-edit-cell-externally] still works, without a server.  Set back
+to t, a server starts when one is next needed."
   :type '(choice (const :tag "The server's, else this machine's" t)
                  (const :tag "This machine's" local)
                  (const :tag "None" nil))
@@ -106,14 +105,14 @@ the advice does nothing at all."
 
 
 (defun emjupy--language-server-here-only-p ()
-  "Return non-nil if the language server is to be this machine's, as set.
-`emjupy-language-support' `local', or the obsolete `emjupy-lsp-enabled'
-nil, which meant it."
+  "Return non-nil if the language server is set to be this machine's.
+That is, `emjupy-language-support' is `local', or the obsolete
+`emjupy-lsp-enabled' is nil."
   (or (eq emjupy-language-support 'local)
       (and (boundp 'emjupy-lsp-enabled) (not emjupy-lsp-enabled))))
 
 (defun emjupy--lsp-fall-back (nb why)
-  "Have NB use a language server on this machine, WHY the server's could not."
+  "Make NB use a language server on this machine, for the reason WHY."
   (setf (emjupy-notebook-lsp-route nb) 'local
         (emjupy-notebook-lsp-reason nb) why)
   (let ((buf (emjupy-notebook-buffer nb)))
@@ -150,11 +149,11 @@ hand.  Reports what it found rather than failing quietly."
 
 (defun emjupy--decide-lsp-route (nb)
   "Return how NB reaches its language server, deciding it the first time.
-`socket' or `local', as `emjupy-notebook-lsp-route'; nil while the server is
-being asked, without waiting -- this is called again once it answers,
-for a notebook still open, its kernel connected.  Nothing attaches
-before: an ordinary Eglot started first, over TRAMP, raced the right
-one and lost the environment's."
+The value is `socket' or `local', as `emjupy-notebook-lsp-route', or nil
+while the server is being asked, without waiting; this is called again
+once it answers, if the notebook is still open with its kernel
+connected.  Nothing attaches before the decision, so an ordinary Eglot
+cannot start first and win over the right server."
   (progn
     (unless (emjupy-notebook-lsp-route nb)
       (let ((server (emjupy-notebook-server nb)))
@@ -178,15 +177,15 @@ one and lost the environment's."
                 server
                 (lambda ()
                   (let ((buf (emjupy-notebook-buffer nb)))
-                    ;; One closed meanwhile was attached to all the same,
-                    ;; and Eglot waited 30 s for no one.
+                    ;; Skip a notebook closed meanwhile: attaching to it
+                    ;; would leave Eglot waiting 30 s for nothing.
                     (when (and (buffer-live-p buf)
                                (with-current-buffer buf (emjupy--ws-live-p)))
                       (emjupy-start-language-support nb)))))))))))
     (emjupy-notebook-lsp-route nb)))
 
 (defun emjupy--eglot-server-description (server)
-  "Return what SERVER, an Eglot server, is, how it is reached, and if ready."
+  "Describe SERVER, an Eglot server: what it is, how reached, and if ready."
   (format "%s, %s"
           (if (object-of-class-p server 'emjupy-eglot-server)
               (format "%s, through the server's WebSocket" emjupy-lsp-server)
@@ -219,9 +218,10 @@ one and lost the environment's."
 
 (defun emjupy--attach-language-server (nb route)
   "Attach NB's shadow buffer to its language server, reached by ROUTE.
-On the socket route, once the kernel's directory is known; the server's
-not reached is the fallback, said.  Return the server attached, else the
-shadow buffer, or nil without one."
+On the socket route, wait until the kernel's directory is known; if the
+server's language server cannot be reached, fall back to a local one,
+and say so.  Return the server attached, else the shadow buffer, or nil
+if there is none."
   (let* ((want-socket (and (eq route 'socket)
                            (emjupy-notebook-kernel-cwd nb)))
          (buffer (condition-case err
@@ -233,8 +233,8 @@ shadow buffer, or nil without one."
      ((not (buffer-live-p buffer)) nil)
      ;; The local route: an ordinary Eglot, attached with the shadow.
      ((not want-socket) buffer)
-     ;; Attached already -- started again as the kernel came back -- is no
-     ;; failure: taken for one, it fell back, and lost the environment's.
+     ;; Already attached, as when started again on the kernel's return, is
+     ;; not a failure: treating it as one would fall back to a local server.
      ((emjupy--socket-attached-p buffer) buffer)
      ((and (emjupy--claim-shadow-for-websocket buffer)
            (emjupy--eglot-connect nb buffer)))
@@ -257,8 +257,8 @@ shadow buffer, or nil without one."
 (defun emjupy--claim-shadow-for-websocket (buffer)
   "Return non-nil if BUFFER is free for a WebSocket server to attach to.
 An ordinary Eglot server, started when completion first built the
-buffer, may be there; it is shut down.  Only one of ours counts as
-attached."
+buffer, may be attached; shut it down.  Only emjupy's own server counts
+as attached."
   (with-current-buffer buffer
     (let ((server (eglot-current-server)))
       (cond
@@ -298,10 +298,10 @@ The server is folded into the name: two servers can both host
 
 (defun emjupy--attach-plain-eglot (nb nb-buffer)
   "Attach an ordinary Eglot to the current buffer, NB's shadow buffer.
-Unless one is attached, another is being, language support is off, or
-NB-BUFFER, the notebook's, is backing off."
-  ;; No server, no other route: decided here, as no kernel will connect to
-  ;; decide it.  Left undecided, nothing ever attached.
+Do nothing if one is attached or being attached, if language support is
+off, or if NB-BUFFER, the notebook's buffer, is backing off."
+  ;; No server and no other route: decide here, as no kernel will connect
+  ;; to decide it; otherwise nothing would ever attach.
   (when (and (null (emjupy-notebook-lsp-route nb))
              (null (emjupy-notebook-server nb)))
     (emjupy--lsp-fall-back nb "the notebook has no server"))
@@ -312,7 +312,7 @@ NB-BUFFER, the notebook's, is backing off."
       ;; `emjupy-language-support' off the buffer is still built, for editing
       ;; the code, but nothing is attached.
       (unless (or (not emjupy-language-support)
-                  ;; only as the fallback, decided: never first, racing
+                  ;; only as the decided fallback, never first
                   (not (eq (emjupy-notebook-lsp-route nb) 'local))
                   (with-current-buffer nb-buffer (emjupy--shadow-blocked-p))
                   (and (boundp 'eglot--managed-mode) eglot--managed-mode))
@@ -320,18 +320,17 @@ NB-BUFFER, the notebook's, is backing off."
                        (emjupy--shadow-block "language server did not start"
                                              nb-buffer))
           (apply #'eglot--connect (eglot--guess-contact))
-          ;; Started, and on this machine: say so, since this fallback
-          ;; answers about the wrong files while seeming to work.  Wrapped:
-          ;; a warning must not break what it warns about.
+          ;; Started on this machine: say so, since this fallback
+          ;; answers about the wrong files while seeming to work.
+          ;; Guarded, so a failing warning cannot break what it warns about.
           (emjupy--warn-local-language-server nb)))
     (error
      (emjupy--shadow-block (error-message-string err) nb-buffer))))
 
 (defun emjupy--ensure-shadow-buffer (nb)
   "Return NB's persistent code shadow buffer, creating it if needed.
-Its content is refreshed to match the current cells, and Eglot attached
-if it is not -- automatically, with nothing for the user to run.  Nil
-while making it is backing off."
+Refresh its content from the current cells, and attach Eglot if it is
+not attached.  Return nil while making it is backing off."
   (let* ((nb-buffer (or (emjupy-notebook-buffer nb) (current-buffer)))
          (content (emjupy--build-shadow-content nb))
          (path (emjupy--shadow-file-path nb))
@@ -399,7 +398,7 @@ language server."
          (when backend (funcall fn backend)))))))
 
 (defun emjupy--names-a-file-elsewhere-p (nb file)
-  "Non-nil when FILE belongs to NB's kernel and is not on this machine.
+  "Return non-nil if FILE belongs to NB's kernel and is not on this machine.
 A path under the kernel's root that also exists here is the same file;
 one with nothing here is a remote file with a local-looking name."
   (let* ((server (emjupy-notebook-server nb))
@@ -409,9 +408,9 @@ one with nothing here is a remote file with a local-looking name."
          (not (file-exists-p file)))))
 
 (defun emjupy--answer-is-from-the-kernels-machine-p (nb)
-  "Non-nil if NB's language server is the one beside its kernel.
-That is the WebSocket server; any other is on this machine, answering
-about its files."
+  "Return non-nil if NB's language server is the one beside its kernel.
+That is the WebSocket server; any other runs on this machine, and
+answers about its files."
   (let ((sb (emjupy-notebook-shadow-buffer nb)))
     (and (buffer-live-p sb)
          (with-current-buffer sb
@@ -421,8 +420,8 @@ about its files."
 (defun emjupy--xref-on-the-right-machine (nb item)
   "Return ITEM with its file named on the machine of NB's kernel.
 The language server reports paths as the kernel's machine sees them.
-Rewritten to a remote name when the kernel is elsewhere and one can be
-built; otherwise left as it is -- a wrong remote name is worse."
+Rewrite the name to a remote one when the kernel is elsewhere and one
+can be built; otherwise leave it, since a wrong remote name is worse."
   (let* ((loc (xref-item-location item))
          ;; Only the server beside the kernel names the kernel's files; the
          ;; local fallback names files on this machine.
@@ -472,7 +471,7 @@ the shadow's remote name has none."
 
 (defun emjupy--shadow-point (buf line col)
   "Return the position of LINE and COL in shadow buffer BUF.
-Nil without a LINE; never past the end of the buffer."
+Return nil without LINE; never return a position past the end."
   (when line
     (with-current-buffer buf
       (save-excursion
@@ -567,13 +566,12 @@ Return the number of cells updated; the notebook is redrawn if any was."
 
 (defun emjupy-eglot-delegate (fn)
   "Run FN in this notebook's shadow buffer, at the matching position.
-Anything FN changes is then pulled back into the cells.
+Pull anything FN changes back into the cells.
 
-This is what makes Eglot's own commands usable from a notebook.  They
-call `eglot--current-server-or-lose', and the notebook buffer is not the
-one Eglot manages -- the hidden shadow buffer is -- so invoked directly
-they fail with a bare \"No current JSON-RPC connection\".  Completion and
-eldoc already went through the shadow buffer; everything else did not."
+This makes Eglot's own commands usable from a notebook.  They call
+`eglot--current-server-or-lose', and Eglot manages the hidden shadow
+buffer, not the notebook buffer, so run directly they fail with \"No
+current JSON-RPC connection\"."
   (let ((nb (emjupy--notebook)))
     (unless (get-text-property (point) 'emjupy-cell)
       (user-error "Point is not in a cell"))
@@ -689,11 +687,10 @@ cell in the notebook, automatically."
                            nil)))))
        (when (consp result)
          (let* ((orig-collection (nth 2 result))
-                ;; Eglot's collection is called again later, from the notebook
-                ;; buffer, but needs the shadow buffer's context: force it on
-                ;; every call.
-                ;; Emacs calls the collection later, when the server may be
-                ;; gone: offer no candidates then.
+                ;; Emacs calls Eglot's collection again later, from the notebook
+                ;; buffer, but it needs the shadow buffer's context, so run it
+                ;; there on every call; if the server is gone by then, offer no
+                ;; candidates.
                 (wrapped (if (functionp orig-collection)
                              (lambda (string pred action)
                                (condition-case err
@@ -733,9 +730,8 @@ no result rather than an error."
 
 (defun emjupy--eglot-capable-p (&rest capabilities)
   "Return non-nil if the current Eglot server advertises CAPABILITIES.
-`eglot--server-capable' was renamed `eglot-server-capable' in Emacs
-30, so guarding on the old private name alone silently disables eldoc
-on newer Emacs."
+Check both names: `eglot--server-capable' was renamed
+`eglot-server-capable' in Emacs 30."
   (and (eglot-current-server)
        (apply #'eglot-server-capable capabilities)))
 
@@ -810,9 +806,9 @@ Run in NB's buffer: the back-off it reports is that buffer's."
                    (t "attached but not running")))
      (format "back-off        %s"
              (if (emjupy--shadow-blocked-p) "in effect" "none"))
-     ;; The reason the WebSocket route was not taken, if it was tried
-     ;; and failed.  Without this the report said everything was well
-     ;; and a local server was running anyway.
+     ;; Include why the WebSocket route was not taken, if it was tried
+     ;; and failed: otherwise the report shows all well while a local
+     ;; server runs.
      (format "socket failure  %s"
              (or (bound-and-true-p emjupy--lsp-last-failure)
                  "none recorded")))))
