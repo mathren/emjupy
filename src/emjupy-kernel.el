@@ -54,20 +54,20 @@ cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
   :group 'emjupy-advanced)
 
 (defcustom emjupy-record-execution-time t
-  "Non-nil to record when each cell runs in its metadata, as JupyterLab can.
+  "Non-nil means record when each cell runs in its metadata, as JupyterLab can.
 The times go under \"execution\", JupyterLab's keys, and a cell's border
-shows how long it last ran.  Saved with the notebook: nil leaves files as
-they were, and shows only times recorded elsewhere."
+shows how long it last ran.  They are saved with the notebook; nil leaves
+files unchanged, and shows only times recorded elsewhere."
   :type 'boolean
   :group 'emjupy-kernels)
 
 (defcustom emjupy-kernel-check-interval 30
-  "Seconds a kernel running a cell may be quiet before emjupy asks after it.
-After that long with nothing from the kernel while a cell runs, emjupy
-asks the server, without waiting, whether the kernel is still there.  A
-kernel shut down or culled while its connection stays open would leave
-the cell showing as running; gone, its cells end and the notebook is left
-without a kernel.  nil never asks."
+  "Seconds a running cell's kernel may be silent before emjupy checks on it.
+After that long without a message while a cell runs, emjupy asks the
+server, without waiting, whether the kernel still exists.  A kernel shut
+down or culled while its connection stays open would otherwise leave the
+cell shown as running; if the kernel is gone, its cells end and the
+notebook has no kernel.  nil never checks."
   :type '(choice (const :tag "Never" nil) number)
   :safe (lambda (v) (or (null v) (and (numberp v) (> v 0))))
   :group 'emjupy-advanced)
@@ -78,8 +78,8 @@ without a kernel.  nil never asks."
   "The kernel and width last sent to it, as (KERNEL-ID . WIDTH).")
 
 (defvar emjupy-debug-functions nil
-  "Functions called with KERNEL, MSG-TYPE and DATA for the debugger's messages.
-debug_reply and debug_event: the debugger, a layer above, hears them so.")
+  "Functions called with KERNEL, MSG-TYPE and DATA for debugger messages.
+That is, debug_reply and debug_event; the debugger layer listens here.")
 
 (defvar emjupy-before-execute-functions nil
   "Functions called with the cell about to run, synced, before it is sent.")
@@ -97,11 +97,12 @@ connection that replaces it.")
 
 (defvar-local emjupy--runs-waiting nil
   "Cells run while the connection was being restored, in the order run.
-They run when it is back, as each reads then; if it is not, they do not.")
+They run when the connection is back, with their contents at that time;
+if it does not come back, they do not run.")
 
 (defvar-local emjupy--server-silent nil
-  "Non-nil when the server did not answer when last asked, reconnecting.
-Said if the reconnect gives up: the server may have stopped.")
+  "Non-nil when the server did not answer the last check while reconnecting.
+If reconnecting gives up, this is mentioned: the server may have stopped.")
 
 (defvar-local emjupy--reconnect-timer nil
   "Timer trying to reconnect after a dropped connection, or nil.")
@@ -139,8 +140,8 @@ history, and stopping none of the user's queued cells if it fails."
 
     (puthash "code" code content)
     (puthash "silent" :false content)
-    ;; emjupy's own code, INTERNAL, is no run of the user's: it counts
-    ;; nothing, is in no history, and failing stops none of their cells.
+    ;; INTERNAL marks emjupy's own code: it is not counted, not kept in the
+    ;; history, and failing does not stop the user's cells.
     (puthash "store_history" (if internal :false t) content)
     (puthash "user_expressions" (make-hash-table) content)
     (puthash "allow_stdin" (if allow-stdin t :false) content)
@@ -212,9 +213,9 @@ terminal's, not the notebook's.")
 
 (defun emjupy--stream-write (output old chunk)
   "Set OUTPUT's text to OLD with CHUNK written to it, as on a terminal.
-Cursor codes -- stacked progress bars -- are applied from where the last
-write left the cursor; text without them, written at the end, has only
-its carriage returns applied, as it always had."
+Cursor codes, as stacked progress bars use, are applied from where the
+last write left the cursor.  Text without them is written at the end,
+with only carriage returns applied."
   (let ((cursor (gethash output emjupy--stream-cursors)))
     (if (or cursor (emjupy--terminal-codes-p chunk))
         (let ((written (emjupy--terminal-apply old chunk cursor)))
@@ -304,9 +305,9 @@ cell showing the widget.")
 
 (defun emjupy--clear-cell-outputs-now (cell notebook)
   "Clear CELL's outputs in NOTEBOOK, as a kernel's `clear_output' asks.
-Widgets stay: in a notebook a widget's own output area is what an
-`interact' clears before drawing again, and the controls are outside
-it.  Here the outputs are one list, so the widgets are what is kept."
+Keep widgets: in Jupyter an `interact' clears its own output area, and
+its controls are outside it.  Here the outputs are one list, so the
+widget views are what is kept."
   (setf (emjupy-cell-outputs cell)
         (vconcat (seq-filter #'emjupy--widget-view-output-p
                              (append (or (emjupy-cell-outputs cell) []) nil))))
@@ -344,9 +345,9 @@ message id and the serialized message."
 
 (defun emjupy--input-requested (kernel data)
   "Ask the user for what KERNEL's request for input, DATA, asks.
-A cell called `input', `getpass', or pdb, and the kernel waits for
-the answer.  Asked from a timer, not here in the process filter, where
-waiting on the minibuffer would hold up every other message."
+A cell called `input', `getpass' or pdb, and the kernel waits for the
+answer.  Ask from a timer, not from the process filter, where waiting on
+the minibuffer would hold up every other message."
   (let ((content (gethash "content" data)))
     (run-at-time 0 nil #'emjupy--answer-input-request kernel
                  (or (gethash "prompt" content) "")
@@ -499,7 +500,7 @@ replayed straight through the handler."
 
 (defvar emjupy--internal-requests (make-hash-table :test 'equal)
   "Message ids of emjupy's own requests, mapped to their callbacks.
-Apart from a kernel's pending table: they belong to no cell.")
+Kept apart from a kernel's pending table, as they belong to no cell.")
 
 (defun emjupy--kernel-eval (kernel code callback)
   "Run CODE on KERNEL and pass its printed output, as printed, to CALLBACK.
@@ -581,11 +582,10 @@ is done: a large answer comes in several messages."
 
 (defun emjupy--cell-replied (cell content id pending notebook)
   "Finish CELL's run, its request ID answered by an execute_reply.
-CONTENT is the reply's content; PENDING the kernel's table of requests;
-NOTEBOOK the cell's.  The count is set, the cell marked done, and its
-output redrawn -- the notebook only if that cannot be done in place:
-redrawing it on every reply, a notebook run whole was redrawn once per
-cell."
+CONTENT is the reply's content, PENDING the kernel's table of requests,
+and NOTEBOOK the cell's.  Set the execution count, mark the cell done,
+and redraw its output -- the whole notebook only if that cannot be done
+in place, so running a notebook does not redraw it once per cell."
   (setf (emjupy-cell-exec-count cell) (gethash "execution_count" content))
   (emjupy--request-half-seen id 'reply pending)
   ;; The run ended without new output: clear its old output now.
@@ -631,8 +631,8 @@ moving a slider, is claimed through `emjupy-output-owner-functions'."
 
 (defun emjupy--record-execution-time (cell msg-type data)
   "Record in CELL's metadata the time of DATA, a message of MSG-TYPE.
-JupyterLab's keys, the kernel's own time from the message header; a run
-starting anew, its times from before go."
+Use JupyterLab's keys and the kernel's time from the message header.
+When a new run starts, remove the previous run's times."
   (let ((key (pcase msg-type
                ("execute_input" "iopub.execute_input")
                ("execute_reply" "shell.execute_reply")
@@ -701,18 +701,18 @@ kernels never cross-talk."
          (_heard (when cell (puthash parent-id t emjupy--requests-heard)))
          (internal (when parent-id (gethash parent-id
                                             emjupy--internal-requests))))
-    ;; The connection hears the kernel's output: what was held goes.
+    ;; The connection now hears the kernel's output: send what was held.
     (when (and kernel (emjupy-kernel-handshake kernel)
                (equal msg-type "status")
                (equal parent-id (emjupy-kernel-handshake kernel)))
       (emjupy--end-handshake kernel))
-    ;; What it is doing, for the mode line: any status, whoever's request.
+    ;; Show the kernel's state in the mode line, from any status message.
     (when (and kernel (equal msg-type "status"))
       (let ((state (gethash "execution_state" content)))
         (unless (equal state (emjupy-kernel-state kernel))
           (setf (emjupy-kernel-state kernel) state)
           (emjupy--kernel-told kernel))))
-    ;; The kernel waiting on the user: a cell asked for input.
+    ;; A cell asked for input, and the kernel waits for the user.
     (when (equal msg-type "input_request")
       (emjupy--input-requested kernel data))
     (when internal
@@ -728,11 +728,11 @@ kernels never cross-talk."
 ;;;; Connecting
 
 (defun emjupy--guard-refused-socket (ws)
-  "Keep a refused WS's leftovers from raising errors.
-Its handshake refused, websocket.el goes on to read the server's error
-page as frames, and answers a ping found there on the closed connection:
-an error in the process's filter.  Errors of a socket marked refused are
-dropped; any other's are raised as they were."
+  "Keep a refused socket WS's leftovers from raising errors.
+When its handshake is refused, websocket.el still reads the server's
+error page as frames, and answers a ping found there on the closed
+connection, which raises an error in the process filter.  Drop errors
+of a socket marked refused; raise others as usual."
   (when-let* (((websocket-p ws))
               (conn (websocket-conn ws))
               ((processp conn))
@@ -750,8 +750,8 @@ dropped; any other's are raised as they were."
 KERNEL-NAME, when given, is the kernelspec name to record.
 Returns the `emjupy-kernel'.  Each notebook keeps its own kernel, so
 several notebooks -- from several servers -- stay live at once."
-  ;; A new connection, or a restarted kernel under the same id: told the
-  ;; width afresh.
+  ;; A new connection, or a kernel restarted under the same id, is told
+  ;; the width again.
   (when (buffer-live-p (emjupy-notebook-buffer notebook))
     (with-current-buffer (emjupy-notebook-buffer notebook)
       (setq emjupy--kernel-width-told nil)))
@@ -769,8 +769,8 @@ several notebooks -- from several servers -- stay live at once."
                          (concat "?session_id="
                                  (emjupy--ws-session-id notebook kernel-id)
                                  (emjupy--ws-token-param server "&"))))
-         ;; The token in a header; in the address only for a server refusing
-         ;; it so.  Shared with the language server's socket.
+         ;; The token goes in a header, and in the address too only for a server
+         ;; that refused it in a header, as for the language server's socket.
          (headers (emjupy--websocket-auth-headers server))
          (kernel (make-emjupy-kernel
                   :id kernel-id :name kernel-name :server server
@@ -802,19 +802,19 @@ several notebooks -- from several servers -- stay live at once."
            :on-close (lambda (_ws)
                        (emjupy--kernel-connection-closed kernel label))
            :on-error (lambda (ws type err)
-                       ;; Its handshake refused -- the kernel gone, a server
-                       ;; restarted -- the socket is closed, and the
-                       ;; reconnecting asks the server what became of it.
+                       ;; The handshake was refused, as when the kernel is
+                       ;; gone or the server restarted: close the socket, and
+                       ;; let reconnecting ask the server what became of it.
                        (when (and (websocket-p ws)
                                   (eq (car-safe err)
                                       'websocket-received-error-http-response))
                          (setf (websocket-client-data ws) 'refused)
-                         ;; Dropped, not closed: closing writes a frame to a
-                         ;; connection the server has shut.
+                         ;; Drop the socket rather than close it: closing writes
+                         ;; a frame to a connection the server has shut.
                          (when (process-live-p (websocket-conn ws))
                            (delete-process (websocket-conn ws))))
-                       ;; Refused with the token in a header alone: the next
-                       ;; attempt, reconnecting, has it in the address too.
+                       ;; Refused with the token only in a header: the next
+                       ;; attempt puts it in the address too.
                        (if (emjupy--note-ws-refusal server err)
                            (message "[emjupy] %s: the server wants the token in the WebSocket address; trying so"
                                     label)
@@ -824,8 +824,8 @@ several notebooks -- from several servers -- stay live at once."
     (setf (emjupy-notebook-kernel notebook) kernel)
     ;; cells kept running when the last connection dropped
     (emjupy--adopt-kept-runs kernel)
-    ;; A hook, run once the socket is up: the language-server layer, above this
-    ;; one, asks the kernel where it runs.
+    ;; Run a hook once the socket is up; the language-server layer asks the
+    ;; kernel there where it runs.
     (run-with-timer 0.5 nil #'run-hook-with-args
                     'emjupy-kernel-connected-functions notebook)
     kernel))
@@ -850,8 +850,8 @@ the caller can fall back to a bare kernel."
           (let ((res (emjupy--http-request "POST" server "/api/sessions"
                                            (json-serialize body))))
             (and (hash-table-p res) (gethash "kernel" res)))
-        ;; Its callers carry on without a session; the server's reason --
-        ;; a token refused, a kernel it does not have -- is said, not lost.
+        ;; Callers carry on without a session, so report the server's reason,
+        ;; such as a refused token or a kernel it does not have.
         (emjupy-http-error
          (message "[emjupy] Could not start a session for %s: %s"
                   path (error-message-string err))
@@ -934,16 +934,16 @@ attaching two notebooks to one kernel makes them share state."
 (defun emjupy--disconnect-kernel (notebook)
   "Close NOTEBOOK's WebSocket, if any, and drop its in-flight requests."
   (when-let* ((kernel (emjupy-notebook-kernel notebook)))
-    ;; closed on purpose: not a drop to reconnect after
+    ;; closed on purpose, so not a drop to reconnect after
     (setf (emjupy-kernel-closing kernel) t)
     (when (emjupy--ws-live-p kernel)
       (websocket-close (emjupy-kernel-ws kernel)))
     (when (emjupy-kernel-pending kernel)
       (clrhash (emjupy-kernel-pending kernel)))
     (setf (emjupy-kernel-ws kernel) nil))
-  ;; Nor is a reconnecting begun by an earlier drop to go on: it would
-  ;; replace the connection made next, requests in flight on this one.
-  ;; Cells held for it run no more, as Jupyter's queue on a restart.
+  ;; Also stop a reconnect started by an earlier drop: it would replace the
+  ;; next connection, and the requests in flight on it.  Cells held for it
+  ;; no longer run, as with Jupyter's queue on a restart.
   (let ((buf (emjupy-notebook-buffer notebook)))
     (when (buffer-live-p buf)
       (with-current-buffer buf
@@ -982,14 +982,12 @@ then sent, in order: see `emjupy--begin-handshake'."
 
 (defun emjupy--begin-handshake (kernel)
   "Hold what is sent to KERNEL until its new connection hears its output.
-A kernel publishes its output on one channel and answers on another; a
-connection just opened can miss what is first published, while the
-answer comes.  So, as JupyterLab does, emjupy asks for the kernel's info
-first, and sends nothing else until a status for that request arrives:
-statuses come only on the output channel.  The first cell's output was
-lost otherwise, unless something whose output no one reads went first.
-No status within `emjupy--handshake-timeout' seconds: it goes on, saying
-so."
+A kernel publishes output on one channel and answers on another, and a
+newly opened connection can miss what is published first.  So, as
+JupyterLab does, ask for the kernel's info first, and send nothing else
+until a status for that request arrives: statuses come only on the
+output channel.  If none arrives within `emjupy--handshake-timeout'
+seconds, go on, and say so."
   (let ((msg (emjupy--make-message "kernel_info_request"
                                    (make-hash-table :test 'equal))))
     (setf (emjupy-kernel-handshake kernel) (car msg)
@@ -1060,11 +1058,10 @@ is still folded where the box ends."
     (when (and kernel (emjupy--ws-live-p kernel) (buffer-live-p buf))
       (with-current-buffer buf
         (let ((columns (or width (emjupy--box-width))))
-          ;; Told every time, the same width included: what a new kernel
-          ;; runs first may publish its output before this connection
-          ;; hears it.  This line, whose output no one reads, takes that
-          ;; place; spared, a user's first cell lost its output.  It goes
-          ;; with the cell: no round trip.
+          ;; Tell the width every time, even if unchanged: a new kernel's
+          ;; first output can be published before this connection hears
+          ;; it, and this line, whose output nobody reads, takes that
+          ;; place.  It goes with the cell, with no extra round trip.
           (progn
             (emjupy--kernel-eval
              kernel
@@ -1131,17 +1128,18 @@ have run and gives the key that runs it again."
                  (if (cdr cells) "each" "it"))))
 
 (defun emjupy--kernel-connection-closed (kernel label)
-  "Note that KERNEL's connection closed, LABEL naming its notebook.
-Recovers as below, then says so in the mode line: reconnecting, or not."
+  "Handle the closing of KERNEL's connection, LABEL naming its notebook.
+Recover as `emjupy--kernel-connection-closed-1' does, then show in the
+mode line whether it is reconnecting."
   (emjupy--kernel-connection-closed-1 kernel label)
   (emjupy--kernel-told kernel))
 
 (defun emjupy--kernel-connection-closed-1 (kernel label)
-  "The WebSocket to KERNEL, for the notebook called LABEL, has closed.
-Closed by emjupy, or with reconnecting off, cells still running on it
-are ended.  Dropped, they keep running and emjupy reconnects for
-`emjupy-reconnect-window' seconds; the server replays what came
-meanwhile to the same session."
+  "Handle the closing of the WebSocket to KERNEL, for the notebook LABEL.
+If emjupy closed it, or reconnecting is off, end the cells still
+running on it.  If the connection dropped, keep them running and
+reconnect for `emjupy-reconnect-window' seconds; the server replays what
+came meanwhile to the same session."
   (let* ((pending (emjupy-kernel-pending kernel))
          (nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb)))
@@ -1177,9 +1175,9 @@ meanwhile to the same session."
                  ""))))))
 
 (defun emjupy--run-waiting-cells (nb)
-  "Run the cells of NB run while its connection was being restored.
-In the order they were run, each as it reads now; one deleted meanwhile
-is not run."
+  "Run the cells of NB that were run while its connection was restored.
+Run them in the order they were run, with their current contents; skip
+a cell deleted meanwhile."
   (let ((cells emjupy--runs-waiting))
     (setq emjupy--runs-waiting nil)
     (dolist (cell cells)
@@ -1193,17 +1191,17 @@ is not run."
 ;; one.  It runs through a callback and a timer, never as recursion.
 
 (defun emjupy--try-reconnect (buf kernel-id kernel-name deadline label)
-  "Try to reconnect BUF's notebook to KERNEL-ID, named KERNEL-NAME, once.
+  "Try once to reconnect BUF's notebook to KERNEL-ID, named KERNEL-NAME.
 Run every few seconds after its connection dropped, until it is back or
-DEADLINE passes; then the kept cells, for the notebook called LABEL, are
-ended as a closed connection ends them."
+DEADLINE passes; then end the kept cells of the notebook LABEL, as a
+closed connection does."
   (if (not (buffer-live-p buf))
       (cancel-function-timers #'emjupy--try-reconnect)
     (with-current-buffer buf
       (let* ((nb emjupy--buffer-notebook)
              (kernel (and nb (emjupy-notebook-kernel nb))))
         (cond
-         ;; back: by this, or by hand
+         ;; connected again, by this or by hand
          ((and kernel (emjupy--ws-live-p kernel)
                (equal (emjupy-kernel-id kernel) kernel-id))
           (cancel-timer emjupy--reconnect-timer)
@@ -1261,12 +1259,12 @@ the run ended while disconnected, and the cell is ended too."
             (run-with-timer 4 nil #'emjupy--settle-adopted-runs kernel ids)))))))
 
 (defun emjupy--settle-adopted-runs (kernel ids)
-  "Settle IDS, requests KERNEL adopted after a drop: end them if it is idle.
-They ended unseen, while the connection was down.  Only these: a run
-sent since may have finished on the kernel with its output still on the
-way, and ending it would lose that output.  A kernel heard from lately
-is working through them -- idle a moment between two queued cells --
-and is asked again later."
+  "End IDS, requests KERNEL adopted after a drop, if the kernel is idle.
+An idle kernel has finished them unseen, while the connection was down.
+Only these are ended: a run sent since may have finished with its output
+still on the way.  A kernel heard from recently may be working through
+them, idle for a moment between queued cells, so it is asked again
+later."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb)))
          (pending (emjupy-kernel-pending kernel))
@@ -1283,7 +1281,7 @@ and is asked again later."
                                  "GET" (emjupy-notebook-server nb)
                                  (format "/api/kernels/%s"
                                          (emjupy-kernel-id kernel))))
-                     ;; unknown: the cells stay running, as they may be
+                     ;; state unknown: leave the cells running, as they may be
                      (emjupy-http-error nil))))
         (when (equal state "idle")
           ;; A request the kernel reported on ran while disconnected.  One it
@@ -1304,10 +1302,10 @@ and is asked again later."
                                        (emjupy-notebook-path nb)))))))))
 
 (defun emjupy--ws-session-id (notebook kernel-id)
-  "Return the session id NOTEBOOK's connections to KERNEL-ID go under.
-The same each time, in this Emacs: the server keeps a session's messages
-while its connection is down, and replays them to the next connection
-of that session -- one with a new id, every connection did, got none."
+  "Return the session id for NOTEBOOK's connections to KERNEL-ID.
+It stays the same within this Emacs: the server keeps a session's
+messages while its connection is down, and replays them to the next
+connection of the same session."
   (let ((h (md5 (format "%s|%s|%s" emjupy--session-id kernel-id
                         (or (emjupy-notebook-path notebook) "")))))
     (format "%s-%s-%s-%s-%s" (substring h 0 8) (substring h 8 12)
@@ -1317,10 +1315,10 @@ of that session -- one with a new id, every connection did, got none."
 ;;;; Is the kernel still there?
 
 (defun emjupy--check-kernel-still-there (buf server kernel-id label)
-  "Ask SERVER, without waiting, whether KERNEL-ID, BUF's kernel, is there.
-Gone -- died, or shut down -- BUF stops reconnecting at once, saying so
-for the notebook called LABEL.  No answer is noted, for the message if
-the reconnecting gives up."
+  "Ask SERVER, without waiting, whether KERNEL-ID, BUF's kernel, exists.
+If it is gone, having died or been shut down, stop reconnecting at once
+and say so for the notebook LABEL.  If the server does not answer, note
+it for the message shown if reconnecting gives up."
   (when server
     (emjupy--http-request-async
      "GET" server (concat "/api/kernels/" kernel-id) nil
@@ -1336,10 +1334,10 @@ the reconnecting gives up."
              (setq emjupy--server-silent t))))))))
 
 (defun emjupy--kernel-gone (buf kernel-id label)
-  "Let BUF go of KERNEL-ID, which the server no longer has.
-Reconnecting to it stops; the cells running on it, or kept for it, end;
-those waiting to run do not run; its connection, if open, closes; and
-the notebook called LABEL is left without a kernel, for a new one."
+  "Detach BUF from KERNEL-ID, which the server no longer has.
+Stop reconnecting; end the cells running on it or kept for it; drop
+those waiting to run; close its connection if open; and leave the
+notebook LABEL without a kernel, ready for a new one."
   (with-current-buffer buf
     (when (timerp emjupy--reconnect-timer)
       (cancel-timer emjupy--reconnect-timer))
@@ -1378,10 +1376,9 @@ the notebook called LABEL is left without a kernel, for a new one."
   "The timer asking after quiet kernels, while a cell runs anywhere.")
 
 (defun emjupy--watch-quiet-kernels ()
-  "Have kernels running cells asked after, should they go quiet.
-The timer ticks every 5 seconds, each tick reading
-`emjupy-kernel-check-interval' as it is then: set while a cell runs, it
-counts at once."
+  "Check on kernels running cells, in case they go quiet.
+The timer ticks every 5 seconds and reads `emjupy-kernel-check-interval'
+each time, so a change takes effect at once."
   (when (and emjupy-kernel-check-interval
              (not (timerp emjupy--quiet-check-timer)))
     (setq emjupy--quiet-check-timer
@@ -1413,11 +1410,9 @@ The timer calling this stops once no cell runs anywhere."
 ;;;; Running cells
 
 (cl-defun emjupy-execute-cell-at-point (&optional synced)
-  "Sync cell code and send to this notebook's kernel for execution.
-From Lisp, SYNCED says the caller has synced the cells already: cells
-run in a row are synced once, not once each -- a notebook run whole was
-read once per cell, slower with the square of its size.  It was a flag
-the caller bound, read here, unseen where it was bound."
+  "Sync the cell's code and send it to this notebook's kernel to run.
+From Lisp, SYNCED non-nil says the caller has already synced the cells,
+so cells run in a row are synced once rather than once each."
   (interactive)
   ;; A markdown cell has nothing to run.  Jupyter treats running one as
   ;; rendering it, and sending its prose to Python produces a syntax error
@@ -1482,9 +1477,9 @@ the caller bound, read here, unseen where it was bound."
         ;; The kernel handles requests in order, so the width is told first, if
         ;; it is new, and the cell runs with it.
         (emjupy--ensure-kernel-width emjupy--buffer-notebook)
-        ;; The cell's output is this run's from now on: what an earlier run
-        ;; of it still sends -- one kept through a dropped connection, its
-        ;; rest replayed -- is not added to it, as in Jupyter's frontends.
+        ;; From now on the cell shows only this run's output: anything an
+        ;; earlier run still sends, such as the replayed rest of a run kept
+        ;; through a dropped connection, is not added, as in Jupyter.
         (let ((pending (emjupy-kernel-pending kernel)) (earlier nil))
           (maphash (lambda (id c) (when (eq c cell) (push id earlier))) pending)
           (dolist (id earlier)
@@ -1492,10 +1487,10 @@ the caller bound, read here, unseen where it was bound."
             (emjupy--forget-request id))
           (puthash msg-id cell pending))
         (emjupy--ws-send json-payload kernel)
-        ;; Its outputs from now on are the user's own, and drawn.
+        ;; From now on its outputs are the user's own, and are drawn.
         (emjupy--mark-cell-trusted cell)
         (setf (emjupy-cell-size-hidden cell) nil)
-        ;; Quiet from now on, it is asked after on the server.
+        ;; If the kernel goes quiet from now on, check on it with the server.
         (setf (emjupy-kernel-heard kernel) (float-time))
         (emjupy--watch-quiet-kernels)
         ;; Show that it is running.  Long cells otherwise look identical to
@@ -1631,8 +1626,8 @@ Other open notebooks, and their kernels, are untouched."
       (emjupy--disconnect-kernel nb)
       (message "[emjupy] Kernel %s restarting..." kernel-id)
       ;; Not waited for: the server restarts the kernel before answering,
-      ;; half a second and more, and Emacs was held for it.  The mode line
-      ;; says restarting; connected again once it is done.
+      ;; which takes half a second or more.  The mode line shows restarting,
+      ;; then connected.
       (emjupy--http-request-async
        "POST" server (format "/api/kernels/%s/restart" kernel-id) nil
        (lambda (_) (emjupy-connect-kernel nb kernel-id name))
