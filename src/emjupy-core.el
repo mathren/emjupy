@@ -182,8 +182,8 @@ cell it runs, until its reply and its closing idle have both come."
   ;; Backlink to the notebook this kernel drives, so an incoming WebSocket
   ;; frame can be routed to the right buffer without consulting any global.
   notebook
-  ;; Non-nil once emjupy closes the socket itself: its closing is then no
-  ;; drop to recover from.
+  ;; Non-nil once emjupy closes the socket itself, so its closing is not a
+  ;; dropped connection.
   closing
   ;; When a message last came from it, as `float-time': a kernel quiet too
   ;; long while running a cell is asked after on the server.
@@ -199,16 +199,15 @@ cell it runs, until its reply and its closing idle have both come."
 ;;;; What a session learns
 
 (defvar emjupy--session-caches nil
-  "Variables holding what emjupy learnt this session, each a hash table.
-Of servers -- which answer, which have a language server -- and of
-machines -- their environments, conda.  `emjupy-forget-remote-state'
+  "Variables caching what emjupy learns in a session, each a hash table.
+About servers, which answer and which have a language server, and
+machines, their environments and conda.  `emjupy-forget-remote-state'
 empties them; define one with `emjupy--defcache'.")
 
 (defmacro emjupy--defcache (name test doc)
   "Define NAME, a hash table compared with TEST, as a session cache.
-DOC documents it.  Registered in `emjupy--session-caches', it is emptied
-by `emjupy-forget-remote-state' with the rest: one place to forget all
-emjupy learnt, rather than tables of their own, in four files."
+DOC documents it.  NAME is registered in `emjupy--session-caches', so
+`emjupy-forget-remote-state' empties it with the rest."
   (declare (indent 2) (doc-string 3))
   `(progn
      (defvar ,name (make-hash-table :test ,test) ,doc)
@@ -225,12 +224,13 @@ Filled with `emjupy--add-forgetter'.")
   (cl-pushnew function emjupy--forgetters))
 
 (defun emjupy-forget-remote-state (&optional everything)
-  "Forget what emjupy learnt this session of servers and machines.
-Which servers answer and which have a language server; each machine's
-environments and conda.  Asked again when next needed -- after an
-environment was removed, a server reconfigured.  Live connections and
-tunnels are kept.  With prefix EVERYTHING, the environment remembered for each
-folder is forgotten too, and asked for at the next opening."
+  "Forget what emjupy has learnt this session about servers and machines.
+That is, which servers answer and which have a language server, and
+each machine's environments and conda.  They are looked up again when
+next needed, for instance after an environment is removed or a server
+reconfigured.  Live connections and tunnels are kept.  With prefix
+argument EVERYTHING, also forget the environment remembered for each
+folder, which is then asked for at the next opening."
   (interactive "P")
   (let ((count 0))
     (dolist (var emjupy--session-caches)
@@ -308,8 +308,8 @@ both nil until the cell is drawn."
   ;; them.  Carried untouched: emjupy does not show them, but a notebook
   ;; saved without them has lost the images its markdown refers to.
   attachments
-  ;; Non-nil when its output is hidden for its size, on opening: for
-  ;; drawing only, not in the metadata, so the file is unchanged.
+  ;; Non-nil when its output was hidden on opening for its size: a drawing
+  ;; choice only, not saved in the metadata.
   size-hidden)
 
 (cl-defstruct emjupy-notebook
@@ -348,8 +348,8 @@ here holds the user's own output: both are trusted."
               (eq (gethash "trusted" metadata) :false)))))
 
 (defun emjupy--mark-cell-trusted (cell)
-  "Mark CELL trusted: run here, its outputs are the user's own.
-Saved with every cell so marked, the server signs the notebook."
+  "Mark CELL trusted: its outputs come from running it here.
+When every cell is so marked, the server signs the notebook on saving."
   (unless (hash-table-p (emjupy-cell-metadata cell))
     (setf (emjupy-cell-metadata cell) (make-hash-table :test 'equal)))
   (puthash "trusted" t (emjupy-cell-metadata cell)))
@@ -475,8 +475,8 @@ NAME is what gets reported."
 
 ;;;; The cell at a position
 
-;; Lookups over the cells and their overlays, nothing more: every layer
-;; asks "which cell is this?", and each required the cells layer for it.
+;; Lookups over the cells and their overlays: every layer asks which cell
+;; a position belongs to, so they are in the core.
 
 (defun emjupy--cell-at-point (&optional pos)
   "Return the cell containing POS (default point), or nil.
@@ -495,9 +495,9 @@ property, which text typed at a cell's end does not carry."
                       (setq found cell)))))
     (or found
         (get-text-property pos 'emjupy-cell)
-        ;; Past the last cell -- point-max, or a gutter line -- no overlay
-        ;; covers the position: the nearest cell, so a new cell goes below the
-        ;; one in view, not at the end.
+        ;; No overlay covers positions past the last cell, such as point-max:
+        ;; use the nearest cell, so a new cell goes below the one in view, not
+        ;; at the end.
         (emjupy--nearest-cell pos))))
 
 (defun emjupy--nearest-cell (pos)
@@ -521,9 +521,8 @@ property, which text typed at a cell's end does not carry."
 For commands about output: in an output box, the cell meant is the one
 above.  `emjupy--cell-at-point' answers for the source only."
   (let ((pos (or pos (point))))
-    ;; The output box is asked about first: as far as the source lookup goes, a
-    ;; position in one lies before the cell below, and would be answered with
-    ;; it.
+    ;; Check the output box first: the source lookup would answer a position
+    ;; in one with the cell below it.
     (or (when emjupy--buffer-notebook
           (cl-find-if
            (lambda (cell)

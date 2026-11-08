@@ -181,7 +181,7 @@ notebook a different kernel."
     (let ((kernel-id
            (condition-case err
                (emjupy--bind-server-kernel server)
-             ;; Only a refusal is asked about; anything else goes on up.
+             ;; Ask again only after a refusal; signal any other error.
              (emjupy-http-status
               (if (not (eql (emjupy--http-status-of err) 403))
                   (signal (car err) (cdr err))
@@ -250,8 +250,8 @@ ALREADY-OPEN non-nil means BUF showed it before: point stays."
     ;; `emjupy--redraw-notebook': reopening reuses the buffer with
     ;; fresh cells, and the old overlays must go with the text.
     (setq emjupy--buffer-notebook nb)
-    ;; Large outputs are hidden, for drawing only: Jupyter scrolls or cuts
-    ;; them, and drawn, they make the notebook slow.
+    ;; Hide large outputs from the drawing only: Jupyter scrolls or truncates
+    ;; them, and drawn in full they make the notebook slow.
     (cl-loop for cell across (emjupy-notebook-cells nb)
              do (setf (emjupy-cell-size-hidden cell)
                       (emjupy--cell-outputs-large-p cell)))
@@ -261,7 +261,7 @@ ALREADY-OPEN non-nil means BUF showed it before: point stays."
     ;; back to what you were reading should not lose your place.
     (unless already-open
       (goto-char (point-min)))
-    ;; As drawn, it is the server copy: nothing unsaved yet.
+    ;; Freshly drawn, the buffer matches the server copy: mark it unmodified.
     (set-buffer-modified-p nil)
     (emjupy--save-machinery-start)
     (add-hook 'kill-buffer-query-functions
@@ -307,8 +307,8 @@ Returns the notebook buffer."
         (unless already-open
           (goto-char (point-min)))
         (emjupy--attach-bound-kernel nb buf server)
-        ;; Language support warmed up now, so completion is ready when
-        ;; typing starts rather than paying the server's start then.
+        ;; Start language support now, so completion is ready when
+        ;; typing starts.
         (when emjupy-language-support
           (with-demoted-errors "[emjupy] Language support did not start: %S"
             (with-current-buffer buf
@@ -351,9 +351,9 @@ Returns the notebook buffer."
 
 (defun emjupy-trust-notebook ()
   "Trust this notebook, as Jupyter's Trust Notebook does.
-Its outputs' HTML and JavaScript then run when opened.  The server signs
-it, so it is trusted wherever Jupyter opens it from that server; asks
-first, as a notebook is a file people share."
+Its outputs' HTML and JavaScript then run when it is opened.  The server
+signs it, so it is trusted wherever Jupyter opens it from that server.
+Ask first, since notebooks are shared files."
   (interactive)
   (let* ((nb (emjupy--notebook))
          (path (emjupy-notebook-path nb)))
@@ -365,7 +365,7 @@ first, as a notebook is a file people share."
       (message "[emjupy] %s is trusted." path))))
 
 (defun emjupy--follow-notebook (nb path)
-  "Have NB, and its buffer, be the notebook at PATH on its server now."
+  "Make NB and its buffer refer to the notebook at PATH on its server."
   (setf (emjupy-notebook-path nb) path)
   (with-current-buffer (emjupy-notebook-buffer nb)
     (rename-buffer (emjupy--notebook-buffer-name path
@@ -387,8 +387,8 @@ Unsaved changes stay here, saved under the new name."
     (message "[emjupy] Renamed %s to %s" old new-path)))
 
 (defun emjupy-save-notebook-as (new-path)
-  "Save this notebook as NEW-PATH on its server, and go on with that one.
-The file it was is left as it was last saved, as JupyterLab's Save As."
+  "Save this notebook as NEW-PATH on its server, and continue with that one.
+The original file stays as last saved, as with JupyterLab's Save As."
   (interactive
    (list (read-string "Save notebook as: "
                       (emjupy-notebook-path (emjupy--notebook)))))
@@ -402,8 +402,8 @@ The file it was is left as it was last saved, as JupyterLab's Save As."
     (message "[emjupy] Saved as %s" new-path)))
 
 (defun emjupy-duplicate-notebook ()
-  "Make a copy of this notebook's file beside it, on its server, and open it.
-The copy is of the file as last saved, as JupyterLab's Duplicate."
+  "Copy this notebook's file next to it, on its server, and open the copy.
+The copy is of the file as last saved, as with JupyterLab's Duplicate."
   (interactive)
   (let* ((nb (emjupy--notebook))
          (server (emjupy-notebook-server nb))
@@ -416,7 +416,7 @@ The copy is of the file as last saved, as JupyterLab's Duplicate."
 
 (defun emjupy-revert-to-checkpoint ()
   "Revert this notebook to its checkpoint on the server, made when saved.
-What has changed since, saved or not, is lost: asks first."
+Changes since then, saved or not, are lost, so ask first."
   (interactive)
   (let* ((nb (emjupy--notebook))
          (server (emjupy-notebook-server nb))
@@ -468,8 +468,8 @@ file name works there, if you would rather push it somewhere else."
              (body (make-hash-table :test 'equal)))
         (when (string-empty-p (string-trim path))
           (user-error "No destination given"))
-        ;; A 404 is "not there"; any other failure is not an answer, and
-        ;; is raised -- taking it for "not there" overwrote without asking.
+        ;; Only a 404 means the file is not there; signal any other failure
+        ;; rather than overwrite without asking.
         (when (and (emjupy--http-exists-p server path)
                    (not (y-or-n-p (format "%s exists on %s.  Overwrite it? "
                                              path
@@ -643,8 +643,8 @@ this buffer."
     ("D" "duplicate" emjupy-duplicate-notebook)
     ("V" "revert to the checkpoint" emjupy-revert-to-checkpoint)
     ("'" "edit this cell in a buffer" emjupy-edit-cell-externally)]]
-  ;; A row of its own: four groups side by side came to some 120 columns,
-  ;; so in an ordinary frame the last column wrapped mid-word.
+  ;; A row of its own: four groups side by side need about 120 columns,
+  ;; wider than an ordinary frame.
   [["Server"
     ("g" "log in to a server" emjupy-login)
     ("R" "restart the kernel" emjupy-restart-kernel)

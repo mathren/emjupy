@@ -203,11 +203,11 @@ ID is the widget's comm id."
                        (if (emjupy--widget-state child-id)
                            (emjupy--widget-lines child-id)
                          ;; announced in a binary message, which is
-                         ;; not read: it is there, if not shown
+                         ;; not read: the widget exists, but is not shown
                          (list (propertize "[widget]" 'face 'shadow))))))))
 
 (defun emjupy--widget-output-p (s)
-  "Return non-nil if S, a widget's state, has the shape of a output."
+  "Return non-nil if S, a widget's state, has the shape of an output area."
   (equal (gethash "_model_name" s) "OutputModel"))
 (defun emjupy--widget-draw-nothing (_id _s)
   "Draw nothing: an output area's outputs are drawn as the cell's own.
@@ -215,7 +215,7 @@ ID is the widget's comm id."
   nil)
 
 (defun emjupy--widget-choose-several-p (s)
-  "Return non-nil if S, a widget's state, has the shape of a choose several."
+  "Return non-nil if S, a widget's state, is a control choosing several."
   (and (emjupy--widget-has s "_options_labels") (vectorp (gethash "index" s))))
 (defun emjupy--widget-draw-choose-several (id s)
   "Draw the options chosen in S, a control choosing several.
@@ -228,7 +228,7 @@ ID is the widget's comm id."
            id 'choose-several))))
 
 (defun emjupy--widget-choose-p (s)
-  "Return non-nil if S, a widget's state, has the shape of a choose."
+  "Return non-nil if S, a widget's state, is a control choosing one."
   (emjupy--widget-has s "_options_labels"))
 (defun emjupy--widget-draw-choose (id s)
   "Draw the option chosen in S, a control choosing one.
@@ -290,7 +290,7 @@ ID is the widget's comm id."
                             (gethash "max" s))))
 
 (defun emjupy--widget-step-p (s)
-  "Return non-nil if S, a widget's state, has the shape of a step."
+  "Return non-nil if S, a widget's state, is a number with a step."
   (and (numberp (gethash "value" s)) (emjupy--widget-has s "min" "max" "step")))
 (defun emjupy--widget-draw-step (id s)
   "Draw S, a number between bounds with a step, to be stepped or edited.
@@ -308,8 +308,7 @@ ID is the widget's comm id."
   (numberp (gethash "value" s)))
 (defun emjupy--widget-date-kind (s)
   "Return `date', `time' or `both' if S is for a date or a time, else nil.
-From its value, or -- when it has none yet -- from its model's name, the
-one thing that says what a value it would take."
+Tell from its value or, when it has none yet, from its model's name."
   (let ((v (gethash "value" s))
         (name (or (gethash "_model_name" s) "")))
     (cond ((hash-table-p v)
@@ -330,7 +329,7 @@ Those widgets say whether a value may repeat; a file upload's value is
 a list too, of files, which no text stands for."
   (and (vectorp (gethash "value" s)) (emjupy--widget-has s "allow_duplicates")))
 (defun emjupy--widget-typed-p (s)
-  "Return non-nil if S, a widget's state, has the shape of a typed."
+  "Return non-nil if S, a widget's state, is a typed value."
   (and (stringp (gethash "value" s)) (emjupy--widget-has s
                                                          "continuous_update")))
 (defun emjupy--widget-color-p (s)
@@ -494,8 +493,8 @@ lists; options before a value, since a dropdown has both.")
 
 (defun emjupy--widget-add-rule (rule)
   "Put RULE, (NAME TEST DRAW), first in `emjupy-widget-rules', once.
-For a layer above this one: a widget that draws itself must be known as
-such before any other rule takes it for what its state looks like."
+For a later layer: a widget that draws itself must be recognized before
+any other rule matches it by the shape of its state."
   (unless (assq (car rule) emjupy-widget-rules)
     (push rule emjupy-widget-rules)))
 
@@ -516,8 +515,9 @@ such before any other rule takes it for what its state looks like."
      (t
       (let ((lines (funcall (nth 2 rule) id state))
             (desc (gethash "description" state)))
-        ;; a description goes before the control, but a container's
-        ;; children have their own, and a button wears it already
+        ;; a description goes before the control, except for a
+        ;; container, whose children have their own, and a button,
+        ;; which shows it already
         (if (and lines (stringp desc) (not (string-empty-p desc))
                  (not (memq (car rule) '(container button))))
             (cons (concat desc " " (car lines)) (cdr lines))
@@ -713,8 +713,8 @@ several options, a click, or a new value asked for in the minibuffer."
                                          (emjupy--widget-image-type state)))
         ('open-media (emjupy--widget-open-media state))
         ('upload (emjupy--widget-upload id state cell))
-        ;; What a layer above drew, it says what opens: the control carries
-        ;; the function, called with the widget's id and its cell.
+        ;; A control drawn by a later layer carries the function that opens
+        ;; it, called with the widget's id and its cell.
         ((pred functionp) (funcall action id cell))))))
 
 (defun emjupy--widget-open-media (state)
@@ -730,8 +730,8 @@ several options, a click, or a new value asked for in the minibuffer."
 " (capitalize tag) tag src tag)))))
 
 (defun emjupy--widget-upload-entry (file)
-  "Return the description of FILE a file upload widget expects.
-Its content is sent apart, as binary data, so it is null here."
+  "Return the description of FILE that a file upload widget expects.
+Its content is sent separately, as binary data, so it is null here."
   (let ((entry (make-hash-table :test 'equal))
         (attrs (file-attributes file)))
     (puthash "name" (file-name-nondirectory file) entry)
@@ -795,8 +795,8 @@ ending with an empty answer.  CELL is the cell showing it."
 
 (defun emjupy-widgets-enable ()
   "Show widgets as controls, and route what they cause to their cells.
-Run when a notebook buffer starts, like the other hooks between layers,
-so that loading this file changes nothing."
+Run when a notebook buffer starts, so that loading this file changes
+nothing."
   (add-hook 'emjupy-comm-functions #'emjupy--widget-on-comm)
   (add-hook 'emjupy-output-owner-functions #'emjupy--widget-owner)
   (add-hook 'emjupy-widget-view-functions #'emjupy--widget-view))

@@ -420,8 +420,8 @@ the kernel, and one made in the kernel reaches the page."
                                                  title found)))))))
 
 (defun emjupy-widget-page-enable ()
-  "Open widgets that draw themselves in a page, and keep the pages in step.
-Run when a notebook buffer starts, like the other hooks between layers."
+  "Open self-drawing widgets in pages, and keep the pages in step.
+Run when a notebook buffer starts."
   (add-hook 'emjupy-comm-functions #'emjupy--bridge-on-comm)
   (emjupy--widget-add-rule (list 'scripted #'emjupy--widget-scripted-p
                                  #'emjupy--widget-draw-scripted)))
