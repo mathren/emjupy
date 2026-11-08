@@ -88,8 +88,8 @@ the script's address instead -- a URL, such as a CDN's, or a file name."
   "The WebKitGTK figure window that comes with emjupy.")
 
 (defvar emjupy--figure-window-bundled-command 'unknown
-  "The command running the bundled figure window, nil if it cannot, or `unknown'.
-Kept: finding out starts Python.")
+  "Command running the bundled figure window; nil if unusable, or `unknown'.
+Cached, because finding out starts Python.")
 
 (defun emjupy--figure-window-bundled ()
   "Return the command running the bundled figure window, or nil if it cannot.
@@ -306,7 +306,7 @@ the callback called with its address."
         (insert-image (emjupy--render-image-output payload type))
         (goto-char (point-min)))
       (special-mode))
-    ;; In a frame of its own, the same one each time: a figure window.
+    ;; Show it in a frame of its own, reused for every figure.
     (display-buffer buf
                     '((display-buffer-reuse-window display-buffer-pop-up-frame)
                           (reusable-frames . t)
@@ -346,7 +346,7 @@ and a notebook is a file people share."
                     (and cell (emjupy--openable-data cell))))))
     (unless data (user-error "No output here that can be opened"))
     (let ((cell (emjupy--cell-at-point-including-output)))
-      ;; As Jupyter: a notebook it does not trust does not run its scripts.
+      ;; As in Jupyter, an untrusted notebook does not run its scripts.
       (when (and (emjupy--scripted-html data) cell
                  (not (emjupy--cell-trusted-p cell)))
         (user-error "This output is from a notebook Jupyter does not trust, so its scripts are not run; %s trusts it"

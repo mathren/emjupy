@@ -25,10 +25,10 @@
 ;;;; Options
 
 (defcustom emjupy-large-output-count 50
-  "Outputs a cell may have before, opening a notebook, they are hidden.
-JupyterLab draws at most 50 of a cell's outputs.  Hidden for drawing
-only, not marked in the notebook; \\[emjupy-toggle-cell-output] shows
-them.  nil never hides for this."
+  "Number of outputs above which a cell's output is hidden on opening.
+JupyterLab draws at most 50 of a cell's outputs.  Hidden output is only
+not drawn; the notebook is unchanged, and \\[emjupy-toggle-cell-output]
+shows it.  nil never hides output for this reason."
   :type '(choice (const :tag "Never" nil) natnum)
   :safe (lambda (v) (or (null v) (natnump v)))
   :group 'emjupy-appearance)
@@ -104,8 +104,8 @@ your figures have a different background."
   :safe #'numberp)
 
 (defcustom emjupy-output-tint-blend 0.16
-  "How far to blend toward red or yellow for `auto' tints.
-This applies to the error and warning  Larger is louder."
+  "How far to blend toward red or yellow for `auto' error and warning tints.
+Larger values give stronger tints."
   :type 'float
   :group 'emjupy-advanced
   :safe #'numberp)
@@ -158,11 +158,11 @@ instead of an animation."
   :safe #'stringp)
 
 (defcustom emjupy-render-ansi-colors t
-  "When non-nil, turn ANSI colour escapes in output into real colours.
+  "Non-nil means turn ANSI colour escapes in output into colours.
 
-Libraries like termcolor, rich and colorama emit them, and a kernel
-happily passes them through -- so without this the output reads
-\"\\033[33mwarning\\033[0m\" instead of a yellow word."
+Libraries such as termcolor, rich and colorama emit them, and kernels
+pass them through; without this, output shows the raw escapes, such as
+\"\\033[33mwarning\\033[0m\"."
   :type 'boolean
   :group 'emjupy-appearance
   :safe #'booleanp)

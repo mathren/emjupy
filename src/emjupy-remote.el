@@ -100,8 +100,8 @@ under the root.  The second off the end of the first is the root:
          ((string-suffix-p (concat "/" rel) cwd)
           (let ((root (substring cwd 0 (- (length cwd) (length rel) 1))))
             (if (string-empty-p root) "/" root)))
-         ;; The two do not line up -- a kernel started somewhere else, say.
-         ;; Better to admit that than to invent a path.
+         ;; The two do not match, as for a kernel started elsewhere: return nil
+         ;; rather than invent a path.
          (t nil))))))
 
 (defun emjupy--server-relative-path (server absolute)
@@ -157,9 +157,9 @@ the last word that is neither an option nor an option's argument."
 
 (defun emjupy--ssh-host-forwarding (port)
   "Return the host of a running SSH tunnel forwarding local PORT, or nil.
-Read from the tunnel's command line.  Kept for
-`emjupy--tunnel-hosts-seconds', the answer none included: it is asked
-for every definition a search returns."
+Read from the tunnel's command line.  Cache the answer, including none,
+for `emjupy--tunnel-hosts-seconds': it is asked for every definition a
+search returns."
   (when (and port emjupy-probe-environment)
     (let ((known (gethash port emjupy--tunnel-hosts)))
       (if (and known (< (- (float-time) (car known))
@@ -171,9 +171,9 @@ for every definition a search returns."
 
 (defun emjupy--ssh-host-forwarding-1 (port)
   "Look through this machine's processes for an SSH tunnel forwarding PORT.
-Run from a local directory whatever the current buffer's: from a TRAMP
-one -- a shadow file beside a remote notebook -- `ps' ran on the remote
-machine, through TRAMP, where the tunnel is not."
+Run from a local directory, whatever the current buffer: from a TRAMP
+directory, such as that of a shadow file next to a remote notebook,
+`ps' would run on the remote machine, where the tunnel is not."
   (let ((default-directory temporary-file-directory))
     (when (executable-find "ps")
       (let ((lines (split-string
@@ -275,7 +275,7 @@ server so two servers holding the same path do not collide."
             (let ((python-indent-guess-indent-offset-verbose nil))
               (delay-mode-hooks (python-mode)))
             (setq-local default-directory temporary-file-directory)
-            ;; What it is, and where it came from, so nobody edits a copy
+            ;; Say what it is and where it came from, so nobody edits a copy
             ;; believing it is the original.
             (setq-local header-line-format
                         (format " %s on %s -- read-only copy"

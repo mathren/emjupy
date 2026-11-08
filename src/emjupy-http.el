@@ -102,9 +102,8 @@ Raw, not through `emjupy--http-request': these answer with HTML."
   'emjupy-http-status)
 
 ;; A type of its own, so a caller catches the failure it expects -- a missing
-;; file, an unreachable server -- and lets the rest through.  Under
-;; `file-error', the family url.el and TRAMP signal for an unreachable resource,
-;; whose messages read as plain text.
+;; file, an unreachable server -- and lets the rest through.  It is a kind of
+;; `file-error', which url.el and TRAMP signal for an unreachable resource.
 
 (defun emjupy--http-status-of (err)
   "Return the HTTP status carried by ERR, an `emjupy-http-status', or nil."
@@ -135,17 +134,16 @@ is not an answer, and is signalled."
 
 (defun emjupy--http-interpret (server method path status body)
   "Turn a reply into a value, or signal.
-SERVER, METHOD and PATH identify the request; STATUS and BODY are what
-came back.  Apart from the request, so it is tested without a server."
+SERVER, METHOD and PATH identify the request; STATUS and BODY are the
+reply.  Kept separate from the request so it can be tested without a
+server."
   (cond
    ((>= status 400)
     (signal 'emjupy-http-status
             (list (format "[Jupyter HTTP %d] %s" status method) body)))
-   ;; 204 No Content: there is nothing to say, and saying nothing is the
-   ;; answer.  Interrupting a kernel replies this way, and parsing it as
-   ;; JSON reported a syntax error for a request that had succeeded.
-   ;; Done, with nothing to say: 204, or 201 with no body, as trusting a
-   ;; notebook answers.
+   ;; 204 No Content, or 201 with no body as trusting a notebook answers:
+   ;; the request succeeded and there is nothing to parse.  Interrupting a
+   ;; kernel answers 204.
    ((or (= status 204)
         (and (= status 201) (string-empty-p (string-trim (or body "")))))
     nil)
@@ -203,7 +201,7 @@ wait for their answer and those that do not, so both read it alike."
     (let ((status nil))
       (when (re-search-forward "^HTTP/[0-9.]+ \\([0-9]+\\)" nil t)
         (setq status (string-to-number (match-string 1))))
-      ;; Harvest XSRF cookie from response, onto THIS server
+      ;; Remember the XSRF cookie the response sets, on this server.
       (goto-char (point-min))
       (when (re-search-forward "^Set-Cookie:.*_xsrf=\\([^; \r\n]+\\)" nil t)
         (setf (emjupy-server-xsrf server) (match-string 1)))
@@ -230,17 +228,17 @@ exceeds `max-lisp-eval-depth'."
 
 (defun emjupy--http-request-async (method server path body on-done on-fail)
   "Send a request to SERVER without waiting for it.
-METHOD, PATH and BODY are as for `emjupy--http-request'.  ON-DONE is
-called with the parsed answer, ON-FAIL with the error.  For a remote
-server, the difference between Emacs waiting and not."
+METHOD, PATH and BODY are as for `emjupy--http-request'.  Call ON-DONE
+with the parsed answer, or ON-FAIL with the error.  Over a remote link,
+this keeps Emacs responsive."
   (emjupy--http-request
    method server path body
    (lambda (_status)
      (let ((buffer (current-buffer)) (answer nil) (failure nil))
        (condition-case err
            (let ((response (emjupy--http-read-response buffer server)))
-             ;; An error status still comes with a response: only none at
-             ;; all is the network failing.
+             ;; An error status still comes with a response; only a
+             ;; missing response means the network failed.
              (if (not (car response))
                  (signal 'emjupy-http-error
                          (list "Network error: no answer from"
@@ -248,8 +246,8 @@ server, the difference between Emacs waiting and not."
                (setq answer (emjupy--http-interpret server method path
                                                     (car response)
                                                     (cdr response)))))
-         ;; What a request can fail with -- emjupy-http-error is a file
-         ;; error -- handed on; ON-DONE runs outside, its errors its own.
+         ;; Pass request failures to ON-FAIL (`emjupy-http-error' is a
+         ;; `file-error'); ON-DONE runs outside, so its errors are its own.
          (file-error (setq failure err)))
        (if failure (funcall on-fail failure) (funcall on-done answer))))))
 
@@ -261,8 +259,8 @@ server, the difference between Emacs waiting and not."
      (append `(("Content-Type" . "application/json"))
              (when (and token (not (string-empty-p token)))
                `(("Authorization" . ,(format "token %s" token))))
-             ;; XSRF tokens added from THIS server's cookie: another
-             ;; server's earns a 403.
+             ;; Add the XSRF token from this server's own cookie:
+             ;; another server's gets a 403.
              (when xsrf
                `(("X-XSRFToken" . ,xsrf)
                  ("Cookie" . ,(format "_xsrf=%s" xsrf))))))))
@@ -347,14 +345,14 @@ Reports the HTTP status on failure, and carries SERVER's XSRF cookie."
 ;;;; WebSocket authentication
 
 (defvar emjupy--token-in-ws-address nil
-  "Servers, by address, whose WebSocket refused the token in a header alone.
-For them it goes in a WebSocket's address too; elsewhere not, as an
-address is what proxies and servers log.")
+  "Servers, by address, that refused a WebSocket token sent only in a header.
+For them, the token also goes in the WebSocket address; for others it
+does not, since proxies and servers log addresses.")
 
 (defun emjupy--ws-token-param (server separator)
-  "Return the token part of a WebSocket address to SERVER, or \"\".
-SEPARATOR, \"?\" or \"&\", starts it.  Empty but for a server that
-refused the token in a header alone."
+  "Return the token parameter for a WebSocket address to SERVER, or \"\".
+SEPARATOR, \"?\" or \"&\", starts it.  It is empty except for servers that
+refused a token sent only in a header."
   (let ((token (emjupy-server-token server)))
     (if (and token (not (string-empty-p token))
              (member (emjupy-server-base-url server)
@@ -363,9 +361,9 @@ refused the token in a header alone."
       "")))
 
 (defun emjupy--note-ws-refusal (server err)
-  "Note SERVER's refusal of a WebSocket token in a header alone, from ERR.
-Return non-nil if noted now: its next WebSocket has the token in its
-address too."
+  "Record, from ERR, that SERVER refused a WebSocket token in a header.
+Return non-nil if newly recorded: its next WebSocket then has the token
+in its address too."
   (let ((token (emjupy-server-token server)))
     (when (and (eq (car-safe err) 'websocket-received-error-http-response)
                (memq (cadr err) '(401 403))

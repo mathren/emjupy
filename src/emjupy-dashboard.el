@@ -138,8 +138,8 @@ each, most recently modified first.  Kernels, without a time, by name."
      (emjupy--list-by-recent dirs)
      (emjupy--list-by-recent notebooks)
      (emjupy--list-by-recent files)
-     ;; Reversed, as they were gathered: kernels often share a name, and
-     ;; the sort keeps ties in the order given.
+     ;; Reverse to the order gathered: kernels often share a name, and a
+     ;; stable sort keeps ties in the order given.
      (emjupy--list-by-name
       (nreverse (mapcar #'emjupy--list-kernel-row (or kernels [])))))))
 
@@ -172,9 +172,7 @@ EVENT is the mouse event."
 (defun emjupy-list-up ()
   "Show the parent of the directory being listed, wherever point is.
 
-Bound to \\`^', as in Dired.  It was bound to `emjupy-list-open', which
-only goes up from the \"..\" row: anywhere else it opened the notebook at
-point, or descended into the directory there."
+Bound to \\`^', as in Dired."
   (interactive)
   (unless (string-empty-p emjupy-list--path)
     (setq emjupy-list--path
@@ -244,7 +242,7 @@ PATH is relative to what the server serves.  Tried in order:
                            path
                            (file-name-as-directory server-side))))
       (find-file (expand-file-name path (file-name-as-directory server-side))))
-     ;; Neither -- fetch it.  Read-only, and said so in the header line.
+     ;; Otherwise fetch it, read-only, as the header line says.
      (server-side
       (emjupy-open-server-file
        (expand-file-name path (file-name-as-directory server-side)) server))
@@ -295,10 +293,8 @@ one, and TRAMP already knows how to reach another machine."
 
 (defun emjupy-create-new-notebook ()
   "Create a new notebook in the directory being shown, and open it.
-
-The notebook starts with one empty code cell.  A notebook with no cells
-at all is not a thing anyone wants: it offers nowhere to type, and the
-first act would always be to add one."
+The notebook starts with one empty code cell, so there is somewhere to
+type."
   (interactive)
   (let* ((server emjupy-list--server)
          (dir emjupy-list--path)
@@ -318,9 +314,8 @@ first act would always be to add one."
     (emjupy--http-request "PUT" server (emjupy--contents-path path)
                           (json-serialize req))
     (emjupy-open-notebook path server)
-    ;; Into the cell, not merely into the buffer.  A new notebook is made to
-    ;; be typed in, and landing at `point-min' leaves the caret against the
-    ;; outline with nothing to type into.
+    ;; Put point in the new cell, ready for typing: `point-min' would leave
+    ;; it against the border.
     (let ((buf (emjupy--notebook-buffer-for path server)))
       (when (buffer-live-p buf)
         (with-current-buffer buf
