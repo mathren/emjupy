@@ -62,14 +62,14 @@ should fall back to a full redraw."
                        (overlayp new-ov)
                        (eq (overlay-buffer following-ov) (current-buffer))
                        (< (overlay-start following-ov) (overlay-end new-ov)))
-              ;; Past everything inserted, the separating blank line included:
-              ;; from the new cell's end, that newline would land in the next
-              ;; cell's source.
+              ;; Move past everything inserted, including the separating blank
+              ;; line: from the new cell's end, that newline would land in the
+              ;; next cell's source.
               (move-overlay following-ov resume
                             (max resume (overlay-end following-ov))))
-            ;; Again, now the next cell starts where it should: else the gap
-            ;; stayed writable, and a backspace there joined the cells.  Not
-            ;; recorded for undo: it edits nothing.
+            ;; Protect the gaps again, now that the next cell starts where it
+            ;; should: otherwise the gap stays writable, and a backspace there
+            ;; joins the cells.  Not recorded for undo, as it edits nothing.
             (let ((buffer-undo-list t))
               (emjupy--protect-non-cell-regions)))
           (emjupy--undo-adjust at at inserted))
@@ -146,7 +146,7 @@ separate entity, the output always travels with its cell automatically."
     (emjupy--sync-all-cells)
     (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
            (cell (emjupy--cell-at-point))
-           ;; where point is in it, kept: moving it is not moving in it
+           ;; keep point's place in the cell: moving it is not moving within it
            (offset (if cell (emjupy--cell-offset cell) 0))
            (idx (cl-position cell cells)))
       (if (or (not idx) (= idx 0))
@@ -173,7 +173,7 @@ separate entity, the output always travels with its cell automatically."
     (emjupy--sync-all-cells)
     (let* ((cells (emjupy-notebook-cells emjupy--buffer-notebook))
            (cell (emjupy--cell-at-point))
-           ;; where point is in it, kept: moving it is not moving in it
+           ;; keep point's place in the cell: moving it is not moving within it
            (offset (if cell (emjupy--cell-offset cell) 0))
            (idx (cl-position cell cells)))
       (if (or (not idx) (= idx (1- (length cells))))
@@ -192,7 +192,7 @@ separate entity, the output always travels with its cell automatically."
 ;;;; Splitting and joining
 
 (defvar-local emjupy--split-was-sane nil
-  "Whether the overlays lined up before a split rearranged the cells.")
+  "Non-nil if the overlays lined up before a split rearranged the cells.")
 
 (defun emjupy-split-cell ()
   "Split the cell at point in two, at point.
@@ -326,8 +326,8 @@ survives saving and means the same thing elsewhere."
           (emjupy-toggle-output-of-cell cell))))))
 
 (defun emjupy--toggle-outputs-in-region (start end)
-  "Hide the output of the cells START to END touch; or show it, all hidden.
-A cell's output hidden for its size counts as hidden, and shown is shown."
+  "Hide the output of the cells between START and END, or show it if all is.
+A cell's output hidden for its size counts as hidden."
   (let* ((cells (cl-remove-if-not
                  (lambda (cell)
                    (and (> (length (or (emjupy-cell-outputs cell) [])) 0)
@@ -357,7 +357,7 @@ moving point or guessing from a buffer position."
   (when (zerop (length (or (emjupy-cell-outputs cell) [])))
     (user-error "This cell has no output to hide"))
   (let ((hidden (not (emjupy--cell-outputs-hidden-p cell))))
-    ;; Hidden for its size, it is shown: the notebook's mark is untouched.
+    ;; Output hidden for its size is shown without changing the notebook's mark.
     (if (emjupy-cell-size-hidden cell)
         (setf (emjupy-cell-size-hidden cell) nil)
       (emjupy--set-cell-outputs-hidden cell hidden))
@@ -450,7 +450,7 @@ outputs until you save."
 ;;;; Deleting, copying and yanking
 
 (defun emjupy-delete-cell ()
-  "Delete current cell at point."
+  "Delete the cell at point."
   (interactive)
   (emjupy--as-one-undo-step
     (emjupy--sync-all-cells)
@@ -531,8 +531,7 @@ The new cell has no output and no execution count."
                       :outputs []
                       :metadata (make-hash-table :test 'equal))))
       ;; Inserting one cell moves only what follows it, by a known amount,
-      ;; so the history survives -- the same path `emjupy-insert-cell-below'
-      ;; takes.  Rebuilding for it lost the history.
+      ;; so the undo history survives, as in `emjupy-insert-cell-below'.
       (let ((at (if idx (1+ idx) (length cells))))
         (unless (emjupy-insert-cell-at nb at new-cell)
           (setf (emjupy-notebook-cells nb)
@@ -654,7 +653,7 @@ next line, outside the code."
                          (length (or (emjupy-cell-source cell) ""))))))))
 
 (defun emjupy--cell-offset (cell)
-  "Point's offset into CELL's source, or 0 if point is not in it."
+  "Return point's offset into CELL's source, or 0 if point is not in it."
   (let ((ov (emjupy-cell-overlay cell)))
     (if (and (overlayp ov) (<= (overlay-start ov) (point) (overlay-end ov)))
         (- (point) (overlay-start ov))
@@ -760,19 +759,19 @@ the beginning or end of the buffer as `next-line' does."
 ;;;; Appearance
 
 (defun emjupy--redraw-markdown-cell (cell &optional synced)
-  "Redraw markdown CELL, its LaTeX included.
-SYNCED: the caller has synced the cells already -- see
+  "Redraw markdown CELL, including its LaTeX.
+SYNCED non-nil means the caller has synced the cells already; see
 `emjupy-execute-cell-at-point'.
 
-What running a markdown cell means in Jupyter: there is no code in it,
-so the result is the rendered form rather than anything from a kernel."
+This is what running a markdown cell means in Jupyter: there is no code,
+so the result is the rendered form, not anything from a kernel."
   (unless synced (emjupy--sync-all-cells))
   ;; Running a markdown cell means "show it formatted": its preview is turned on
   ;; if it was off.
   (unless emjupy-render-latex
     (setq-local emjupy-render-latex t))
-  ;; In place: the notebook redrawn for each markdown cell made running a
-  ;; notebook whole slower with every markdown cell in it.
+  ;; Redraw in place: redrawing the notebook for each markdown cell would
+  ;; slow down running a whole notebook.
   (unless (emjupy--redraw-cells-in-place (list cell) (list cell))
     (emjupy--redraw-notebook cell))
   (let ((ov (emjupy-cell-overlay cell)))
@@ -901,10 +900,10 @@ EVENT is the mouse event."
 
 (defun emjupy-toggle-cell-code ()
   "Hide the code of the cell at point, and its output; or show it again.
-With an active region, every code cell it touches: hidden, unless all
-are already, when they are shown.  A hidden cell is one line in its
-place, its marker a click on shows it by.  Kept in the notebook, as
-Jupyter's mark, for JupyterLab too."
+With an active region, act on every code cell it touches: hide them
+unless all are hidden already, in which case show them.  A hidden cell
+is drawn as one line, with a marker to click to show it.  The state is
+kept in the notebook as Jupyter's mark, so JupyterLab honours it too."
   (interactive)
   (let* ((cells (if (use-region-p)
                     (emjupy--code-cells-between (region-beginning)
@@ -918,14 +917,14 @@ Jupyter's mark, for JupyterLab too."
     (dolist (cell cells) (emjupy--set-cell-source-hidden cell hide))
     (emjupy--redraw-each cells)
     (when (use-region-p) (deactivate-mark))
-    ;; On the first cell's line, hidden or shown: pressed again, it undoes.
+    ;; Leave point on the first cell's line, so pressing the key again undoes.
     (emjupy--goto-cell (car cells) 'beginning)))
 
 (defun emjupy--redraw-each (cells)
-  "Redraw CELLS, each in its own place, the rules rebuilt once.
+  "Redraw CELLS, each in its own place, rebuilding the rules once.
 Not together: `emjupy--redraw-cells-in-place' takes adjacent cells, and
-a region's cells acted on need not be -- a markdown cell, or one without
-output, between them would be drawn over."
+the cells of a region need not be adjacent; a markdown cell, or one
+without output, between them would be drawn over."
   (emjupy--with-rules-once
     (unless (cl-every (lambda (cell)
                         (emjupy--redraw-cells-in-place (list cell) (list cell)))
@@ -933,7 +932,7 @@ output, between them would be drawn over."
       (emjupy--redraw-notebook (car cells)))))
 
 (defun emjupy--cells-between (start end)
-  "The cells START to END touch, in order: their code, or their output."
+  "Return the cells between START and END, in order, by code or output."
   (cl-loop for cell across (emjupy-notebook-cells (emjupy--notebook))
            for ov = (emjupy-cell-overlay cell)
            for out = (emjupy-cell-output-ov cell)
@@ -943,7 +942,7 @@ output, between them would be drawn over."
            collect cell))
 
 (defun emjupy--code-cells-between (start end)
-  "The code cells START to END touch, in order."
+  "Return the code cells between START and END, in order."
   (cl-remove-if-not (lambda (cell) (eq (emjupy-cell-type cell) 'code))
                     (emjupy--cells-between start end)))
 
@@ -954,7 +953,8 @@ output, between them would be drawn over."
 
 (defun emjupy--show-code-from-string (pair buffer)
   "Show the code of the cell named by PAIR, a (STRING . INDEX), in BUFFER.
-Apart from the mouse event, to be tested, as for an output's marker."
+Kept apart from the mouse event so it can be tested, as for an output's
+marker."
   (let ((id (and (consp pair)
                  (get-text-property (cdr pair) 'emjupy-toggle-cell
                                     (car pair)))))
