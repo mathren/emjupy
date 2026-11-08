@@ -80,13 +80,13 @@ your own modules, but nothing is written to a wrong path."
   :group 'emjupy-advanced)
 
 (defcustom emjupy-shadow-beside-notebook t
-  "When non-nil, keep the shadow file in the notebook's own directory.
+  "Non-nil means keep the shadow file in the notebook's own directory.
 A language server resolves `import mylib' against the file's directory,
-so this is what lets \\[xref-find-definitions] reach the modules beside
+so this is what lets \\[xref-find-definitions] reach the modules next to
 the notebook.  The directory is the kernel's working directory, or
 `emjupy-remote-root''s; a remote one is used only through
-`emjupy-shadow-host'.  No effect when the shadow must stay on this
-machine and the notebook is on another: \"beside\" would make a local
+`emjupy-shadow-host'.  It has no effect when the shadow must stay on
+this machine and the notebook is on another: \"beside\" would make a local
 directory named after a remote path."
   :type 'boolean
   :group 'emjupy-advanced)
@@ -219,27 +219,25 @@ using one raises a `jsonrpc-error' out of completion."
 
 (defun emjupy--shadow-stays-here-p (nb)
   "Return non-nil if NB's shadow file belongs on this machine.
-Unless NB's route is `local': the server's language server is sent the
-text, and never reads the file -- built over TRAMP, it would only be
-slow -- and while the route is undecided, nothing reads it yet.  Built
-beside a remote notebook then, it was written over TRAMP, only to move
-here once the socket route was found, and the server connected to it
-went with it.  Only the fallback, an ordinary Eglot, reads it there."
+It does unless NB's route is `local': the server's language server
+receives the text and never reads the file, so building it over TRAMP
+would only be slow, and while the route is undecided nothing reads it.
+Only the fallback, an ordinary Eglot, reads the file where it is."
   (not (eq (emjupy-notebook-lsp-route nb) 'local)))
 
 (defun emjupy--shadow-must-stay-here-p (nb)
-  "Non-nil when NB's shadow belongs on this machine but its files do not.
+  "Return non-nil when NB's shadow belongs on this machine but its files do not.
 
-True exactly when the WebSocket transport is in use and the notebook is
-somewhere this machine cannot reach as a plain path."
+That is exactly when the WebSocket transport is in use and the notebook
+is somewhere this machine cannot reach as a plain path."
   (and (emjupy--shadow-stays-here-p nb)
        (let ((dir (emjupy--notebook-directory nb)))
          (and dir (not (emjupy--local-directory-p dir))))))
 
 (defun emjupy--shadow-directory-for (nb)
   "Return the directory NB's shadow file belongs in."
-  ;; Kept here rejects REMOTE candidates only.  A directory set by hand
-  ;; that is already on this machine is still what the user asked for.
+  ;; Keeping the file here rejects only remote candidates: a directory
+  ;; set by hand that is already on this machine is what the user asked for.
   (let ((here (emjupy--shadow-stays-here-p nb)))
     (cl-flet ((usable (dir)
                 (and dir
@@ -261,9 +259,9 @@ somewhere this machine cannot reach as a plain path."
 
 (defun emjupy--shadow-temporary-directory ()
   "Return the temporary directory for this user's shadow files.
-One per user, named after them: a single one in a shared /tmp was made
-by whoever came first, and nobody else could write in it.  It is made
-readable by its owner alone -- a shadow file holds a notebook's code."
+One per user, named after them: a single shared one in /tmp would belong
+to whoever made it first, and nobody else could write in it.  It is
+readable by its owner only, since a shadow file holds a notebook's code."
   (file-name-as-directory
    (expand-file-name (format "emjupy-shadow-%s" (user-login-name))
                      temporary-file-directory)))
@@ -311,11 +309,11 @@ after commands.  A remote name is not here by definition."
   "Non-nil once this notebook has been told its language server is local.")
 
 (defun emjupy--warn-local-language-server (nb)
-  "Say that NB is about to get a language server on THIS machine.
-The fallback when the server beside the kernel cannot be reached: it
-reads this machine's files and Python, so imports of the user's own
-modules quietly come back empty.  Said once per notebook, with the
-reason the socket failed, if there is one."
+  "Say that NB is about to get a language server on this machine.
+This is the fallback when the server beside the kernel cannot be
+reached: it reads this machine's files and Python, so imports of the
+user's own modules come back empty.  Say it once per notebook, with the
+reason the socket failed, if any."
   (let ((nb-buffer (or (and nb (emjupy-notebook-buffer nb)) (current-buffer))))
     (when (buffer-live-p nb-buffer)
       (with-current-buffer nb-buffer
@@ -360,10 +358,10 @@ must be the notebook buffer: the next request comes from there."
 
 (defun emjupy--retire-moved-shadow (nb path)
   "Return NB's shadow buffer, unless it visits a file other than PATH.
-Then it is killed, and nil returned.  The path can change: the kernel
-reports its directory after the first buffer was made, in the temporary
-fallback.  Rebuilt, so the server reads the notebook's own directory and
-finds its modules."
+In that case kill it and return nil.  The path can change: the kernel
+reports its directory after the first buffer was made in the temporary
+fallback.  Rebuilding lets the server read the notebook's own directory
+and find its modules."
   (let ((buf (emjupy-notebook-shadow-buffer nb)))
     (if (not (and (buffer-live-p buf)
                   (buffer-local-value 'buffer-file-name buf)
@@ -404,9 +402,9 @@ backs off: the notebook stays open, without language support."
   ;; make the next visit ask to reread it.
   (let ((buf (find-buffer-visiting path)))
     (unless (buffer-live-p buf)
-      ;; The content is written BEFORE the file is visited: Eglot sends
-      ;; didOpen from `find-file-hook' with what the buffer holds then, and an
-      ;; empty document left later notebooks without completion.
+      ;; Write the content before visiting the file: Eglot sends didOpen
+      ;; from `find-file-hook' with what the buffer holds then, and an
+      ;; empty document would leave the notebook without completion.
       (let ((coding-system-for-write emjupy--shadow-coding))
         (write-region content nil path nil 'quiet))
       (setq buf (let ((coding-system-for-read emjupy--shadow-coding))
@@ -505,9 +503,8 @@ next time."
 
 (defun emjupy-abort-shadow-edit ()
   "Discard uncommitted edits in the shared code buffer.
-It is reverted to the cells' last-committed state, then the notebook is
-switched back to.
-The buffer and its Eglot connection are kept alive, not killed."
+Revert it to the cells' last committed state, then switch back to the
+notebook.  The buffer and its Eglot connection are kept."
   (interactive)
   (when (y-or-n-p "Discard uncommitted edits in the shared code view? ")
     (let ((nb emjupy--edit-shadow-notebook))
@@ -564,9 +561,9 @@ adopted again.  A language server serving another buffer stays."
     (let* ((sb (emjupy-notebook-shadow-buffer nb))
            (server (and (buffer-live-p sb)
                         (with-current-buffer sb (eglot-current-server)))))
-      ;; The shadow buffer first: killing it is how Eglot is told the document
-      ;; is closed.  Shutting the server down while it was still managed failed
-      ;; flushing its changes.
+      ;; Kill the shadow buffer first: that tells Eglot the document is
+      ;; closed, and shutting the server down while it still manages the
+      ;; buffer fails to flush its changes.
       (when (buffer-live-p sb)
         (with-current-buffer sb (set-buffer-modified-p nil))
         (let ((kill-buffer-query-functions nil))

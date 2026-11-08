@@ -59,8 +59,8 @@ nil."
 
 (defun emjupy--relabel-output (cell out)
   "Redraw only the label of CELL's output box OUT, its output unchanged.
-As when the cell finished and nothing new came.  Set as drawing the box
-sets it, then placed as a redraw places it."
+For a cell that finished with no new output.  The label is set as
+drawing the box sets it, then placed as a redraw places it."
   (let ((inhibit-read-only t))
     (overlay-put out 'emjupy-header nil)
     (overlay-put out 'before-string
@@ -97,10 +97,10 @@ extended to cover the text, which is kept out of the undo history."
 
 (defun emjupy--append-stream-output (cell)
   "Draw only what CELL's last stream output gained, if that is all.
-Return non-nil if that was done; nothing new to draw counts, when only
-the label changes.  Only when nothing drawn could look different: the
-same pieces, the stream grown at its end, the same fold width, a whole
-line last drawn, and no carriage return or colour escape in it."
+Return non-nil if done, including when only the label changes.  Do this
+only when nothing already drawn could look different: the same outputs,
+the stream grown at its end, the same fold width, a whole line last
+drawn, and no carriage return or colour escape in it."
   (let* ((out (emjupy-cell-output-ov cell))
          (drawn (and (overlayp out) (eq (overlay-buffer out) (current-buffer))
                      (overlay-get out 'emjupy-drawn)))
@@ -205,8 +205,8 @@ visible, the window's first line stays first."
   "Redraw CELL's output box in place, leaving the rest of the buffer alone.
 Return non-nil when that could be done; nil means the caller should
 redraw the notebook.  What the windows show stays where it was."
-  ;; Output that only grew at its end is added to; done is done, and says
-  ;; so -- nil here means "redraw the whole notebook instead".
+  ;; Add to output that only grew at its end, and return non-nil when done:
+  ;; nil here means "redraw the whole notebook instead".
   (emjupy--keeping-view
     (emjupy--with-rules-once
       (emjupy--redraw-cell-output-1 cell))))
@@ -225,7 +225,7 @@ redraw the notebook.  What the windows show stays where it was."
               (let ((new-end start))
                 (let ((inhibit-read-only t)
                       (buffer-undo-list t)
-                      ;; emjupy's own drawing: not an edit to re-highlight
+                      ;; emjupy's own drawing, not an edit to re-highlight
                       (emjupy--refontifying t))
                   (when live-out (delete-overlay out))
                   (setf (emjupy-cell-output-ov cell) nil)
@@ -284,8 +284,8 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
                (or force (not (eql width emjupy--last-box-width))))
       (let ((changed (not (eql width emjupy--last-box-width))))
         (setq emjupy--last-box-width width)
-        ;; Layers above this one -- the kernel, told how wide to draw --
-        ;; hear about it here, since this one cannot name them.
+        ;; Notify later layers, such as the kernel, which is told the width:
+        ;; this layer cannot call them by name.
         (when changed
           (run-hook-with-args 'emjupy-box-width-changed-functions
                               emjupy--buffer-notebook width)))
@@ -314,7 +314,7 @@ overlay strings are rebuilt, so point, markers and undo are untouched."
                       ;; be re-aligned at the new width as well.
                       (let ((inhibit-read-only t)
                             (buffer-undo-list t)
-                            ;; emjupy's own drawing: not an edit to re-highlight
+                            ;; emjupy's own drawing, not an edit to re-highlight
                             (emjupy--refontifying t))
                         (emjupy--repad-output cell)))))
       (emjupy--reconcile-rules))))
@@ -381,7 +381,7 @@ Its source and output box, and the newline after them."
 Returns the number of characters inserted."
   (let ((inhibit-read-only t)
         (buffer-undo-list t)
-        ;; emjupy's own drawing: not an edit to re-highlight
+        ;; emjupy's own drawing, not an edit to re-highlight
         (emjupy--refontifying t)
         (inserted 0))
     (save-excursion
@@ -435,7 +435,7 @@ notebook."
               (following-after nil))
           (let ((inhibit-read-only t)
                 (buffer-undo-list t)
-                ;; emjupy's own drawing: not an edit to re-highlight
+                ;; emjupy's own drawing, not an edit to re-highlight
                 (emjupy--refontifying t))
             (emjupy--forget-cell-overlays old-cells)
             ;; The next cell may start where this region ends, and take the
@@ -478,9 +478,9 @@ updated cells."
          (lambda () (emjupy--redraw-notebook-1)))))))
 
 (defun emjupy--visible-from (pos)
-  "Return POS, or the first visible position after it if it is hidden.
-The empty line between two cells is invisible, and a window can start on
-it; remembering that line put the view back on it, not on the cell."
+  "Return POS, or the first visible position after it if POS is hidden.
+The empty line between two cells is invisible, and a window can start
+on it; restoring the view to that line would show it, not the cell."
   (if (invisible-p pos)
       (next-single-char-property-change pos 'invisible)
     pos))
@@ -529,7 +529,7 @@ rebuild is not itself undone entry by entry: it records one step that
 puts the cells back, so undo carries on through it."
   (when emjupy--buffer-notebook
     (let ((inhibit-read-only t)
-          ;; emjupy's own drawing: not an edit to re-highlight
+          ;; emjupy's own drawing, not an edit to re-highlight
           (emjupy--refontifying t)
           ;; the window measured once for the whole redraw, not per rule
           (emjupy--box-width-memo (list nil))
@@ -553,9 +553,9 @@ puts the cells back, so undo carries on through it."
           ;; Every cell first, point after: moving point to the target mid-loop
           ;; would make later inserts land inside its overlay.
           (cl-loop for cell across cells
-                   ;; Each at the end, wherever point has got to: drawn at
-                   ;; point, one call that moved it -- measuring a window,
-                   ;; which selects it -- drew the rest on top of each other.
+                   ;; Draw each cell at the end of the buffer, not at point:
+                   ;; a call that moved point, such as measuring a window,
+                   ;; which selects it, would draw cells on top of each other.
                    do (goto-char (point-max))
                    (let ((start (point)))
                      (emjupy--draw-cell cell)
@@ -649,18 +649,17 @@ nothing."
   `(let* ((snapshot (progn (undo-boundary)
                            (emjupy--sync-all-cells)
                            (emjupy--snapshot-cells)))
-          ;; A copy of the history's spine: BODY's redraws shift entries in
-          ;; place, as they must for an undo under way, but the snapshot
-          ;; restores the text the earlier entries describe -- unshifted.
-          ;; It was a flag bound around BODY, read deep in the redraws.
+          ;; Copy the history's spine: BODY's redraws shift entries in place,
+          ;; as they must for an undo under way, but the snapshot restores the
+          ;; text the earlier entries describe, unshifted.
           (before (if (listp buffer-undo-list)
                       (copy-sequence buffer-undo-list)
                     buffer-undo-list))
           (result (progn ,@body)))
      (unless (or (eq buffer-undo-list t) undo-in-progress (null snapshot))
-       ;; The snapshot undoes all BODY did.  BODY's own entries go: undone
-       ;; after it -- undo takes the newest first -- they applied at
-       ;; positions its redraw had moved, cutting text from another cell.
+       ;; The snapshot undoes all BODY did, so drop BODY's own entries: undo
+       ;; takes the newest first, so they would apply at positions BODY's
+       ;; redraw had moved, cutting text from another cell.
        (setq buffer-undo-list before)
        (push (list 'apply #'emjupy--restore-cells-snapshot snapshot)
              buffer-undo-list)
@@ -697,8 +696,8 @@ Not with TARGET-CELL, which moves point to the start of that cell."
 
 (defun emjupy--recover-from-broken-redraw (keep-typing)
   "Redraw the notebook from its cells, after a redraw that stopped partway.
-With KEEP-TYPING, what is typed is synced first: for output redrawn, the
-cells's text was not being touched, so it is what the user typed.  A
+With KEEP-TYPING, sync the typed text first: a redraw of output does not
+touch the cells' text, so the buffer's is what the user typed.  A
 structural command synced before it started, and its cells are whole."
   (let ((inhibit-quit t))
     (condition-case err
@@ -707,8 +706,9 @@ structural command synced before it started, and its cells are whole."
           (setq emjupy--sync-refused nil)
           (emjupy--redraw-notebook-keeping-point)
           (message "[emjupy] A redraw stopped partway; the notebook was redrawn from its cells."))
-      ;; Everything: this runs while an error is already unwinding, and a
-      ;; second one raised here would hide the first, which is the one to see.
+      ;; Catch any error: this runs while an error is already unwinding, and
+      ;; a second one raised here would hide the first, which is the one to
+      ;; see.
       (error (message "[emjupy] A redraw stopped partway, and redrawing failed too (%s); %s"
                       (error-message-string err)
                       (substitute-command-keys "\\[emjupy-re-render] redraws it."))))))
@@ -730,9 +730,9 @@ what was typed in it."
                     (setq prev-end (overlay-end ov)))))))
 
 (defun emjupy--check-integrity (buffer)
-  "Put BUFFER right if its structure and its cells have come apart.
-Only the structure is checked, not the text, which differs while
-typing is unsynced.  The problems found are reported."
+  "Repair BUFFER if its structure and its cells have come apart.
+Check only the structure, not the text, which differs while typing is
+unsynced.  Report the problems found."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq emjupy--integrity-timer nil)

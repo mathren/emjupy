@@ -88,7 +88,7 @@ Returns non-nil when it was done incrementally."
                 (vconcat (delq cell (append (emjupy-notebook-cells nb) nil))))
           (let ((inhibit-read-only t)
                 (buffer-undo-list t)
-                ;; emjupy's own drawing: not an edit to re-highlight
+                ;; emjupy's own drawing, not an edit to re-highlight
                 (emjupy--refontifying t))
             (when (overlayp (emjupy-cell-overlay cell))
               (delete-overlay (emjupy-cell-overlay cell)))
