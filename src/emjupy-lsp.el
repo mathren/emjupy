@@ -33,9 +33,9 @@
 ;;;; Options
 
 (defcustom emjupy-lsp-enabled t
-  "Non-nil means the server's language server is used, when it has one.
-nil, one on this machine.  Obsolete: set `emjupy-language-support' to
-`local' instead -- one option says which language server, not two."
+  "Non-nil means use the server's language server when it has one.
+nil means use one on this machine.  Obsolete: set
+`emjupy-language-support' to `local' instead."
   :type 'boolean
   :group 'emjupy-language-server)
 (make-obsolete-variable 'emjupy-lsp-enabled
@@ -101,8 +101,8 @@ settings from elsewhere and would rather not be told."
 
 (defun emjupy--lsp-url (server)
   "Return the `jupyter-lsp' WebSocket URL on SERVER.
-The token goes in a header, in the address only for a server refusing
-it so (`emjupy--ws-token-param')."
+The token goes in a header, and in the address too only for a server
+that refused it in a header (see `emjupy--ws-token-param')."
   (let* ((parts (emjupy--server-parts server))
          (scheme (if (equal (plist-get parts :scheme) "https") "wss" "ws")))
     (format "%s://%s:%s%s/lsp/ws/%s%s"
@@ -113,7 +113,8 @@ it so (`emjupy--ws-token-param')."
 
 (defun emjupy--lsp-error-handler (server)
   "Return the error handler of a language server WebSocket to SERVER.
-It notes a refusal of the token in a header alone, and reports."
+The handler records a refusal of a token sent only in a header, and
+reports the error."
   (lambda (ws type err)
     (emjupy--note-ws-refusal server err)
     (emjupy--lsp-socket-error ws type err)))
@@ -126,7 +127,7 @@ stripped the Content-Length framing LSP uses over a pipe."
   (let* ((text (websocket-frame-text frame))
          (msg (condition-case err
                   (json-parse-string text :object-type 'hash-table)
-                ;; dropped -- it cannot be answered -- but said
+                ;; drop it, as it cannot be answered, but report it
                 (json-error
                  (message "[emjupy] The language server sent what is not JSON: %s"
                           (error-message-string err))
@@ -148,7 +149,7 @@ stripped the Content-Length framing LSP uses over a pipe."
 
 (defun emjupy--lsp-async (session method params callback)
   "Send METHOD with PARAMS over SESSION; call CALLBACK with the result.
-Nothing waits: eldoc runs after every command."
+Do not wait: eldoc asks after every command."
   (when (emjupy--lsp-live-p session)
     (let ((id (cl-incf (emjupy-lsp-next-id session))))
       (unless (emjupy-lsp-callbacks session)
@@ -205,8 +206,8 @@ and the answer collected on the first request that needs it."
                  :on-close (lambda (_ws) (setf (emjupy-lsp-ready session) nil))
                  :on-error (emjupy--lsp-error-handler server)))
           session)
-      ;; Everything: `websocket-open' reports a failed connection as a
-      ;; plain error.  What failed is then asked of the server and said.
+      ;; Catch any error: `websocket-open' reports a failed connection as a
+      ;; plain `error'.  The server is then asked what failed, and that is said.
       (error
        (ignore err)
        (emjupy--lsp-explain-failure server)
@@ -285,7 +286,7 @@ Asked of /lsp/status:
        installed -- `jupyterlab-lsp' installs none."
   (let* ((status (condition-case err
                      (emjupy--http-request "GET" server "/lsp/status")
-                   ;; a refusal is the answer looked for; a bug is not
+                   ;; only a refusal answers the question; signal anything else
                    (emjupy-http-error (error-message-string err))))
          (label (emjupy--server-label server)))
     (cond
@@ -501,9 +502,9 @@ same cells holding the same source objects build the same content."
 ;; ignored.
 
 (defvar emjupy--eglot-pending nil
-  "Plist for the next server to be built.
-`eglot--connect' decides the initargs, so the WebSocket is left here
-for the server class, symbol `emjupy-eglot-server', to collect.")
+  "Plist for the next Eglot server to be made.
+`eglot--connect' decides the initargs, so the WebSocket is left here for
+the server class, symbol `emjupy-eglot-server', to collect.")
 
 (defclass emjupy-eglot-server (eglot-lsp-server)
   ((ws :initform nil :accessor emjupy-eglot-server-ws)
@@ -614,7 +615,7 @@ ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
                   (json-parse-string text :object-type 'plist
                                      :null-object nil
                                      :false-object :json-false)
-                ;; dropped -- it cannot be answered -- but said
+                ;; drop it, as it cannot be answered, but report it
                 (json-error
                  (message "[emjupy] The language server sent what is not JSON: %s"
                           (error-message-string err))
@@ -698,8 +699,8 @@ A failure is explained, and recorded for `emjupy-lsp-diagnose'."
                       ;; which takes the socket over
                       :on-message (lambda (_ws _frame) nil)
                       :on-error (emjupy--lsp-error-handler server))
-    ;; Everything: `websocket-open' reports a failed connection as a plain
-    ;; error.
+    ;; Catch any error: `websocket-open' reports a failed connection as a
+    ;; plain `error'.
     (error (emjupy--lsp-explain-failure server)
            (setq emjupy--lsp-last-failure (error-message-string err))
            nil)))
@@ -746,12 +747,13 @@ manage.  Return the server, or nil."
                 ;; buffer in a transient project.
                 (emjupy--ensure-managed-by connected)
                 connected)
-            ;; Everything: the socket is opened and Eglot started here, and
-            ;; either fails with plain errors; the socket is closed whatever.
+            ;; Catch any error: opening the socket and starting Eglot can each
+            ;; fail with a plain `error'.  The socket is closed either way.
             (error
              (when (websocket-openp ws) (websocket-close ws))
-             ;; Recorded, not only said: an echo-area message at startup is gone
-             ;; by the time anyone asks why a local server took over.
+             ;; Record the failure as well as reporting it: an echo-area
+             ;; message at startup is gone by the time anyone asks why a
+             ;; local server took over.
              (setq emjupy--lsp-last-failure
                    (format "Eglot would not attach: %s"
                            (error-message-string err)))
