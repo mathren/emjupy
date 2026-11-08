@@ -122,8 +122,9 @@ debugpy."
 
 (defun emjupy--debug-request (command &optional arguments)
   "Send the debugger COMMAND with ARGUMENTS, a hash table; return its body.
-Waits for the reply, a few milliseconds on the control channel: never
-called from a process filter, which could not read it."
+Wait for the reply, which takes a few milliseconds on the control
+channel.  Never call this from a process filter, which could not read
+the reply."
   (let* ((kernel (or (emjupy--kernel) (user-error "No kernel")))
          (msg (emjupy--make-message
                "debug_request"
@@ -149,9 +150,9 @@ called from a process filter, which could not read it."
             (t (gethash "body" reply))))))
 
 (defun emjupy--debug-message (kernel msg-type data)
-  "Take DATA, a message of MSG-TYPE from KERNEL for the debugger.
-A reply goes to its request; an event is handled from a timer, out of
-the process filter, so that it can ask the debugger in turn."
+  "Handle DATA, a debugger message of MSG-TYPE from KERNEL.
+Pass a reply to its request.  Handle an event from a timer, outside the
+process filter, so that it can send requests in turn."
   (pcase msg-type
     ("debug_reply"
      (let ((id (emjupy--ws-parent-id data)))
@@ -177,7 +178,7 @@ Each is its line, from 1, and its condition if it has one."
                        b))))
 
 (defun emjupy--debug-cell-at (pos)
-  "The cell at POS, or nil."
+  "Return the cell at POS, or nil."
   (save-excursion (goto-char pos) (emjupy--cell-at-point)))
 
 (defun emjupy-debug-toggle-breakpoint (&optional condition)
@@ -211,7 +212,7 @@ breakpoint, new or the one there, stops only when it is true."
           (push o emjupy--debug-breakpoints)))))))
 
 (defun emjupy--debug-set-condition (breakpoint condition)
-  "Give BREAKPOINT, an overlay, CONDITION; an empty one or nil, none."
+  "Set BREAKPOINT's condition to CONDITION; nil or empty means none."
   (let ((condition (and condition (not (string-empty-p condition))
                         condition)))
     (overlay-put breakpoint 'emjupy-condition condition)
@@ -220,9 +221,9 @@ breakpoint, new or the one there, stops only when it is true."
                    "Breakpoint"))))
 
 (defun emjupy--debug-before-execute (cell)
-  "Make the debugger know CELL, about to run, and its breakpoints.
-Its code is dumped to the file the kernel runs it as, by its content, so
-anew each time it may have changed."
+  "Tell the debugger about CELL, about to run, and its breakpoints.
+Its code is written to the file the kernel runs it as, named by its
+content, so a changed cell gets a new file."
   (when (and emjupy-debug-mode (eq (emjupy-cell-type cell) 'code))
     (let ((path (gethash "sourcePath"
                          (emjupy--debug-request
@@ -247,9 +248,9 @@ anew each time it may have changed."
   "Choices of when to stop on an exception, and debugpy's filters for each.")
 
 (defun emjupy-debug-break-on-exceptions (filters)
-  "Choose when the debugger stops on an exception: FILTERS, debugpy's.
-Never, when not caught, when not caught in your own code, or whenever
-raised -- as JupyterLab offers."
+  "Choose when the debugger stops on an exception.
+FILTERS are debugpy's names: never, when uncaught, when uncaught in your
+own code, or whenever raised, as in JupyterLab."
   (interactive
    (list (cdr (assoc (completing-read "Stop on an exception: "
                                       emjupy--debug-exception-choices nil t)
@@ -293,7 +294,7 @@ raised -- as JupyterLab offers."
         ((or "terminated" "exited") (emjupy-debug-mode -1))))))
 
 (defun emjupy--debug-show (frame)
-  "Mark the line of FRAME, if in a cell; else say where it is."
+  "Mark the line of FRAME if it is in a cell; otherwise say where it is."
   (emjupy--debug-clear-arrow)
   (let* ((path (gethash "path" (gethash "source" frame)))
          (line (gethash "line" frame))
@@ -340,8 +341,8 @@ raised -- as JupyterLab offers."
 ;;;; Looking around
 
 (defun emjupy-debug-frame (frame)
-  "Choose FRAME of the stack stopped in, and mark its line.
-Evaluating and the variables are then of it."
+  "Select FRAME of the stopped stack, and mark its line.
+Evaluation and the variables buffer then use this frame."
   (interactive
    (progn
      (unless emjupy--debug-frames (user-error "The debugger is not stopped"))
@@ -356,7 +357,8 @@ Evaluating and the variables are then of it."
 
 (defun emjupy-debug-evaluate (expression)
   "Evaluate EXPRESSION in the frame stopped at, and show its value."
-  ;; Not stopped, nothing to ask for: the check comes before the prompt.
+  ;; Check that the program is stopped before prompting: otherwise there
+  ;; is nothing to evaluate in.
   (interactive
    (progn (unless emjupy--debug-stopped
             (user-error "The debugger is not stopped"))
@@ -371,7 +373,7 @@ Evaluating and the variables are then of it."
                            "context" "repl")))))
 
 (defvar-local emjupy--debug-notebook nil
-  "In the variables buffer: the notebook buffer whose debugger it shows.")
+  "In the variables buffer, the notebook buffer whose debugger it shows.")
 
 (defun emjupy--debug-children (notebook reference)
   "Return the variables under REFERENCE, from NOTEBOOK's debugger."
@@ -399,7 +401,7 @@ Evaluating and the variables are then of it."
         (depth (button-get button 'emjupy-depth))
         (shown (button-get button 'emjupy-shown)))
     (save-excursion
-      ;; from the button's own line, wherever point is: a click is anywhere
+      ;; Use the button's own line, not point's: a click can be anywhere.
       (goto-char (button-start button))
       (if shown
           (progn (delete-region (car shown) (cdr shown))
@@ -425,11 +427,11 @@ Evaluating and the variables are then of it."
 
 (defun emjupy-debug-variables ()
   "Show the variables of the frame stopped at, local ones first.
-One that holds others -- a dict, a list, an object -- has a button
-showing them."
+A variable holding others, such as a dict, a list or an object, has a
+button that shows them."
   (interactive)
   (unless emjupy--debug-stopped (user-error "The debugger is not stopped"))
-  ;; Asked here, in the notebook: its kernel is this buffer's.
+  ;; Ask from the notebook buffer, whose kernel the debugger uses.
   (let* ((notebook (current-buffer))
          (scopes (append (gethash "scopes"
                                   (emjupy--debug-request
@@ -457,7 +459,7 @@ showing them."
     (display-buffer buf)))
 
 (defun emjupy-debug-enable ()
-  "Let the debugger hear the kernel, and know each cell sent to it."
+  "Connect the debugger to this notebook's kernel and each cell sent."
   (add-hook 'emjupy-debug-functions #'emjupy--debug-message)
   (add-hook 'emjupy-before-execute-functions #'emjupy--debug-before-execute))
 

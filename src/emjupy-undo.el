@@ -100,11 +100,11 @@ fail, it rewrites the wrong text."
               (t (emjupy--undo-map-positions
                   entry (lambda (x) (if (>= x old-end) (+ x delta) x))))))))
         (seen (make-hash-table :test 'eq)))
-    ;; In place: undo replays from a list `primitive-undo' holds, and the
-    ;; three lists share their cons cells, so changing those reaches each,
-    ;; once.  An entry to drop becomes one that does nothing.  All or nothing:
-    ;; every new entry is worked out first, or a failure would leave the
-    ;; history half shifted.
+    ;; Change the entries in place: `primitive-undo' replays from a list that
+    ;; shares its cons cells with these, so an in-place change reaches every
+    ;; copy once.  An entry to drop is replaced by one that does nothing.
+    ;; Every new entry is computed first, so a failure cannot leave the history
+    ;; half adjusted.
     (let ((changes nil))
       (condition-case err
           (progn
@@ -120,8 +120,8 @@ fail, it rewrites the wrong text."
               (setcar c (if (eq new :emjupy-drop)
                             (list 'apply #'ignore :emjupy-dropped)
                           new))))
-        ;; Anything else is a mode's own entry: the ones from START on are
-        ;; stale and go -- lost history is safe, wrong history is not.
+        ;; Any other entry belongs to a mode: drop those from START on, since a
+        ;; lost entry is safe and a wrong one is not.
         (error
          (emjupy--undo-drop-from start)
          (when (consp pending-undo-list)

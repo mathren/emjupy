@@ -25,11 +25,10 @@
 ;;;; Options
 
 (defcustom emjupy-export-markdown-cells t
-  "When non-nil, carry markdown cells into an exported .py as comments.
+  "Non-nil means export markdown cells to a .py file as comments.
 
-They are written as a `# %% [markdown]' block with each line commented,
-which is the same percent format Jupytext, VS Code and Spyder read -- so
-the prose survives the round trip instead of being dropped."
+They are written as a `# %% [markdown]' block, each line commented,
+which Jupytext, VS Code and Spyder read back as markdown."
   :type 'boolean
   :group 'emjupy-editing
   :safe #'booleanp)
@@ -49,9 +48,9 @@ the prose survives the round trip instead of being dropped."
              do (aset (emjupy-notebook-cells nb) i
                       (make-emjupy-cell
                        :id (emjupy--new-cell-id)
-                       ;; The notebook's OWN nbformat >=4.5 cell id, kept
-                       ;; distinct from our internal buffer-local `id' so a
-                       ;; round trip doesn't renumber cells for collaborators.
+                       ;; The notebook's own nbformat 4.5 cell id, kept apart
+                       ;; from emjupy's internal `id', so a round trip does not
+                       ;; renumber cells for collaborators.
                        :nb-id (let ((v (gethash "id" c-data)))
                                 (and (stringp v) v))
                        :type (intern (gethash "cell_type" c-data))
@@ -161,8 +160,8 @@ validation even though it looks fine in emjupy."
                                             (or (emjupy-cell-outputs cell)
                                                 []) nil)))
                           c-hash)
-                 ;; Safely write :null back to the JSON payload for unexecuted
-                 ;; cells
+                 ;; Write :null, not nil, as the execution count of unexecuted
+                 ;; cells.
                  (puthash "execution_count"
                           (if (numberp (emjupy-cell-exec-count cell))
                               (emjupy-cell-exec-count cell)

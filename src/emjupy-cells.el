@@ -25,11 +25,10 @@
 ;;;; Options
 
 (defcustom emjupy-confirm-clear-output t
-  "When non-nil, ask before discarding a cell's output.
+  "Non-nil means ask before discarding a cell's output.
 
-Output can represent a long run, and the kernel cannot be asked to
-produce it again for nothing.  The question costs a keystroke; the
-mistake costs the run."
+Output can be the result of a long run, which the kernel cannot
+reproduce without running it again."
   :type 'boolean
   :group 'emjupy-editing
   :safe #'booleanp)
@@ -40,17 +39,17 @@ mistake costs the run."
   "Copy the buffer text inside CELL's overlay into its `emjupy-cell-source'."
   (when-let* ((ov (emjupy-cell-overlay cell)))
     (when (overlay-buffer ov)
-      ;; Its text but an empty cell's line to type on, marked when drawn:
-      ;; typed on, that newline stayed, ending the source.
+      ;; The text, without the newline an empty cell is drawn with to type on:
+      ;; once typed on, that newline otherwise ended the source.
       (let ((text (emjupy--text-but-placeholders (overlay-start ov)
                                                  (overlay-end ov))))
         (setf (emjupy-cell-source cell) (string-trim-right text "\n"))))))
 
 (defun emjupy--text-but-placeholders (start end)
-  "Return the text from START to END, without a placeholder at its end.
+  "Return the text from START to END, without a trailing placeholder.
 An empty cell is drawn with a newline to type on, marked
-`emjupy-placeholder'.  Typed on, the text comes before it, and the
-newline is none of the source; typed after, it is a blank line kept."
+`emjupy-placeholder'.  Text typed before it is source; the newline is
+not.  A newline typed after it is a blank line, and is kept."
   (let ((pos (text-property-any start end 'emjupy-placeholder t)))
     (if (and pos
              (string-match-p "\\`\n*\\'"
@@ -81,8 +80,8 @@ its text is not compared with its source."
       (when (and prev-end (< (overlay-start ov) prev-end))
         (push (format "cell %d overlaps the cell before it" index)
               problems))
-      ;; The text there, against the text that would be saved.  Trailing
-      ;; blank lines are not compared: an empty cell's line is display.
+      ;; Compare the buffer text with the source that would be saved.  Trailing
+      ;; blank lines are ignored: an empty cell's line is only drawn.
       (unless structure-only
         (let ((shown (string-trim-right
                       (buffer-substring-no-properties
@@ -175,10 +174,10 @@ Every cell has a live overlay, in cell order, not overlapping."
   "Non-nil once a sync has been refused, so the warning is said once.")
 
 (defun emjupy--sync-all-cells ()
-  "Sync buffer text for all cells in current buffer.
-Refused when the overlays no longer describe the cells: one stale
-overlay would read the notebook into a cell, and that would be saved.
-\[emjupy-re-render] redraws the buffer from the cells."
+  "Copy the buffer text of every cell into its source.
+Refuse when the overlays no longer match the cells: a stale overlay
+could copy the whole notebook into one cell, which would then be saved.
+\\[emjupy-re-render] redraws the buffer from the cells."
   (when emjupy--buffer-notebook
     (if (not (emjupy--overlays-sane-p))
         (progn
@@ -198,9 +197,9 @@ overlay would read the notebook into a cell, and that would be saved.
   "Timer that checks this buffer when Emacs is next idle, or nil.")
 
 (defun emjupy-cells-enable ()
-  "Ready this notebook buffer's check of its structure.
+  "Set up this notebook buffer's structure check.
 Run when a notebook buffer starts."
-  ;; A notebook closed before Emacs is idle again takes its check with it.
+  ;; A notebook closed before Emacs is idle cancels its pending check.
   (add-hook 'kill-buffer-hook #'emjupy--cancel-integrity-check nil t))
 
 (defun emjupy--cancel-integrity-check ()

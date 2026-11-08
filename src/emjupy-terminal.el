@@ -22,9 +22,10 @@
 
 ;;;; Stream text as a terminal shows it
 
-;; Progress bars that stack -- tqdm nested, or with `position' -- move the
-;; cursor up a line to redraw the bar above, and clear what is left of a
-;; line.  Only carriage returns were applied, and stale bars piled up.
+;; Stacked progress bars (nested tqdm, or with `position') move the cursor
+;; up a line to redraw the bar above, and clear the rest of a line, so
+;; cursor movement and line clearing are applied, not only carriage
+;; returns.
 
 (defconst emjupy--terminal-codes-re "\e\\[[0-9;]*[ABCDGK]"
   "Escape codes, in stream output, that move the cursor or clear a line.")
@@ -34,10 +35,10 @@
   (and (stringp text) (string-match-p emjupy--terminal-codes-re text)))
 
 (defun emjupy--terminal-column (line col)
-  "Return the index in LINE of its column COL, and the columns it has there.
-A cons of the index and the column reached: colour codes take no column,
-and one starting at an index is passed over to the character after it.
-Past the end of LINE, the index is its length and the column its width."
+  "Return (INDEX . COLUMN) for column COL of LINE.
+INDEX is where column COL starts in LINE, and COLUMN the column actually
+reached.  Colour codes take no column; one starting at INDEX is skipped.
+Past the end of LINE, INDEX is its length and COLUMN its width."
   (let ((i 0) (c 0) (n (length line)) (done nil))
     (while (and (< i n) (not done))
       (cond ((and (eq (aref line i) ?\e)
@@ -70,15 +71,15 @@ cursor, anything else the whole line."
     (_ "")))
 
 (defun emjupy--terminal-colour (line col code)
-  "Return LINE with CODE, a colour escape, kept at column COL.
-It takes no column, so is put where the cursor is, not over text."
+  "Return LINE with CODE, a colour escape, inserted at column COL.
+A colour code takes no column, so it is inserted, not written over text."
   (let ((at (car (emjupy--terminal-column line col))))
     (concat (substring line 0 at) code (substring line at))))
 
 (defun emjupy--terminal-result (lines row col)
   "Return LINES, a vector, as text, with the cursor at ROW and COL.
-A cons of the text and the cursor, nil for the end of the text.
-Trailing spaces go: what a cleared bar leaves."
+Return (TEXT . CURSOR), CURSOR nil meaning the end of the text.
+Trailing spaces, left by cleared progress bars, are removed."
   (dotimes (i (length lines))
     (aset lines i (replace-regexp-in-string " +\\'" "" (aref lines i))))
   (let* ((last (1- (length lines)))
@@ -118,8 +119,8 @@ of the new text and the cursor, nil for the end of the text."
            ((and (eq ch ?\e) (string-match "\e\\[\\([0-9;]*\\)\\([A-Za-z]\\)"
                                            chunk p)
                  (= (match-beginning 0) p))
-            ;; All read from the match now: what follows matches again,
-            ;; and a colour code read later came back as some other text.
+            ;; Read everything needed from this match now: matching
+            ;; again below overwrites the match data.
             (let* ((code (match-string 0 chunk))
                    (args (match-string 1 chunk))
                    (num (if (string-empty-p args) 1

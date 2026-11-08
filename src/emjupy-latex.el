@@ -20,8 +20,8 @@
 (require 'subr-x)
 (require 'emjupy-core)
 
-;; org is loaded only when a LaTeX preview is asked for: declared, not
-;; required, for the compiler.
+;; Org loads only when a LaTeX preview is requested: these
+;; declarations are for the compiler.
 (declare-function org-create-formula-image "org")
 (defvar org-format-latex-options)
 (defvar org-format-latex-header)
@@ -32,11 +32,10 @@
 ;;;; Options
 
 (defcustom emjupy-render-latex nil
-  "When non-nil, show math in markdown cells as rendered images.
+  "Non-nil means show math in markdown cells as rendered images.
 
-Needs a working LaTeX installation (`latex' plus `dvipng'), or
-`math-preview' on PATH.  Nothing else: the rendering itself is done by
-org, which comes with Emacs."
+This needs LaTeX (`latex' and `dvipng'), or `math-preview' on PATH.
+Org, which comes with Emacs, does the rendering."
   :type 'boolean
   :group 'emjupy-appearance
   :safe #'booleanp)
@@ -52,13 +51,11 @@ beyond what ships with Emacs, and falls back to `math-preview'."
   :group 'emjupy-advanced)
 
 (defcustom emjupy-latex-foreground 'auto
-  "Colour to draw rendered math in.
+  "Colour for rendered math.
 
-`auto' (the default) follows the theme, taking the foreground of the
-`default' face -- so formulae are dark on a light theme and light on a
-dark one, instead of always black on a transparent background.
-
-A colour string is used verbatim."
+`auto', the default, uses the foreground of the `default' face, so
+formulae suit a light or a dark theme.  A colour string is used as
+given."
   :type '(choice (const :tag "Follow the theme" auto)
                  (color :tag "Explicit colour"))
   :group 'emjupy-appearance
@@ -143,10 +140,10 @@ A fragment with its delimiters -- $...$, $$...$$, \\(...\\), \\[...\\]
     (concat "$" fragment "$")))
 
 (defun emjupy--latex-colour (colour)
-  "Return COLOUR if Emacs can say what it is, else black.
-Org makes the colour numbers, and fails on a name it cannot resolve: the
-default face's foreground is \"unspecified-fg\" on a terminal, and in
-batch, and a name given in an option may be misspelt."
+  "Return COLOUR if Emacs can resolve it, else black.
+Org fails on a colour name it cannot resolve: the default face's
+foreground is \"unspecified-fg\" on a terminal and in batch, and an
+option's value may be misspelt."
   (if (and (stringp colour) (color-name-to-rgb colour))
       colour
     "Black"))
@@ -185,25 +182,24 @@ BODY may bring its delimiters or not; see `emjupy--latex-math'."
            (opts (copy-sequence org-format-latex-options)))
       (setq opts (plist-put opts :scale emjupy-latex-scale))
       (setq opts (plist-put opts :foreground fg))
-      ;; Transparent: given a buffer, org would bake the theme's background into
-      ;; the image, wrong on anything else.  The foreground carries the
-      ;; contrast.
+      ;; Transparent background: org would otherwise draw the theme's
+      ;; background into the image, wrong under any other theme.  The
+      ;; foreground carries the contrast.
       (setq opts (plist-put opts :background "Transparent"))
       (condition-case err
           (progn
             ;; Cached by content hash: dragging a slider over a notebook full
             ;; of formulae should not re-run LaTeX for each redraw.
             (unless (file-exists-p file)
-              ;; The buffer is needed: without it org reads the :html- options
-              ;; instead, black on transparent, and ignores
-              ;; `emjupy-latex-scale'.
+              ;; Pass the buffer: without it org uses its :html- options, black
+              ;; on transparent, and ignores `emjupy-latex-scale'.
               (let ((org-preview-latex-process-alist
                      (list emjupy--latex-process)))
                 (org-create-formula-image (emjupy--latex-math body) file opts
                                           (current-buffer) 'dvipng)))
             (when (and (file-exists-p file) (emjupy--image-displayable-p 'png))
               (create-image file 'png nil :ascent 'center)))
-        ;; Everything: Org reports a failed LaTeX run as a plain error.
+        ;; Catch any error: org reports a failed LaTeX run as a plain `error'.
         (error
          (message "[emjupy] LaTeX preview failed: %s"
                   (error-message-string err))
@@ -216,9 +212,9 @@ BODY may bring its delimiters or not; see `emjupy--latex-math'."
       (pcase-let ((`(,beg ,fin ,body) frag))
         (unless (string-empty-p (string-trim (or body "")))
           (when-let* ((image (emjupy--latex-image
-                              ;; with its delimiters: they say whether the
+                              ;; with its delimiters, which say whether the
                               ;; math is inline or display, and put LaTeX
-                              ;; in math mode at all
+                              ;; in math mode
                               (buffer-substring-no-properties beg fin))))
             (let ((ov (make-overlay beg fin)))
               (overlay-put ov 'display image)

@@ -50,10 +50,11 @@ directory you own that is not a symbolic link."
   :group 'emjupy-saving)
 
 (defcustom emjupy-autosave-interval 120
-  "Seconds between saves to the server of a notebook with unsaved changes.
-As Jupyter does.  A save that would overwrite changes made on the server
-since the notebook was opened is not made, and auto-saving that notebook
-stops until it is saved by hand.  nil never saves on its own."
+  "Seconds between automatic saves of a notebook with unsaved changes.
+As in Jupyter.  A save that would overwrite changes made on the server
+since the notebook was opened is not made, and automatic saving of that
+notebook stops until it is saved by hand.  nil disables automatic
+saving."
   :type '(choice (const :tag "Never" nil) number)
   :group 'emjupy-saving)
 
@@ -91,16 +92,16 @@ stops until it is saved by hand.  nil never saves on its own."
       (with-current-buffer buf (setq emjupy--autosave-in-flight nil)))))
 
 (defun emjupy--autosave-failed (nb err)
-  "End NB's auto-save, which failed with ERR, saying so."
+  "End NB's automatic save, which failed with ERR, and say so."
   (emjupy--autosave-done nb)
   (emjupy--say (emjupy-notebook-buffer nb)
                "[emjupy] Could not save %s (%s); a recovery copy is kept."
                (emjupy-notebook-path nb) (error-message-string err)))
 
 (defun emjupy--autosave-upload (nb body tick)
-  "Send BODY, NB as it was at its buffer's modification TICK, not waiting.
-Once saved, the buffer is unmodified and the recovery copy goes -- unless
-it was edited since."
+  "Send BODY, NB as of buffer modification TICK, without waiting.
+Once saved, mark the buffer unmodified and delete the recovery copy,
+unless the buffer was edited since."
   (let ((buf (emjupy-notebook-buffer nb)))
     (emjupy--http-request-async
      "PUT" (emjupy-notebook-server nb)
@@ -111,17 +112,17 @@ it was edited since."
              (and (hash-table-p model) (gethash "last_modified" model)))
        (when (buffer-live-p buf)
          (with-current-buffer buf
-           ;; saved as it was when sent; edited since, it is not
+           ;; unmodified only if not edited since the save was sent
            (when (eql tick (buffer-modified-tick))
              (set-buffer-modified-p nil)
              (emjupy--recovery-delete nb)))))
      (lambda (err) (emjupy--autosave-failed nb err)))))
 
 (defun emjupy--autosave-async (nb)
-  "Save NB to its server without waiting, as auto-save does.
-As saving by hand -- not over a notebook changed elsewhere -- but
-asynchronous: over a remote link the requests take round trips.  Edits
-made meanwhile leave the notebook unsaved, for the next save."
+  "Save NB to its server without waiting, for automatic saving.
+Like saving by hand, it never overwrites a notebook changed elsewhere,
+but it is asynchronous: over a remote link the requests take round
+trips.  Edits made meanwhile stay unsaved until the next save."
   (let* ((buf (emjupy-notebook-buffer nb))
          (path (emjupy-notebook-path nb))
          (known (emjupy-notebook-last-modified nb))
@@ -162,8 +163,8 @@ Unless OVERWRITE, first make sure the server copy is the one opened or
 last saved here, and signal `emjupy-save-conflict' if it changed since --
 saved from JupyterLab, say -- rather than overwrite that."
   (with-current-buffer (emjupy-notebook-buffer nb)
-    ;; An automatic save on its way finishes first: sent before, it could
-    ;; still reach the server after, and put back what this one replaces.
+    ;; Let an automatic save in progress finish first: sent earlier, it
+    ;; could still arrive later and undo this save.
     (let ((deadline (+ (float-time) 15)))
       (while (and emjupy--autosave-in-flight (< (float-time) deadline))
         (accept-process-output nil 0.05)))
@@ -204,9 +205,9 @@ JupyterLab, or by someone else -- ask before overwriting it."
                                 path (nth 2 err)))
            (emjupy--save-to-server nb t)
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
-    ;; A checkpoint, as JupyterLab makes on saving: what
-    ;; `emjupy-revert-to-checkpoint' goes back to.  Not for automatic saves;
-    ;; not waited for, a round trip on a slow link, but said if it fails.
+    ;; Make a checkpoint, as JupyterLab does when saving, for
+    ;; `emjupy-revert-to-checkpoint'.  Not for automatic saves.  Not waited
+    ;; for, as it is a round trip on a slow link; a failure is reported.
     (emjupy--http-request-async
      "POST" (emjupy-notebook-server nb)
      (concat (emjupy--contents-path path) "/checkpoints") nil
@@ -233,8 +234,9 @@ JupyterLab, or by someone else -- ask before overwriting it."
 
 (defun emjupy--recovery-write (nb)
   "Copy NB, as it is in its buffer, to its recovery file.
-Written whole to a temporary file and renamed, so a copy is never half
-written; readable by its owner only, as the notebook may hold anything."
+Write it to a temporary file and rename it, so a copy is never half
+written, and make it readable by its owner only, since a notebook may
+hold anything."
   (with-current-buffer (emjupy-notebook-buffer nb)
     (emjupy--sync-all-cells)
     (let ((file (emjupy--recovery-file nb))
@@ -271,8 +273,8 @@ written; readable by its owner only, as the notebook may hold anything."
 
 (defun emjupy--idle-save ()
   "Copy unsaved edits for recovery, and save to the server when due.
-Run when Emacs is idle, so that neither interrupts typing.  A failure is
-said and left: the recovery copy, written first, keeps the changes."
+Run when Emacs is idle, so neither interrupts typing.  Report a failure
+and go on: the recovery copy, written first, keeps the changes."
   (dolist (buf (emjupy--modified-notebook-buffers))
     (with-current-buffer buf
       (let ((nb emjupy--buffer-notebook))
@@ -286,8 +288,8 @@ said and left: the recovery copy, written first, keeps the changes."
                    (not emjupy--autosave-in-flight)
                    (>= (- (float-time) (or emjupy--autosave-last 0))
                        emjupy-autosave-interval))
-          ;; Not waited for: it says itself how it went.  Starting it can
-          ;; still fail -- serializing, or a cookie to fetch first.
+          ;; Not waited for: it reports its own result.  Starting it can
+          ;; still fail, while serializing or fetching a cookie.
           (condition-case err
               (emjupy--autosave-async nb)
             (file-error
@@ -326,8 +328,8 @@ Return non-nil when it may be closed."
 
 (defun emjupy--kill-emacs-query ()
   "Offer to save notebooks with unsaved edits before Emacs quits.
-Non-nil lets it quit.  Quitting without saving keeps them in recovery
-copies, written as Emacs quits."
+Return non-nil to let Emacs quit.  Notebooks not saved are kept in
+recovery copies, written as Emacs quits."
   (let ((modified (emjupy--modified-notebook-buffers)))
     (or (null modified) noninteractive
         (pcase (car (read-multiple-choice
@@ -339,8 +341,8 @@ copies, written as Emacs quits."
                        (?c "cancel" "Do not quit"))))
           (?s (dolist (buf modified)
                 (with-current-buffer buf
-                  ;; A notebook that cannot be saved is said, and kept in a
-                  ;; recovery copy; the others are still saved.
+                  ;; Report a notebook that cannot be saved, which its recovery
+                  ;; copy keeps, and save the others.
                   (condition-case err
                       (emjupy-save-notebook)
                     ((file-error user-error)
@@ -354,8 +356,8 @@ copies, written as Emacs quits."
 
 (defun emjupy--offer-recovery (nb)
   "Offer to restore unsaved edits to NB from its recovery copy.
-A copy no different from what was opened is deleted.  One declined is
-kept aside, never deleted, in the recovery directory."
+Delete a copy identical to what was opened.  Set a declined copy aside
+in the recovery directory; it is never deleted."
   (let ((file (emjupy--recovery-file nb)))
     (when (file-exists-p file)
       (let* ((record (json-parse-string

@@ -45,9 +45,9 @@
 ;;;; The headings
 
 (defun emjupy--toc-headings ()
-  "Return this notebook's headings: (LEVEL TEXT POSITION), in order.
-Read from the markdown cells' text as it is in the buffer, so edits not
-yet synced are seen; a # in a fenced code block is no heading."
+  "Return this notebook's headings, as (LEVEL TEXT POSITION), in order.
+Read from the markdown cells' text in the buffer, so unsynced edits are
+included.  A # inside a fenced code block is not a heading."
   (let (headings)
     (when emjupy--buffer-notebook
       (cl-loop
@@ -90,7 +90,7 @@ yet synced are seen; a # in a fenced code block is no heading."
   "q" #'emjupy-toc)
 
 (define-derived-mode emjupy-toc-mode special-mode "emjupy-outline"
-  "The outline of a notebook: its headings, each a button to jump to it."
+  "Major mode for a notebook's outline: its headings, each a button."
   (setq-local truncate-lines t))
 
 (defun emjupy--toc-jump (button)
@@ -134,7 +134,7 @@ yet synced are seen; a # in a fenced code block is no heading."
       (with-current-buffer notebook (emjupy--toc-mark-current)))))
 
 (defun emjupy--toc-mark-current ()
-  "In the panel, mark the heading point in this notebook is under."
+  "Mark, in the panel, the heading that point in this notebook is under."
   (let ((panel (get-buffer (emjupy--toc-buffer-name (current-buffer))))
         (here (point)))
     (when panel
@@ -172,7 +172,7 @@ yet synced are seen; a # in a fenced code block is no heading."
                              (current-buffer))))
 
 (defun emjupy--toc-follow (on)
-  "Have the panel follow this notebook's edits and point if ON; else stop."
+  "Make the panel follow this notebook's edits and point if ON; else stop."
   (if on
       (progn (add-hook 'after-change-functions #'emjupy--toc-edited nil t)
              (add-hook 'post-command-hook #'emjupy--toc-mark-current nil t))
@@ -182,9 +182,9 @@ yet synced are seen; a # in a fenced code block is no heading."
     (setq emjupy--toc-timer nil)))
 
 (defun emjupy-toc ()
-  "Show the notebook's outline in a panel at the side, or hide it.
-Off until asked for.  Its headings are buttons: RET or a click goes to
-one; n and p move between them, g draws it anew, q hides it."
+  "Show the notebook's outline in a side panel, or hide it.
+Each heading is a button: RET or a click goes to it; n and p move
+between headings, g redraws the panel, q hides it."
   (interactive)
   (let* ((notebook (if (derived-mode-p 'emjupy-toc-mode)
                        emjupy--toc-notebook
@@ -209,7 +209,7 @@ one; n and p move between them, g draws it anew, q hides it."
                  (preserve-size . (t . nil))))))))
 
 (defun emjupy-toc-enable ()
-  "Give this notebook its outline, for imenu."
+  "Add this notebook's headings to imenu."
   (setq-local imenu-create-index-function #'emjupy--imenu-index))
 
 (provide 'emjupy-toc)

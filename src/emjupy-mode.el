@@ -36,22 +36,21 @@
 ;;;; Options
 
 (defcustom emjupy-electric-pairs t
-  "When non-nil, pair brackets and quotes as you type in cells.
+  "Non-nil means pair brackets and quotes as you type in cells.
 
 `electric-pair-mode' is global and off by default, and `emjupy-mode'
-derives from `fundamental-mode', so a notebook would otherwise behave
-less like a Python buffer than the code in it deserves.  Set to nil to
-leave the matter to your own configuration."
+derives from `fundamental-mode'; this option gives cells the pairing a
+Python buffer would have.  Set it to nil to rely on your own
+configuration."
   :type 'boolean
   :group 'emjupy-editing
   :safe #'booleanp)
 
 (defcustom emjupy-language-mode 'python-mode
-  "The major mode whose settings a notebook borrows for its cells.
+  "Major mode whose settings notebook cells use.
 
-Cells hold code in that language, so the buffer should behave as a
-buffer of it does.  Set to nil to leave the buffer with
-`fundamental-mode\\='s settings."
+Cells are edited as code in this language.  Set it to nil to keep the
+settings of `fundamental-mode'."
   :type '(choice (const :tag "None" nil) function)
   :group 'emjupy-editing)
 
@@ -66,21 +65,21 @@ buffer of it does.  Set to nil to leave the buffer with
 ;; README shows how to put cell commands there.
 (defvar emjupy-mode-map
   (let ((map (make-sparse-keymap)))
-    ;; Commands of the files above this one, in emjupy-notebook.el, are named
-    ;; with a plain quote: a binding is resolved when the key is pressed.
+    ;; Commands defined in emjupy-notebook.el, which loads after this file, are
+    ;; quoted, not sharp-quoted: the key looks them up when pressed.
 
     ;; Running cells
     (define-key map (kbd "C-c C-c") #'emjupy-execute-cell-and-goto-next)
-    ;; Shift-RET runs the cell and stays put, the way a notebook front-end
-    ;; does.  Bound in both spellings: a terminal Emacs reports it as
-    ;; "S-<return>" only if the terminal distinguishes it at all.
+    ;; Shift-RET runs the cell and stays put, as in other notebook front-ends.
+    ;; Both spellings are bound: a terminal Emacs reports S-<return> only if
+    ;; the terminal distinguishes it.
     (define-key map (kbd "S-<return>") #'emjupy-execute-cell-at-point)
     (define-key map (kbd "<S-return>") #'emjupy-execute-cell-at-point)
     (define-key map (kbd "C-c C-e")    #'emjupy-execute-cell-at-point)
 
     ;; The kernel
-    ;; C-c C-z stops what is running, like C-c in a terminal; picking a
-    ;; kernel is the rarer act and moves one modifier away.
+    ;; C-c C-z interrupts the kernel, like C-c in a terminal; choosing a
+    ;; kernel, which is rarer, takes another modifier.
     (define-key map (kbd "C-c C-z") #'emjupy-interrupt-kernel)
     (define-key map (kbd "C-c M-z") #'emjupy-connect-kernel-interactive)
     (define-key map (kbd "C-c C-x C-r") #'emjupy-restart-kernel)
@@ -95,9 +94,9 @@ buffer of it does.  Set to nil to leave the buffer with
     ;; whatever keys move by lines.
     (define-key map [remap next-line] 'emjupy-next-line)
     (define-key map [remap previous-line] 'emjupy-previous-line)
-    ;; To a neighbouring cell, the way each key points: Up and Page Up back,
-    ;; Down and Page Down forward; an arrow lands at the cell's start, a
-    ;; Page key at its end.  M-<up> went forward once, against every key.
+    ;; Neighbouring cells, the way each key points: Up and Page Up go back,
+    ;; Down and Page Down forward; arrows land at the cell's start, Page keys
+    ;; at its end.
     (define-key map (kbd "M-<up>")    #'emjupy-beginning-of-previous-cell)
     (define-key map (kbd "M-<down>")  #'emjupy-beginning-of-next-cell)
     (define-key map (kbd "M-<prior>") #'emjupy-end-of-previous-cell)
@@ -126,14 +125,14 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-i")     #'emjupy-toggle-cell-code)
     (define-key map (kbd "C-c C-f")     #'emjupy-open-output)
     (define-key map (kbd "C-$")     #'emjupy-show-traceback)
-    ;; Deleting against a rendered formula reveals it.  Both spellings: a
-    ;; configuration binding <backspace> itself would never reach DEL.
+    ;; Deleting into a rendered formula reveals its source.  Both keys are
+    ;; bound: a configuration that binds <backspace> itself never reaches DEL.
     (define-key map (kbd "DEL")         #'emjupy-latex-unrender-or-delete)
     (define-key map (kbd "<backspace>") #'emjupy-latex-unrender-or-delete)
     (define-key map (kbd "C-c C-x C-l") #'emjupy-re-render)
 
     ;; The notebook, its outline and its servers
-    ;; The command, not its key: whichever key saves, saves the notebook.
+    ;; Remap the save command, so any key that saves also saves the notebook.
     (define-key map [remap save-buffer] 'emjupy-save-notebook)
     (define-key map (kbd "C-c C-q")     #'emjupy-toc)
     (define-key map (kbd "C-c C-x b") 'emjupy-switch-notebook)
@@ -143,9 +142,9 @@ buffer of it does.  Set to nil to leave the buffer with
 
     ;; The debugger, and the menu of everything
     (define-key map (kbd "C-c C-d")     emjupy-debug-map)
-    ;; The menu.  Not `C-c C-h': `C-h' after a prefix is reserved for the
-    ;; list of that prefix's bindings, which is the very thing this improves
-    ;; on, so taking the key would remove the fallback.
+    ;; The menu.  Not C-c C-h: C-h after a prefix lists that prefix's
+    ;; bindings, which the menu improves on; taking the key would remove that
+    ;; fallback.
     (define-key map (kbd "C-c C-v") 'emjupy-menu)
     map)
   "Keymap for `emjupy-mode'.")
@@ -153,11 +152,11 @@ buffer of it does.  Set to nil to leave the buffer with
 ;;;; Language settings
 
 (defun emjupy--adopt-language-settings ()
-  "Take the syntax and comment settings of `emjupy-language-mode'.
-So a cell is edited as that language: the syntax table decides where
-\\[forward-word] stops and what \\[dabbrev-expand] finds, the comment
-variables what \\[comment-dwim] does.  Copied from the mode run in a
-scratch buffer, not listed here, so they follow the mode."
+  "Copy the syntax and comment settings of `emjupy-language-mode'.
+Cells are then edited as code in that language: the syntax table
+decides where \\[forward-word] stops and what \\[dabbrev-expand] finds,
+and the comment variables what \\[comment-dwim] does.  The settings are
+read from the mode itself, run in a temporary buffer."
   (when emjupy-language-mode
     (let (table vars)
       (with-temp-buffer
@@ -181,9 +180,9 @@ scratch buffer, not listed here, so they follow the mode."
 ;;;; The mode
 
 (defun emjupy--mode-line-status ()
-  "What the kernel is doing, and the port of its server, for the mode line.
-The kernel's own word -- idle, busy, starting -- or what emjupy knows:
-no kernel, disconnected, reconnecting."
+  "Return the kernel's status and the server's port, for the mode line.
+The status is the kernel's own (idle, busy, starting) or emjupy's (no
+kernel, disconnected, reconnecting)."
   (let* ((nb emjupy--buffer-notebook)
          (kernel (and nb (emjupy-notebook-kernel nb)))
          (server (and nb (emjupy-notebook-server nb)))
@@ -205,7 +204,8 @@ no kernel, disconnected, reconnecting."
                   ((plist-get parts :host)
                    (format " %s" (plist-get parts :host)))
                   (t ""))
-            ;; The fallback, plain to see: its answers are this machine's.
+            ;; Mark the fallback language server: it answers from this
+            ;; machine.
             (if (and (emjupy--notebook)
                      (eq (emjupy-notebook-lsp-route (emjupy--notebook)) 'local))
                 (propertize " LSP: this machine" 'face 'error)
@@ -245,10 +245,10 @@ changed them."
   (setq-local line-move-ignore-invisible t)
   (use-local-map emjupy-mode-map)
   (emjupy--adopt-language-settings)
-  ;; Each layer wires its own hooks, here rather than when it loads.  The
-  ;; order keeps each hook's: language support asks a kernel where it runs
-  ;; before the kernel layer tells it the width, and a notebook releases its
-  ;; connections after the cells layer stops its checks.
+  ;; Each layer adds its hooks here, not when it loads.  The order matters:
+  ;; language support asks the kernel where it runs before the kernel layer
+  ;; sends the width, and a notebook closes its connections after the cells
+  ;; layer stops its checks.
   (emjupy-eglot-enable)
   (emjupy-kernel-enable)
   (emjupy-debug-enable)
@@ -258,8 +258,8 @@ changed them."
   (emjupy-widgets-enable)
   (emjupy-widget-page-enable)
   (emjupy-redraw-enable)
-  ;; Cells hold code: the conveniences a programming mode gives, which
-  ;; `fundamental-mode' does not.
+  ;; Cells hold code: enable what a programming mode provides and
+  ;; `fundamental-mode' lacks.
   (when emjupy-electric-pairs
     (electric-pair-local-mode 1))
   (emjupy-faces-enable)
