@@ -114,25 +114,6 @@ the position."
 
 ;;;; Performance
 
-(ert-deftest emjupy-test-a-mixed-installation-is-warned-of-once ()
-  "Files of emjupy from two places are warned of, once, when a notebook opens."
-  (let ((emjupy--strays-checked nil) (warned 0))
-    (cl-letf (((symbol-function 'emjupy--stray-modules)
-               (lambda () '((emjupy-cells . "/elsewhere/emjupy-cells.el"))))
-              ((symbol-function 'display-warning)
-               (lambda (_type message &rest _)
-                 (should (string-match-p "/elsewhere/emjupy-cells.el" message))
-                 (cl-incf warned))))
-      (emjupy--warn-about-strays)
-      (emjupy--warn-about-strays)
-      (should (= warned 1))))
-  ;; nothing to say: nothing said
-  (let ((emjupy--strays-checked nil))
-    (cl-letf (((symbol-function 'emjupy--stray-modules) #'ignore)
-              ((symbol-function 'display-warning) (lambda (&rest _)
-                                                    (error "Warned"))))
-      (emjupy--warn-about-strays))))
-
 (ert-deftest emjupy-test-brackets-pair-in-cells ()
   "Brackets pair as you type, as they would in a Python buffer.
 
@@ -198,19 +179,6 @@ menu improves on, and one worth keeping."
   (should (commandp 'emjupy-menu)))
 
 ;;;; The undo guard
-
-(ert-deftest emjupy-test-a-mixed-installation-is-noticed ()
-  "Files loaded from two installations are named; one installation, none.
-A package and a checkout both on the `load-path' gave a mix, and a mix
-showed keys as \"M-x ...\" and widgets as text."
-  (should-not (emjupy--stray-modules))
-  (let ((real (symbol-function 'feature-file)))
-    (cl-letf (((symbol-function 'feature-file)
-               (lambda (f) (if (eq f 'emjupy-mode) "/elsewhere/emjupy-mode.elc"
-                             (funcall real f)))))
-      (should (equal (emjupy--stray-modules)
-                     '((emjupy-mode . "/elsewhere/emjupy-mode.elc")))))))
-
 
 ;;;; The mode line
 

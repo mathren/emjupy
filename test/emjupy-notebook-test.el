@@ -359,12 +359,12 @@ it.  Checked in a fresh Emacs, where nothing else is loaded."
                                  nil t nil "-Q" "--batch" "-L" here "-L"
                                  websocket
                                  "-l" "emjupy-notebook"
-                                 "--eval" "(prin1 (list (fboundp 'emjupy-mode) (fboundp 'emjupy--warn-about-strays) (featurep 'emjupy)))")
+                                 "--eval" "(prin1 (list (fboundp 'emjupy-mode) (featurep 'emjupy)))")
                    (goto-char (point-max))
                    (backward-sexp)
                    (read (current-buffer)))))
-    ;; the mode and its check are there; emjupy.el itself was not needed
-    (should (equal answer '(t t nil)))))
+    ;; the mode is there; emjupy.el itself was not needed
+    (should (equal answer '(t nil)))))
 
 
 ;;;; Large outputs, hidden on opening

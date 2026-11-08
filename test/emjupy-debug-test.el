@@ -1,5 +1,8 @@
 ;;; emjupy-debug-test.el --- Tests of emjupy-debug.el  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The debugger with its replies stubbed: what it asks the kernel, and

@@ -129,13 +129,11 @@ columns on a wide frame."
   :safe #'natnump)
 
 (defcustom emjupy-box-right-margin 1
-  "Columns left free at the right edge when fitting rules to the window.
-
-Emacs cannot always be asked exactly how many columns are usable: a
-right margin, a `fill-column' indicator or a scroll bar the toolkit
-reports oddly can eat one.  So one is left spare: a thin spine between
-the rules and the edge.  Raise it if the rules still run past the edge
-in your setup, lower it to 0 if they stop short."
+  "Number of columns to leave free at the right edge of cell borders.
+Some window elements, such as a `fill-column' indicator or a scroll
+bar, can take a column that Emacs does not report.  Increase this if
+borders wrap to the next line; set it to 0 if they stop short of the
+edge."
   :type 'integer
   :group 'emjupy-advanced
   :safe #'natnump)
@@ -206,8 +204,9 @@ still holds exactly what the kernel sent, and is saved back to the
   :group 'emjupy)
 
 (defface emjupy-output-stale '((t :inherit shadow))
-  "Face of a cell's output while the cell runs again.
-Kept up, dimmed, until the new output replaces it."
+  "Face for a cell's previous output while the cell runs again.
+The previous output stays visible, dimmed, until new output replaces
+it."
   :group 'emjupy-appearance)
 
 (defface emjupy-output-error '((t))

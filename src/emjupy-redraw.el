@@ -123,10 +123,11 @@ line last drawn, and no carriage return or colour escape in it."
                                   (substring new (length old)))))))
 
 (defun emjupy--views ()
-  "Return, for each window on this buffer, what to keep in its view.
-For each: the window; a marker at its anchor's line -- the cursor's
-when it is in view, else the window's first -- and how far down the
-window that line is, in pixels."
+  "Return what each window showing this buffer should keep in view.
+Each element is (WINDOW ANCHOR DISTANCE): ANCHOR is a marker at the
+start of the cursor's line, or of the window's first line if the cursor
+is not visible, and DISTANCE is that line's height from the window's top,
+in pixels."
   (let (views)
     (dolist (w (get-buffer-window-list (current-buffer) nil t))
       (let* ((start (window-start w))
@@ -146,12 +147,12 @@ window that line is, in pixels."
   (nth 1 (pos-visible-in-window-p anchor w t)))
 
 (defun emjupy--restore-views (views)
-  "Put each anchor of VIEWS, from `emjupy--views', back where it was.
-To the pixel, as the display engine places it: the window's start moved
-a screen line at a time towards it, and scrolled into its first line by
-what remains -- a figure is one line, too tall to start above or below
-and keep the cursor where it was.  Computed instead, from lines counted
-or their heights summed, it drifted: the rules are continuation lines."
+  "Scroll each window in VIEWS so its anchor is where it was.
+VIEWS comes from `emjupy--views'.  Move the window start one screen line
+at a time while asking the display engine where the anchor appears,
+then scroll part of the first line by the remainder.  A figure is a
+single tall line, so whole-line scrolling alone cannot keep the cursor
+in place."
   (dolist (view views)
     (pcase-let ((`(,w ,anchor ,distance) view))
       (when (and (window-live-p w) (eq (window-buffer w) (current-buffer))
@@ -173,27 +174,27 @@ or their heights summed, it drifted: the rules are continuation lines."
                 (set-window-start w next t)
                 (let ((now (emjupy--anchor-y w anchor)))
                   (cond
-                   ;; Gone past, moving up: the line above is taller than
-                   ;; what was left.  Scrolled into by the difference.
+                   ;; Moving up went past: the line above is taller than the
+                   ;; remaining distance, so scroll into it by the difference.
                    ((and (< step 0) now (> now distance))
                     (set-window-vscroll w (- now distance) t)
                     (setq tries 0))
-                   ;; Gone past, moving down -- a step of two rows, a rule's
-                   ;; continuation lines: back, scrolled into by what was left.
+                   ;; Moving down went past, over a border drawn as two screen
+                   ;; lines: step back, and scroll into it by the remainder.
                    ((and (> step 0) now (< now distance))
                     (set-window-start w start t)
                     (set-window-vscroll w (- y distance) t)
                     (setq tries 0))))))))
         (unless (emjupy--anchor-y w anchor)
-          ;; never left out of view by keeping it
+          ;; do not scroll the anchor out of view
           (set-window-vscroll w 0 t)))
       (set-marker anchor nil))))
 
 (defmacro emjupy--keeping-view (&rest body)
-  "Run BODY, each window on this buffer kept showing what it showed.
-Output drawn, grown or cleared above the cursor pushed it down the
-screen, and everything with it: its line now stays on its screen line,
-or, the cursor out of view, the window's first line stays first."
+  "Run BODY, keeping each window on this buffer showing what it showed.
+When output above the cursor is drawn, grows or is cleared, the
+cursor's line stays at the same height on screen; if the cursor is not
+visible, the window's first line stays first."
   (declare (indent 0) (debug t))
   (let ((views (make-symbol "views")))
     `(let ((,views (emjupy--views)))

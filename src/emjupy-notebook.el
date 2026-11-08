@@ -276,9 +276,8 @@ that tunnel, rather than into a dead buffer needing a connect step."
     (with-current-buffer buf
       (condition-case err
           (emjupy-connect-kernel nb kernel-id)
-        ;; Everything: connecting opens a WebSocket, and
-        ;; `websocket-open' reports a failure as a plain error.  The
-        ;; notebook opens either way; the kernel is connected later.
+        ;; Open the notebook even if this fails; the kernel can be connected
+        ;; later.  `websocket-open' reports every failure as a plain `error'.
         (error (message "[emjupy] Could not attach kernel %s: %s"
                         kernel-id (error-message-string err)))))))
 
@@ -513,8 +512,8 @@ a notebook, a line for every notebook open."
   (let ((server (emjupy-notebook-server nb))
         (sections
          (delq nil (mapcar (lambda (section)
-                             ;; A section that fails says so, in the report
-                             ;; that is read when something is wrong.
+                             ;; A failing section shows its error in the
+                             ;; report, read when something is wrong.
                              (condition-case err
                                  (funcall (cdr section) nb)
                                (error

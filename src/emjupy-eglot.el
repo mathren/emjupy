@@ -692,8 +692,8 @@ cell in the notebook, automatically."
                 ;; Eglot's collection is called again later, from the notebook
                 ;; buffer, but needs the shadow buffer's context: force it on
                 ;; every call.
-                ;; Called later, as candidates are listed, the server
-                ;; there may be gone: no candidates then, not an error.
+                ;; Emacs calls the collection later, when the server may be
+                ;; gone: offer no candidates then.
                 (wrapped (if (functionp orig-collection)
                              (lambda (string pred action)
                                (condition-case err
@@ -711,13 +711,13 @@ cell in the notebook, automatically."
                    (emjupy--completion-properties (nthcdr 3 result) buf))))))))
 
 (defun emjupy--completion-properties (plist shadow)
-  "Return PLIST, Eglot's completion properties, usable from the notebook.
-Its functions are called once the candidates are listed or one chosen,
-in the notebook's buffer, where Eglot has no server: it raised \"No
-current JSON-RPC connection\" at the end of each completion.  Each runs
-in SHADOW, where the server is -- but `:exit-function', which may edit
-the text it completed, runs where it is; with no server it does nothing,
-the candidate inserted."
+  "Return PLIST, Eglot's completion properties, adapted for the notebook.
+Completion asks the shadow buffer SHADOW, but Emacs calls these
+functions later, from the notebook buffer, where Eglot has no server.
+So each function runs in SHADOW instead, except `:exit-function', which
+may edit the completed text and so runs in the notebook.  A
+`jsonrpc-error' from any of them, such as a server that has gone, means
+no result rather than an error."
   (cl-loop for (key value) on plist by #'cddr
            append (list key
                         (if (functionp value)

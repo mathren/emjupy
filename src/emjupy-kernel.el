@@ -382,8 +382,9 @@ would repeat its last command."
 ;;;; Adding output to a cell
 
 (defun emjupy--mark-output-stale (cell)
-  "Keep CELL's output up, dimmed, until its run gives new output.
-Or until the run ends without any: see `emjupy--clear-stale-output'."
+  "Keep CELL's output visible, dimmed, until the run's new output arrives.
+See `emjupy--clear-stale-output', which also clears it when the run
+ends without output."
   (when (> (length (or (emjupy-cell-outputs cell) [])) 0)
     (puthash cell 'run emjupy--clear-before-next-output)
     (let ((out (emjupy-cell-output-ov cell)))
@@ -391,9 +392,10 @@ Or until the run ends without any: see `emjupy--clear-stale-output'."
         (overlay-put out 'face 'emjupy-output-stale)))))
 
 (defun emjupy--clear-stale-output (cell)
-  "Clear CELL's outputs if they wait to be cleared; return non-nil if so.
-A run clears them all; a kernel's `clear_output' with wait keeps the
-widgets, the controls being outside the area an `interact' clears."
+  "Clear CELL's outputs if they are waiting to be cleared.
+Return non-nil if they were.  After a new run, clear all outputs;
+after the kernel's `clear_output' with wait, keep widget views, since
+the controls of an `interact' are outside the area it clears."
   (let ((why (gethash cell emjupy--clear-before-next-output)))
     (when why
       (remhash cell emjupy--clear-before-next-output)
@@ -409,8 +411,8 @@ widgets, the controls being outside the area an `interact' clears."
 
 (defun emjupy--append-output-to-cell (cell output-hash &optional notebook)
   "Append OUTPUT-HASH to CELL outputs and refresh NOTEBOOK's buffer."
-  ;; What waits to be cleared is cleared now, as the new output arrives,
-  ;; so the old one stays up until there is something to replace it.
+  ;; Clear what waits to be cleared now that new output has arrived, so
+  ;; the old output stays visible until then.
   (emjupy--clear-stale-output cell)
   (let* ((existing (append (or (emjupy-cell-outputs cell) []) nil))
          (merged (emjupy--merge-stream-output existing output-hash)))
@@ -520,12 +522,12 @@ For emjupy's own questions -- \"where are you?\" -- not for user code."
   "Requests for which one of execute_reply and the closing idle has come.")
 
 (defvar emjupy--requests-heard (make-hash-table :test 'equal)
-  "Requests the kernel has been heard working on: any message for them.
-One kept across a dropped connection and never heard from may not have
-reached the kernel -- sent as the connection died, a laptop just woken.")
+  "Requests the kernel has sent any message about, as a set.
+A request still pending after a reconnect that is not in this table may
+never have reached the kernel.")
 
 (defun emjupy--forget-request (id)
-  "Forget request ID: its halves seen, and that it was heard from."
+  "Forget the bookkeeping for request ID."
   (remhash id emjupy--request-halves)
   (remhash id emjupy--requests-heard))
 
@@ -586,7 +588,7 @@ redrawing it on every reply, a notebook run whole was redrawn once per
 cell."
   (setf (emjupy-cell-exec-count cell) (gethash "execution_count" content))
   (emjupy--request-half-seen id 'reply pending)
-  ;; A run ended with no new output: its old one goes now.
+  ;; The run ended without new output: clear its old output now.
   (when (eq (gethash cell emjupy--clear-before-next-output) 'run)
     (emjupy--clear-stale-output cell))
   (when-let* ((buf (and notebook (emjupy-notebook-buffer notebook)))
@@ -792,8 +794,8 @@ several notebooks -- from several servers -- stay live at once."
                       (emjupy--kernel-told kernel)
                       (unless (eq (websocket-client-data ws) 'refused)
                         (emjupy--begin-handshake kernel)
-                        ;; on every reconnect too: said of a notebook not
-                        ;; in view only to *Messages*
+                        ;; Also said on every reconnect: shown only for a notebook
+                        ;; in view.
                         (emjupy--say (emjupy-notebook-buffer notebook)
                                      "[emjupy] %s connected to kernel %s"
                                      label kernel-id)))
@@ -1098,12 +1100,12 @@ is still folded where the box ends."
                  "")))
 
 (defun emjupy--end-unsent-runs (cells buf label)
-  "End CELLS in BUF, never heard of by the kernel; suggest running them again.
-For the notebook called LABEL.  Sent as the connection died -- a laptop
-just woken -- they did not reach the kernel; or queued there, behind a
-cell of another notebook on the same kernel, they ran unheard.  Which,
-nothing says: so \"may not have run\", and the key that runs them again.
-Said to have ended while disconnected, a user waited on them."
+  "End CELLS in BUF, which the kernel never reported on, and say so.
+LABEL names the notebook.  Such a run may not have reached the kernel,
+because the connection dropped as it was sent; or it may have run
+unreported, queued behind a cell of another notebook on the same
+kernel.  Emacs cannot tell which, so the message says the cell may not
+have run and gives the key that runs it again."
   (when (buffer-live-p buf)
     (dolist (cell cells) (emjupy--mark-done cell buf)))
   (let ((first (car (split-string (string-trim
@@ -1284,8 +1286,9 @@ and is asked again later."
                      ;; unknown: the cells stay running, as they may be
                      (emjupy-http-error nil))))
         (when (equal state "idle")
-          ;; Heard working on: it ran, unseen.  Never heard of: it may not
-          ;; have reached the kernel -- to be run again, not taken as done.
+          ;; A request the kernel reported on ran while disconnected.  One it
+          ;; never reported on may not have reached it: suggest running
+          ;; it again.
           (let ((ran nil) (unsent nil))
             (dolist (id left)
               (if (gethash id emjupy--requests-heard)
@@ -1430,10 +1433,9 @@ the caller bound, read here, unseen where it was bound."
     (when (and here (eq (emjupy-cell-type here) 'raw))
       (cl-return-from emjupy-execute-cell-at-point here)))
   (let ((kernel (emjupy--kernel)))
-    ;; Dropped, and not yet noticed -- a laptop just woken, its connection
-    ;; dead before its close is read: the drop is handled now, as when the
-    ;; close comes, and the cell held below.  It was refused, "reconnect
-    ;; by hand", a moment before emjupy reconnected by itself.
+    ;; The connection is dead but its close is not processed yet, as when a
+    ;; laptop wakes: handle the drop now, as the close handler would, so the
+    ;; cell waits below for the reconnect instead of being refused.
     (when (and kernel (emjupy-kernel-id kernel)
                (not (emjupy--ws-live-p kernel))
                (not emjupy--reconnect-timer) emjupy-reconnect-window
@@ -1467,9 +1469,8 @@ the caller bound, read here, unseen where it was bound."
       (unless synced (emjupy--sync-all-cells))
       (run-hook-with-args 'emjupy-before-execute-functions cell)
 
-      ;; 2.  The previous output stays, dimmed, until the new one replaces it,
-      ;; or the run ends with none.  Cleared at once, everything below went
-      ;; up, then down again as the new output came.
+      ;; 2.  Keep the previous output, dimmed, until new output replaces it or
+      ;; the run ends without output, so the cells below do not jump.
       (emjupy--mark-output-stale cell)
 
       ;; 3. Build execution payload

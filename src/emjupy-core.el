@@ -215,11 +215,10 @@ emjupy learnt, rather than tables of their own, in four files."
      (cl-pushnew ',name emjupy--session-caches)))
 
 (defvar emjupy--forgetters nil
-  "Functions `emjupy-forget-remote-state' calls with EVERYTHING.
-Each forgets what its layer remembers beyond the session caches when
-EVERYTHING is non-nil -- the environment chosen for each folder, say.
-A registry, filled by `emjupy--add-forgetter' as each layer loads: not
-a hook, which loading a package should rarely add to.")
+  "Functions that `emjupy-forget-remote-state' calls with EVERYTHING.
+Each forgets state its layer keeps outside the session caches, such as
+the environment remembered for each folder, when EVERYTHING is non-nil.
+Filled with `emjupy--add-forgetter'.")
 
 (defun emjupy--add-forgetter (function)
   "Have `emjupy-forget-remote-state' call FUNCTION too."
@@ -243,15 +242,13 @@ folder is forgotten too, and asked for at the next opening."
              (if everything ", and every folder's environment" ""))))
 
 (defvar emjupy--status-sections nil
-  "Sections of a notebook's status, as (DEPTH . FUNCTION), lowest first.
-FUNCTION is called with a notebook and gives (TITLE . LINES), strings,
-or nil for nothing to say.  Layers above this one add theirs -- the
-kernel, the language server, the remote -- with
-`emjupy--add-status-section'.  A registry, not a hook: loading a
-package should rarely add to hooks.")
+  "Sections of the `emjupy-status' report, as (DEPTH . FUNCTION).
+Sorted by DEPTH.  FUNCTION takes a notebook and returns (TITLE . LINES),
+or nil when it has nothing to report.  Filled with
+`emjupy--add-status-section'.")
 
 (defun emjupy--add-status-section (function depth)
-  "Add FUNCTION's section to `emjupy-status', at DEPTH among the others."
+  "Add FUNCTION to the `emjupy-status' report, at DEPTH among the sections."
   (setq emjupy--status-sections
         (sort (cons (cons depth function)
                     (seq-remove (lambda (s) (eq (cdr s) function))
@@ -259,17 +256,17 @@ package should rarely add to hooks.")
               (lambda (x y) (< (car x) (car y))))))
 
 (defvar-local emjupy--unseen-messages 0
-  "In a notebook buffer: messages kept quiet since it was last shown.")
+  "Number of messages logged quietly while this notebook was not shown.")
 
 (defun emjupy--say (buffer format &rest args)
-  "Say FORMAT, with ARGS, about BUFFER's notebook: aloud if it is shown.
-If not, only into *Messages*, where `emjupy-status' finds it, and
-counted, for `emjupy--tell-unseen' to mention once BUFFER is shown.
-For what emjupy does on its own, unasked -- saving, reconnecting: a
-notebook restored with the session, its tunnel not open yet, warned it
-could not be saved while something else was being worked on.  BUFFER
-nil means the current buffer; a buffer not a notebook's always speaks
-aloud."
+  "Show the message FORMAT with ARGS, about the notebook in BUFFER.
+Show it in the echo area if BUFFER is displayed; otherwise only log it
+to *Messages* and count it, so that `emjupy--tell-unseen' can mention
+it when BUFFER is displayed again.  Use this for what emjupy does on
+its own, such as saving or reconnecting, so that work in one notebook
+is not interrupted by messages about another.  BUFFER nil means the
+current buffer; a buffer that is not a notebook always shows the
+message."
   (let* ((buffer (or buffer (current-buffer)))
          (quiet (and (buffer-live-p buffer)
                      (buffer-local-value 'emjupy--buffer-notebook buffer)
@@ -281,7 +278,7 @@ aloud."
         (setq emjupy--unseen-messages (1+ emjupy--unseen-messages))))))
 
 (defun emjupy--tell-unseen (window)
-  "Say how many messages were kept quiet while WINDOW's buffer was hidden."
+  "Report the messages logged quietly while WINDOW's buffer was hidden."
   (with-current-buffer (window-buffer window)
     (when (> emjupy--unseen-messages 0)
       (message "[emjupy] %s: %d message%s while not shown; %s"
@@ -369,7 +366,7 @@ from \"iopub.execute_input\" to \"shell.execute_reply\"."
                      (gethash "iopub.execute_input" times)))
          (end (and (hash-table-p times) (gethash "shell.execute_reply" times))))
     (when (and (stringp start) (stringp end))
-      ;; Times another tool wrote, not in ISO 8601: no time to show.
+      ;; A timestamp not in ISO 8601, written by another tool: show no time.
       (condition-case nil
           (let ((seconds
                  (- (float-time (encode-time (iso8601-parse end t)))

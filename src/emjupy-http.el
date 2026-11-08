@@ -213,12 +213,12 @@ wait for their answer and those that do not, so both read it alike."
         (kill-buffer buffer)))))
 
 (defun emjupy--server-listening-p (server)
-  "Return non-nil if something listens on SERVER's port.
-A connection is tried, and closed at once.  On this machine -- a server
-started here, or the end of a tunnel -- it is accepted or refused at
-once, without waiting.  Ask this before an HTTP request to a server
-that may not listen yet: the url library retried a refused connection,
-nested, until Emacs ran out of Lisp depth."
+  "Return non-nil if something accepts connections on SERVER's port.
+Open a connection and close it immediately; on this machine, where
+local servers and tunnels listen, the answer is immediate.  Check this
+before an HTTP request to a server that may not be listening yet: the
+url library retries a refused connection recursively, until Emacs
+exceeds `max-lisp-eval-depth'."
   (condition-case nil
       (progn (delete-process
               (make-network-process :name "emjupy-listening"
@@ -304,8 +304,8 @@ any refusal is."
          ;; refuse the pair.
          (url-cookie-storage nil)
          (url-cookie-secure-storage nil)
-         ;; Its "Contacting host" for every request, in the background
-         ;; too: seventeen in one session of the fuzz test.
+         ;; Do not show url's "Contacting host" for every request,
+         ;; background ones included.
          (url-show-status nil)
          (url-request-extra-headers (emjupy--http-headers server))
          (full-url (emjupy--http-url server method path)))

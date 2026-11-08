@@ -110,7 +110,7 @@ debugpy."
                      (cadr err))))
     (emjupy--debug-clear-arrow)
     (setq emjupy--debug-stopped nil)
-    ;; The kernel gone, there is no session to end; said, not hidden.
+    ;; The kernel may be gone, leaving no session to end: report it.
     (condition-case err
         (emjupy--debug-request
          "disconnect"

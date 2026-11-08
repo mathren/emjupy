@@ -69,13 +69,13 @@ A kernel shut down from elsewhere, or culled, is noticed by itself: after
 =emjupy-kernel-check-interval= seconds (30) of quiet, the cell ends and
 the notebook says the kernel is gone.
 
-* "emjupy is loaded from two places"
+* Two installations of emjupy
 
-Two installations are on the =load-path= -- a package and a checkout, say
--- each supplying some files.  A mix fails like bugs: a key shown as
-=M-x= and a command's name, widgets drawn as text.  Remove one, or put the
-one wanted first on the =load-path=; =M-x emjupy-version= names the files
-loaded from elsewhere.
+With two installations on the =load-path= -- a package and a checkout,
+say -- Emacs may load some files from each, and the mix fails like a
+bug: a key shown as =M-x= and a command's name, widgets drawn as text.
+=M-x list-load-path-shadows= lists the files found twice.  Remove one
+installation, or put the one wanted first on the =load-path=.
 
 * "The notebook was redrawn: its display had come apart from its cells"
 

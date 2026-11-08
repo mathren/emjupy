@@ -678,34 +678,33 @@ next line, outside the code."
   (emjupy--goto-cell (emjupy--sibling-cell -1) 'end)
   (emjupy--show-cell-at-point))
 
-;;;; Line by line
+;;;; Moving by lines
 
 (defun emjupy-next-line (&optional arg)
   "Move to the next line, keeping the column.
-With ARG, move that many lines.  Only lines of cells and outputs count:
-the separator between two cells is skipped, as the cursor there showed
-at the end of a border.  Lines are the buffer's, not the screen's: a
-cell's borders are drawn on screen lines with no text, and moving into
-one went nowhere.  Bound in place of `next-line', on whatever keys that
-is."
+With ARG, move that many lines.  Separator lines between cells are
+skipped.  Lines are counted in the buffer, not on the screen: a cell's
+borders are drawn on screen lines that have no buffer text, so moving
+by screen lines could get stuck on them.  Bound in place of
+`next-line'."
   (interactive "^p")
   (emjupy--line-move (or arg 1)))
 
 (defun emjupy-previous-line (&optional arg)
-  "Move to the previous line, the column kept, as `emjupy-next-line'.
-With ARG, that many."
+  "Move to the previous line, keeping the column.
+With ARG, move that many lines.  See `emjupy-next-line'."
   (interactive "^p")
   (emjupy--line-move (- (or arg 1))))
 
 (defun emjupy--line-move (n)
-  "Move N lines, by the buffer's lines, over separators, the column kept.
-With nothing but separators beyond, stay, and signal the buffer's end
-or beginning, as `next-line' does."
+  "Move N lines by buffer lines, skipping separators, keeping the column.
+If only separators remain in that direction, do not move, and signal
+the beginning or end of the buffer as `next-line' does."
   (let ((start (point))
         (line-move-visual nil)
         (step (if (< n 0) -1 1)))
-    ;; As `next-line', for `line-move' to keep the goal column from one
-    ;; press to the next: it does so after those two commands only.
+    ;; `line-move' keeps the goal column only across consecutive `next-line'
+    ;; and `previous-line' commands, so record this command as one of them.
     (setq this-command (if (< n 0) 'previous-line 'next-line))
     (line-move n)
     (while (emjupy--separator-at-p (point))
@@ -716,7 +715,7 @@ or beginning, as `next-line' does."
         (line-move step)))))
 
 (defun emjupy--separator-at-p (pos)
-  "Return non-nil if POS is a separator's, a line between cells."
+  "Return non-nil if POS is on a separator line between cells."
   (and (eq (char-after pos) ?\n)
        (get-pos-property pos 'cursor-intangible)))
 

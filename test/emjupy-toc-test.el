@@ -1,5 +1,8 @@
 ;;; emjupy-toc-test.el --- Tests of emjupy-toc.el  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 Mathieu Renzo
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The outline: the headings found, the imenu index, and the panel --

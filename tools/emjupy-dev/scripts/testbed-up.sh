@@ -1,4 +1,8 @@
 #!/bin/bash
+# Copyright (C) 2026 Mathieu Renzo
+# Author: Mathieu Renzo <mrenzo@arizona.edu>
+# Assisted-by: Claude:claude-opus-5.5
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Start whatever of the testbed is down: sshd, the SSH latency proxy,
 # server A here, server B on the remote and the tunnel to it.  The
 # sandbox restarts now and then, and every process with it: run this

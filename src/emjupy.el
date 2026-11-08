@@ -135,13 +135,6 @@ the echo area, for pasting into a bug report."
                   (format "emjupy %s" emjupy-version)
                   (if rev (format ", git %s" rev) "")
                   (if dir (format ", loaded from %s" dir) "")
-                  (let ((strays (emjupy--stray-modules)))
-                    (if strays
-                        (format " -- but %s"
-                                (mapconcat (lambda (s) (format "%s from %s"
-                                                               (car s) (cdr s)))
-                                           strays ", "))
-                      ""))
                   (if nb
                       (format "; kernel cwd %s; language server %s"
                               (or (emjupy-notebook-kernel-cwd nb) "unknown")

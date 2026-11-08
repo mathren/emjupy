@@ -91,7 +91,7 @@ buffer of it does.  Set to nil to leave the buffer with
     (define-key map (kbd "C-c C-p") #'emjupy-previous-cell)
     (define-key map (kbd "C-c <prior>") #'emjupy-beginning-of-cell)
     (define-key map (kbd "C-c <next>")  #'emjupy-end-of-cell)
-    ;; Line by line, the column kept, never stopping on a separator:
+    ;; Move by lines, keeping the column and skipping separators, on
     ;; whatever keys move by lines.
     (define-key map [remap next-line] 'emjupy-next-line)
     (define-key map [remap previous-line] 'emjupy-previous-line)
@@ -178,47 +178,6 @@ scratch buffer, not listed here, so they follow the mode."
 
 ;;;; Two installations at once
 
-(defconst emjupy--home
-  (file-name-directory (or load-file-name buffer-file-name default-directory))
-  "The directory this file was loaded from, where every emjupy file belongs.")
-
-(defconst emjupy--modules
-  '(emjupy-core emjupy-http emjupy-render emjupy-cells emjupy-kernel
-    emjupy-figures emjupy-widgets emjupy-widget-page emjupy-remote emjupy-lsp
-    emjupy-eglot emjupy-mode emjupy-notebook emjupy)
-  "The files emjupy is made of, as features.")
-
-(defun emjupy--stray-modules ()
-  "Return the emjupy files loaded from a directory other than this one's.
-Each is a cons of the feature and the file.  A package and a checkout
-both on the `load-path' give a mix, which fails in ways that look like
-bugs."
-  (cl-loop for feature in emjupy--modules
-           for file = (and (featurep feature) (feature-file feature))
-           when (and file (not (file-equal-p (file-name-directory file)
-                                             emjupy--home)))
-           collect (cons feature file)))
-
-(defvar emjupy--strays-checked nil
-  "Non-nil once this session has looked for a mixed installation.")
-
-(defun emjupy--warn-about-strays ()
-  "Warn, once a session, if emjupy's files come from two installations.
-Run when a notebook first opens rather than when emjupy is loaded, so
-that loading it does nothing but define, and every file is loaded by
-then however emjupy was -- by a `require', or an autoloaded command."
-  (unless emjupy--strays-checked
-    (setq emjupy--strays-checked t)
-    (when-let* ((strays (emjupy--stray-modules)))
-      (display-warning
-       'emjupy
-       (format "emjupy is loaded from two places: %s, but %s.  Two installations
-are on the `load-path' -- remove one, or put the one you want first."
-               emjupy--home
-               (mapconcat (lambda (s) (format "%s from %s" (car s) (cdr s)))
-                          strays ", "))
-       :warning))))
-
 ;;;; The mode
 
 (defun emjupy--mode-line-status ()
@@ -253,17 +212,18 @@ no kernel, disconnected, reconnecting."
               ""))))
 
 (defcustom emjupy-scroll-margin 2
-  "Lines of context kept above and below the cursor in a notebook.
-The window then scrolls just enough to keep it, `scroll-conservatively'
-101, never recentring: moving the cursor out of view recentred it,
-the view jumping half a window.  nil leaves Emacs's own scrolling as it
-is; so does having changed `scroll-margin' or `scroll-conservatively'."
+  "Number of lines of context to keep above and below the cursor.
+In notebook buffers, the window then scrolls just enough to keep the
+cursor in view, instead of recentring.  This sets `scroll-margin' and
+`scroll-conservatively' locally, unless you have customized them.  nil
+leaves scrolling to Emacs."
   :type '(choice (integer :tag "Lines") (const :tag "Emacs's own" nil))
   :group 'emjupy)
 
 (defun emjupy--set-scrolling ()
-  "Scroll just enough, with `emjupy-scroll-margin' lines of context.
-Unless the user set those of Emacs, which stay as they are."
+  "Set scrolling in this buffer according to `emjupy-scroll-margin'.
+Leave `scroll-margin' and `scroll-conservatively' alone if the user has
+changed them."
   (when emjupy-scroll-margin
     (when (and (eql (default-value 'scroll-conservatively) 0)
                (not (local-variable-p 'scroll-conservatively)))
@@ -274,12 +234,11 @@ Unless the user set those of Emacs, which stay as they are."
 
 (define-derived-mode emjupy-mode fundamental-mode "emjupy"
   "Major mode for interactive Jupyter Notebook editing in Emacs."
-  (emjupy--warn-about-strays)
-  ;; What was kept quiet while it was hidden is mentioned when it is shown.
+  ;; When shown, report the messages logged quietly while it was hidden.
   (add-hook 'window-buffer-change-functions #'emjupy--tell-unseen nil t)
   (emjupy--set-scrolling)
-  ;; Point is moved off separators and padding, which show it at the end
-  ;; of a border's line: to the next place to write, the way it was going.
+  ;; Keep point off separators and padding, which would show it at the
+  ;; end of a border's line.
   (cursor-intangible-mode 1)
   ;; The kernel's state and the server's port beside the mode's name.
   (setq mode-name '("emjupy" (:eval (emjupy--mode-line-status))))

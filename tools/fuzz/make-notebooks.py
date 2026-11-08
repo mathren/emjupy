@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mathieu Renzo
+# Author: Mathieu Renzo <mrenzo@arizona.edu>
+# Assisted-by: Claude:claude-opus-5.5
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Write fresh fuzzing notebooks: make-notebooks.py DIR KIND [NAME].
 
 KIND is sci (numpy, a matplotlib figure), plain (the standard library

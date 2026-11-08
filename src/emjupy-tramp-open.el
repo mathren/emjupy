@@ -48,7 +48,7 @@ with one command: tested and read through TRAMP, three round trips."
   (if (file-remote-p dir)
       (with-temp-buffer
         (let ((default-directory dir))
-          ;; The machine not reached: no file to offer from.
+          ;; The machine is unreachable: offer no environment.yml.
           (condition-case nil
               (process-file "sh" nil t nil "-c"
                             (concat "cat environment.yml 2>/dev/null"
@@ -83,7 +83,7 @@ of the PATH for each name, a round trip each -- 21 on a plain machine."
       (when (eq 0 (condition-case nil
                       (process-file "sh" nil t nil "-c"
                                     "command -v conda || command -v mamba || command -v micromamba")
-                    ;; The machine not reached: no conda found there.
+                    ;; The machine is unreachable: report no conda.
                     (file-error nil)))
         (let ((found (string-trim (buffer-string))))
           (and (not (string-empty-p found))
@@ -177,8 +177,7 @@ it knows it, so the same folder is named two ways; DIR expanded here."
     (setq emjupy--environments (if env (cons (cons key env) rest) rest)))
   (when emjupy-environments-file
     (with-demoted-errors "[emjupy] Environments not saved: %S"
-      ;; Its folder made if need be: a user with no ~/.emacs.d yet was
-      ;; told at every opening that nothing could be remembered.
+      ;; Create the folder if needed, such as ~/.emacs.d for a new user.
       (make-directory (file-name-directory
                        (expand-file-name emjupy-environments-file))
                       t)
@@ -335,16 +334,16 @@ for: `emjupy--server-ready' does, or not."
         server)))
 
 (defun emjupy--local-server-record (server)
-  "Return SERVER's record, as `emjupy--start-local-server' made it, or nil."
+  "Return SERVER's record, made by `emjupy--start-local-server', or nil."
   (cl-find server emjupy--local-servers
            :key (lambda (s) (plist-get s :server))))
 
 (defun emjupy--local-server-alive-p (server)
-  "Return non-nil if the process of SERVER, started here, is live."
+  "Return non-nil if the process of SERVER, started locally, is running."
   (process-live-p (plist-get (emjupy--local-server-record server) :process)))
 
 (defun emjupy--local-server-failure (server)
-  "Stop SERVER, started here, as having failed; return why, as it said."
+  "Stop SERVER, started locally, and return why it failed, from its output."
   (let* ((record (emjupy--local-server-record server))
          (process (plist-get record :process))
          (output (plist-get record :output))
@@ -569,9 +568,9 @@ Return its process; what ssh says goes to its buffer."
                   :command (emjupy--tunnel-command route port remote-port))))
 
 (defun emjupy--server-buffer (server)
-  "Return a notebook buffer on SERVER, one in view if any, or nil.
-For what is said of a server, not a notebook: aloud if any notebook on
-it is in view -- it was, or not, as the current buffer happened to be."
+  "Return a notebook buffer on SERVER, preferring a visible one, or nil.
+Use it to show messages about a server: they are shown when any
+notebook on that server is visible."
   (let ((on-it (seq-filter
                 (lambda (b)
                   (let ((nb (buffer-local-value 'emjupy--buffer-notebook b)))
@@ -710,15 +709,13 @@ starts one.  ROUTE names the machine, for the messages."
       (emjupy--start-remote-server dir jupyter))))
 
 (defun emjupy--open-remote-notebook (file &optional choose no-wait)
-  "Prepare FILE, an .ipynb through TRAMP, to open on its own machine.
-CHOOSE: ask for the environment even if one is remembered for its folder.
-Finds a Jupyter server already serving its folder there, or starts one
-in the environment asked for, and opens a tunnel to it, through every
-hop.  Return (SERVER PATH), PATH the notebook's on it.  With NO-WAIT, a
-server not answering yet -- one just started -- is not waited for: the
-list has a third element then, a function of ON-READY and ON-FAIL that
-waits without holding Emacs, and calls one of them.  Waited for, three
-seconds and more went by with Emacs frozen."
+  "Prepare FILE, an .ipynb file opened through TRAMP, to open remotely.
+With CHOOSE, ask for the environment even if one is remembered for its
+folder.  Use a Jupyter server already serving the folder on that
+machine, or start one in the chosen environment, and open a tunnel to
+it.  Return (SERVER PATH), PATH being the notebook's path on SERVER.
+With NO-WAIT, a server that is not answering yet is not waited for:
+see `emjupy--server-ready'."
   (let* ((route (emjupy--ssh-route file))
          (prefix (emjupy--remote-prefix file))
          (dir (file-name-directory file))
@@ -750,18 +747,17 @@ seconds and more went by with Emacs frozen."
       (emjupy--server-ready server path no-wait why))))
 
 (defun emjupy--server-ready (server path no-wait why &optional alive)
-  "Return (SERVER PATH), SERVER answering and its kernel bound.
-With NO-WAIT, SERVER not answering yet -- just started -- is not waited
-for: the list has a third element then, a function of ON-READY and
-ON-FAIL that waits without holding Emacs and calls one of them, ON-FAIL
-with why.  WHY is a function returning why SERVER did not answer;
-ALIVE, if given, a function returning whether SERVER's process still
-runs -- for a server started here.  For servers here and through TRAMP
-alike: each had its own wait, holding Emacs."
+  "Return (SERVER PATH) once SERVER answers, with its kernel bound.
+With NO-WAIT and SERVER not answering yet, return immediately with a
+third element: a function of ON-READY and ON-FAIL that waits without
+blocking Emacs, then calls ON-READY, or ON-FAIL with the reason.  WHY is
+a function returning the reason SERVER did not answer.  ALIVE, if
+given, is a function returning whether SERVER's process still runs; it
+applies to servers started locally."
   (let ((deadline (+ (float-time) emjupy-local-server-timeout))
         (alive (or alive #'always))
-        ;; Bound already, by an earlier opening: asking again lists its
-        ;; kernels, a round trip, to come to the same one.
+        ;; Bind the server's kernel only once: asking again costs a
+        ;; round trip and finds the same kernel.
         (bind (lambda ()
                 (unless (emjupy-server-kernel-id server)
                   (emjupy--bind-server-kernel server)))))
@@ -781,10 +777,11 @@ alike: each had its own wait, holding Emacs."
       (list server path))))
 
 (defun emjupy--await-server (server deadline alive on-ready on-fail)
-  "Call ON-READY once SERVER answers; ON-FAIL if not by DEADLINE.
-Or as soon as ALIVE, a function, says its process has ended.  Asked
-without waiting, again every half second: Emacs is not held.  Its port
-first, then its status: see `emjupy--server-listening-p'."
+  "Call ON-READY once SERVER answers, or ON-FAIL if it does not by DEADLINE.
+Also call ON-FAIL as soon as ALIVE, a function, returns nil.  Check
+every half second with a timer, without blocking Emacs: first whether
+the port listens (see `emjupy--server-listening-p'), then the server's
+status."
   (let ((again (lambda ()
                  (if (or (> (float-time) deadline) (not (funcall alive)))
                      (funcall on-fail)
@@ -858,27 +855,24 @@ saying so when the path is open from another server there."
 
 ;;;###autoload
 (defun emjupy-open-this-notebook (&optional choose no-wait)
-  "Open the .ipynb file this buffer visits as a notebook, on its machine.
-For a notebook opened as a file -- its JSON shown as text.  Runs it in
-the Python environment chosen last in its folder, saying so; the first
-time there, or with a prefix argument CHOOSE, asks for one, offered
-first the one an environment.yml beside it names.  Starts a Jupyter
-server there, for the notebook\\='s directory, and replaces this buffer
-with the notebook.
+  "Open the .ipynb file visited in this buffer as a notebook.
+Use the Python environment last chosen for the file's folder; the first
+time, or with a prefix argument CHOOSE, ask for one, suggesting the
+environment an environment.yml next to the file names.  Start a Jupyter
+server for the file's folder, and replace this buffer with the notebook.
 
-On this machine, the server listens here only, and stops when the last
-notebook it serves is closed, and with Emacs.  Through TRAMP -- over
-SSH, through any hops -- a server already serving the folder there is
-used, or one is started, and reached through a tunnel; closing the last
-notebook closes the tunnel, and leaves the server, and its kernels,
-running, to come back to.  A notebook already open from the same machine,
-from the server on the same port there, is the same notebook: its buffer
-is reused, its edits kept.
+For a local file, the server listens on this machine only, and stops
+when its last notebook is closed, or with Emacs.  For a file opened
+through TRAMP, over SSH and any number of hops, use a server already
+serving the folder there, or start one, and reach it through a tunnel.
+Closing its last notebook closes the tunnel and leaves the server and
+its kernels running.  A notebook already open from the same server is
+reused, with its edits.
 
-NO-WAIT, as a key passes it: a server just started is not waited for,
-Emacs frozen meanwhile -- the notebook's buffer says it is starting, and
-fills once it answers.  From Lisp, without it, the notebook is returned
-ready."
+With NO-WAIT, which the interactive call passes, do not wait for a
+server just started: show the notebook buffer at once, saying the
+server is starting, and fill it in when the server answers.  Called
+from Lisp without NO-WAIT, return the notebook ready."
   (interactive (list current-prefix-arg t))
   (let ((file buffer-file-name))
     (unless (and file (string-suffix-p ".ipynb" file t))
@@ -889,9 +883,8 @@ ready."
           (save-buffer)
         (user-error "Not opened: save the file, or revert it, first")))
     (let* ((remote (file-remote-p file))
-           ;; NO-WAIT, as a key asks: a server just started is not
-           ;; waited for -- the notebook's buffer says so, and fills when
-           ;; it answers.  From Lisp, the notebook is returned ready.
+           ;; With NO-WAIT, do not wait for a server just started; see
+           ;; `emjupy--open-when-server-answers'.
            (opened (if remote
                        (emjupy--open-remote-notebook file choose no-wait)
                      (let* ((dir (file-name-directory file))
@@ -909,17 +902,19 @@ ready."
         (emjupy--show-opened-notebook opened remote text window)))))
 
 (defun emjupy--release-server (server remote)
-  "Release SERVER, when no notebook is left on it.
-REMOTE: its tunnel closed, the server left running there; else, started
-here, it is stopped."
+  "Release SERVER if no notebook is left on it.
+REMOTE means SERVER is reached through a tunnel: close the tunnel and
+leave the server running.  Otherwise SERVER was started locally: stop
+it."
   (if remote
       (emjupy--close-tunnel-if-unused server)
     (emjupy--stop-local-server-if-unused server)))
 
 (defun emjupy--show-opened-notebook (opened remote text window)
-  "Open OPENED, (SERVER PATH), its server answering, in place of TEXT.
-REMOTE: through a tunnel.  WINDOW, if live, shows the notebook; TEXT,
-the .ipynb's own buffer, is killed.  Return the notebook's buffer."
+  "Open the notebook OPENED, (SERVER PATH), in place of the buffer TEXT.
+SERVER must be answering.  REMOTE means SERVER is reached through a
+tunnel.  If WINDOW is live, show the notebook in it.  Kill TEXT, the
+buffer visiting the .ipynb file.  Return the notebook's buffer."
   (let* ((server (car opened))
          (notebook (or (and remote
                             (emjupy--adopt-remote-notebook (cadr opened)
@@ -932,18 +927,19 @@ the .ipynb's own buffer, is killed.  Return the notebook's buffer."
                   (lambda () (emjupy--release-server server remote))
                   nil t))
       (when (window-live-p window) (set-window-buffer window notebook))
-      ;; In place: the text is the same file, and would go stale as the
-      ;; notebook is saved.
+      ;; Kill the file's text buffer: it shows the same file, and
+      ;; would go stale as the notebook is saved.
       (when (buffer-live-p text) (kill-buffer text)))
     notebook))
 
 (defun emjupy--open-when-server-answers (opened remote text window)
-  "Show OPENED's notebook buffer now, filled once its server answers.
-OPENED is (SERVER PATH WAIT), WAIT from `emjupy--server-ready'; REMOTE:
-its server reached through a tunnel.  The buffer says the server is
-starting; WINDOW shows it in place of TEXT.  Filled, no window is
-changed: one showing it shows the notebook.  Killed meanwhile, the
-opening is given up, the server let go.  Return the buffer."
+  "Show OPENED's notebook buffer now, and fill it in when its server answers.
+OPENED is (SERVER PATH WAIT), WAIT being the function returned by
+`emjupy--server-ready'.  REMOTE means SERVER is reached through a
+tunnel.  Show the buffer in WINDOW in place of TEXT, saying the server
+is starting.  When the server answers, draw the notebook in that buffer
+without changing any window.  If the buffer is killed before then,
+cancel the opening and release the server.  Return the buffer."
   (pcase-let* ((`(,server ,path ,wait) opened)
                (host (if remote
                          (plist-get (plist-get (emjupy--tunnel-of server)
@@ -971,14 +967,14 @@ opening is given up, the server let go.  Return the buffer."
            (emjupy--release-server server remote)
          (with-current-buffer buf
            (let ((inhibit-read-only t)) (erase-buffer))
-           ;; Unmodified: else taken for the notebook open with unsaved
-           ;; changes, and left as it was -- empty.
+           ;; Mark it unmodified: otherwise opening the notebook would take it
+           ;; for a notebook with unsaved changes, and leave it empty.
            (set-buffer-modified-p nil)
            (setq buffer-read-only nil))
          (let ((notebook (save-window-excursion
                            (emjupy--show-opened-notebook
                             (list server path) remote text nil))))
-           ;; adopted: another buffer has it -- shown where this one was
+           ;; already open in another buffer: show that one in its place
            (when (and (buffer-live-p notebook) (not (eq notebook buf)))
              (dolist (w (get-buffer-window-list buf nil t))
                (set-window-buffer w notebook))

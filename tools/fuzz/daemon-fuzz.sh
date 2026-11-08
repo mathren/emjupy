@@ -1,4 +1,8 @@
 #!/bin/bash
+# Copyright (C) 2026 Mathieu Renzo
+# Author: Mathieu Renzo <mrenzo@arizona.edu>
+# Assisted-by: Claude:claude-opus-5.5
+# SPDX-License-Identifier: GPL-3.0-or-later
 # The fuzz session in one Emacs daemon, as one works, with the network
 # lost under it: see README.org.  Run as root, from the repository, the
 # testbed up: it pauses and restarts the SSH latency proxy and the

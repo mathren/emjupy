@@ -167,12 +167,12 @@ its overlay strings, for the rules to be hung again."
     (sort boxes (lambda (a b) (< (overlay-start a) (overlay-start b))))))
 
 (defun emjupy--hang-rules (box anchor rules &optional keep-newline)
-  "Hang RULES on the newline at ANCHOR, BOX's last, as continuation lines.
-Drawn in place of the newline, with KEEP-NEWLINE ending in one too: when
-no separator follows to end the line, as after the last box, or before
-an output.  The overlay is BOX's companion, deleted with its rules.
-Drawn before the newline instead, a string shows point there after it:
-on the rule, not at the end of the code."
+  "Draw RULES, the borders after BOX, in place of the newline at ANCHOR.
+ANCHOR is BOX's last newline.  With KEEP-NEWLINE, end the drawn text
+with a newline too, for where no separator follows: after the last box,
+or before an output.  Drawing the borders in place of the newline lets
+the cursor at the end of the code appear there, rather than after the
+borders.  The overlay is one of BOX's companions, deleted with it."
   (let ((o (make-overlay anchor (1+ anchor) nil t nil))
         (text (concat "\n" rules (if keep-newline "\n" ""))))
     ;; point there shows at the end of the text, before the rule
@@ -463,13 +463,12 @@ they change; else every rule is rebuilt."
     (emjupy--start-spinner)))
 
 (defun emjupy--show-cell-at-point ()
-  "Scroll the selected window just enough to show point, in context.
-Not at all if it shows already: its line, two below it, and, at a
-cell's first line, the cell's header above.  Above the window, the
-window starts at that header; below, point's line goes third from the
-bottom.  Never centred: moving to a cell out of view put it in the
-middle of the window, the view jumping half a window.  Nothing, when
-the selected window shows another buffer."
+  "Scroll the selected window just enough to show point in context.
+Do nothing if point's line, the two lines below it and, on a cell's
+first line, the cell's header are already visible.  If they are above
+the window, start the window at the header; if below, put point's line
+third from the bottom.  Never recenter.  Do nothing if the selected
+window shows another buffer."
   (let* ((w (selected-window))
          (cell (emjupy--cell-at-point))
          (ov (and cell (emjupy-cell-overlay cell)))
@@ -481,8 +480,8 @@ the selected window shows another buffer."
                                   (point))
                 line))
          (bottom (save-excursion (vertical-motion 3 w) (point))))
-    ;; Only the window looked at: a command run from Lisp, the notebook
-    ;; not in the selected window, has nothing to show.
+    ;; Act only on the selected window: from Lisp, the notebook may not
+    ;; be shown in it.
     (cond ((not (eq (window-buffer w) (current-buffer))))
           ((and (pos-visible-in-window-p top w)
                 (pos-visible-in-window-p bottom w)))
@@ -797,8 +796,8 @@ the window's edge."
           (goto-char eol)
           (insert (propertize " "
                               'emjupy-pad t
-                              ;; Drawn, not output: point is moved off it, as
-                              ;; off a separator -- see `emjupy-mode'.
+                              ;; Padding, not output: keep point off it, as
+                              ;; off a separator; see `emjupy-mode'.
                               'cursor-intangible t
                               'face face
                               ;; Also as `font-lock-face': font-lock removes
@@ -1288,9 +1287,9 @@ not the start of the cell after it."
                          rear-nonsticky (read-only cursor-intangible))))
 
 (defun emjupy--make-intangible (pos)
-  "Keep point off the separator at POS, if it is one: a newline outside cells.
-Shown, point there sat at the end of a border's line, nothing there to
-edit; `cursor-intangible-mode' moves it on, the way it was going."
+  "Make POS cursor-intangible if it is a separator, a newline between cells.
+`cursor-intangible-mode' then moves point off it, in the direction it
+was moving, so the cursor is never shown at the end of a border."
   (when (and (eq (char-after pos) ?\n)
              (not (get-text-property pos 'emjupy-cell)))
     (put-text-property pos (1+ pos) 'cursor-intangible t)))

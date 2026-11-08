@@ -1,4 +1,8 @@
 #!/bin/bash
+# Copyright (C) 2026 Mathieu Renzo
+# Author: Mathieu Renzo <mrenzo@arizona.edu>
+# Assisted-by: Claude:claude-opus-5.5
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Three Python environments for the remote user: different packages, and a second Python version.
 set -x
 base="jupyter-server ipykernel jupyter-lsp python-lsp-server"
