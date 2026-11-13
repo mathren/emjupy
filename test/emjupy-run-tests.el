@@ -55,7 +55,7 @@
   ;; package metadata, the tests, or these scripts.  Absolute names, as the
   ;; patterns are resolved against the directory Emacs was started in.
   (let ((src (expand-file-name "../src" (file-name-directory
-                                          (or load-file-name buffer-file-name)))))
+                                         (or load-file-name buffer-file-name)))))
     (eval `(undercover
             ,@(seq-remove (lambda (f) (string-suffix-p "emjupy-pkg.el" f))
                           (directory-files src t "\\`emjupy.*\\.el\\'"))

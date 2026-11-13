@@ -26,9 +26,9 @@
   "A page gets a widget and every model it refers to, however deep, once."
   (let ((emjupy--widget-models (emjupy-test--models
                                 '(("a" ("children" . ["IPY_MODEL_b"]))
-        ("b" ("layout" . "IPY_MODEL_c") ("back" . "IPY_MODEL_a"))
-        ("c" ("value" . 1))
-        ("lone" ("value" . 2))))))
+                                  ("b" ("layout" . "IPY_MODEL_c") ("back" . "IPY_MODEL_a"))
+                                  ("c" ("value" . 1))
+                                  ("lone" ("value" . 2))))))
     (should (equal (sort (emjupy--widget-tree "a") #'string<) '("a" "b" "c")))))
 
 (ert-deftest emjupy-test-widget-model-json-takes-the-bytes-out ()

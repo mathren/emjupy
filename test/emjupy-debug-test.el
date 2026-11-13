@@ -42,57 +42,57 @@ REPLIES maps a command to the body it answers; ASKED, in BODY, lists
   "Before a cell runs, the debugger has its code and its breakpoints' lines.
 configurationDone once in a session; with the mode off, nothing."
   (emjupy-test--debugging
-      `(("dumpCell" . ,(emjupy--json-object "sourcePath" "/tmp/k/1.py")))
-    (emjupy-test--line cell 3) (emjupy-debug-toggle-breakpoint)
-    (emjupy--debug-before-execute cell)
-    (should-not asked)
-    (setq emjupy-debug-mode t
-          emjupy--debug-paths (make-hash-table :test 'equal))
-    (emjupy--debug-before-execute cell)
-    (emjupy--debug-before-execute cell)
-    (should (equal (mapcar #'car (asked))
-                   '("dumpCell" "setBreakpoints" "configurationDone"
-                     "dumpCell" "setBreakpoints")))
-    (let ((set (cdr (nth 1 (asked)))))
-      (should (equal (gethash "path" (gethash "source" set)) "/tmp/k/1.py"))
-      (should (equal (mapcar (lambda (b) (gethash "line" b))
-                             (gethash "breakpoints" set))
-                     '(3))))
-    (should (eq (gethash "/tmp/k/1.py" emjupy--debug-paths) cell))))
+   `(("dumpCell" . ,(emjupy--json-object "sourcePath" "/tmp/k/1.py")))
+   (emjupy-test--line cell 3) (emjupy-debug-toggle-breakpoint)
+   (emjupy--debug-before-execute cell)
+   (should-not asked)
+   (setq emjupy-debug-mode t
+         emjupy--debug-paths (make-hash-table :test 'equal))
+   (emjupy--debug-before-execute cell)
+   (emjupy--debug-before-execute cell)
+   (should (equal (mapcar #'car (asked))
+                  '("dumpCell" "setBreakpoints" "configurationDone"
+                    "dumpCell" "setBreakpoints")))
+   (let ((set (cdr (nth 1 (asked)))))
+     (should (equal (gethash "path" (gethash "source" set)) "/tmp/k/1.py"))
+     (should (equal (mapcar (lambda (b) (gethash "line" b))
+                            (gethash "breakpoints" set))
+                    '(3))))
+   (should (eq (gethash "/tmp/k/1.py" emjupy--debug-paths) cell))))
 
 (ert-deftest emjupy-test-a-stop-marks-its-line-in-its-cell ()
   "Stopped, the line of the top frame is marked in the cell it ran from."
   (emjupy-test--debugging
-      `(("stackTrace" . ,(emjupy--json-object
-                          "stackFrames"
-                          (vector (emjupy--json-object
-                                   "id" 7 "line" 3
-                                   "source" (emjupy--json-object
-                                             "path" "/tmp/k/1.py"))))))
-    (setq emjupy--debug-paths (make-hash-table :test 'equal))
-    (puthash "/tmp/k/1.py" cell emjupy--debug-paths)
-    (emjupy--debug-event buf (emjupy--json-object
-                              "event" "stopped"
-                              "body" (emjupy--json-object "threadId" 1)))
-    (should (equal emjupy--debug-stopped '(1 . 7)))
-    (should (equal (string-trim (buffer-substring
-                                 (overlay-start emjupy--debug-arrow)
-                                 (overlay-end emjupy--debug-arrow)))
-                   "c = b * 3"))))
+   `(("stackTrace" . ,(emjupy--json-object
+                       "stackFrames"
+                       (vector (emjupy--json-object
+                                "id" 7 "line" 3
+                                "source" (emjupy--json-object
+                                          "path" "/tmp/k/1.py"))))))
+   (setq emjupy--debug-paths (make-hash-table :test 'equal))
+   (puthash "/tmp/k/1.py" cell emjupy--debug-paths)
+   (emjupy--debug-event buf (emjupy--json-object
+                             "event" "stopped"
+                             "body" (emjupy--json-object "threadId" 1)))
+   (should (equal emjupy--debug-stopped '(1 . 7)))
+   (should (equal (string-trim (buffer-substring
+                                (overlay-start emjupy--debug-arrow)
+                                (overlay-end emjupy--debug-arrow)))
+                  "c = b * 3"))))
 
 (ert-deftest emjupy-test-stepping-sends-its-command ()
   "Next, in, out, continue: each its command, for the thread stopped."
   (emjupy-test--debugging nil
-    (should-error (emjupy-debug-next) :type 'user-error)
-    (dolist (step '((emjupy-debug-next . "next")
-                    (emjupy-debug-step-in . "stepIn")
-                    (emjupy-debug-step-out . "stepOut")
-                    (emjupy-debug-continue . "continue")))
-      (setq emjupy--debug-stopped '(4 . 9) asked nil)
-      (funcall (car step))
-      (should (equal (car (car asked)) (cdr step)))
-      (should (= (gethash "threadId" (cdr (car asked))) 4))
-      (should-not emjupy--debug-stopped))))
+                          (should-error (emjupy-debug-next) :type 'user-error)
+                          (dolist (step '((emjupy-debug-next . "next")
+                                          (emjupy-debug-step-in . "stepIn")
+                                          (emjupy-debug-step-out . "stepOut")
+                                          (emjupy-debug-continue . "continue")))
+                            (setq emjupy--debug-stopped '(4 . 9) asked nil)
+                            (funcall (car step))
+                            (should (equal (car (car asked)) (cdr step)))
+                            (should (= (gethash "threadId" (cdr (car asked))) 4))
+                            (should-not emjupy--debug-stopped))))
 
 (ert-deftest emjupy-test-a-kernel-that-cannot-debug-says-so ()
   "Turning the debugger on with a kernel that cannot debug says what can."
@@ -109,51 +109,51 @@ configurationDone once in a session; with the mode off, nothing."
   "A prefix asks for a condition, sent with the breakpoint's line; asked on
 a breakpoint there, it changes its condition, not removes it."
   (emjupy-test--debugging
-      `(("dumpCell" . ,(emjupy--json-object "sourcePath" "/tmp/k/1.py")))
-    (emjupy-test--line cell 3)
-    (emjupy-debug-toggle-breakpoint "b > 1")
-    (emjupy-debug-toggle-breakpoint "b > 5")
-    (should (= (length emjupy--debug-breakpoints) 1))
-    (setq emjupy-debug-mode t
-          emjupy--debug-paths (make-hash-table :test 'equal))
-    (emjupy--debug-before-execute cell)
-    (let ((b (aref (gethash "breakpoints" (cdr (nth 1 (asked)))) 0)))
-      (should (= (gethash "line" b) 3))
-      (should (equal (gethash "condition" b) "b > 5")))))
+   `(("dumpCell" . ,(emjupy--json-object "sourcePath" "/tmp/k/1.py")))
+   (emjupy-test--line cell 3)
+   (emjupy-debug-toggle-breakpoint "b > 1")
+   (emjupy-debug-toggle-breakpoint "b > 5")
+   (should (= (length emjupy--debug-breakpoints) 1))
+   (setq emjupy-debug-mode t
+         emjupy--debug-paths (make-hash-table :test 'equal))
+   (emjupy--debug-before-execute cell)
+   (let ((b (aref (gethash "breakpoints" (cdr (nth 1 (asked)))) 0)))
+     (should (= (gethash "line" b) 3))
+     (should (equal (gethash "condition" b) "b > 5")))))
 
 (ert-deftest emjupy-test-stopping-on-exceptions ()
   "When to stop on an exception: sent at once if debugging, else kept and
 sent when debugging starts."
   (emjupy-test--debugging nil
-    (emjupy-debug-break-on-exceptions '("raised"))
-    (should-not asked)
-    (emjupy-debug-mode 1)
-    (should (member "setExceptionBreakpoints" (mapcar #'car (asked))))
-    (setq asked nil)
-    (emjupy-debug-break-on-exceptions '("uncaught"))
-    (should (equal (append (gethash "filters" (cdr (car asked))) nil)
-                   '("uncaught")))
-    (setq emjupy-debug-mode nil)))
+                          (emjupy-debug-break-on-exceptions '("raised"))
+                          (should-not asked)
+                          (emjupy-debug-mode 1)
+                          (should (member "setExceptionBreakpoints" (mapcar #'car (asked))))
+                          (setq asked nil)
+                          (emjupy-debug-break-on-exceptions '("uncaught"))
+                          (should (equal (append (gethash "filters" (cdr (car asked))) nil)
+                                         '("uncaught")))
+                          (setq emjupy-debug-mode nil)))
 
 (ert-deftest emjupy-test-choosing-a-frame ()
   "Choosing a frame makes it the one evaluated in, its line marked."
   (emjupy-test--debugging nil
-    (let ((inner (emjupy--json-object "id" 1 "name" "inner" "line" 4
-                                       "source" (emjupy--json-object
-                                                 "path" "/tmp/k/1.py")))
-          (outer (emjupy--json-object "id" 2 "name" "outer" "line" 2
-                                       "source" (emjupy--json-object
-                                                 "path" "/tmp/k/1.py"))))
-      (setq emjupy--debug-paths (make-hash-table :test 'equal)
-            emjupy--debug-stopped (cons 9 1)
-            emjupy--debug-frames (list inner outer))
-      (puthash "/tmp/k/1.py" cell emjupy--debug-paths)
-      (emjupy-debug-frame outer)
-      (should (equal emjupy--debug-stopped '(9 . 2)))
-      (should (equal (string-trim (buffer-substring
-                                   (overlay-start emjupy--debug-arrow)
-                                   (overlay-end emjupy--debug-arrow)))
-                     "b = a + 1")))))
+                          (let ((inner (emjupy--json-object "id" 1 "name" "inner" "line" 4
+                                                            "source" (emjupy--json-object
+                                                                      "path" "/tmp/k/1.py")))
+                                (outer (emjupy--json-object "id" 2 "name" "outer" "line" 2
+                                                            "source" (emjupy--json-object
+                                                                      "path" "/tmp/k/1.py"))))
+                            (setq emjupy--debug-paths (make-hash-table :test 'equal)
+                                  emjupy--debug-stopped (cons 9 1)
+                                  emjupy--debug-frames (list inner outer))
+                            (puthash "/tmp/k/1.py" cell emjupy--debug-paths)
+                            (emjupy-debug-frame outer)
+                            (should (equal emjupy--debug-stopped '(9 . 2)))
+                            (should (equal (string-trim (buffer-substring
+                                                         (overlay-start emjupy--debug-arrow)
+                                                         (overlay-end emjupy--debug-arrow)))
+                                           "b = a + 1")))))
 
 (ert-deftest emjupy-test-a-variable-shows-what-it-holds ()
   "A variable holding others has a button: pressed, they show; again, hide."

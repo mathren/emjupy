@@ -70,7 +70,7 @@ None, or one of \"raised\", \"uncaught\" and \"userUnhandled\".")
 (defvar-keymap emjupy-debug-map
   :doc "Keys of the debugger, under \\`C-c C-d'."
   :repeat (emjupy-debug-next emjupy-debug-step-in emjupy-debug-step-out
-           emjupy-debug-continue)
+                             emjupy-debug-continue)
   "d" #'emjupy-debug-mode
   "b" #'emjupy-debug-toggle-breakpoint
   "x" #'emjupy-debug-break-on-exceptions
@@ -129,9 +129,9 @@ the reply."
          (msg (emjupy--make-message
                "debug_request"
                (emjupy--json-object "seq" 1 "type" "request"
-                                     "command" command
-                                     "arguments" (or arguments
-                                                     (make-hash-table)))
+                                    "command" command
+                                    "arguments" (or arguments
+                                                    (make-hash-table)))
                "control"))
          (id (car msg))
          (deadline (+ (float-time) 10)))

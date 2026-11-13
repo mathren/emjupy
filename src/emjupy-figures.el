@@ -309,10 +309,10 @@ the callback called with its address."
     ;; Show it in a frame of its own, reused for every figure.
     (display-buffer buf
                     '((display-buffer-reuse-window display-buffer-pop-up-frame)
-                          (reusable-frames . t)
-                          (pop-up-frame-parameters (name . "emjupy figure")
-                                                   (width . 90)
-                                                   (height . 40))))))
+                      (reusable-frames . t)
+                      (pop-up-frame-parameters (name . "emjupy figure")
+                                               (width . 90)
+                                               (height . 40))))))
 
 (defun emjupy--openable-data (cell)
   "Return the first output bundle of CELL that can be opened, or nil."

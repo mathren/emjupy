@@ -472,8 +472,8 @@ file name works there, if you would rather push it somewhere else."
         ;; rather than overwrite without asking.
         (when (and (emjupy--http-exists-p server path)
                    (not (y-or-n-p (format "%s exists on %s.  Overwrite it? "
-                                             path
-                                             (emjupy--server-label server)))))
+                                          path
+                                          (emjupy--server-label server)))))
           (user-error "Not overwriting %s" path))
         (puthash "type" "file" body)
         (puthash "format" "text" body)
@@ -598,29 +598,29 @@ were defined rather than the order anyone thinks in.  This groups them,
 and can be used as a menu in its own right: everything here runs from
 this buffer."
   [:description emjupy--menu-title
-   ["Run"
-    ("c" "this cell, then move on" emjupy-execute-cell-and-goto-next)
-    ("e" "this cell, stay here" emjupy-execute-cell-at-point)
-    ("A" "all cells" emjupy-run-all-cells)
-    ("{" "all above this one" emjupy-run-cells-above)
-    ("}" "this one and all below" emjupy-run-cells-below)
-    ("z" "interrupt the kernel" emjupy-interrupt-kernel)
-    ("$" "show the last traceback" emjupy-show-traceback)]
-   ["Cells"
-    ("a" "new cell above" emjupy-insert-cell-above)
-    ("b" "new cell below" emjupy-insert-cell-below)
-    ("k" "delete this cell" emjupy-delete-cell)
-    ("s" "split here" emjupy-split-cell)
-    ("j" "join to the one above" emjupy-join-cell-above)
-    ("t" "code or markdown" emjupy-cycle-cell-type)
-    ("w" "copy this cell" emjupy-copy-cell)
-    ("y" "paste a cell" emjupy-yank-cell)]
-   ["Output"
-    ("o" "hide or show this output" emjupy-toggle-cell-output)
-    ("f" "open this output on its own" emjupy-open-output)
-    ("l" "clear this output" emjupy-clear-cell-output)
-    ("L" "clear every output" emjupy-clear-all-outputs)
-    ("r" "redraw the notebook" emjupy-re-render)]]
+                ["Run"
+                 ("c" "this cell, then move on" emjupy-execute-cell-and-goto-next)
+                 ("e" "this cell, stay here" emjupy-execute-cell-at-point)
+                 ("A" "all cells" emjupy-run-all-cells)
+                 ("{" "all above this one" emjupy-run-cells-above)
+                 ("}" "this one and all below" emjupy-run-cells-below)
+                 ("z" "interrupt the kernel" emjupy-interrupt-kernel)
+                 ("$" "show the last traceback" emjupy-show-traceback)]
+                ["Cells"
+                 ("a" "new cell above" emjupy-insert-cell-above)
+                 ("b" "new cell below" emjupy-insert-cell-below)
+                 ("k" "delete this cell" emjupy-delete-cell)
+                 ("s" "split here" emjupy-split-cell)
+                 ("j" "join to the one above" emjupy-join-cell-above)
+                 ("t" "code or markdown" emjupy-cycle-cell-type)
+                 ("w" "copy this cell" emjupy-copy-cell)
+                 ("y" "paste a cell" emjupy-yank-cell)]
+                ["Output"
+                 ("o" "hide or show this output" emjupy-toggle-cell-output)
+                 ("f" "open this output on its own" emjupy-open-output)
+                 ("l" "clear this output" emjupy-clear-cell-output)
+                 ("L" "clear every output" emjupy-clear-all-outputs)
+                 ("r" "redraw the notebook" emjupy-re-render)]]
   [["Moving"
     ("n" "next cell" emjupy-next-cell)
     ("p" "previous cell" emjupy-previous-cell)

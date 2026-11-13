@@ -109,32 +109,32 @@ in BODY, is the file shown, if any; DATA the output."
   "Scripted HTML from a notebook Jupyter does not trust is not opened.
 As Jupyter, which runs no script of a notebook saved by someone else."
   (emjupy-test--scripted-output :false
-    (should-error (emjupy-open-output data) :type 'user-error)
-    (should-not opened)))
+                                (should-error (emjupy-open-output data) :type 'user-error)
+                                (should-not opened)))
 
 (ert-deftest emjupy-test-a-trusted-notebooks-scripts-are-run ()
   "Scripted HTML from a trusted notebook, or a cell made here, opens."
   (emjupy-test--scripted-output t
-    (emjupy-open-output data)
-    (should opened))
+                                (emjupy-open-output data)
+                                (should opened))
   (emjupy-test--scripted-output 'none
-    (emjupy-open-output data)
-    (should opened)))
+                                (emjupy-open-output data)
+                                (should opened)))
 
 (ert-deftest emjupy-test-trusting-a-notebook-asks-the-server ()
   "Trusting asks the server to sign the notebook, and trusts its cells."
   (emjupy-test--scripted-output :false
-    (let ((asked nil))
-      (setf (emjupy-notebook-server nb)
-            (make-emjupy-server :base-url "127.0.0.1:1")
-            (emjupy-notebook-path nb) "dir/my nb.ipynb")
-      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
-                ((symbol-function 'emjupy--http-request)
-                 (lambda (method _server path &rest _)
-                   (setq asked (list method path)))))
-        (emjupy-trust-notebook))
-      (should (equal asked '("POST" "/api/contents/dir/my%20nb.ipynb/trust")))
-      (should (emjupy--cell-trusted-p (aref (emjupy-notebook-cells nb) 0))))))
+                                (let ((asked nil))
+                                  (setf (emjupy-notebook-server nb)
+                                        (make-emjupy-server :base-url "127.0.0.1:1")
+                                        (emjupy-notebook-path nb) "dir/my nb.ipynb")
+                                  (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                                            ((symbol-function 'emjupy--http-request)
+                                             (lambda (method _server path &rest _)
+                                               (setq asked (list method path)))))
+                                    (emjupy-trust-notebook))
+                                  (should (equal asked '("POST" "/api/contents/dir/my%20nb.ipynb/trust")))
+                                  (should (emjupy--cell-trusted-p (aref (emjupy-notebook-cells nb) 0))))))
 
 (provide 'emjupy-figures-test)
 

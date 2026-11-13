@@ -165,12 +165,12 @@ read from the mode itself, run in a temporary buffer."
         (setq vars
               (mapcar (lambda (v) (cons v (and (boundp v) (symbol-value v))))
                       '(comment-start comment-end comment-start-skip
-                        comment-end-skip comment-use-syntax comment-column
-                        parse-sexp-ignore-comments
-                        forward-sexp-function
-                        electric-indent-chars
-                        beginning-of-defun-function
-                        end-of-defun-function))))
+                                      comment-end-skip comment-use-syntax comment-column
+                                      parse-sexp-ignore-comments
+                                      forward-sexp-function
+                                      electric-indent-chars
+                                      beginning-of-defun-function
+                                      end-of-defun-function))))
       (set-syntax-table table)
       (pcase-dolist (`(,var . ,value) vars)
         (set (make-local-variable var) value)))))

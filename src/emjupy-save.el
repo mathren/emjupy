@@ -202,7 +202,7 @@ JupyterLab, or by someone else -- ask before overwriting it."
         (emjupy--save-to-server nb)
       (emjupy-save-conflict
        (if (y-or-n-p (format "%s changed on the server since it was opened here (%s).  Overwrite it? "
-                                path (nth 2 err)))
+                             path (nth 2 err)))
            (emjupy--save-to-server nb t)
          (user-error "Not saved: your changes are kept here, and in a recovery copy"))))
     ;; Make a checkpoint, as JupyterLab does when saving, for

@@ -245,7 +245,7 @@ failed in the full suite one run in two."
 
 (defconst emjupy-test--menu-exempt
   '(emjupy-menu emjupy-indent-or-cycle emjupy-latex-unrender-or-delete
-    emjupy-next-line emjupy-previous-line)
+                emjupy-next-line emjupy-previous-line)
   "Commands that belong on a key but not in the menu.
 
 The menu itself; TAB, which indents and is not a thing one goes looking
@@ -665,27 +665,27 @@ Return (ADDRESS-OR-NIL . PIECES-ASKED)."
 
 (defconst emjupy-test--terminal-cases
   '(
-  ;; two bars, positions
-  ("two bars, positions"
-   ("\rA:   0%|                              | 0/4 [00:00<?, ?it/s]" "\n"
-    "\rB:   0%|                              | 0/4 [00:00<?, ?it/s]" "\e[A"
-    "\rA:  25%|####7              | 1/4 [00:00<00:00, 17924.38it/s]" "\n"
-    "\rB:  25%|####7              | 1/4 [00:00<00:00, 23431.87it/s]" "\e[A"
-    "\rA:  50%|#########5         | 2/4 [00:00<00:00, 14181.22it/s]" "\n"
-    "\rB:  50%|#########5         | 2/4 [00:00<00:00, 15834.59it/s]" "\e[A"
-    "\rA:  75%|##############2    | 3/4 [00:00<00:00, 13489.08it/s]" "\n"
-    "\rB:  75%|##############2    | 3/4 [00:00<00:00, 14347.68it/s]" "\e[A"
-    "\rA: 100%|###################| 4/4 [00:00<00:00, 13522.40it/s]" "\n"
-    "\rB: 100%|###################| 4/4 [00:00<00:00, 14087.67it/s]" "\e[A" ""
-    "\rA: 100%|###################| 4/4 [00:00<00:00, 10686.12it/s]" "\n" ""
-    "\rB: 100%|###################| 4/4 [00:00<00:00, 10965.50it/s]" "\n")
-   ("A: 100%|###################| 4/4 [00:00<00:00, 10686.12it/s]"
-    "B: 100%|###################| 4/4 [00:00<00:00, 10965.50it/s]"))
-  ;; colours and a clear
-  ("colours and a clear"
-   ("\e[31mred\e[0m line\n" "progress 1" "\rprogress 2" "\e[K\rdone\n"
-    "\e[1mbold\e[0m end\n")
-   ("red line" "doneress 2" "bold end")))
+    ;; two bars, positions
+    ("two bars, positions"
+     ("\rA:   0%|                              | 0/4 [00:00<?, ?it/s]" "\n"
+      "\rB:   0%|                              | 0/4 [00:00<?, ?it/s]" "\e[A"
+      "\rA:  25%|####7              | 1/4 [00:00<00:00, 17924.38it/s]" "\n"
+      "\rB:  25%|####7              | 1/4 [00:00<00:00, 23431.87it/s]" "\e[A"
+      "\rA:  50%|#########5         | 2/4 [00:00<00:00, 14181.22it/s]" "\n"
+      "\rB:  50%|#########5         | 2/4 [00:00<00:00, 15834.59it/s]" "\e[A"
+      "\rA:  75%|##############2    | 3/4 [00:00<00:00, 13489.08it/s]" "\n"
+      "\rB:  75%|##############2    | 3/4 [00:00<00:00, 14347.68it/s]" "\e[A"
+      "\rA: 100%|###################| 4/4 [00:00<00:00, 13522.40it/s]" "\n"
+      "\rB: 100%|###################| 4/4 [00:00<00:00, 14087.67it/s]" "\e[A" ""
+      "\rA: 100%|###################| 4/4 [00:00<00:00, 10686.12it/s]" "\n" ""
+      "\rB: 100%|###################| 4/4 [00:00<00:00, 10965.50it/s]" "\n")
+     ("A: 100%|###################| 4/4 [00:00<00:00, 10686.12it/s]"
+      "B: 100%|###################| 4/4 [00:00<00:00, 10965.50it/s]"))
+    ;; colours and a clear
+    ("colours and a clear"
+     ("\e[31mred\e[0m line\n" "progress 1" "\rprogress 2" "\e[K\rdone\n"
+      "\e[1mbold\e[0m end\n")
+     ("red line" "doneress 2" "bold end")))
   "Stream writes recorded from tqdm, and what a terminal shows of them.
 Each is (NAME CHUNKS LINES): the writes, as tqdm made them, and the
 screen pyte -- a terminal emulator -- showed, trailing blanks dropped.")

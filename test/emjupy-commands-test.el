@@ -339,13 +339,13 @@ the run that produced it."
 (ert-deftest emjupy-test-cell-bindings ()
   "The bindings this release settled on."
   (dolist (pair '(("C-c <up>"    . emjupy-move-cell-up)
-                 ("C-c <down>"  . emjupy-move-cell-down)
-                 ("C-c <prior>" . emjupy-beginning-of-cell)
-                 ("C-c <next>"  . emjupy-end-of-cell)
-                 ("C-c C-w"     . emjupy-copy-cell)
-                 ("C-c C-y"     . emjupy-yank-cell)
-                 ("C-c C-s"     . emjupy-split-cell)
-                 ("C-c C-j"     . emjupy-join-cell-above)))
+                  ("C-c <down>"  . emjupy-move-cell-down)
+                  ("C-c <prior>" . emjupy-beginning-of-cell)
+                  ("C-c <next>"  . emjupy-end-of-cell)
+                  ("C-c C-w"     . emjupy-copy-cell)
+                  ("C-c C-y"     . emjupy-yank-cell)
+                  ("C-c C-s"     . emjupy-split-cell)
+                  ("C-c C-j"     . emjupy-join-cell-above)))
     (should (eq (lookup-key emjupy-mode-map (kbd (car pair))) (cdr pair))))
   ;; and the retired duplicates are gone -- except C-c C-s, now split-cell, and
   ;; M-<up>/M-<down>, which now move to a neighbouring cell.
@@ -842,8 +842,8 @@ Asserted as `recoverable within a few presses' rather than `one press':
 a structural command is its own undo step now, and the edit sits behind
 it."
   (dolist (command '(emjupy-move-cell-up emjupy-join-cell-above
-                    emjupy-split-cell emjupy-delete-cell
-                    emjupy-cycle-cell-type emjupy-clear-all-outputs))
+                                         emjupy-split-cell emjupy-delete-cell
+                                         emjupy-cycle-cell-type emjupy-clear-all-outputs))
     (let ((presses (emjupy-test--presses-to-recover command)))
       (should presses)
       (should (<= presses 3)))))
@@ -951,105 +951,105 @@ takes for the end."
   "Hidden, a cell is one line in its code's place, marked as Jupyter does;
 its output goes with it; point leaves it."
   (emjupy-test--hideable
-    (let ((cell (aref cells 1)))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-toggle-cell-code)
-      (should (emjupy--cell-source-hidden-p cell))
-      (should (eq (gethash "source_hidden"
-                           (gethash "jupyter" (emjupy-cell-metadata cell)))
-                  t))
-      (let ((line (emjupy-test--hidden-line cell)))
-        (should line)
-        (should (string-match-p "▸ \\[In: 2\\] python, 1 line of code hidden, and its output"
-                                (overlay-get line 'display))))
-      (should-not (overlayp (emjupy-cell-output-ov cell)))
-      ;; on its line still: pressed again, it shows
-      (should (eq (emjupy--cell-at-point) cell)))))
+   (let ((cell (aref cells 1)))
+     (emjupy--goto-cell cell 'beginning)
+     (emjupy-toggle-cell-code)
+     (should (emjupy--cell-source-hidden-p cell))
+     (should (eq (gethash "source_hidden"
+                          (gethash "jupyter" (emjupy-cell-metadata cell)))
+                 t))
+     (let ((line (emjupy-test--hidden-line cell)))
+       (should line)
+       (should (string-match-p "▸ \\[In: 2\\] python, 1 line of code hidden, and its output"
+                               (overlay-get line 'display))))
+     (should-not (overlayp (emjupy-cell-output-ov cell)))
+     ;; on its line still: pressed again, it shows
+     (should (eq (emjupy--cell-at-point) cell)))))
 
 (ert-deftest emjupy-test-the-code-key-toggles ()
   "C-c C-i on a hidden cell's line shows it, as C-c C-o does output."
   (emjupy-test--hideable
-    (let ((cell (aref cells 1)))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-toggle-cell-code)
-      (should (emjupy--cell-source-hidden-p cell))
-      (emjupy-toggle-cell-code)
-      (should-not (emjupy--cell-source-hidden-p cell))
-      (should-not (emjupy-test--hidden-line cell))
-      (should (overlayp (emjupy-cell-output-ov cell))))))
+   (let ((cell (aref cells 1)))
+     (emjupy--goto-cell cell 'beginning)
+     (emjupy-toggle-cell-code)
+     (should (emjupy--cell-source-hidden-p cell))
+     (emjupy-toggle-cell-code)
+     (should-not (emjupy--cell-source-hidden-p cell))
+     (should-not (emjupy-test--hidden-line cell))
+     (should (overlayp (emjupy-cell-output-ov cell))))))
 
 (ert-deftest emjupy-test-the-code-key-on-a-region ()
   "Over a region, every code cell it touches is hidden; all hidden, shown.
 Some hidden and some not, all are hidden: not each one turned over."
   (emjupy-test--hideable
-    (let ((transient-mark-mode t))
-      (cl-flet ((region-over (from to)
-                  (emjupy--goto-cell (aref cells from) 'beginning)
-                  (push-mark (point) t t)
-                  (emjupy--goto-cell (aref cells to) 'end)))
-        (region-over 0 1)
-        (emjupy-toggle-cell-code)
-        (should (emjupy--cell-source-hidden-p (aref cells 0)))
-        (should (emjupy--cell-source-hidden-p (aref cells 1)))
-        (should-not (emjupy--cell-source-hidden-p (aref cells 2)))
-        (should-not (use-region-p))
-        (region-over 0 1)
-        (emjupy-toggle-cell-code)
-        (should-not (emjupy--cell-source-hidden-p (aref cells 0)))
-        (should-not (emjupy--cell-source-hidden-p (aref cells 1)))
-        (emjupy--set-cell-source-hidden (aref cells 1) t)
-        (emjupy--redraw-notebook)
-        (region-over 0 1)
-        (emjupy-toggle-cell-code)
-        (should (emjupy--cell-source-hidden-p (aref cells 0)))
-        (should (emjupy--cell-source-hidden-p (aref cells 1)))))))
+   (let ((transient-mark-mode t))
+     (cl-flet ((region-over (from to)
+                 (emjupy--goto-cell (aref cells from) 'beginning)
+                 (push-mark (point) t t)
+                 (emjupy--goto-cell (aref cells to) 'end)))
+       (region-over 0 1)
+       (emjupy-toggle-cell-code)
+       (should (emjupy--cell-source-hidden-p (aref cells 0)))
+       (should (emjupy--cell-source-hidden-p (aref cells 1)))
+       (should-not (emjupy--cell-source-hidden-p (aref cells 2)))
+       (should-not (use-region-p))
+       (region-over 0 1)
+       (emjupy-toggle-cell-code)
+       (should-not (emjupy--cell-source-hidden-p (aref cells 0)))
+       (should-not (emjupy--cell-source-hidden-p (aref cells 1)))
+       (emjupy--set-cell-source-hidden (aref cells 1) t)
+       (emjupy--redraw-notebook)
+       (region-over 0 1)
+       (emjupy-toggle-cell-code)
+       (should (emjupy--cell-source-hidden-p (aref cells 0)))
+       (should (emjupy--cell-source-hidden-p (aref cells 1)))))))
 
 (ert-deftest emjupy-test-a-click-shows-hidden-code ()
   "A click on the marker shows the code, and its output, again."
   (emjupy-test--hideable
-    (let ((cell (aref cells 1)))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-toggle-cell-code)
-      (let ((shown (overlay-get (emjupy-test--hidden-line cell) 'display)))
-        (emjupy--show-code-from-string (cons shown (string-match "▸" shown))
-                                       (current-buffer)))
-      (should-not (emjupy--cell-source-hidden-p cell))
-      (should-not (emjupy-test--hidden-line cell))
-      (should (overlayp (emjupy-cell-output-ov cell))))))
+   (let ((cell (aref cells 1)))
+     (emjupy--goto-cell cell 'beginning)
+     (emjupy-toggle-cell-code)
+     (let ((shown (overlay-get (emjupy-test--hidden-line cell) 'display)))
+       (emjupy--show-code-from-string (cons shown (string-match "▸" shown))
+                                      (current-buffer)))
+     (should-not (emjupy--cell-source-hidden-p cell))
+     (should-not (emjupy-test--hidden-line cell))
+     (should (overlayp (emjupy-cell-output-ov cell))))))
 
 (ert-deftest emjupy-test-hidden-code-is-not-typed-into ()
   "Typing into hidden code is refused; emjupy's own redrawing is not."
   (emjupy-test--hideable
-    (let ((cell (aref cells 0)))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-toggle-cell-code)
-      (goto-char (overlay-start (emjupy-test--hidden-line cell)))
-      (should-error (insert "x") :type 'user-error)
-      (emjupy--redraw-notebook)
-      (should (emjupy-test--hidden-line cell)))))
+   (let ((cell (aref cells 0)))
+     (emjupy--goto-cell cell 'beginning)
+     (emjupy-toggle-cell-code)
+     (goto-char (overlay-start (emjupy-test--hidden-line cell)))
+     (should-error (insert "x") :type 'user-error)
+     (emjupy--redraw-notebook)
+     (should (emjupy-test--hidden-line cell)))))
 
 (ert-deftest emjupy-test-hidden-cells-in-a-row-leave-no-empty-line ()
   "Between two hidden cells, nothing to draw: the first's newline is none."
   (emjupy-test--hideable
-    (dolist (i '(0 1))
-      (emjupy--set-cell-source-hidden (aref cells i) t))
-    (emjupy--redraw-notebook)
-    (let* ((ov (emjupy-cell-overlay (aref cells 0)))
-           (newline (1- (overlay-end ov))))
-      (should (cl-some (lambda (o) (equal (overlay-get o 'display) ""))
-                       (overlays-in newline (1+ newline)))))))
+   (dolist (i '(0 1))
+     (emjupy--set-cell-source-hidden (aref cells i) t))
+   (emjupy--redraw-notebook)
+   (let* ((ov (emjupy-cell-overlay (aref cells 0)))
+          (newline (1- (overlay-end ov))))
+     (should (cl-some (lambda (o) (equal (overlay-get o 'display) ""))
+                      (overlays-in newline (1+ newline)))))))
 
 (ert-deftest emjupy-test-a-hidden-cells-line-follows-its-count ()
   "Run again, a hidden cell's line shows its new count."
   (emjupy-test--hideable
-    (let ((cell (aref cells 0)))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-toggle-cell-code)
-      (setf (emjupy-cell-exec-count cell) 9)
-      (emjupy--redraw-cell-header cell)
-      (should (string-match-p "\\[In: 9\\]"
-                              (overlay-get (emjupy-test--hidden-line cell)
-                                           'display))))))
+   (let ((cell (aref cells 0)))
+     (emjupy--goto-cell cell 'beginning)
+     (emjupy-toggle-cell-code)
+     (setf (emjupy-cell-exec-count cell) 9)
+     (emjupy--redraw-cell-header cell)
+     (should (string-match-p "\\[In: 9\\]"
+                             (overlay-get (emjupy-test--hidden-line cell)
+                                          'display))))))
 
 
 (ert-deftest emjupy-test-the-output-key-on-a-region ()
@@ -1257,10 +1257,10 @@ another buffer in the selected window, nothing.  Never centred."
       (cl-letf (((symbol-function 'emjupy--show-cell-at-point)
                  (lambda () (cl-incf shown))))
         (dolist (command '(emjupy-next-cell emjupy-previous-cell
-                           emjupy-beginning-of-next-cell
-                           emjupy-end-of-next-cell
-                           emjupy-beginning-of-previous-cell
-                           emjupy-end-of-previous-cell))
+                                            emjupy-beginning-of-next-cell
+                                            emjupy-end-of-next-cell
+                                            emjupy-beginning-of-previous-cell
+                                            emjupy-end-of-previous-cell))
           (emjupy--goto-cell (aref (emjupy-notebook-cells nb) 1) 'beginning)
           (let ((before shown))
             (call-interactively command)

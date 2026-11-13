@@ -324,7 +324,7 @@ server to answer; `emjupy--server-ready' does."
                                  (and (eql (user-uid) 0)
                                       (list "--allow-root")))))
              (server (emjupy--intern-server (format "127.0.0.1:%d" port)
-                                           token)))
+                                            token)))
         (message "[emjupy] Starting a Jupyter server for %s..."
                  (abbreviate-file-name dir))
         (push (list :dir dir :jupyter jupyter :process process :server server
@@ -590,7 +590,7 @@ Leave alone a server not reached through one of emjupy's tunnels."
     (when (and tunnel (not (process-live-p (plist-get tunnel :process))))
       (emjupy--say (emjupy--server-buffer server)
                    "[emjupy] Reopening the tunnel to %s..."
-               (plist-get (plist-get tunnel :route) :host))
+                   (plist-get (plist-get tunnel :route) :host))
       (setf (plist-get tunnel :process)
             (emjupy--start-tunnel (plist-get tunnel :route)
                                   (plist-get tunnel :port)
@@ -692,9 +692,9 @@ starts one.  ROUTE names the machine, for the messages."
               (message "[emjupy] Looking for a Jupyter server on %s..." host)))
          (listed (and (not known)
                       (condition-case nil
-                     (emjupy--remote-shell
-                      dir (emjupy--server-list-command jupyter))
-                   (file-error ""))))
+                          (emjupy--remote-shell
+                           dir (emjupy--server-list-command jupyter))
+                        (file-error ""))))
          (found (or known
                     (emjupy--remote-server-for
                      listed (file-remote-p dir 'localname)))))

@@ -33,7 +33,7 @@ alist keyed by server."
       (should (equal (emjupy--remote-root-for a) "/ssh:box:/srv/nb"))
       (should (equal (emjupy--remote-root-for b) "/ssh:box:/srv/nb")))
     (let ((emjupy-remote-root '(("localhost:8888" . "~/notebooks")
-                               ("localhost:9999" . "/ssh:box:/srv/nb"))))
+                                ("localhost:9999" . "/ssh:box:/srv/nb"))))
       (should (equal (emjupy--remote-root-for a) "~/notebooks"))
       (should (equal (emjupy--remote-root-for b) "/ssh:box:/srv/nb")))))
 

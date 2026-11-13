@@ -82,7 +82,7 @@ overrides the faces on tracebacks and rich output."
   ;; `:inherit', so an inheriting face still reports `unspecified' and the
   ;; check passes while the bug is present.
   (dolist (attr '(:foreground :weight :slant :underline :overline
-                  :strike-through :box :inverse-video))
+                              :strike-through :box :inverse-video))
     (should (eq (face-attribute 'emjupy-output attr nil t) 'unspecified))))
 
 ;;;; Output-box rendering: visibility, merged divider, 80-col borders
@@ -130,7 +130,7 @@ rule spans a wide frame instead of stopping short at 80 columns."
 They are applied over output text, so any colour attribute they carried
 would fight the faces on tracebacks and rich output."
   (dolist (face '(emjupy-output emjupy-output-error
-                 emjupy-output-warning emjupy-output-image))
+                                emjupy-output-warning emjupy-output-image))
     (should (eq (face-attribute face :inherit nil nil) 'unspecified))
     ;; NOT :extend -- that runs the background to the window edge, past the
     ;; cell outline.  The band is padded to the border instead.
@@ -288,7 +288,7 @@ both, the rules stopped ten columns short of the edge."
 further.  `:extend' would run it to the WINDOW edge, spilling the colour
 past the outline and across the rest of the frame."
   (dolist (face '(emjupy-output emjupy-output-error
-                  emjupy-output-warning emjupy-output-image))
+                                emjupy-output-warning emjupy-output-image))
     (should (eq (face-attribute face :extend nil nil) 'unspecified)))
   (cl-flet ((mk (type &rest kv)
               (let ((o (make-hash-table :test 'equal)))

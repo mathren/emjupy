@@ -142,14 +142,14 @@ localhost:8888/user/alice."
           :host host :port port :path path)))
 (cl-defstruct (emjupy-server
                (:constructor make-emjupy-server
-                (&key base-url token host port root xsrf kernel-id
-                      files-root
-                      &aux (parts (and base-url
-                                       (emjupy--parse-base-url base-url)))
-                      (scheme (plist-get parts :scheme))
-                      (host (or host (plist-get parts :host)))
-                      (port (or port (plist-get parts :port)))
-                      (path (plist-get parts :path)))))
+                             (&key base-url token host port root xsrf kernel-id
+                                   files-root
+                                   &aux (parts (and base-url
+                                                    (emjupy--parse-base-url base-url)))
+                                   (scheme (plist-get parts :scheme))
+                                   (host (or host (plist-get parts :host)))
+                                   (port (or port (plist-get parts :port)))
+                                   (path (plist-get parts :path)))))
   "A Jupyter server emjupy has logged in to, one per address.
 BASE-URL is the address given to `emjupy-login', host:port or a URL;
 TOKEN the token sent with every request.  The address is parsed once,

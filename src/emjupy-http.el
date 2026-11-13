@@ -99,7 +99,7 @@ Raw, not through `emjupy--http-request': these answer with HTML."
 (define-error 'emjupy-http-status "Jupyter server refused the request"
               'emjupy-http-error)
 (define-error 'emjupy-http-xsrf "Jupyter server rejected the XSRF cookie"
-  'emjupy-http-status)
+              'emjupy-http-status)
 
 ;; A type of its own, so a caller catches the failure it expects -- a missing
 ;; file, an unreachable server -- and lets the rest through.  It is a kind of

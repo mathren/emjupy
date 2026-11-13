@@ -693,14 +693,14 @@ showing its carriage return as a literal ^M."
   (let ((cell (make-emjupy-cell :id "t" :type 'code :source "" :outputs []
                                 :metadata (make-hash-table :test 'equal))))
     (dolist (m '(("stderr" "\r0it [00:00, ?it/s]")
-                ("stdout" "0 a/x\n")
-                ("stderr" "\r1it [00:00,  3.33it/s]")
-                ("stdout" "1 b/y\n")
-                ("stderr" "\r2it [00:00,  3.33it/s]")
-                ("stdout" "2 c/z\n")
-                ("stderr" "\r3it [00:00,  3.32it/s]")
-                ("stderr" "\r3it [00:00,  3.32it/s]")
-                ("stderr" "\n")))
+                 ("stdout" "0 a/x\n")
+                 ("stderr" "\r1it [00:00,  3.33it/s]")
+                 ("stdout" "1 b/y\n")
+                 ("stderr" "\r2it [00:00,  3.33it/s]")
+                 ("stdout" "2 c/z\n")
+                 ("stderr" "\r3it [00:00,  3.32it/s]")
+                 ("stderr" "\r3it [00:00,  3.32it/s]")
+                 ("stderr" "\n")))
       (emjupy--append-output-to-cell cell (emjupy-test--stream-on (car m)
                                                                   (cadr m))))
     (let ((outs (append (emjupy-cell-outputs cell) nil)))
@@ -945,73 +945,73 @@ sent to the kernel."
 It said the notebook had no kernel, and to start one -- which would have
 left the kernel being reconnected to, and everything defined in it."
   (emjupy-test--reconnecting live sent
-    (emjupy-execute-cell-at-point)
-    (emjupy-execute-cell-at-point)
-    (should (= (length emjupy--runs-waiting) 1))
-    (should-not sent)
-    (setq live t)
-    (emjupy--try-reconnect (current-buffer) "k" "python3"
-                           (+ (float-time) 30) "nb")
-    (should (= (length sent) 1))
-    (should-not emjupy--runs-waiting)))
+                             (emjupy-execute-cell-at-point)
+                             (emjupy-execute-cell-at-point)
+                             (should (= (length emjupy--runs-waiting) 1))
+                             (should-not sent)
+                             (setq live t)
+                             (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                                    (+ (float-time) 30) "nb")
+                             (should (= (length sent) 1))
+                             (should-not emjupy--runs-waiting)))
 
 (ert-deftest emjupy-test-a-cell-run-while-reconnecting-is-dropped-if-not ()
   "A cell waiting for a connection that does not come back does not run."
   (emjupy-test--reconnecting live sent
-    (emjupy-execute-cell-at-point)
-    (should (= (length emjupy--runs-waiting) 1))
-    (emjupy--try-reconnect (current-buffer) "k" "python3"
-                           (- (float-time) 1) "nb")
-    (should-not sent)
-    (should-not emjupy--runs-waiting)))
+                             (emjupy-execute-cell-at-point)
+                             (should (= (length emjupy--runs-waiting) 1))
+                             (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                                    (- (float-time) 1) "nb")
+                             (should-not sent)
+                             (should-not emjupy--runs-waiting)))
 
 (ert-deftest emjupy-test-reconnecting-restores-the-way-first ()
   "Each attempt to reconnect first asks for the way to the server back.
 `emjupy-reconnect-functions' get the server, then the connection is tried:
 a tunnel reopened there is what the attempt connects through."
   (emjupy-test--reconnecting live sent
-    (ignore sent)
-    (let ((order nil) (server (emjupy-notebook-server (emjupy--notebook))))
-      (cl-letf (((symbol-function 'emjupy-connect-kernel)
-                 (lambda (&rest _) (push 'connect order))))
-        (let ((emjupy-reconnect-functions
-               (list (lambda (s) (push (list 'restore (eq s server)) order)))))
-          (emjupy--try-reconnect (current-buffer) "k" "python3"
-                                 (+ (float-time) 30) "nb")))
-      (should (equal (reverse order) '((restore t) connect))))))
+                             (ignore sent)
+                             (let ((order nil) (server (emjupy-notebook-server (emjupy--notebook))))
+                               (cl-letf (((symbol-function 'emjupy-connect-kernel)
+                                          (lambda (&rest _) (push 'connect order))))
+                                 (let ((emjupy-reconnect-functions
+                                        (list (lambda (s) (push (list 'restore (eq s server)) order)))))
+                                   (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                                          (+ (float-time) 30) "nb")))
+                               (should (equal (reverse order) '((restore t) connect))))))
 
 (ert-deftest emjupy-test-reconnecting-by-hand-keeps-trying ()
   "C-c C-x C-c that cannot connect at once keeps trying, as after a drop.
 It failed with a raw \"Connection refused\" -- the way to the server, a
 tunnel, needing a moment to come back."
   (emjupy-test--reconnecting live sent
-    (ignore sent)
-    (cancel-timer emjupy--reconnect-timer)
-    (setq emjupy--reconnect-timer nil)
-    (let ((asked nil))
-      (cl-letf (((symbol-function 'emjupy-connect-kernel)
-                 (lambda (&rest _) (error "Connection refused")))
-                ((symbol-function 'emjupy--disconnect-kernel) #'ignore)
-                ((symbol-function 'emjupy--repair-if-scrambled) #'ignore))
-        (let ((emjupy-reconnect-functions (list (lambda (_) (setq asked t)))))
-          (emjupy-reconnect-kernel)))
-      (should asked)
-      (should (timerp emjupy--reconnect-timer)))))
+                             (ignore sent)
+                             (cancel-timer emjupy--reconnect-timer)
+                             (setq emjupy--reconnect-timer nil)
+                             (let ((asked nil))
+                               (cl-letf (((symbol-function 'emjupy-connect-kernel)
+                                          (lambda (&rest _) (error "Connection refused")))
+                                         ((symbol-function 'emjupy--disconnect-kernel) #'ignore)
+                                         ((symbol-function 'emjupy--repair-if-scrambled) #'ignore))
+                                 (let ((emjupy-reconnect-functions (list (lambda (_) (setq asked t)))))
+                                   (emjupy-reconnect-kernel)))
+                               (should asked)
+                               (should (timerp emjupy--reconnect-timer)))))
 
 (ert-deftest emjupy-test-a-cell-on-a-dropped-connection-says-so ()
   "Running a cell whose kernel's connection is down says so, not \"no kernel\".
 The kernel is there; \\[emjupy-reconnect-kernel] reaches it again.  With
 reconnecting off: on, running the cell reconnects and waits for it."
   (emjupy-test--reconnecting live sent
-    (ignore sent)
-    (cancel-timer emjupy--reconnect-timer)
-    (setq emjupy--reconnect-timer nil)
-    (let ((err (let ((emjupy-reconnect-window nil))
-                 (should-error (emjupy-execute-cell-at-point)
-                               :type 'user-error))))
-      ;; ' or ', as `format-message' quotes it in the locale
-      (should (string-match-p "connection to this notebook.s kernel is down"
-                              (cadr err))))))
+                             (ignore sent)
+                             (cancel-timer emjupy--reconnect-timer)
+                             (setq emjupy--reconnect-timer nil)
+                             (let ((err (let ((emjupy-reconnect-window nil))
+                                          (should-error (emjupy-execute-cell-at-point)
+                                                        :type 'user-error))))
+                               ;; ' or ', as `format-message' quotes it in the locale
+                               (should (string-match-p "connection to this notebook.s kernel is down"
+                                                       (cadr err))))))
 
 (ert-deftest emjupy-test-a-kernel-gone-from-the-server-stops-reconnecting ()
   "A kernel the server no longer has is not reconnected to for 30 seconds.
@@ -1019,40 +1019,40 @@ Asked during the reconnect, the server answers 404: the reconnecting
 stops at once, the cells waiting do not run, and the notebook is left
 without a kernel, for running a cell to say so."
   (emjupy-test--reconnecting live sent
-    (emjupy-execute-cell-at-point)
-    (should emjupy--runs-waiting)
-    (cl-letf (((symbol-function 'emjupy-connect-kernel) #'ignore)
-              ((symbol-function 'emjupy--http-request-async)
-               (lambda (_m _s _p _b _done fail)
-                 (funcall fail '(emjupy-http-status "[Jupyter HTTP 404] GET"
-                                                    "{}")))))
-      (emjupy--try-reconnect (current-buffer) "k" "python3"
-                             (+ (float-time) 30) "nb"))
-    (should-not emjupy--reconnect-timer)
-    (should-not emjupy--runs-waiting)
-    (should-not (emjupy-notebook-kernel (emjupy--notebook)))
-    (should-not sent)))
+                             (emjupy-execute-cell-at-point)
+                             (should emjupy--runs-waiting)
+                             (cl-letf (((symbol-function 'emjupy-connect-kernel) #'ignore)
+                                       ((symbol-function 'emjupy--http-request-async)
+                                        (lambda (_m _s _p _b _done fail)
+                                          (funcall fail '(emjupy-http-status "[Jupyter HTTP 404] GET"
+                                                                             "{}")))))
+                               (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                                      (+ (float-time) 30) "nb"))
+                             (should-not emjupy--reconnect-timer)
+                             (should-not emjupy--runs-waiting)
+                             (should-not (emjupy-notebook-kernel (emjupy--notebook)))
+                             (should-not sent)))
 
 (ert-deftest emjupy-test-a-silent-server-is-said-when-reconnecting-ends ()
   "Giving up on a server that never answered says it may have stopped.
 \"C-c C-x C-c tries again\" was all it said, and tried again for nothing."
   (emjupy-test--reconnecting live sent
-    (ignore sent)
-    (let ((said nil))
-      (cl-letf (((symbol-function 'emjupy-connect-kernel) #'ignore)
-                ((symbol-function 'emjupy--http-request-async)
-                 (lambda (_m _s _p _b _done fail)
-                   (funcall fail '(emjupy-http-error "Network error: no answer from"
-                                                     "127.0.0.1:1"))))
-                ((symbol-function 'message)
-                 (lambda (fmt &rest args)
-                   (push (apply #'format-message fmt args) said))))
-        (emjupy--try-reconnect (current-buffer) "k" "python3"
-                               (+ (float-time) 30) "nb")
-        (emjupy--try-reconnect (current-buffer) "k" "python3"
-                               (- (float-time) 1) "nb"))
-      (should (seq-some (lambda (m) (string-match-p "does not answer" m))
-                        said)))))
+                             (ignore sent)
+                             (let ((said nil))
+                               (cl-letf (((symbol-function 'emjupy-connect-kernel) #'ignore)
+                                         ((symbol-function 'emjupy--http-request-async)
+                                          (lambda (_m _s _p _b _done fail)
+                                            (funcall fail '(emjupy-http-error "Network error: no answer from"
+                                                                              "127.0.0.1:1"))))
+                                         ((symbol-function 'message)
+                                          (lambda (fmt &rest args)
+                                            (push (apply #'format-message fmt args) said))))
+                                 (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                                        (+ (float-time) 30) "nb")
+                                 (emjupy--try-reconnect (current-buffer) "k" "python3"
+                                                        (- (float-time) 1) "nb"))
+                               (should (seq-some (lambda (m) (string-match-p "does not answer" m))
+                                                 said)))))
 
 ;;;; A kernel quiet while running a cell
 
@@ -1092,27 +1092,27 @@ Shut down or culled while its connection stayed open, it left the cell
 showing as running for good."
   (let ((emjupy-kernel-check-interval 30))
     (emjupy-test--running-quietly 40 'gone
-      (emjupy--check-quiet-kernels)
-      (should asked)
-      (should-not (emjupy-notebook-kernel nb))
-      (should (= (hash-table-count pending) 0)))))
+                                  (emjupy--check-quiet-kernels)
+                                  (should asked)
+                                  (should-not (emjupy-notebook-kernel nb))
+                                  (should (= (hash-table-count pending) 0)))))
 
 (ert-deftest emjupy-test-a-kernel-heard-lately-is-not-asked-after ()
   "A kernel heard from within the interval is not asked after."
   (let ((emjupy-kernel-check-interval 30))
     (emjupy-test--running-quietly 5 'gone
-      (emjupy--check-quiet-kernels)
-      (should-not asked)
-      (should (emjupy-notebook-kernel nb)))))
+                                  (emjupy--check-quiet-kernels)
+                                  (should-not asked)
+                                  (should (emjupy-notebook-kernel nb)))))
 
 (ert-deftest emjupy-test-no-kernel-is-asked-after-with-the-check-off ()
   "`emjupy-kernel-check-interval' nil asks after none, and stops its timer."
   (let ((emjupy-kernel-check-interval nil))
     (emjupy-test--running-quietly 600 'gone
-      (setq emjupy--quiet-check-timer (run-at-time 3600 nil #'ignore))
-      (emjupy--check-quiet-kernels)
-      (should-not asked)
-      (should-not emjupy--quiet-check-timer))))
+                                  (setq emjupy--quiet-check-timer (run-at-time 3600 nil #'ignore))
+                                  (emjupy--check-quiet-kernels)
+                                  (should-not asked)
+                                  (should-not emjupy--quiet-check-timer))))
 
 (ert-deftest emjupy-test-a-refused-header-puts-the-token-in-the-address ()
   "A WebSocket refused, 403, with the token in a header alone is noted.
@@ -1136,16 +1136,16 @@ on; any other error is only reported."
   "A cell run is trusted from then on, as Jupyter marks a cell the user runs.
 Saved with every cell trusted, the server signs the notebook."
   (emjupy-test--reconnecting live sent
-    (setq live t)
-    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
-      (setf (emjupy-cell-metadata cell)
-            (let ((m (make-hash-table :test 'equal)))
-              (puthash "trusted" :false m)
-              m))
-      (should-not (emjupy--cell-trusted-p cell))
-      (emjupy-execute-cell-at-point)
-      (should sent)
-      (should (emjupy--cell-trusted-p cell)))))
+                             (setq live t)
+                             (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+                               (setf (emjupy-cell-metadata cell)
+                                     (let ((m (make-hash-table :test 'equal)))
+                                       (puthash "trusted" :false m)
+                                       m))
+                               (should-not (emjupy--cell-trusted-p cell))
+                               (emjupy-execute-cell-at-point)
+                               (should sent)
+                               (should (emjupy--cell-trusted-p cell)))))
 
 (ert-deftest emjupy-test-a-refused-handshake-is-never-open ()
   "A WebSocket the server refuses -- a kernel gone, a server restarted -- is
@@ -1165,7 +1165,7 @@ never taken as open.  websocket.el, the handshake refused, still called
                    (lambda (fmt &rest args)
                      (push (apply #'format fmt args) said))))
           (let* ((server (make-emjupy-server :base-url "127.0.0.1:1"
-                                            :token "t"))
+                                             :token "t"))
                  (nb (make-emjupy-notebook :path "a.ipynb" :server server)))
             (emjupy-connect-kernel nb "gone-kernel")
             (funcall (plist-get handlers :on-error) ws 'on-open
@@ -1241,32 +1241,32 @@ RAN, in BODY, lists the ids of the cells run, in order."
   "Run all, all above, all below: as JupyterLab, raw cells left alone.
 Above leaves out the cell at point; below starts with it; point stays."
   (emjupy-test--five-cells
-    (at 4)
-    (let ((here (point)))
-      (emjupy-run-all-cells)
-      (should (equal (ran) '(1 3 4 5)))
-      (should (= (point) here)))
-    (setq ran nil) (at 4) (emjupy-run-cells-above)
-    (should (equal (ran) '(1 3)))
-    (setq ran nil) (at 4) (emjupy-run-cells-below)
-    (should (equal (ran) '(4 5)))))
+   (at 4)
+   (let ((here (point)))
+     (emjupy-run-all-cells)
+     (should (equal (ran) '(1 3 4 5)))
+     (should (= (point) here)))
+   (setq ran nil) (at 4) (emjupy-run-cells-above)
+   (should (equal (ran) '(1 3)))
+   (setq ran nil) (at 4) (emjupy-run-cells-below)
+   (should (equal (ran) '(4 5)))))
 
 (ert-deftest emjupy-test-a-prefix-runs-that-many-cells ()
   "C-u N C-c C-c runs N cells, each moving on to the next.
 Past the end it stops there; reaching it exactly, it makes the new cell
 running the last one always makes."
   (emjupy-test--five-cells
-    (at 1)
-    (emjupy-execute-cell-and-goto-next 2)
-    (should (equal (ran) '(1 2)))
-    (should (= (emjupy-cell-id (emjupy--cell-at-point)) 3))
-    (setq ran nil) (at 1)
-    (emjupy-execute-cell-and-goto-next 10)
-    (should (equal (ran) '(1 2 3 4 5)))
-    (should (= (length (emjupy-notebook-cells nb)) 5))
-    (setq ran nil) (at 1)
-    (emjupy-execute-cell-and-goto-next 5)
-    (should (= (length (emjupy-notebook-cells nb)) 6))))
+   (at 1)
+   (emjupy-execute-cell-and-goto-next 2)
+   (should (equal (ran) '(1 2)))
+   (should (= (emjupy-cell-id (emjupy--cell-at-point)) 3))
+   (setq ran nil) (at 1)
+   (emjupy-execute-cell-and-goto-next 10)
+   (should (equal (ran) '(1 2 3 4 5)))
+   (should (= (length (emjupy-notebook-cells nb)) 5))
+   (setq ran nil) (at 1)
+   (emjupy-execute-cell-and-goto-next 5)
+   (should (= (length (emjupy-notebook-cells nb)) 6))))
 
 (defun emjupy-test--message (type date &optional state)
   "A message of TYPE from the kernel at DATE; status messages with STATE."
@@ -1498,24 +1498,24 @@ SENT, in BODY, collects what is sent; (calls FN) counts calls to FN."
 markdown cell in place, not by redrawing the notebook.  Synced per cell,
 a notebook run whole was read once per cell: 0.8 s at 500 cells."
   (emjupy-test--running
-    (emjupy-run-all-cells)
-    ;; the three code cells; the width, told once, besides
-    (should (= (cl-count-if-not (lambda (p) (string-match-p "COLUMNS" p)) sent)
-               3))
-    (should (= (calls 'sync) 1))
-    (should (= (calls 'whole) 0))))
+   (emjupy-run-all-cells)
+   ;; the three code cells; the width, told once, besides
+   (should (= (cl-count-if-not (lambda (p) (string-match-p "COLUMNS" p)) sent)
+              3))
+   (should (= (calls 'sync) 1))
+   (should (= (calls 'whole) 0))))
 
 (ert-deftest emjupy-test-the-kernel-is-told-its-width-every-time ()
   "The width is sent each time, the same width included.
 Spared, a fresh kernel's first output could be a user's cell's, and was
 lost: the first a new connection hears may come too late for it."
   (emjupy-test--running
-    (let ((told 0))
-      (cl-letf (((symbol-function 'emjupy--kernel-eval)
-                 (lambda (&rest _) (cl-incf told))))
-        (emjupy--tell-kernel-width nb 80)
-        (emjupy--tell-kernel-width nb 80)
-        (should (= told 2))))))
+   (let ((told 0))
+     (cl-letf (((symbol-function 'emjupy--kernel-eval)
+                (lambda (&rest _) (cl-incf told))))
+       (emjupy--tell-kernel-width nb 80)
+       (emjupy--tell-kernel-width nb 80)
+       (should (= told 2))))))
 
 (ert-deftest emjupy-test-emjupys-own-code-is-no-run-of-the-users ()
   "emjupy's own code on the kernel counts nothing and stops nothing.
@@ -1564,32 +1564,32 @@ the user's first cell 2."
 order, once a status answers the kernel_info_request asked first.  A
 first cell's output was lost otherwise."
   (emjupy-test--handshaking
-    (emjupy--begin-handshake kernel)
-    (should (= (length sent) 1))
-    (should (string-match-p "kernel_info_request" (car sent)))
-    (emjupy--ws-send "first" kernel)
-    (emjupy--ws-send "second" kernel)
-    (should (= (length sent) 1))
-    ;; a status for another request does not end it
-    (emjupy--handle-ws-message kernel (emjupy-test--status-for "other"))
-    (should (= (length sent) 1))
-    (emjupy--handle-ws-message
-     kernel (emjupy-test--status-for (emjupy-kernel-handshake kernel)))
-    (should (equal (cdr sent) '("first" "second")))
-    (should-not (emjupy-kernel-handshake kernel))
-    ;; and after, sent at once
-    (emjupy--ws-send "third" kernel)
-    (should (equal (car (last sent)) "third"))))
+   (emjupy--begin-handshake kernel)
+   (should (= (length sent) 1))
+   (should (string-match-p "kernel_info_request" (car sent)))
+   (emjupy--ws-send "first" kernel)
+   (emjupy--ws-send "second" kernel)
+   (should (= (length sent) 1))
+   ;; a status for another request does not end it
+   (emjupy--handle-ws-message kernel (emjupy-test--status-for "other"))
+   (should (= (length sent) 1))
+   (emjupy--handle-ws-message
+    kernel (emjupy-test--status-for (emjupy-kernel-handshake kernel)))
+   (should (equal (cdr sent) '("first" "second")))
+   (should-not (emjupy-kernel-handshake kernel))
+   ;; and after, sent at once
+   (emjupy--ws-send "third" kernel)
+   (should (equal (car (last sent)) "third"))))
 
 (ert-deftest emjupy-test-a-connection-not-heard-goes-on-saying-so ()
   "No status in time: what was held is sent all the same, and said."
   (emjupy-test--handshaking
-    (emjupy--begin-handshake kernel)
-    (emjupy--ws-send "first" kernel)
-    (apply (car timer) (cdr timer))
-    (should (equal (cdr sent) '("first")))
-    (should-not (emjupy-kernel-handshake kernel))
-    (should (seq-some (lambda (m) (string-match-p "not heard" m)) said))))
+   (emjupy--begin-handshake kernel)
+   (emjupy--ws-send "first" kernel)
+   (apply (car timer) (cdr timer))
+   (should (equal (cdr sent) '("first")))
+   (should-not (emjupy-kernel-handshake kernel))
+   (should (seq-some (lambda (m) (string-match-p "not heard" m)) said))))
 
 
 (ert-deftest emjupy-test-a-rerun-keeps-its-output-until-replaced ()

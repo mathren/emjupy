@@ -150,19 +150,19 @@ The protocol orders each channel but not one against the other: an
 output can come after its reply.  This tries many orders at random, for
 several requests in flight, against the order with every reply last."
   (emjupy-fuzz-cases i (emjupy-fuzz-iterations 200)
-    (let* ((requests (emjupy-fuzz--requests (1+ (random 3))))
-           (channels (emjupy-fuzz--channels requests))
-           (iopub (nth 0 channels)) (shell (nth 1 channels))
-           (reference (emjupy-fuzz--run-messages requests (append iopub shell)))
-           (shuffled (emjupy-fuzz--run-messages
-                      requests (emjupy-fuzz--riffle iopub shell))))
-      ;; the same outputs, in the same cells, with the same counts
-      (should (equal (nth 0 shuffled) (nth 0 reference)))
-      ;; every count arrived
-      (dolist (cell (nth 0 shuffled)) (should (numberp (nth 1 cell))))
-      ;; nothing left waiting, and no bookkeeping left behind
-      (should (= (nth 1 shuffled) 0))
-      (should (= (nth 2 shuffled) 0)))))
+                     (let* ((requests (emjupy-fuzz--requests (1+ (random 3))))
+                            (channels (emjupy-fuzz--channels requests))
+                            (iopub (nth 0 channels)) (shell (nth 1 channels))
+                            (reference (emjupy-fuzz--run-messages requests (append iopub shell)))
+                            (shuffled (emjupy-fuzz--run-messages
+                                       requests (emjupy-fuzz--riffle iopub shell))))
+                       ;; the same outputs, in the same cells, with the same counts
+                       (should (equal (nth 0 shuffled) (nth 0 reference)))
+                       ;; every count arrived
+                       (dolist (cell (nth 0 shuffled)) (should (numberp (nth 1 cell))))
+                       ;; nothing left waiting, and no bookkeeping left behind
+                       (should (= (nth 1 shuffled) 0))
+                       (should (= (nth 2 shuffled) 0)))))
 
 ;;;; 2. Random editing
 
@@ -186,7 +186,7 @@ several requests in flight, against the order with every reply last."
 
 (defconst emjupy-fuzz--edits
   '(type delete-char insert-above insert-below delete-cell move-up move-down
-    split join cycle-type clear-output toggle-output output-arrives undo)
+         split join cycle-type clear-output toggle-output output-arrives undo)
   "The operations the edit fuzz chooses from.")
 
 (defun emjupy-fuzz--do-edit (op nb buf)
@@ -239,28 +239,28 @@ struct says, with nothing stray -- and the cells read back from the
 buffer are what is shown.  Most of this project's bugs have been one
 particular sequence that broke that; this tries many."
   (emjupy-fuzz-cases i (emjupy-fuzz-iterations 30)
-    (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
-                         (emjupy-test--cell-like 'markdown "# Title\ntext")
-                         (emjupy-test--cell-like 'code "b = 2\nc = 3"
-                                                 (vector (emjupy-fuzz--stream "hi\n")))
-                         (emjupy-test--cell-like 'code "d = 4")))
-          (trail nil))
-      (emjupy-test--with-notebook cells buf nb
-        (with-current-buffer buf
-          (buffer-enable-undo)
-          (setq buffer-undo-list nil)
-          (dotimes (_ 25)
-            (let ((op (emjupy-fuzz-pick emjupy-fuzz--edits)))
-              (push op trail)
-              (ert-info ((format "after %S" (reverse trail)))
-                (emjupy-fuzz--do-edit op nb buf)
-                (undo-boundary)
-                ;; The cells catch up with the buffer at the next sync, which
-                ;; every command that reads them performs first; compare
-                ;; after one, as the user's next command would.
-                (emjupy--sync-all-cells)
-                (should-not (emjupy--check-invariants))
-                (should (> (length (emjupy-notebook-cells nb)) 0))))))))))
+                     (let ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                                          (emjupy-test--cell-like 'markdown "# Title\ntext")
+                                          (emjupy-test--cell-like 'code "b = 2\nc = 3"
+                                                                  (vector (emjupy-fuzz--stream "hi\n")))
+                                          (emjupy-test--cell-like 'code "d = 4")))
+                           (trail nil))
+                       (emjupy-test--with-notebook cells buf nb
+                         (with-current-buffer buf
+                           (buffer-enable-undo)
+                           (setq buffer-undo-list nil)
+                           (dotimes (_ 25)
+                             (let ((op (emjupy-fuzz-pick emjupy-fuzz--edits)))
+                               (push op trail)
+                               (ert-info ((format "after %S" (reverse trail)))
+                                 (emjupy-fuzz--do-edit op nb buf)
+                                 (undo-boundary)
+                                 ;; The cells catch up with the buffer at the next sync, which
+                                 ;; every command that reads them performs first; compare
+                                 ;; after one, as the user's next command would.
+                                 (emjupy--sync-all-cells)
+                                 (should-not (emjupy--check-invariants))
+                                 (should (> (length (emjupy-notebook-cells nb)) 0))))))))))
 
 (ert-deftest emjupy-fuzz-undo-takes-every-edit-back ()
   "Undoing everything, after any sequence of edits, gives the notebook back.
@@ -268,34 +268,34 @@ particular sequence that broke that; this tries many."
 Only commands that edit the notebook are used, and the comparison is of
 the cells -- type and source -- as they read back from the buffer."
   (emjupy-fuzz-cases i (emjupy-fuzz-iterations 30)
-    (let* ((cells (vector (emjupy-test--cell-like 'code "a = 1")
-                          (emjupy-test--cell-like 'markdown "# Title")
-                          (emjupy-test--cell-like 'code "b = 2\nc = 3")))
-           (edits (seq-remove
-                   (lambda (e)
-                     (memq e '(undo output-arrives toggle-output clear-output)))
-                   emjupy-fuzz--edits))
-           (trail nil))
-      (emjupy-test--with-notebook cells buf nb
-        (with-current-buffer buf
-          (buffer-enable-undo)
-          (setq buffer-undo-list nil)
-          (let ((before (emjupy-fuzz--sources nb)))
-            (dotimes (_ 12)
-              (let ((op (emjupy-fuzz-pick edits)))
-                (push op trail)
-                (ert-info ((format "while editing: %S" (reverse trail)))
-                  (emjupy-fuzz--do-edit op nb buf))
-                (undo-boundary)))
-            (ert-info ((format "edits %S" (reverse trail)))
-              (let ((last-command nil))
-                (undo-start)
-                (condition-case nil
-                    (while t (undo-more 1))
-                  (user-error nil) (error nil)))
-              (emjupy--sync-all-cells)
-              (should-not (emjupy--check-invariants))
-              (should (equal (emjupy-fuzz--sources nb) before)))))))))
+                     (let* ((cells (vector (emjupy-test--cell-like 'code "a = 1")
+                                           (emjupy-test--cell-like 'markdown "# Title")
+                                           (emjupy-test--cell-like 'code "b = 2\nc = 3")))
+                            (edits (seq-remove
+                                    (lambda (e)
+                                      (memq e '(undo output-arrives toggle-output clear-output)))
+                                    emjupy-fuzz--edits))
+                            (trail nil))
+                       (emjupy-test--with-notebook cells buf nb
+                         (with-current-buffer buf
+                           (buffer-enable-undo)
+                           (setq buffer-undo-list nil)
+                           (let ((before (emjupy-fuzz--sources nb)))
+                             (dotimes (_ 12)
+                               (let ((op (emjupy-fuzz-pick edits)))
+                                 (push op trail)
+                                 (ert-info ((format "while editing: %S" (reverse trail)))
+                                   (emjupy-fuzz--do-edit op nb buf))
+                                 (undo-boundary)))
+                             (ert-info ((format "edits %S" (reverse trail)))
+                               (let ((last-command nil))
+                                 (undo-start)
+                                 (condition-case nil
+                                     (while t (undo-more 1))
+                                   (user-error nil) (error nil)))
+                               (emjupy--sync-all-cells)
+                               (should-not (emjupy--check-invariants))
+                               (should (equal (emjupy-fuzz--sources nb) before)))))))))
 
 (ert-deftest emjupy-fuzz-undo-after-two-joins ()
   "Undo after joining twice, with output and typing between, does not err.

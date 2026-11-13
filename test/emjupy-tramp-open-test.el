@@ -88,17 +88,17 @@
                    '(:host "box" :user "me" :port "2200" :jumps nil)))
     (should (equal (emjupy--ssh-route "/ssh:bastion|ssh:me@inner#2200|ssh:node7:/data/nb.ipynb")
                    '(:host "node7" :user nil :port nil
-                         :jumps "bastion,me@inner:2200")))
+                           :jumps "bastion,me@inner:2200")))
     (should (equal (emjupy--remote-prefix "/ssh:bastion|ssh:node7:/data/nb.ipynb")
                    "/ssh:bastion|ssh:node7:"))
     (should-error (emjupy--ssh-route "/ssh:box|sudo:root@box:/root/nb.ipynb")
                   :type 'user-error)
     (should (equal (emjupy--tunnel-command '(:host "node7" :user "me" :port "22"
-                                                 :jumps "bastion") 9000 8888)
+                                                   :jumps "bastion") 9000 8888)
                    '("ssh" "-N" "-o" "BatchMode=yes" "-o"
-                   "ExitOnForwardFailure=yes"
-                   "-L" "127.0.0.1:9000:127.0.0.1:8888" "-J" "bastion" "-p" "22"
-                   "me@node7"))))
+                     "ExitOnForwardFailure=yes"
+                     "-L" "127.0.0.1:9000:127.0.0.1:8888" "-J" "bastion" "-p" "22"
+                     "me@node7"))))
   ;; once TRAMP has been through a hop, it names the file without it:
   ;; the route still has it
   (let ((tramp-default-proxies-alist '(("^node7$" nil "/ssh:bastion:"))))
@@ -243,29 +243,29 @@ BUF the open notebook's buffer, NB its notebook."
 Opening it again, through a new tunnel, made a second buffer, the first
 left stranded with its edits."
   (emjupy-test--remote-notebook-open 8888 8888 "a.ipynb"
-    (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
-    (should (eq (emjupy--adopt-remote-notebook "a.ipynb" new) buf))
-    (should (eq (emjupy-notebook-server nb) new))
-    (should reconnected)
-    (should (= (length emjupy--remote-tunnels) 1))))
+                                     (setf (emjupy-notebook-kernel nb) (make-emjupy-kernel :id "k"))
+                                     (should (eq (emjupy--adopt-remote-notebook "a.ipynb" new) buf))
+                                     (should (eq (emjupy-notebook-server nb) new))
+                                     (should reconnected)
+                                     (should (= (length emjupy--remote-tunnels) 1))))
 
 (ert-deftest emjupy-test-the-same-path-on-another-port-is-another-notebook ()
   "The same path from a server on another port opens apart, and says so.
 Untitled.ipynb on two servers is two notebooks."
   (emjupy-test--remote-notebook-open 8888 8890 "a.ipynb"
-    (let ((said nil))
-      (cl-letf (((symbol-function 'message)
-                 (lambda (fmt &rest args)
-                   (push (apply #'format fmt args) said))))
-        (should-not (emjupy--adopt-remote-notebook "a.ipynb" new)))
-      (should (eq (emjupy-notebook-server nb) old))
-      (should (seq-some (lambda (m) (string-match-p "also open" m)) said)))))
+                                     (let ((said nil))
+                                       (cl-letf (((symbol-function 'message)
+                                                  (lambda (fmt &rest args)
+                                                    (push (apply #'format fmt args) said))))
+                                         (should-not (emjupy--adopt-remote-notebook "a.ipynb" new)))
+                                       (should (eq (emjupy-notebook-server nb) old))
+                                       (should (seq-some (lambda (m) (string-match-p "also open" m)) said)))))
 
 (ert-deftest emjupy-test-another-path-on-the-same-server-is-another-notebook ()
   "Another path on the same server is another notebook: nothing moves."
   (emjupy-test--remote-notebook-open 8888 8888 "b.ipynb"
-    (should-not (emjupy--adopt-remote-notebook "b.ipynb" new))
-    (should (eq (emjupy-notebook-server nb) old))))
+                                     (should-not (emjupy--adopt-remote-notebook "b.ipynb" new))
+                                     (should (eq (emjupy-notebook-server nb) old))))
 
 
 ;;;; What other users of the machine cannot see
@@ -505,8 +505,8 @@ for folders, unless asked with a prefix.  An environment removed on a
 machine was found again only after a restart of Emacs."
   (should (seq-every-p (lambda (v) (memq v emjupy--session-caches))
                        '(emjupy--reachable-at emjupy--lsp-offered
-                         emjupy--lsp-asking emjupy--environment-jupyters
-                         emjupy--conda-environments-of)))
+                                              emjupy--lsp-asking emjupy--environment-jupyters
+                                              emjupy--conda-environments-of)))
   (let* ((file (make-temp-file "emjupy-environments" nil ".eld"))
          (emjupy-environments-file file)
          (emjupy--environments '(("@h:/p/" . "/e")))

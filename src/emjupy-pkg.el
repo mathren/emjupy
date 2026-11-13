@@ -15,7 +15,7 @@
 (define-package "emjupy" "0.2.4"
                 "Interactive Jupyter notebooks over HTTP and WebSocket"
                 '((emacs "30.1")
-    (websocket "1.15"))
+                  (websocket "1.15"))
                 :keywords '("languages" "tools" "python" "jupyter")
                 :url "https://github.com/mathren/emjupy")
 

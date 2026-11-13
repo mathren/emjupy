@@ -1180,14 +1180,14 @@ for each server it saw die."
 Emacs waits for a synchronous request, so one that never returns is a
 frozen Emacs.  It must give up, with the error callers expect."
   (emjupy-int--through-proxy
-    (emjupy-int--skip-unless-live)
-    (emjupy-int--proxy-say "stall")
-    (let ((t0 (float-time)))
-      (should-error (emjupy--http-request "GET" emjupy--current-server
-                                          "/api/contents")
-                    :type 'emjupy-http-error)
-      (should (< (- (float-time) t0) 10)))
-    (emjupy-int--proxy-say "reset")))
+   (emjupy-int--skip-unless-live)
+   (emjupy-int--proxy-say "stall")
+   (let ((t0 (float-time)))
+     (should-error (emjupy--http-request "GET" emjupy--current-server
+                                         "/api/contents")
+                   :type 'emjupy-http-error)
+     (should (< (- (float-time) t0) 10)))
+   (emjupy-int--proxy-say "reset")))
 
 (ert-deftest emjupy-int-fault-fragmented-slow-output-arrives-whole ()
   "Output split into tiny, delayed pieces arrives exactly as sent.
@@ -1195,13 +1195,13 @@ frozen Emacs.  It must give up, with the error callers expect."
 WebSocket frames cut mid-way, and in several pieces, must be put back
 together: nothing lost, nothing repeated, nothing out of order."
   (emjupy-int--through-proxy
-    (emjupy-int--with-live-kernel
-     (emjupy-int--proxy-say "chunk 7")
-     (emjupy-int--proxy-say "delay 2")
-     (let ((cell (emjupy-int--run "print('é' * 300)\nprint('end')" 60)))
-       (should (equal (emjupy-int--stdout cell)
-                      (concat (make-string 300 ?é) "\nend\n"))))
-     (emjupy-int--proxy-say "reset"))))
+   (emjupy-int--with-live-kernel
+    (emjupy-int--proxy-say "chunk 7")
+    (emjupy-int--proxy-say "delay 2")
+    (let ((cell (emjupy-int--run "print('é' * 300)\nprint('end')" 60)))
+      (should (equal (emjupy-int--stdout cell)
+                     (concat (make-string 300 ?é) "\nend\n"))))
+    (emjupy-int--proxy-say "reset"))))
 
 (ert-deftest emjupy-int-fault-tunnel-drop-mid-cell-then-reconnect ()
   "The tunnel dropping while a cell runs neither errs nor hangs Emacs.
@@ -1209,53 +1209,53 @@ together: nothing lost, nothing repeated, nothing out of order."
 Then reconnecting reaches the same kernel, its state intact: the tunnel
 went, not the kernel."
   (emjupy-int--through-proxy
-    (emjupy-int--with-live-kernel
-     (emjupy-int--run "keep = 42" 30)
-     (with-current-buffer emjupy-int--buffer
-       (let* ((nb (emjupy--notebook))
-              (cell (aref (emjupy-notebook-cells nb) 0)))
-         (setf (emjupy-cell-source cell)
-               "import time\nfor i in range(30):\n    print(i, flush=True)\n    time.sleep(0.1)")
-         (emjupy--redraw-notebook cell)
-         (goto-char (overlay-start (emjupy-cell-overlay cell)))
-         (emjupy-execute-cell-at-point)
-         (emjupy-int--pump 1)
-         (emjupy-int--proxy-say "sever")
-         (emjupy-int--pump 2)
-         ;; the socket is known to be gone, and Emacs is still responsive
-         (should-not (emjupy--ws-live-p (emjupy-notebook-kernel nb)))
-         (let ((t0 (float-time)))
-           (emjupy--sync-all-cells)
-           (should (< (- (float-time) t0) 0.5)))
-         ;; the tunnel comes back; so does the same kernel
-         (emjupy-int--proxy-say "reset")
-         (emjupy-reconnect-kernel)
-         (emjupy-int--pump 30
-                           (lambda ()
-                             (emjupy--ws-live-p (emjupy-notebook-kernel nb))))
-         (should (emjupy--ws-live-p (emjupy-notebook-kernel nb)))))
-     (let ((cell (emjupy-int--run "print(keep)" 30)))
-       (should (equal (emjupy-int--stdout cell) "42\n"))))))
+   (emjupy-int--with-live-kernel
+    (emjupy-int--run "keep = 42" 30)
+    (with-current-buffer emjupy-int--buffer
+      (let* ((nb (emjupy--notebook))
+             (cell (aref (emjupy-notebook-cells nb) 0)))
+        (setf (emjupy-cell-source cell)
+              "import time\nfor i in range(30):\n    print(i, flush=True)\n    time.sleep(0.1)")
+        (emjupy--redraw-notebook cell)
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (emjupy-execute-cell-at-point)
+        (emjupy-int--pump 1)
+        (emjupy-int--proxy-say "sever")
+        (emjupy-int--pump 2)
+        ;; the socket is known to be gone, and Emacs is still responsive
+        (should-not (emjupy--ws-live-p (emjupy-notebook-kernel nb)))
+        (let ((t0 (float-time)))
+          (emjupy--sync-all-cells)
+          (should (< (- (float-time) t0) 0.5)))
+        ;; the tunnel comes back; so does the same kernel
+        (emjupy-int--proxy-say "reset")
+        (emjupy-reconnect-kernel)
+        (emjupy-int--pump 30
+                          (lambda ()
+                            (emjupy--ws-live-p (emjupy-notebook-kernel nb))))
+        (should (emjupy--ws-live-p (emjupy-notebook-kernel nb)))))
+    (let ((cell (emjupy-int--run "print(keep)" 30)))
+      (should (equal (emjupy-int--stdout cell) "42\n"))))))
 
 (ert-deftest emjupy-int-fault-a-cell-run-just-after-a-drop-runs ()
   "A cell run in the moments after a dropped connection runs once it is back.
 It was refused, the notebook said to have no kernel."
   (emjupy-int--through-proxy
-    (emjupy-int--with-live-kernel
-     (emjupy-int--run "keep = 7" 30)
-     (with-current-buffer emjupy-int--buffer
-       (let* ((nb (emjupy--notebook))
-              (cell (aref (emjupy-notebook-cells nb) 0)))
-         (setf (emjupy-cell-source cell) "print('after the drop', keep)")
-         (emjupy--redraw-notebook cell)
-         (goto-char (overlay-start (emjupy-cell-overlay cell)))
-         (emjupy-int--proxy-say "sever")
-         (emjupy-int--pump 0.5)
-         (emjupy-execute-cell-at-point)
-         (should (emjupy-int--pump
-                  30 (lambda ()
-                       (string-match-p "after the drop 7"
-                                       (emjupy-int--stdout cell))))))))))
+   (emjupy-int--with-live-kernel
+    (emjupy-int--run "keep = 7" 30)
+    (with-current-buffer emjupy-int--buffer
+      (let* ((nb (emjupy--notebook))
+             (cell (aref (emjupy-notebook-cells nb) 0)))
+        (setf (emjupy-cell-source cell) "print('after the drop', keep)")
+        (emjupy--redraw-notebook cell)
+        (goto-char (overlay-start (emjupy-cell-overlay cell)))
+        (emjupy-int--proxy-say "sever")
+        (emjupy-int--pump 0.5)
+        (emjupy-execute-cell-at-point)
+        (should (emjupy-int--pump
+                 30 (lambda ()
+                      (string-match-p "after the drop 7"
+                                      (emjupy-int--stdout cell))))))))))
 
 (ert-deftest emjupy-int-a-dead-tunnel-is-reopened-mid-run ()
   "A notebook's SSH tunnel dying mid-run is reopened, and nothing is lost.
@@ -1571,9 +1571,9 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
      (json-encode
       `((type . "notebook") (format . "json")
         (content . ((cells . [((cell_type . "code") (id . "c1")
-                                (source . ,source)
-                                (metadata . ,(make-hash-table))
-                                (outputs . []) (execution_count . nil))])
+                               (source . ,source)
+                               (metadata . ,(make-hash-table))
+                               (outputs . []) (execution_count . nil))])
                     (metadata . ,(make-hash-table))
                     (nbformat . 4) (nbformat_minor . 5))))))
     path))
@@ -1612,73 +1612,73 @@ between its labels -- and a queued cell shows [In: *] meanwhile."
 (ert-deftest emjupy-int-revert-to-the-checkpoint-a-save-made ()
   "Saving makes a checkpoint; reverting to it brings the saved notebook back."
   (emjupy-int--with-file-notebook "x = 1"
-    (emjupy-save-notebook)
-    (emjupy-int--retype "x = 2  # not saved")
-    (emjupy-revert-to-checkpoint)
-    (should (equal (emjupy-cell-source
-                    (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
-                   "x = 1"))))
+                                  (emjupy-save-notebook)
+                                  (emjupy-int--retype "x = 2  # not saved")
+                                  (emjupy-revert-to-checkpoint)
+                                  (should (equal (emjupy-cell-source
+                                                  (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+                                                 "x = 1"))))
 
 (ert-deftest emjupy-int-rename-save-as-and-duplicate ()
   "Rename, save as and duplicate a notebook, as JupyterLab does."
   (emjupy-int--with-file-notebook "y = 1"
-    (let ((renamed (concat "renamed-" path))
-          (other (concat "other-" path)))
-      ;; rename: the file moves, the buffer follows, saving writes there
-      (emjupy-rename-notebook renamed)
-      (should-not (emjupy--http-exists-p emjupy--current-server path))
-      (should (emjupy--http-exists-p emjupy--current-server renamed))
-      (emjupy-int--retype "y = 2")
-      (emjupy-save-notebook)
-      (should (equal (emjupy-int--saved-source renamed) "y = 2"))
-      ;; save as: a new file, the old one as it was
-      (emjupy-int--retype "y = 3")
-      (emjupy-save-notebook-as other)
-      (should (equal (emjupy-int--saved-source other) "y = 3"))
-      (should (equal (emjupy-int--saved-source renamed) "y = 2"))
-      (should (equal (emjupy-notebook-path (emjupy--notebook)) other))
-      ;; duplicate: a copy beside it, opened in a buffer of its own
-      (let ((copy (emjupy-duplicate-notebook))
-            (copy-path nil))
-        (unwind-protect
-            (with-current-buffer copy
-              (setq copy-path (emjupy-notebook-path (emjupy--notebook)))
-              (should-not (equal copy-path other))
-              (should (equal (emjupy-cell-source
-                              (aref (emjupy-notebook-cells (emjupy--notebook))
-                                    0))
-                             "y = 3")))
-          (kill-buffer copy)
-          ;; what it made goes: a run after would trip on it
-          (dolist (made (list renamed other copy-path))
-            (when made
-              (ignore-errors
-                (emjupy--http-request "DELETE" emjupy--current-server
-                                      (emjupy--contents-path made))))))))))
+                                  (let ((renamed (concat "renamed-" path))
+                                        (other (concat "other-" path)))
+                                    ;; rename: the file moves, the buffer follows, saving writes there
+                                    (emjupy-rename-notebook renamed)
+                                    (should-not (emjupy--http-exists-p emjupy--current-server path))
+                                    (should (emjupy--http-exists-p emjupy--current-server renamed))
+                                    (emjupy-int--retype "y = 2")
+                                    (emjupy-save-notebook)
+                                    (should (equal (emjupy-int--saved-source renamed) "y = 2"))
+                                    ;; save as: a new file, the old one as it was
+                                    (emjupy-int--retype "y = 3")
+                                    (emjupy-save-notebook-as other)
+                                    (should (equal (emjupy-int--saved-source other) "y = 3"))
+                                    (should (equal (emjupy-int--saved-source renamed) "y = 2"))
+                                    (should (equal (emjupy-notebook-path (emjupy--notebook)) other))
+                                    ;; duplicate: a copy beside it, opened in a buffer of its own
+                                    (let ((copy (emjupy-duplicate-notebook))
+                                          (copy-path nil))
+                                      (unwind-protect
+                                          (with-current-buffer copy
+                                            (setq copy-path (emjupy-notebook-path (emjupy--notebook)))
+                                            (should-not (equal copy-path other))
+                                            (should (equal (emjupy-cell-source
+                                                            (aref (emjupy-notebook-cells (emjupy--notebook))
+                                                                  0))
+                                                           "y = 3")))
+                                        (kill-buffer copy)
+                                        ;; what it made goes: a run after would trip on it
+                                        (dolist (made (list renamed other copy-path))
+                                          (when made
+                                            (ignore-errors
+                                              (emjupy--http-request "DELETE" emjupy--current-server
+                                                                    (emjupy--contents-path made))))))))))
 
 (ert-deftest emjupy-int-a-cell-shows-how-long-it-ran ()
   "A cell run shows how long it took beside its count, kept as JupyterLab
 keeps it: under \"execution\" in the saved notebook."
   (emjupy-int--with-file-notebook "import time; time.sleep(0.4)"
-    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
-      (emjupy--spawn-and-connect-kernel (emjupy--notebook))
-      (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-execute-cell-at-point)
-      (should (emjupy-int--pump
-               30 (lambda () (numberp (emjupy-cell-exec-count cell)))))
-      (emjupy-int--pump 0.5)
-      (let ((seconds (emjupy--cell-execution-seconds cell)))
-        (should (and seconds (< 0.35 seconds 3))))
-      (should (string-match-p "\\] [0-9.]+ m?s python"
-                              (emjupy--overlay-header
-                               (emjupy-cell-overlay cell))))
-      (emjupy-save-notebook)
-      (let* ((model (emjupy--http-request "GET" emjupy--current-server
-                                          (emjupy--contents-path path)))
-             (saved (aref (gethash "cells" (gethash "content" model)) 0)))
-        (should (gethash "shell.execute_reply"
-                         (gethash "execution" (gethash "metadata" saved))))))))
+                                  (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+                                    (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+                                    (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+                                    (emjupy--goto-cell cell 'beginning)
+                                    (emjupy-execute-cell-at-point)
+                                    (should (emjupy-int--pump
+                                             30 (lambda () (numberp (emjupy-cell-exec-count cell)))))
+                                    (emjupy-int--pump 0.5)
+                                    (let ((seconds (emjupy--cell-execution-seconds cell)))
+                                      (should (and seconds (< 0.35 seconds 3))))
+                                    (should (string-match-p "\\] [0-9.]+ m?s python"
+                                                            (emjupy--overlay-header
+                                                             (emjupy-cell-overlay cell))))
+                                    (emjupy-save-notebook)
+                                    (let* ((model (emjupy--http-request "GET" emjupy--current-server
+                                                                        (emjupy--contents-path path)))
+                                           (saved (aref (gethash "cells" (gethash "content" model)) 0)))
+                                      (should (gethash "shell.execute_reply"
+                                                       (gethash "execution" (gethash "metadata" saved))))))))
 
 (ert-deftest emjupy-int-the-debugger-stops-steps-and-shows ()
   "A breakpoint stops the cell there; variables, evaluation, stepping work.
@@ -1686,44 +1686,44 @@ JupyterLab's debugger, through the kernel: the cell's line marked, its
 variables and an expression read in the frame, a step, and on to the
 end of the cell."
   (emjupy-int--with-file-notebook "a = 1\nb = a + 1\nc = b * 3\nprint(c)"
-    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
-          (said nil))
-      (emjupy--spawn-and-connect-kernel (emjupy--notebook))
-      (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
-      (emjupy-debug-mode 1)
-      (unwind-protect
-          (progn
-            (emjupy--goto-cell cell 'beginning)
-            (forward-line 2)
-            (emjupy-debug-toggle-breakpoint)
-            (emjupy--goto-cell cell 'beginning)
-            (emjupy-execute-cell-at-point)
-            (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
-            (should (equal (string-trim
-                            (buffer-substring
-                             (overlay-start emjupy--debug-arrow)
-                             (overlay-end emjupy--debug-arrow)))
-                           "c = b * 3"))
-            (emjupy-debug-variables)
-            (with-current-buffer "*emjupy variables*"
-              (should (string-match-p "a = 1" (buffer-string)))
-              (should (string-match-p "b = 2" (buffer-string))))
-            (cl-letf (((symbol-function 'message)
-                       (lambda (fmt &rest args)
-                         (push (apply #'format fmt args) said))))
-              (emjupy-debug-evaluate "b*10"))
-            (should (equal (car said) "20"))
-            (emjupy-debug-next)
-            (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
-            (should (string-match-p "print(c)"
-                                    (buffer-substring
-                                     (overlay-start emjupy--debug-arrow)
-                                     (overlay-end emjupy--debug-arrow))))
-            (emjupy-debug-continue)
-            (should (emjupy-int--pump
-                     20 (lambda () (numberp (emjupy-cell-exec-count cell)))))
-            (should (equal (string-trim (emjupy-int--stdout cell)) "6")))
-        (emjupy-debug-mode -1)))))
+                                  (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+                                        (said nil))
+                                    (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+                                    (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+                                    (emjupy-debug-mode 1)
+                                    (unwind-protect
+                                        (progn
+                                          (emjupy--goto-cell cell 'beginning)
+                                          (forward-line 2)
+                                          (emjupy-debug-toggle-breakpoint)
+                                          (emjupy--goto-cell cell 'beginning)
+                                          (emjupy-execute-cell-at-point)
+                                          (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
+                                          (should (equal (string-trim
+                                                          (buffer-substring
+                                                           (overlay-start emjupy--debug-arrow)
+                                                           (overlay-end emjupy--debug-arrow)))
+                                                         "c = b * 3"))
+                                          (emjupy-debug-variables)
+                                          (with-current-buffer "*emjupy variables*"
+                                            (should (string-match-p "a = 1" (buffer-string)))
+                                            (should (string-match-p "b = 2" (buffer-string))))
+                                          (cl-letf (((symbol-function 'message)
+                                                     (lambda (fmt &rest args)
+                                                       (push (apply #'format fmt args) said))))
+                                            (emjupy-debug-evaluate "b*10"))
+                                          (should (equal (car said) "20"))
+                                          (emjupy-debug-next)
+                                          (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
+                                          (should (string-match-p "print(c)"
+                                                                  (buffer-substring
+                                                                   (overlay-start emjupy--debug-arrow)
+                                                                   (overlay-end emjupy--debug-arrow))))
+                                          (emjupy-debug-continue)
+                                          (should (emjupy-int--pump
+                                                   20 (lambda () (numberp (emjupy-cell-exec-count cell)))))
+                                          (should (equal (string-trim (emjupy-int--stdout cell)) "6")))
+                                      (emjupy-debug-mode -1)))))
 
 (defun emjupy-int--debug-start (cell)
   "Start debugging this notebook's kernel, CELL's notebook, once it is up."
@@ -1744,123 +1744,123 @@ end of the cell."
 (ert-deftest emjupy-int-the-debugger-stops-only-when-the-condition-holds ()
   "A breakpoint with a condition stops only when it is true."
   (emjupy-int--with-file-notebook
-      "total = 0\nfor i in range(5):\n    total += i\nprint(total)"
-    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
-      (emjupy-int--debug-start cell)
-      (unwind-protect
-          (progn
-            (emjupy--goto-cell cell 'beginning)
-            (forward-line 2)
-            (emjupy-debug-toggle-breakpoint "i == 3")
-            (emjupy-execute-cell-at-point)
-            (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
-            (should (equal (car (emjupy-int--debug-said
-                                 (lambda () (emjupy-debug-evaluate "i"))))
-                           "3"))
-            (emjupy-debug-continue)
-            (should (emjupy-int--pump
-                     20 (lambda () (numberp (emjupy-cell-exec-count cell)))))
-            (should (equal (string-trim (emjupy-int--stdout cell)) "10")))
-        (emjupy-debug-mode -1)))))
+   "total = 0\nfor i in range(5):\n    total += i\nprint(total)"
+   (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0)))
+     (emjupy-int--debug-start cell)
+     (unwind-protect
+         (progn
+           (emjupy--goto-cell cell 'beginning)
+           (forward-line 2)
+           (emjupy-debug-toggle-breakpoint "i == 3")
+           (emjupy-execute-cell-at-point)
+           (should (emjupy-int--pump 20 (lambda () emjupy--debug-arrow)))
+           (should (equal (car (emjupy-int--debug-said
+                                (lambda () (emjupy-debug-evaluate "i"))))
+                          "3"))
+           (emjupy-debug-continue)
+           (should (emjupy-int--pump
+                    20 (lambda () (numberp (emjupy-cell-exec-count cell)))))
+           (should (equal (string-trim (emjupy-int--stdout cell)) "10")))
+       (emjupy-debug-mode -1)))))
 
 (ert-deftest emjupy-int-the-debugger-on-an-exception-frames-and-nesting ()
   "Stopped on a raised exception: its message said; the outer frame chosen,
 its variable evaluated there and what that variable holds shown."
   (emjupy-int--with-file-notebook
-      "def inner(d):\n    raise ValueError('boom')\ndef outer():\n    data = {'a': {'b': 1}}\n    inner(data)\nouter()"
-    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
-          (said nil))
-      (emjupy-int--debug-start cell)
-      (unwind-protect
-          (progn
-            (emjupy-debug-break-on-exceptions '("raised"))
-            (emjupy--goto-cell cell 'beginning)
-            (setq said (emjupy-int--debug-said
-                        (lambda ()
-                          (emjupy-execute-cell-at-point)
-                          (emjupy-int--pump 20 (lambda () emjupy--debug-arrow))
-                          (emjupy-int--pump 1))))
-            (should emjupy--debug-arrow)
-            (should (seq-some (lambda (m) (string-match-p "exception: boom" m))
-                              said))
-            (let ((outer (seq-find (lambda (f)
-                                     (equal (gethash "name" f) "outer"))
-                                   emjupy--debug-frames)))
-              (should outer)
-              (emjupy-debug-frame outer))
-            (should (equal (car (emjupy-int--debug-said
-                                 (lambda () (emjupy-debug-evaluate "data"))))
-                           "{'a': {'b': 1}}"))
-            (cl-letf (((symbol-function 'display-buffer) #'ignore))
-              (emjupy-debug-variables))
-            (with-current-buffer "*emjupy variables*"
-              (goto-char (point-min))
-              (search-forward "+ data = ")
-              (button-activate (button-at (match-beginning 0)))
-              (should (string-match-p "'a' = {'b': 1}" (buffer-string))))
-            (emjupy-debug-continue))
-        (emjupy-debug-mode -1)))))
+   "def inner(d):\n    raise ValueError('boom')\ndef outer():\n    data = {'a': {'b': 1}}\n    inner(data)\nouter()"
+   (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+         (said nil))
+     (emjupy-int--debug-start cell)
+     (unwind-protect
+         (progn
+           (emjupy-debug-break-on-exceptions '("raised"))
+           (emjupy--goto-cell cell 'beginning)
+           (setq said (emjupy-int--debug-said
+                       (lambda ()
+                         (emjupy-execute-cell-at-point)
+                         (emjupy-int--pump 20 (lambda () emjupy--debug-arrow))
+                         (emjupy-int--pump 1))))
+           (should emjupy--debug-arrow)
+           (should (seq-some (lambda (m) (string-match-p "exception: boom" m))
+                             said))
+           (let ((outer (seq-find (lambda (f)
+                                    (equal (gethash "name" f) "outer"))
+                                  emjupy--debug-frames)))
+             (should outer)
+             (emjupy-debug-frame outer))
+           (should (equal (car (emjupy-int--debug-said
+                                (lambda () (emjupy-debug-evaluate "data"))))
+                          "{'a': {'b': 1}}"))
+           (cl-letf (((symbol-function 'display-buffer) #'ignore))
+             (emjupy-debug-variables))
+           (with-current-buffer "*emjupy variables*"
+             (goto-char (point-min))
+             (search-forward "+ data = ")
+             (button-activate (button-at (match-beginning 0)))
+             (should (string-match-p "'a' = {'b': 1}" (buffer-string))))
+           (emjupy-debug-continue))
+       (emjupy-debug-mode -1)))))
 
 (ert-deftest emjupy-int-the-mode-line-follows-the-kernel ()
   "The mode line shows the server's port, and the kernel busy, then idle."
   (emjupy-int--with-file-notebook "import time; time.sleep(1.5)"
-    (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
-          (port (plist-get (emjupy--server-parts emjupy--current-server)
-                           :port)))
-      (emjupy--spawn-and-connect-kernel (emjupy--notebook))
-      (should (emjupy-int--pump
-               60 (lambda () (string-match-p "idle"
-                                             (emjupy--mode-line-status)))))
-      (should (string-match-p (format ":%s\\]" port)
-                              (emjupy--mode-line-status)))
-      (emjupy--goto-cell cell 'beginning)
-      (emjupy-execute-cell-at-point)
-      (should (emjupy-int--pump
-               10 (lambda () (string-match-p "busy"
-                                             (emjupy--mode-line-status)))))
-      (should (emjupy-int--pump
-               20 (lambda () (string-match-p "idle"
-                                             (emjupy--mode-line-status))))))))
+                                  (let ((cell (aref (emjupy-notebook-cells (emjupy--notebook)) 0))
+                                        (port (plist-get (emjupy--server-parts emjupy--current-server)
+                                                         :port)))
+                                    (emjupy--spawn-and-connect-kernel (emjupy--notebook))
+                                    (should (emjupy-int--pump
+                                             60 (lambda () (string-match-p "idle"
+                                                                           (emjupy--mode-line-status)))))
+                                    (should (string-match-p (format ":%s\\]" port)
+                                                            (emjupy--mode-line-status)))
+                                    (emjupy--goto-cell cell 'beginning)
+                                    (emjupy-execute-cell-at-point)
+                                    (should (emjupy-int--pump
+                                             10 (lambda () (string-match-p "busy"
+                                                                           (emjupy--mode-line-status)))))
+                                    (should (emjupy-int--pump
+                                             20 (lambda () (string-match-p "idle"
+                                                                           (emjupy--mode-line-status))))))))
 
 (ert-deftest emjupy-int-restart-run-all-a-region-and-shutting-down ()
   "Restart and run all: a fresh kernel runs every cell.  A region runs its
 cells.  Shut down, the server has the kernel no more."
   (emjupy-int--with-file-notebook "x = 41"
-    (let* ((nb (emjupy--notebook)) (cells nil))
-      (emjupy-insert-cell-below)
-      (insert "print(x + 1)")
-      (emjupy--sync-all-cells)
-      (setq cells (emjupy-notebook-cells nb))
-      (emjupy--spawn-and-connect-kernel nb)
-      (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
-      (cl-flet ((done ()
-                  (cl-every (lambda (c) (numberp (emjupy-cell-exec-count c)))
-                            cells)))
-        ;; a region over both
-        (let ((transient-mark-mode t))
-          (emjupy--goto-cell (aref cells 0) 'beginning)
-          (push-mark (point) t t)
-          (emjupy--goto-cell (aref cells 1) 'end)
-          (emjupy-execute-cell-at-point))
-        (should (emjupy-int--pump 30 #'done))
-        (should (equal (string-trim (emjupy-int--stdout (aref cells 1))) "42"))
-        ;; restart and run all: a fresh kernel counts from 1 again, where
-        ;; the old one would go on at 3
-        (dolist (c (append cells nil)) (setf (emjupy-cell-exec-count c) nil))
-        (emjupy-restart-kernel-and-run-all)
-        (should (emjupy-int--pump 60 #'done))
-        (should (equal (mapcar #'emjupy-cell-exec-count (append cells nil))
-                       '(1 2)))
-        (should (equal (string-trim (emjupy-int--stdout (aref cells 1))) "42")))
-      (let ((kernel-id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
-        (emjupy-shutdown-kernel)
-        (should-not (emjupy-notebook-kernel nb))
-        (should-not (cl-find kernel-id
-                             (append (emjupy--http-request
-                                      "GET" emjupy--current-server "/api/kernels")
-                                     nil)
-                             :key (lambda (k) (gethash "id" k))
-                             :test #'equal))))))
+                                  (let* ((nb (emjupy--notebook)) (cells nil))
+                                    (emjupy-insert-cell-below)
+                                    (insert "print(x + 1)")
+                                    (emjupy--sync-all-cells)
+                                    (setq cells (emjupy-notebook-cells nb))
+                                    (emjupy--spawn-and-connect-kernel nb)
+                                    (should (emjupy-int--pump 60 (lambda () (emjupy--ws-live-p))))
+                                    (cl-flet ((done ()
+                                                (cl-every (lambda (c) (numberp (emjupy-cell-exec-count c)))
+                                                          cells)))
+                                      ;; a region over both
+                                      (let ((transient-mark-mode t))
+                                        (emjupy--goto-cell (aref cells 0) 'beginning)
+                                        (push-mark (point) t t)
+                                        (emjupy--goto-cell (aref cells 1) 'end)
+                                        (emjupy-execute-cell-at-point))
+                                      (should (emjupy-int--pump 30 #'done))
+                                      (should (equal (string-trim (emjupy-int--stdout (aref cells 1))) "42"))
+                                      ;; restart and run all: a fresh kernel counts from 1 again, where
+                                      ;; the old one would go on at 3
+                                      (dolist (c (append cells nil)) (setf (emjupy-cell-exec-count c) nil))
+                                      (emjupy-restart-kernel-and-run-all)
+                                      (should (emjupy-int--pump 60 #'done))
+                                      (should (equal (mapcar #'emjupy-cell-exec-count (append cells nil))
+                                                     '(1 2)))
+                                      (should (equal (string-trim (emjupy-int--stdout (aref cells 1))) "42")))
+                                    (let ((kernel-id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
+                                      (emjupy-shutdown-kernel)
+                                      (should-not (emjupy-notebook-kernel nb))
+                                      (should-not (cl-find kernel-id
+                                                           (append (emjupy--http-request
+                                                                    "GET" emjupy--current-server "/api/kernels")
+                                                                   nil)
+                                                           :key (lambda (k) (gethash "id" k))
+                                                           :test #'equal))))))
 
 (ert-deftest emjupy-int-a-notebook-gets-the-kernel-it-records ()
   "A notebook recording a kernelspec the server has gets a kernel of it, as
@@ -1874,19 +1874,19 @@ the server says; one recording a kernel it lacks gets python3."
     (dolist (case (append (and other (list (cons other other)))
                           (list (cons "no-such-kernel" "python3"))))
       (emjupy-int--with-file-notebook "x = 1"
-        (let ((nb (emjupy--notebook)))
-          (setf (emjupy-notebook-metadata nb)
-                (emjupy--json-object "kernelspec"
-                                     (emjupy--json-object "name" (car case))))
-          (cl-letf (((symbol-function 'message) #'ignore))
-            (emjupy--spawn-and-connect-kernel nb))
-          (let ((id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
-            (should (equal (gethash "name"
-                                    (emjupy--http-request
-                                     "GET" emjupy--current-server
-                                     (format "/api/kernels/%s" id)))
-                           (cdr case))))
-          (emjupy-shutdown-kernel))))))
+                                      (let ((nb (emjupy--notebook)))
+                                        (setf (emjupy-notebook-metadata nb)
+                                              (emjupy--json-object "kernelspec"
+                                                                   (emjupy--json-object "name" (car case))))
+                                        (cl-letf (((symbol-function 'message) #'ignore))
+                                          (emjupy--spawn-and-connect-kernel nb))
+                                        (let ((id (emjupy-kernel-id (emjupy-notebook-kernel nb))))
+                                          (should (equal (gethash "name"
+                                                                  (emjupy--http-request
+                                                                   "GET" emjupy--current-server
+                                                                   (format "/api/kernels/%s" id)))
+                                                         (cdr case))))
+                                        (emjupy-shutdown-kernel))))))
 
 (ert-deftest emjupy-int-language-support-off-does-not-warm-up-on-opening ()
   "Opening a notebook with `emjupy-language-support' nil starts no language support.
@@ -2110,13 +2110,13 @@ handled: the cells running on it are ended."
 Not a hang, and not a silent success: the edits are not on the server,
 and the user must be told."
   (emjupy-int--through-proxy
-    (emjupy-int--with-live-kernel
-     (emjupy-int--proxy-say "stall")
-     (with-current-buffer emjupy-int--buffer
-       (let ((t0 (float-time)))
-         (should-error (emjupy-save-notebook))
-         (should (< (- (float-time) t0) 15))))
-     (emjupy-int--proxy-say "reset"))))
+   (emjupy-int--with-live-kernel
+    (emjupy-int--proxy-say "stall")
+    (with-current-buffer emjupy-int--buffer
+      (let ((t0 (float-time)))
+        (should-error (emjupy-save-notebook))
+        (should (< (- (float-time) t0) 15))))
+    (emjupy-int--proxy-say "reset"))))
 
 (ert-deftest emjupy-int-plotly-figure-opens-with-the-kernels-plotly-js ()
   "A plotly figure shows as a line, and opens as a page that draws it.

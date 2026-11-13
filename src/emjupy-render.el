@@ -733,10 +733,10 @@ it, with ends of its own so that it does not look like an empty box."
      glyph)
     (string-remove-suffix
      "\n" (emjupy--rule (format "%s %s, %d line%s of code hidden%s"
-                               glyph (emjupy--cell-label cell)
-                               lines (if (= lines 1) "" "s")
-                               (if (> outputs 0) ", and its output" ""))
-                       "╶"))))
+                                glyph (emjupy--cell-label cell)
+                                lines (if (= lines 1) "" "s")
+                                (if (> outputs 0) ", and its output" ""))
+                        "╶"))))
 
 (defun emjupy--hidden-output-label (cell)
   "Return the label shown on CELL's footer while its output is hidden.
@@ -1283,8 +1283,8 @@ same way: a separator, or padding, keeps point off the place before it,
 not the start of the cell after it."
   (add-text-properties start end
                        '(read-only emjupy
-                         front-sticky (read-only cursor-intangible)
-                         rear-nonsticky (read-only cursor-intangible))))
+                                   front-sticky (read-only cursor-intangible)
+                                   rear-nonsticky (read-only cursor-intangible))))
 
 (defun emjupy--make-intangible (pos)
   "Make POS cursor-intangible if it is a separator, a newline between cells.

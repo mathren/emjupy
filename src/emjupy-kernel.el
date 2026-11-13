@@ -1170,9 +1170,9 @@ came meanwhile to the same session."
                               (emjupy-kernel-name kernel)
                               (+ (float-time) emjupy-reconnect-window) label)))
       (emjupy--say buf "[emjupy] %s: kernel connection dropped; reconnecting%s..." label
-               (if cells (format ", %d running cell%s kept" (length cells)
-                                 (if (cdr cells) "s" ""))
-                 ""))))))
+                   (if cells (format ", %d running cell%s kept" (length cells)
+                                     (if (cdr cells) "s" ""))
+                     ""))))))
 
 (defun emjupy--run-waiting-cells (nb)
   "Run the cells of NB that were run while its connection was restored.
