@@ -1062,14 +1062,13 @@ is still folded where the box ends."
           ;; first output can be published before this connection hears
           ;; it, and this line, whose output nobody reads, takes that
           ;; place.  It goes with the cell, with no extra round trip.
-          (progn
-            (emjupy--kernel-eval
-             kernel
-             (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
-                     columns)
-             #'ignore)
-            (setq emjupy--kernel-width-told
-                  (cons (emjupy-kernel-id kernel) columns))))))))
+          (emjupy--kernel-eval
+           kernel
+           (format "import os as _emjupy_os; _emjupy_os.environ['COLUMNS'] = '%d'; del _emjupy_os"
+                   columns)
+           #'ignore)
+          (setq emjupy--kernel-width-told
+                (cons (emjupy-kernel-id kernel) columns)))))))
 
 (defun emjupy--ensure-kernel-width (nb)
   "Tell NB's kernel the box width, unless it already has this one."
@@ -1455,7 +1454,7 @@ so cells run in a row are synced once rather than once each."
       (user-error "This notebook has no kernel! Use %s to select or start one"
                   (substitute-command-keys "\\[emjupy-connect-kernel-interactive]")))
 
-    (let* ((cell (emjupy--cell-at-point)))
+    (let ((cell (emjupy--cell-at-point)))
       (unless cell
         (user-error "No cell found at point"))
 
@@ -1516,7 +1515,7 @@ stepping over overlays mid-flight lands in the output box."
     (cl-return-from emjupy-execute-cell-and-goto-next nil))
   (catch 'end
     (dotimes (i (max 1 (or n 1)))
-      (let* ((cell (emjupy--cell-at-point)))
+      (let ((cell (emjupy--cell-at-point)))
         (unless cell (user-error "Point is not in a cell"))
         (emjupy-execute-cell-at-point)
         (let* ((nb (emjupy--notebook))

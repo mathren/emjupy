@@ -568,7 +568,7 @@ kernel's path; every message passes through here, both ways."
   "Send a JSON-RPC message for SERVER over its WebSocket.
 ARGS carry ID, METHOD, PARAMS, RESULT and ERROR as jsonrpc defines them."
   (ignore args)
-  (let* ((msg (make-hash-table :test 'equal)))
+  (let ((msg (make-hash-table :test 'equal)))
     (puthash "jsonrpc" "2.0" msg)
     (when id (puthash "id" id msg))
     (when method

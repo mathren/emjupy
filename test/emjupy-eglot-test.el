@@ -862,8 +862,8 @@ machine\"."
                                 (error-message-string err))))
       ;; a file that IS here is opened, not refused: the kernel may be local
       ;; or the directory shared
-      (let* ((here (expand-file-name "emjupy-here.py"
-                                     temporary-file-directory)))
+      (let ((here (expand-file-name "emjupy-here.py"
+                                    temporary-file-directory)))
         (unwind-protect
             (progn
               (write-region "x = 1\n" nil here nil 'silent)

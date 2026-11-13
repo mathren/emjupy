@@ -346,11 +346,11 @@ Evaluation and the variables buffer then use this frame."
   (interactive
    (progn
      (unless emjupy--debug-frames (user-error "The debugger is not stopped"))
-     (let* ((names (mapcar (lambda (f)
-                             (cons (format "%s, line %d" (gethash "name" f)
-                                           (gethash "line" f))
-                                   f))
-                           emjupy--debug-frames)))
+     (let ((names (mapcar (lambda (f)
+                            (cons (format "%s, line %d" (gethash "name" f)
+                                          (gethash "line" f))
+                                  f))
+                          emjupy--debug-frames)))
        (list (cdr (assoc (completing-read "Frame: " names nil t) names))))))
   (setcdr emjupy--debug-stopped (gethash "id" frame))
   (emjupy--debug-show frame))

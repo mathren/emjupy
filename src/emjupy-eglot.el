@@ -154,35 +154,34 @@ while the server is being asked, without waiting; this is called again
 once it answers, if the notebook is still open with its kernel
 connected.  Nothing attaches before the decision, so an ordinary Eglot
 cannot start first and win over the right server."
-  (progn
-    (unless (emjupy-notebook-lsp-route nb)
-      (let ((server (emjupy-notebook-server nb)))
-        (cond
-         ((emjupy--language-server-here-only-p)
-          (emjupy--lsp-fall-back nb "emjupy-language-support is local"))
-         ((null server)
-          (emjupy--lsp-fall-back nb "the notebook has no server"))
-         (t
-          (pcase (emjupy--server-lsp-answer server)
-            ('yes (setf (emjupy-notebook-lsp-route nb) 'socket
-                        (emjupy-notebook-lsp-reason nb)
-                        (format "the server has %s, through jupyter-lsp"
-                                emjupy-lsp-server)))
-            ('no (emjupy--lsp-fall-back
-                  nb (format "the server offers no %s through jupyter-lsp"
-                             emjupy-lsp-server)))
-            ('unanswered (emjupy--lsp-fall-back
-                          nb "the server did not say whether it has one"))
-            (_ (emjupy--ask-server-lsp
-                server
-                (lambda ()
-                  (let ((buf (emjupy-notebook-buffer nb)))
-                    ;; Skip a notebook closed meanwhile: attaching to it
-                    ;; would leave Eglot waiting 30 s for nothing.
-                    (when (and (buffer-live-p buf)
-                               (with-current-buffer buf (emjupy--ws-live-p)))
-                      (emjupy-start-language-support nb)))))))))))
-    (emjupy-notebook-lsp-route nb)))
+  (unless (emjupy-notebook-lsp-route nb)
+    (let ((server (emjupy-notebook-server nb)))
+      (cond
+       ((emjupy--language-server-here-only-p)
+        (emjupy--lsp-fall-back nb "emjupy-language-support is local"))
+       ((null server)
+        (emjupy--lsp-fall-back nb "the notebook has no server"))
+       (t
+        (pcase (emjupy--server-lsp-answer server)
+          ('yes (setf (emjupy-notebook-lsp-route nb) 'socket
+                      (emjupy-notebook-lsp-reason nb)
+                      (format "the server has %s, through jupyter-lsp"
+                              emjupy-lsp-server)))
+          ('no (emjupy--lsp-fall-back
+                nb (format "the server offers no %s through jupyter-lsp"
+                           emjupy-lsp-server)))
+          ('unanswered (emjupy--lsp-fall-back
+                        nb "the server did not say whether it has one"))
+          (_ (emjupy--ask-server-lsp
+              server
+              (lambda ()
+                (let ((buf (emjupy-notebook-buffer nb)))
+                  ;; Skip a notebook closed meanwhile: attaching to it
+                  ;; would leave Eglot waiting 30 s for nothing.
+                  (when (and (buffer-live-p buf)
+                             (with-current-buffer buf (emjupy--ws-live-p)))
+                    (emjupy-start-language-support nb)))))))))))
+  (emjupy-notebook-lsp-route nb))
 
 (defun emjupy--eglot-server-description (server)
   "Describe SERVER, an Eglot server: what it is, how reached, and if ready."

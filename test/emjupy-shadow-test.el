@@ -337,7 +337,7 @@ temp directory does the same job without inventing directories."
           (emjupy-shadow-beside-notebook t))
       ;; with the socket attaching, neither remote nor a local look-alike
       (setf (emjupy-notebook-lsp-route nb) 'socket)
-      (let* ((dir (emjupy--shadow-directory-for nb)))
+      (let ((dir (emjupy--shadow-directory-for nb)))
         (should-not (file-remote-p dir))
         (should-not (string-match-p "somewhere-else" dir))
         (should (string-prefix-p (emjupy--shadow-temporary-directory) dir)))

@@ -312,7 +312,7 @@ compatible with standard .ipynb for non-emacs users."
    (emjupy-int--run "print('saved output')")
    (with-current-buffer emjupy-int--buffer
      (emjupy-save-notebook))
-   (let* ((py (or (executable-find "python3") (executable-find "python"))))
+   (let ((py (or (executable-find "python3") (executable-find "python"))))
      (unless py (ert-skip "No python on PATH to validate with"))
      (let* ((path (expand-file-name emjupy-int--notebook
                                     (or (getenv "EMJUPY_TEST_ROOT")
@@ -2274,7 +2274,7 @@ Built from ipywidgets' own list, so a widget it adds is checked the day
 it appears: drawn, if its state has a shape a rule knows, else named
 here as an exception.  The one exception: a gamepad, shown by name."
   (emjupy-int--with-live-kernel
-   (let* ((cell (emjupy-int--run "import ipywidgets as w, inspect
+   (let ((cell (emjupy-int--run "import ipywidgets as w, inspect
 ws = []
 for n, c in inspect.getmembers(w, inspect.isclass):
     if issubclass(c, w.DOMWidget) and c is not w.DOMWidget and not n.startswith(('Layout', 'Style')):

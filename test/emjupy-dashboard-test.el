@@ -173,7 +173,7 @@ read-only copy -- which needs no configuration and always works."
 
 Read back from the row rather than re-fetched: the dashboard already
 asked the server once."
-  (let* ((item (make-hash-table :test 'equal)))
+  (let ((item (make-hash-table :test 'equal)))
     (puthash "type" "notebook" item)
     (puthash "name" "a.ipynb" item)
     (puthash "path" "a.ipynb" item)

@@ -265,7 +265,7 @@ reverse, would silently reinterpret one of them."
                (idx (cl-position cell cells)))
           (when (zerop idx)
             (user-error "No cell above this one"))
-          (let* ((above (nth (1- idx) cells)))
+          (let ((above (nth (1- idx) cells)))
             (unless (eq (emjupy-cell-type above) (emjupy-cell-type cell))
               (user-error "Cannot merge a %s cell into a %s cell"
                           (emjupy-cell-type cell) (emjupy-cell-type above)))

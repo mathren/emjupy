@@ -79,12 +79,11 @@ as a source block with no language had."
   "Read contents of FILE to string"
   (with-temp-buffer (insert-file-contents file) (buffer-string)))
 ;; Dynamically make footer with pointers to previous and next page
-(defun mr/get-html-link (org-file publishing-directory)
-  "Convert ORG-FILE to the corresponding HTML file in PUBLISHING-DIRECTORY."
+(defun mr/get-html-link (org-file)
+  "Return the name of the HTML page ORG-FILE is published as, or nil.
+The name is relative, as a link between pages of the site."
   (when org-file
-    (let* ((file-name (file-name-sans-extension org-file))
-           (html-file (concat file-name ".html")))
-      html-file)))
+    (concat (file-name-sans-extension org-file) ".html")))
 
 (defun mr/read-navigation-keywords ()
   "Read the keywords #+PREVIOUS_PAGE and #+NEXT_PAGE from the current Org file.
@@ -103,14 +102,13 @@ Return them as two values: previous-page and next-page."
 (defconst mr/site-html-preamble
   (mr/read-file "html-content/html-templates/preamble.html"))
 
-(defun mr/site-html-postamble (info)
+(defun mr/site-html-postamble (_info)
   "Generate a dynamic HTML footer for the Org export.
 Substitute placeholders PREVIOUS_PAGE and NEXT_PAGE with corresponding links.
-INFO is the export plist."
-  (let* ((publishing-directory (plist-get info :publishing-directory))
-         (nav (mr/read-navigation-keywords))
-         (previous-page (mr/get-html-link (car nav) publishing-directory))
-         (next-page (mr/get-html-link (cadr nav) publishing-directory))
+Org passes the export plist, which is not needed."
+  (let* ((nav (mr/read-navigation-keywords))
+         (previous-page (mr/get-html-link (car nav)))
+         (next-page (mr/get-html-link (cadr nav)))
          (footer-template
           (mr/read-file "../html-content/html-templates/postamble.html"))
          (emjupy-version
@@ -148,7 +146,7 @@ INFO is the export plist."
             (setq mr/id-counter 0)
             (setq mr/drawer-counter 0)))
 
-(defun mr/format-drawer-html (drawer contents info)
+(defun mr/format-drawer-html (drawer contents _info)
   "Export DRAWER as a collapsible HTML element."
   (let* ((drawer-name (org-element-property :drawer-name drawer))
          (drawer-id (format "drawer-%s-%d"

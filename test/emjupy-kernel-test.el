@@ -368,10 +368,10 @@ to /api/kernels directly would leave the kernel in the server root."
          (got nil))
     (emjupy-test--with-notebook (vector cell) buf nb
       (with-current-buffer buf
-        (let* ((kernel (make-emjupy-kernel
-                        :id "k" :name "python3"
-                        :pending (make-hash-table :test 'equal)
-                        :notebook emjupy--buffer-notebook)))
+        (let ((kernel (make-emjupy-kernel
+                       :id "k" :name "python3"
+                       :pending (make-hash-table :test 'equal)
+                       :notebook emjupy--buffer-notebook)))
           (clrhash emjupy--internal-requests)
           (puthash "mid" (cons (lambda (out) (setq got out)) nil)
                    emjupy--internal-requests)
