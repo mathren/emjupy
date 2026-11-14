@@ -17,21 +17,22 @@ of one cell:
 | a cell's type is changed (=C-c C-t=)       | cursors collapse to the start |
 | =M-x emjupy-re-render=                     | cursors collapse to the start |
 
-Rendering a markdown cell and undoing a structural change redraw the
-whole notebook too.  To edit across cells, =C-c '= opens every code cell
-in one Python buffer, where multiple cursors and every other tool work;
-=C-c C-c= there writes the changes back.
+Rendering a markdown cell redraws the whole notebook, and so does
+undoing a structural change.  To edit across cells, =C-c '= opens every
+code cell in one Python buffer, where multiple cursors and every other
+tool work.  =C-c C-c= there writes the changes back.
 
 * A kernel that dies mid-cell leaves the cell running
 
-A kernel dying while a cell runs -- out of memory, or the code exiting
--- is restarted by the server, which tells the notebook's connection
-nothing: the cell goes on showing as running.  =C-c C-x C-c= reconnects
-to the new kernel and ends the run; the dead kernel's variables are gone.
-A dropped connection, by contrast, is noticed: its running cells are
-kept, and get what they printed once it is back.  A kernel shut down or
-culled, its connection left open, is noticed too, after
-=emjupy-kernel-check-interval= seconds (30) with nothing from it.
+When a kernel dies while a cell runs (out of memory, or the code exits),
+the server restarts it and tells the notebook's connection nothing.  The
+cell goes on showing as running.  =C-c C-x C-c= reconnects to the new
+kernel and ends the run.  The dead kernel's variables are gone.  By
+contrast, emjupy notices a dropped connection: it keeps the running
+cells, and they get what they printed once the connection is back.  It
+also notices a kernel that is shut down or culled while its connection
+stays open, after =emjupy-kernel-check-interval= seconds (30) without a
+message.
 
 * Language features need the language server beside the kernel
 
@@ -42,9 +43,9 @@ For a kernel elsewhere, completion of and =M-.= into your own code need
 * Rich output: what is drawn in the buffer
 
 The buffer shows plain text, images (PNG, JPEG, GIF, SVG) and widget
-controls; a figure drawing itself in JavaScript opens in a window of its
-own (see [[file:usage.org][Interactive output]]).  Anything else shows its plain-text
-fallback, which every Jupyter output carries:
+controls.  A figure that draws itself in JavaScript opens in a window of
+its own (see [[file:usage.org][Interactive output]]).  Anything else
+shows its plain-text fallback, which every Jupyter output carries:
 
 - HTML without a script -- a pandas =DataFrame= appears as its text table;
 - Markdown and LaTeX sent through =IPython.display= appear as source.
@@ -53,32 +54,35 @@ Images need a graphical Emacs; in a terminal they show as text too.
 
 * Widgets that draw themselves open in a page, with two gaps
 
-A widget drawn by its own JavaScript -- plotly's =FigureWidget=, a map --
-opens in a page in the figure window (see [[file:usage.org][Interactive output]]).  Not
-reaching it: what an =Output= widget inside it captures, drawn in the
-notebook instead; and, offline, the widget manager, unless
+A widget drawn by its own JavaScript, such as plotly's =FigureWidget= or
+a map, opens in a page in the figure window (see
+[[file:usage.org][Interactive output]]).  Two things do not reach that
+page.  What an =Output= widget inside it captures is drawn in the
+notebook instead.  Offline, the widget manager is missing, unless
 =emjupy-widget-scripts= names local copies.
 
 * Figures open in a window of their own, not inside Emacs
 
-A figure inside Emacs needs an xwidget, so Emacs built
+A figure inside Emacs needs an xwidget, so an Emacs built
 =--with-xwidgets=.  Emacs 30.1 refuses WebKitGTK 2.41.92 or newer, which
-current distributions ship (Ubuntu 24.04: 2.52), and rightly: built with
-the check lifted, against 2.52, it aborts as the figure opens.
-=emjupy-figure-viewer= can choose an xwidget, for a build known to work.
+current distributions ship (Ubuntu 24.04 has 2.52).  The refusal is
+justified: an Emacs built with the check lifted, against 2.52, aborts
+when the figure opens.  =emjupy-figure-viewer= can choose an xwidget,
+for a build known to work.
 
 * Python only
 
-Execution speaks the Jupyter protocol, whatever the kernel, so R or Julia
-may well run.  Nothing else is set up for them, untried: cells borrow
-=python-mode='s syntax and comment settings (=emjupy-language-mode=
-changes that), the language server reads a =.py= shadow document, and
-its settings are written for =python-lsp-server=.
+Execution speaks the Jupyter protocol, whatever the kernel, so R or
+Julia may well run.  Nothing else is set up for them, and they are
+untried.  Cells borrow =python-mode='s syntax and comment settings;
+=emjupy-language-mode= changes that.  The language server reads a =.py=
+shadow document, and its settings are written for =python-lsp-server=.
 
 * SSH logins with a password, for a notebook opened through TRAMP
 
-=emjupy-open-this-notebook= on a notebook through TRAMP runs ssh itself
-for the tunnel, with no terminal for a password: it needs a login
-without a prompt -- a key, in an agent if it has a passphrase.  One
-asking for a password fails, and emjupy says why and what to do.
-Handling a password, or reusing TRAMP's connection, is not done yet.
+=emjupy-open-this-notebook= on a notebook reached through TRAMP runs ssh
+itself for the tunnel, with no terminal for a password.  So it needs a
+login without a prompt: a key, held in an agent if it has a passphrase.
+A login that asks for a password fails, and emjupy says why and what to
+do.  Handling a password, or reusing TRAMP's connection, is not done
+yet.

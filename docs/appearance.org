@@ -34,9 +34,9 @@ background.  Only a cell's *output* gets a faint band, on the output
 overlay, so it goes with the outputs when they are cleared.
 
 =emjupy-output-color= sets the band.  Its default, ='auto=, blends the
-background =emjupy-output-blend= (8%) toward the foreground: darker on a
-light theme, lighter on a dark one, tinted by the theme, and following
-theme switches.
+background toward the foreground by =emjupy-output-blend= (8%).  The
+band is then darker on a light theme and lighter on a dark one.  It is
+tinted by the theme, and follows theme switches.
 
 #+begin_src elisp
 (setq emjupy-output-color "#f0f0f0")   ;; pin a colour
@@ -84,13 +84,14 @@ output background is aligned to.
 
 * Cell outlines
 
-=emjupy-box-width= sizes the rules: ='window=, the default, fits the
-window rather than a fixed 80 columns; an integer fixes the width;
+=emjupy-box-width= sizes the rules.  The default, ='window=, fits the
+window rather than a fixed 80 columns.  An integer fixes the width.
 =emjupy-box-min-width= (60) is the floor when fitting.  Rules follow the
-window -- splits, dragged mode lines, full screen -- so they do not wrap,
-unless the window is narrower than the floor.  Only overlay strings are
-rebuilt, so point, markers and undo are untouched.  Shown in two windows,
-the *narrower* wins, as a rule sized for the wide one would wrap in it.
+window through splits, dragged mode lines and full screen, so they do
+not wrap unless the window is narrower than the floor.  Only overlay
+strings are rebuilt, so point, markers and undo are untouched.  When the
+buffer shows in two windows, the *narrower* one wins, because a rule
+sized for the wide window would wrap in the narrow one.
 
 * Cell outline artifacts
 
@@ -101,13 +102,14 @@ them.
 
 * Line numbers
 
-With =display-line-numbers-mode=, numbers fall on the lines you write and
-on output, not the outlines: each rule is drawn as a continuation of the
-line above, and the empty line between cells is hidden.  Numbers are the
-buffer's own, skipping a value at a cell's end, and the rules narrow for
-the number column.  Exceptions: the first cell's header, with no line
-above, takes line 1's number, and the last cell's footer is on a numbered
-line at the buffer's end.
+With =display-line-numbers-mode=, numbers fall on the lines you write
+and on output, not on the outlines.  Each rule is drawn as a
+continuation of the line above it, and the empty line between cells is
+hidden.  The numbers are the buffer's own, so they skip one value at the
+end of each cell.  The rules narrow to make room for the number column.
+There are two exceptions.  The first cell's header has no line above it,
+and takes line 1's number.  The last cell's footer is on a numbered line
+at the end of the buffer.
 
 * LaTeX in markdown cells
 
@@ -118,10 +120,11 @@ one notebook; for all of them:
 (setq emjupy-render-latex t)
 #+end_src
 
-Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then shown
-*on screen* as an image -- inline for the first and third, displayed for
-the others, as in LaTeX.  The image is an overlay: the cell holds, and
-saves, the LaTeX written, and hovering shows the source.
+Math between =$...$=, =$$...$$=, =\\(...\\)= and =\\[...\\]= is then
+shown *on screen* as an image.  The first and third forms are inline,
+and the others are displayed, as in LaTeX.  The image is an overlay.
+The cell holds and saves the LaTeX as written, and hovering shows the
+source.
 
 org renders it, with Emacs, so only LaTeX is needed:
 
@@ -129,9 +132,9 @@ org renders it, with Emacs, so only LaTeX is needed:
 sudo apt install texlive-latex-base dvipng
 #+end_src
 
-=math-preview= is used if that is what is installed -- it works well, but
-needs nodejs and npm, so is not the default.  =emjupy-latex-backend=
-chooses explicitly.
+emjupy uses =math-preview= if that is what is installed.  It works well,
+but it needs nodejs and npm, so it is not the default.
+=emjupy-latex-backend= chooses explicitly.
 
 Formulae are drawn in the theme's foreground on a transparent background;
 =emjupy-latex-foreground= overrides the colour, =emjupy-latex-scale= the
@@ -142,19 +145,20 @@ which a small TeX install lacks.
 
 * Inline images need a graphical Emacs
 
-Images are drawn only where Emacs can display them
-(=display-graphic-p= *and* =image-type-available-p=): on a terminal frame
-or an image-less build (=emacs-nox=), =create-image= *signals*, and in a
-WebSocket callback that would leave the box blank.  So emjupy shows the
-output's =text/plain= instead, with a note saying why.
+Images are drawn only where Emacs can display them: =display-graphic-p=
+*and* =image-type-available-p=.  On a terminal frame, or in a build
+without images (=emacs-nox=), =create-image= *signals* an error.  In a
+WebSocket callback, that would leave the box blank.  So emjupy shows the
+output's =text/plain= instead, with a note that says why.
 
 Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
 =image/svg+xml=.
 
 * Duplicate figures
 
-A cell ending with a figure can receive it twice: as the
-=execute_result= repr and as the inline backend's =display_data=.  emjupy
-draws a repeat -- the same bytes; two sizes are two pictures -- once, at
-*render* time only: the cell's outputs and the saved =.ipynb= keep what
-the kernel sent.  =emjupy-deduplicate-image-outputs= =nil= draws both.
+A cell that ends with a figure can receive it twice: as the
+=execute_result= repr, and as the inline backend's =display_data=.
+emjupy draws such a repeat once.  A repeat means the same bytes: two
+sizes are two pictures.  emjupy does this at *render* time only: the
+cell's outputs and the saved =.ipynb= keep what the kernel sent.
+=emjupy-deduplicate-image-outputs= =nil= draws both.

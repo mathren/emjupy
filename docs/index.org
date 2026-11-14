@@ -2,17 +2,17 @@
 #+PREVIOUS_PAGE: limitations.org
 #+NEXT_PAGE:     usage.org
 
-=emjupy= edits and runs Jupyter notebooks in Emacs.  Plots and widgets
-can be shown inline or in an external window or browser (see
-[[file:usage.org::*Interactive output][Interactive output]]).  =emjupy= uses Emacs's own
-tools -- =eglot=, =xref=, =eldoc=, =tramp= -- with whatever completion setup
-you already have (=vertico=, =corfu=, =orderless= or anything else).
-Completion, documentation and =M-.= come through =eglot=, from a language
-server running beside the kernel.
+=emjupy= edits and runs Jupyter notebooks in Emacs.  It shows plots and
+widgets inline, or in an external window or browser (see
+[[file:usage.org::*Interactive output][Interactive output]]).  =emjupy=
+uses Emacs's own tools: =eglot=, =xref=, =eldoc= and =tramp=.  It works
+with whatever completion setup you already have (=vertico=, =corfu=,
+=orderless= or anything else).  Completion, documentation and =M-.= come
+through =eglot=, from a language server that runs beside the kernel.
 
 It talks to a running Jupyter server over the same HTTP and WebSocket
-API the browser uses, so a kernel on another machine works through an
-ssh tunnel, and the notebook stays a standard =.ipynb= that any other
+API that the browser uses.  So a kernel on another machine works through
+an ssh tunnel.  The notebook stays a standard =.ipynb= that any other
 Jupyter tool opens.
 
 * Try it with =emacs -Q=
@@ -22,10 +22,10 @@ Jupyter tool opens.
 [[file:images/quickstart.gif]]
 
 
-Without touching your own Emacs configuration.  The repository ships a
-small notebook, =test_notebooks/test.ipynb=, with a module beside it, so
-there is something real to run.  To test with your own notebooks, jump
-to step 4.
+This does not touch your own Emacs configuration.  The repository ships
+a small notebook, =test_notebooks/test.ipynb=, with a module next to it,
+so there is something real to run.  To test with your own notebooks,
+jump to step 4.
 
 1. *Get emjupy.*
    #+begin_src bash
@@ -51,8 +51,9 @@ to step 4.
      cd test_notebooks
      JUPYTER_TOKEN=abc jupyter server --no-browser --port=8888
    #+end_src
-   Or on another machine, the same way, in a copy of =test_notebooks/=
-   or any directory with notebooks, forwarding its port from this one:
+   Or start it on another machine, the same way, in a copy of
+   =test_notebooks/= or in any directory with notebooks.  Then forward
+   its port from this machine:
    #+begin_src bash
      ssh -N -L 8888:localhost:8888 <remote machine>
    #+end_src
@@ -143,10 +144,10 @@ Or with whichever package manager you already use -- each installs
             :files ("src/*.el" "src/*.py" (:exclude "src/quicktry.el"))))
 #+END_SRC
 
-The sources are in =src/=, so each is told where: =:lisp-dir= for
-package-vc, =:files= for elpaca and straight -- which also install the
-figure window, =emjupy-figure-window.py=, and leave out =quicktry.el=, a
-development tool.
+The sources are in =src/=, so each tool is told where: =:lisp-dir= for
+package-vc, =:files= for elpaca and straight.  The =:files= entries also
+install the figure window, =emjupy-figure-window.py=, and leave out
+=quicktry.el=, a development tool.
 
 Alternatively, =M-x package-install-file= on the tarball =make package=
 builds.
@@ -159,17 +160,18 @@ Nothing, in Emacs: the defaults are meant to be kept.  Open a notebook
 file and =M-x emjupy-open-this-notebook=, or log in to a server with
 =M-x emjupy-login=.
 
-Where the kernel runs -- here, or on a machine reached through TRAMP --
-its Python environment needs:
+The kernel's Python environment, on this machine or on one reached
+through TRAMP, needs:
 
 #+BEGIN_SRC sh
   pip install jupyter-server ipykernel jupyter-lsp python-lsp-server
 #+END_SRC
 
-the last two for completion and documentation from the language server
-beside the kernel, which sees the environment's packages; without them
-one on this machine answers, and the mode line says =LSP: this machine=.
-The environment is asked for the first time in a folder, and remembered.
+The last two give completion and documentation from the language server
+beside the kernel, which sees the environment's packages.  Without them,
+a language server on this machine answers, and the mode line says
+=LSP: this machine=.  emjupy asks for the environment the first time in
+a folder, and remembers it.
 
 =M-x customize-group RET emjupy= shows the options a user meets; the
 timings, retries and plumbing are under =Advanced=.
@@ -194,24 +196,28 @@ timings, retries and plumbing are under =Advanced=.
 has no cell operations), ? = not documented.  Checked <2026-10-03 Sat>
 against each project's README and package header.
 
-They differ in what they edit and how they reach the kernel.  =ein= and
-=emjupy= edit =.ipynb= notebooks as cells, over a Jupyter server's HTTP
-and WebSocket API: an ssh tunnel is enough.  =emacs-jupyter= is a kernel
-client for a REPL and Org-babel blocks, with no notebook buffer and no
-=.ipynb=; it requires the =emacs-zmq= dynamic module, whose ZMQ cannot
-reach a notebook server's kernels, though it can use a server's REST API
-through TRAMP-style =/jpy:host#port:name= names; its widgets are
-experimental, in a browser.  For notebook-level =eglot= integration,
-=emjupy= is Python only (other kernels untested), needs =jupyter-lsp= on
-the server, and Emacs 30.1+.
+They differ in what they edit and in how they reach the kernel.  =ein=
+and =emjupy= edit =.ipynb= notebooks as cells, over a Jupyter server's
+HTTP and WebSocket API, so an ssh tunnel is enough.  =emacs-jupyter= is
+a kernel client for a REPL and for Org-babel blocks.  It has no notebook
+buffer and no =.ipynb=.  It requires the =emacs-zmq= dynamic module,
+whose ZMQ cannot reach a notebook server's kernels.  It can use a
+server's REST API through TRAMP-style =/jpy:host#port:name= names.  Its
+widgets are experimental, and show in a browser.  For notebook-level
+=eglot= integration, =emjupy= supports Python only (other kernels are
+untested).  It needs =jupyter-lsp= on the server, and Emacs 30.1 or
+later.
 
 =ein= was my working tool for over a decade, but it is
-[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]]: sunset since 2023, its architecture "fundamentally
-incompatible with LSP", its README says, pointing to [[https://github.com/commercial-emacs/xjupyter][xjupyter]], a
-successor at 0.0.1 running local kernels through a Python
-=jupyter_client= helper, not a Jupyter server, and needing =mode-overlay=,
-which GNU Emacs 30.1 lacks.  I share code with non-Emacs users, so not
-=ob-jupyter=, and =emacs-jupyter= does not suit me.
+[[https://github.com/millejoh/emacs-ipython-notebook][unmaintained]]: it
+has been sunset since 2023.  Its README calls its architecture
+"fundamentally incompatible with LSP", and points to
+[[https://github.com/commercial-emacs/xjupyter][xjupyter]].  That
+successor is at 0.0.1.  It runs local kernels through a Python
+=jupyter_client= helper, not through a Jupyter server, and it needs
+=mode-overlay=, which GNU Emacs 30.1 lacks.  I share code with people
+who do not use Emacs, so =ob-jupyter= is not an option, and
+=emacs-jupyter= does not suit me.
 
 * Rest of these docs
 - [[file:usage.org][Using a notebook]]

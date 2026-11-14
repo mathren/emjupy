@@ -110,9 +110,9 @@ address:
 | none of the above             | an error saying what to set   |
 
 The HTTP copy uses the Contents API.  It needs only that a kernel has
-reported where the server's files are (see [[*Where the server's files
-are][below]]).  The copy is read-only, and its header line names the
-original path.
+reported where the server's files are (see
+[[*Where the server's files are][below]]).  The copy is read-only, and
+its header line names the original path.
 
 * Multiple notebooks & multiple servers
 

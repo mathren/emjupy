@@ -464,9 +464,9 @@ on this machine, and nothing is written on the remote.  The directory is
 it holds the notebook's code.
 
 A notebook with unsaved edits is also copied to
-=emjupy-recovery-directory= until it is saved; see [[*Saving, and not
-losing work][Saving, and not losing work]].  Only you can read those
-copies.  Delete them when you no longer want them.
+=emjupy-recovery-directory= until it is saved; see
+[[*Saving, and not losing work][Saving, and not losing work]].  Only you
+can read those copies.  Delete them when you no longer want them.
 
 ** Exporting to a plain =.py=
 

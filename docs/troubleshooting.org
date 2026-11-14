@@ -4,37 +4,39 @@
 
 When something behaves unexpectedly.
 
-First, =C-c C-x s= (=emjupy-status=) in the notebook: its server, its
-kernel and what it is doing, its language server -- the server's or a
-fallback, and why -- the remote it is reached through, and emjupy's
-recent messages.  It is what to look at, and to send with a report.
+Start with =C-c C-x s= (=emjupy-status=) in the notebook.  It shows the
+notebook's server, its kernel and what the kernel is doing.  It shows
+the language server: the server's own or a fallback, and why.  It shows
+the remote machine the notebook is reached through, and emjupy's recent
+messages.  Look at it first, and send it with a report.
 
 * Something changed on a machine
 
-emjupy remembers, for the session, what it learns of servers and
-machines -- which server answers, which has a language server, each
-machine's environments and conda -- not to ask them again at every
-opening.  When that changed under it -- an environment removed, a
-server reconfigured, jupyter-lsp installed -- =M-x
-emjupy-forget-remote-state= forgets it all, and it is asked again when
-next needed.  Live connections and tunnels are kept.  With =C-u=, the
-environment chosen for each folder is forgotten too.
+emjupy remembers, for the session, what it learns about servers and
+machines: which server answers, which has a language server, and each
+machine's environments and conda.  That saves asking again at every
+opening.  Sometimes those facts change: an environment is removed, a
+server is reconfigured, or jupyter-lsp is installed.
+=M-x emjupy-forget-remote-state= then forgets them all, and emjupy asks
+again when it next needs them.  Live connections and tunnels are kept.
+With =C-u=, emjupy also forgets the environment chosen for each folder.
 
 * Diagnosing slowness
 
 First find which part is slow.
 
 =emjupy-language-support= nil disables every path that contacts a
-language server -- completion, eldoc, =M-.= (left to Emacs's other xref
-backends), the server started as a notebook opens, and commands asking
-one for something, which say there is none -- leaving notebooks, kernels,
-output and rendering as they are.  If the delay goes, it came from
-there.  It takes effect at once, in notebooks already open;
-=emjupy-edit-cell-externally= still opens all the code in one buffer,
-without a server.  Set back to t, a server starts when next asked for.
+language server.  That is: completion, eldoc, =M-.= (left to Emacs's
+other xref backends), the server started when a notebook opens, and the
+commands that ask a server for something, which then say there is none.
+Notebooks, kernels, output and rendering stay as they are.  If the delay
+goes away, it came from language support.  The setting takes effect at
+once, in notebooks already open.  =emjupy-edit-cell-externally= still
+opens all the code in one buffer, without a server.  Set back to t, a
+server starts when one is next needed.
 
-=emjupy-slow-hook-threshold=, a number of seconds, reports per-command work
-taking longer, naming the function.
+=emjupy-slow-hook-threshold= is a number of seconds.  emjupy reports
+per-command work that takes longer, and names the function.
 
 If neither points anywhere, measure:
 
@@ -44,43 +46,47 @@ M-x profiler-start RET cpu RET
 M-x profiler-report
 #+end_example
 
-Top entries that are emjupy functions are a bug worth reporting, with the
-report.  emjupy's own per-command work is small -- a cursor move well
-under a millisecond -- so on a notebook full of figures the answer is
-usually =redisplay_internal= or image scaling: more than Emacs draws
-comfortably.  Clearing some output (=emjupy-clear-all-outputs=) confirms
-it in seconds.
+A top entry that is an emjupy function is a bug worth reporting; attach
+the report.  emjupy's own per-command work is small: a cursor move takes
+well under a millisecond.  So on a notebook full of figures, the answer
+is usually =redisplay_internal= or image scaling, which means more than
+Emacs draws comfortably.  Clearing some output
+(=emjupy-clear-all-outputs=) confirms it in seconds.
 
 * =M-.= finds the standard library but not my own modules
 
-The language server answering is on this machine, not beside the kernel,
-and cannot see the kernel's files: =M-x emjupy-lsp-diagnose= says "a
-local process", =M-x emjupy-version= "language server on this machine".
-Install =jupyter-lsp= and a language server where =jupyter server= runs
--- see [[file:language-server.org::*Requirements][Requirements]] -- and restart the server.
+The language server that answers runs on this machine, not beside the
+kernel, so it cannot see the kernel's files.  =M-x emjupy-lsp-diagnose=
+says "a local process", and =M-x emjupy-version= says "language server
+on this machine".  Install =jupyter-lsp= and a language server where
+=jupyter server= runs (see
+[[file:language-server.org::*Requirements][Requirements]]), then restart
+the server.
 
 * A cell shows as running and never finishes
 
-If the cell is not really still working, the kernel likely died -- out of
-memory, or the code exited -- and the server restarted it without telling
-the notebook.  =C-c C-x C-c= reconnects to the new kernel and ends the
-run; the old kernel's state is gone.  Why, in [[file:limitations.org][Known limitations]].
-A kernel shut down from elsewhere, or culled, is noticed by itself: after
-=emjupy-kernel-check-interval= seconds (30) of quiet, the cell ends and
-the notebook says the kernel is gone.
+If the cell is not really still working, the kernel probably died: it
+ran out of memory, or the code exited.  The server then restarted it
+without telling the notebook.  =C-c C-x C-c= reconnects to the new
+kernel and ends the run.  The old kernel's state is gone.
+[[file:limitations.org][Known limitations]] explains why.  emjupy
+notices by itself a kernel that was shut down from elsewhere, or culled:
+after =emjupy-kernel-check-interval= seconds (30) of silence, the cell
+ends and the notebook says the kernel is gone.
 
 * Two installations of emjupy
 
-With two installations on the =load-path= -- a package and a checkout,
-say -- Emacs may load some files from each, and the mix fails like a
-bug: a key shown as =M-x= and a command's name, widgets drawn as text.
+Two installations on the =load-path=, such as a package and a checkout,
+can make Emacs load some files from each.  The mix fails like a bug: a
+key shows as =M-x= and a command's name, or widgets are drawn as text.
 =M-x list-load-path-shadows= lists the files found twice.  Remove one
-installation, or put the one wanted first on the =load-path=.
+installation, or put the one you want first on the =load-path=.
 
 * "The notebook was redrawn: its display had come apart from its cells"
 
-After redraws, when idle, emjupy checks the buffer still matches the
-notebook's structure, and redraws from the cells if not (see [[file:design.org][How it works]]).
-Nothing is lost: the cells are the notebook, and what was typed in cells
-still intact is kept.  The message says what was wrong; it should not
-happen, so please report it, with its text and what you were doing.
+After a redraw, when Emacs is idle, emjupy checks that the buffer still
+matches the notebook's structure.  If it does not, emjupy redraws from
+the cells (see [[file:design.org][How it works]]).  Nothing is lost: the
+cells are the notebook, and text typed in cells that are still intact is
+kept.  The message says what was wrong.  This should not happen, so
+please report it, with the message and what you were doing.
