@@ -27,27 +27,29 @@ server needs one SSH tunnel and nothing started on the far side.
    kernel connection above
 #+end_example
 
-- The *notebook buffer* is the notebook: cells drawn as text, kept in
-  step with the cell structs, which are what is saved as =.ipynb=.
+- The *notebook buffer* is the notebook: cells drawn as text.  emjupy
+  keeps it in step with the cell structs, which are what is saved as
+  =.ipynb=.
 - The *kernel connection* carries execution and its output; widgets'
   messages too.
 - The *shadow buffer* is every code cell as one Python file, for Eglot,
   whose language server runs beside the kernel through =jupyter-lsp=.
-- The *figure window* shows what a text buffer cannot -- plotly figures,
-  widgets that draw themselves -- and a widget's page talks back through
-  the *bridge*, a WebSocket server in Emacs, not to the Jupyter server.
+- The *figure window* shows what a text buffer cannot: plotly figures,
+  and widgets that draw themselves.  A widget's page talks back through
+  the *bridge*, a WebSocket server in Emacs.  It does not talk to the
+  Jupyter server.
 
 Which file holds what, and the graph of their dependencies, are in
 [[file:reading-the-code.org][Reading the code]].
 
 ** The shadow buffer
 
-A notebook is not valid Python but JSON holding cells: *n* Python
-fragments with prose between, a name defined in cell 3 used in cell 7.
-Handed one cell at a time, a language server would see unrelated files.
-So =emjupy= keeps a *shadow buffer*: one Python file of every code cell
-in order, each after a marker comment naming its cell -- one module, as
-=eglot= expects.
+A notebook is not valid Python.  It is JSON that holds cells: *n* Python
+fragments with prose between them, where a name defined in cell 3 is
+used in cell 7.  A language server given one cell at a time would see
+unrelated files.  So =emjupy= keeps a *shadow buffer*: one Python file
+with every code cell in order.  Each cell follows a marker comment that
+names it.  The result is one module, as =eglot= expects.
 
 It is hidden, a well-formed document for the language server.  =C-c '=
 shows it, to edit several cells at once; =C-c C-c= there writes the
@@ -61,66 +63,71 @@ at the matching position:
 - =eglot-rename= and the other =eglot= commands, advised to run there and
   pull their edits back.
 
-Holding every cell, it does more than work around: a rename fixes
-references in *all* cells, and =M-.= on a call in one cell lands on its
-definition in another.
+Because it holds every cell, the shadow buffer is more than a
+workaround.  A rename fixes references in *all* cells.  =M-.= on a call
+in one cell lands on its definition in another.
 
 ** The language server beside the kernel
 
-The language server must run where the kernel does: only there can it see
-your modules and the Python the code runs against.  =emjupy= talks to it
-as JupyterLab does, through =jupyter-lsp= on the Jupyter server, over a
-WebSocket on the notebook's connection -- so through the same SSH tunnel,
-with nothing started remotely by hand.
+The language server must run where the kernel does.  Only there can it
+see your modules, and the Python that the code runs against.  =emjupy=
+talks to it as JupyterLab does: through =jupyter-lsp= on the Jupyter
+server, over a WebSocket on the notebook's connection.  So it uses the
+same SSH tunnel, and nothing is started remotely by hand.
 
-The shadow file stays here -- beside a local notebook, in a temporary
-directory otherwise -- and nothing remote reads it.  Its contents go over
-the socket as the LSP document, every path rewritten in flight between
-the shadow's directory and the kernel's working directory, so the server
-resolves =import mylib= beside the notebook; it is also told that
-directory, as where to look for modules.
+The shadow file stays on this machine: next to a local notebook, or
+otherwise in a temporary directory.  Nothing remote reads it.  Its
+contents go over the socket as the LSP document.  Every path is
+rewritten in flight, between the shadow's directory and the kernel's
+working directory, so the server resolves =import mylib= next to the
+notebook.  The server is also told that directory, as the place to look
+for modules.
 
-Which it is, is decided once, before anything attaches: the server is
-asked, without waiting, whether it has the language server.  Having
-none, not answering, or its not connecting, and =emjupy= falls back to
-one on this machine, saying so and marking it in the mode line; the
-cost is in [[file:language-server.org][Language server support]].
+The route is decided once, before anything attaches.  emjupy asks the
+server, without waiting, whether it has the language server.  If the
+server has none, does not answer, or cannot be connected to, =emjupy=
+falls back to a language server on this machine.  It says so, and marks
+it in the mode line.  [[file:language-server.org][Language server
+support]] describes the cost.
 
 ** Mapping positions
 
-Point in a cell maps to the shadow buffer as its cell's marker plus the
-offset within the cell; results map back the other way, =xref= results
-inside the shadow rewritten into notebook positions.
+Point in a cell maps to the shadow buffer as the cell's marker plus the
+offset within the cell.  Results map back the other way.  =xref= results
+inside the shadow are rewritten into notebook positions.
 
-Any other location is a file on the kernel's machine, when the server
-beside the kernel answered, named there over TRAMP, the host from
-=emjupy-remote-root= or the SSH tunnel.  The local fallback's paths name
-this machine's files, and are left alone.
+Any other location is a file.  When the server beside the kernel
+answered, the file is on the kernel's machine.  emjupy names it there
+over TRAMP, with the host from =emjupy-remote-root= or from the SSH
+tunnel.  Paths from the local fallback name this machine's files, and
+are left alone.
 
 ** Output
 
-Output arrives as messages on the kernel's WebSocket, each naming its
-request.  A request is finished when both its reply, on the shell channel,
-and the status after its last output, on iopub, have come: the protocol
-does not order the channels, so an output can follow its reply.
+Output arrives as messages on the kernel's WebSocket.  Each message
+names its request.  A request is finished when two things have come: its
+reply, on the shell channel, and the status after its last output, on
+iopub.  The protocol does not order the channels, so an output can
+follow its reply.
 
-Stream text continues its output: consecutive text on one stream is one
-output, and text on a stream whose line is still open -- no newline yet
--- continues that line even if the other stream wrote between.  That is a
-terminal's rule, which progress bars rely on, each update starting with a
-carriage return, applied as a terminal would.
+Stream text continues the previous output.  Consecutive text on one
+stream is one output.  Text on a stream whose line is still open (no
+newline yet) continues that line, even if the other stream wrote in
+between.  That is a terminal's rule, and progress bars rely on it: each
+update starts with a carriage return, which emjupy applies as a terminal
+would.
 
 How wide output is drawn, and when the kernel is told the width, is in
 [[file:usage.org][Using a notebook]].
 
 Output is redrawn at most a few times a second, and only in its own
-cell.  A stream only grown at its end has just the new text drawn, so an
-update costs what it adds, not what the output holds -- when nothing
-drawn can look different: the same outputs, the stream grown at its end,
-the same width, a whole line last drawn, and no carriage return or colour
-escape in it, as those rewrite what came before.  Anything else redraws
-the cell's output box.  Either way only that box is marked read-only
-again.
+cell.  When a stream has only grown at its end, emjupy draws just the
+new text.  An update then costs what it adds, not what the output holds.
+This applies only when nothing already drawn can look different: the
+same outputs, the stream grown at its end, the same width, a whole line
+drawn last, and no carriage return or colour escape in the new text,
+since those rewrite what came before.  Anything else redraws the cell's
+output box.  Either way, only that box is marked read-only again.
 
 * Closing a notebook
 
@@ -129,64 +136,66 @@ its language-server connection and its shadow buffer.  The kernel keeps
 running on the server, by design, for the next login to adopt.  A
 language server another notebook uses stays.
 
-The connection is ended directly: the shadow buffer killed first, which
-is how Eglot closes the document; the server marked as shut down on
-purpose, or Eglot would start a replacement; its pending requests
-dropped; and it is taken out of Eglot's table at once, so a notebook
-opened a moment later is not handed it.  Nothing waits: closing takes no
-measurable time.
+The connection is ended directly, in four steps.  The shadow buffer is
+killed first, which is how Eglot closes the document.  The server is
+marked as shut down on purpose; otherwise Eglot would start a
+replacement.  Its pending requests are dropped.  It is removed from
+Eglot's table at once, so a notebook opened a moment later is not handed
+it.  Nothing waits: closing takes no measurable time.
 
 * Redrawing
 
 Most changes redraw only what they affect: output arriving, running a
-cell (clearing its output first), inserting, deleting, splitting, merging
-and moving cells, hiding and clearing output.  The rest of the buffer
-moves by a known amount, so what holds a position there -- markers,
-other windows, =multiple-cursors='s fake cursors -- stays.
+cell (which clears its output first), inserting, deleting, splitting,
+merging and moving cells, and hiding and clearing output.  The rest of
+the buffer moves by a known amount.  So whatever holds a position there
+stays valid: markers, other windows, and =multiple-cursors='s fake
+cursors.
 
-A few redraw the whole notebook: changing a cell's type,
-=emjupy-re-render=, rendering a markdown cell, undoing a structural
-change.  They erase and redraw from the cells, moving every held position
-to the start.
+A few changes redraw the whole notebook: changing a cell's type,
+=emjupy-re-render=, rendering a markdown cell, and undoing a structural
+change.  They erase the buffer and redraw from the cells, which moves
+every held position to the start.
 
-A redraw happens whole or is put right.  Stopped partway -- by an error,
-or =C-g= -- it would leave text and overlays apart, the buffer showing
-what the cells do not hold, so the notebook is redrawn from its cells at
-once, the error still reported.  Measuring a window keeps point, as
-selecting it moves its buffer's point to the window's, and a full redraw
-measures once.
+A redraw either completes or is repaired.  A redraw stopped partway, by
+an error or by =C-g=, would leave text and overlays out of step, with
+the buffer showing what the cells do not hold.  So emjupy then redraws
+the notebook from its cells at once, and still reports the error.
+Measuring a window preserves point, because selecting a window moves its
+buffer's point to the window's.  A full redraw measures once.
 
-As a last safeguard, after redraws, when Emacs is idle, the buffer's
-structure is checked: every cell's overlay present, in order, none
-overlapping, each output box after its source.  Anything wrong is put
-right by a redraw, and said, for its cause to be found.  Only structure
-is checked, not text, which differs while typing is unsynced, and a
-redraw then would undo the typing.
+As a last safeguard, emjupy checks the buffer's structure after redraws,
+when Emacs is idle.  It checks that every cell's overlay is present, in
+order, not overlapping, and that each output box follows its source.  A
+redraw repairs anything wrong, and emjupy reports it, so that the cause
+can be found.  Only structure is checked, not text: text differs while
+typing is unsynced, and a redraw at that point would undo the typing.
 
 * Undo
 
-Every cell command -- inserting, deleting, moving, splitting, joining,
-changing a cell's type, clearing or hiding output, yanking a cell -- is
-one undo step, redo taking it forward again.  The cells are snapshotted
-before the command changes anything, and undoing restores the snapshot;
-restoring records the state it replaced, so redo is the same the other
-way.
+Every cell command is one undo step, and redo takes it forward again.
+The cell commands are: inserting, deleting, moving, splitting, joining,
+changing a cell's type, clearing or hiding output, and yanking a cell.
+emjupy snapshots the cells before the command changes anything, and
+undoing restores the snapshot.  Restoring records the state it replaced,
+so redo works the same way in the other direction.
 
 - The snapshot is taken first, before the command changes anything.
 - It is written back into the same cell objects, not copies, as the
   notebook and other undo entries refer to them.
-- While a cell command runs, no earlier entry is shifted or dropped:
-  undoing the step restores exactly the text they describe, before they
-  are replayed.
+- While a cell command runs, no earlier entry is shifted or dropped.
+  Undoing the step restores exactly the text those entries describe,
+  before they are replayed.
 
-Undo entries hold plain positions, so a redraw that is not an undo step
--- output arriving, say -- adjusts them: entries before the change stay,
-those after shift by what it moved, those inside the redrawn region go.
-They are changed in place, as an undo under way replays from a shared
-list, and all or nothing: every new entry is worked out first; if one
-cannot be, none is changed, the entries from the region on are dropped,
-and that is said.  Lost history is safe; history half shifted would make
-the next undo write in the wrong places.
+Undo entries hold plain positions.  So a redraw that is not an undo
+step, such as output arriving, adjusts them.  Entries before the change
+stay.  Entries after it shift by the amount it moved.  Entries inside
+the redrawn region are dropped.  The entries are changed in place,
+because an undo in progress replays from a shared list.  The change is
+all or nothing: emjupy works out every new entry first.  If one cannot
+be worked out, none is changed; the entries from the region on are
+dropped, and emjupy says so.  Lost history is safe.  History that is
+half shifted would make the next undo write in the wrong places.
 
 * Use the browser's transport, not ZMQ
 
@@ -202,6 +211,6 @@ the next undo write in the wrong places.
 - =WS   /api/kernels/<id>/channels= \rightarrow the Jupyter protocol over WebSocket
 - =WS   /lsp/ws/<server>=      \rightarrow a language server, through =jupyter-lsp=
 
-What every browser client (JupyterLab, Classic Notebook) uses: it works
-through an =ssh= tunnel, survives reconnects, and needs only =url.el=
-(built in) and =websocket.el=.
+Every browser client (JupyterLab, the Classic Notebook) uses this API.  It
+works through an =ssh= tunnel, survives reconnects, and needs only
+=url.el= (built in) and =websocket.el=.
