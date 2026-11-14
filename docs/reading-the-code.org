@@ -2,9 +2,10 @@
 #+PREVIOUS_PAGE: design.org
 #+NEXT_PAGE: development.org
 
-[[file:design.org][How it works]] explains the ideas; [[file:development.org][Building and development]] the rules
-and the tests.  This page is the map: what to read, in what order, and
-where each step of the main flows happens.
+[[file:design.org][How it works]] explains the ideas.
+[[file:development.org][Building and development]] gives the rules and
+the tests.  This page is the map: what to read, in what order, and where
+each step of the main flows happens.
 
 * Three ideas first
 
@@ -15,20 +16,20 @@ where each step of the main flows happens.
   cells.  Saving writes the cells, never the buffer.  When the two
   disagree, the cells win: the buffer is redrawn from them.
 - *The code files are layers of =emjupy=.* Each file requires only files
-  below it, the order of the table below; a lower layer reaches a
-  higher one only through a hook list -- =emjupy-comm-functions= and its
-  kind -- which the higher one joins.  Keymap and menu name commands
-  of files above them and are an exception.
-- *Loading a file does nothing.* Each layer has an =-enable= function that
-  wires it into a notebook buffer, and =emjupy-mode= calls them, in
+  below it, in the order of the table below.  A lower layer reaches a
+  higher one only through a hook list, such as =emjupy-comm-functions=,
+  which the higher layer joins.  The keymap and the menu are an
+  exception: they name commands of files above them.
+- *Loading a file does nothing.* Each layer has an =-enable= function
+  that wires it into a notebook buffer.  =emjupy-mode= calls them, in
   order, when the buffer starts.  So a side effect is always in a
   function, never at the top level.
 
 * The files, in reading order
 
-Bottom up.  Skim each file's =;;;;= headings before its code: every file
-has a commentary, its options under =;;;; Options= if it has any, then
-one section per part.
+Read bottom up.  Skim each file's =;;;;= headings before its code.
+Every file has a commentary, then its options under =;;;; Options= if it
+has any, then one section per part.
 
 | Order | File                  | Read for                                          |
 |-------+-----------------------+---------------------------------------------------|
@@ -60,8 +61,8 @@ one section per part.
 |    26 | =emjupy-tramp-open.el=  | an .ipynb opened as a notebook, or by TRAMP       |
 |    27 | =emjupy.el=             | the package: version, everything required         |
 
-The same layers, drawn from the code's requires, each file above those
-it requires; lines a longer path implies are left out:
+The same layers, drawn from the code's requires.  Each file is above
+those it requires.  Lines that a longer path implies are left out:
 
 #+CAPTION: Dependency graph of the =emjupy= package.
 [[file:dependencies.svg]]
@@ -74,14 +75,14 @@ falls into place around them.
 
 ** Opening a notebook
 1. =emjupy-login= (notebook) works out the server's token with
-   =emjupy--resolve-token= (notebook), and binds one kernel to the port
+   =emjupy--resolve-token= (notebook).  It binds one kernel to the port
    with =emjupy--bind-server-kernel= (notebook): one port, one kernel.
-2. =emjupy-open-notebook= (notebook) reads the notebook with
-   =emjupy--fetch-notebook= (notebook), which parses it with
-   =emjupy--parse-ipynb= (ipynb); draws it with
-   =emjupy--draw-opened-notebook= (notebook), which turns on =emjupy-mode=
-   (mode) and calls =emjupy--redraw-notebook= (redraw); and connects
-   with =emjupy--attach-bound-kernel= (notebook).
+2. =emjupy-open-notebook= (notebook) does three things.  It reads the
+   notebook with =emjupy--fetch-notebook= (notebook), which parses it
+   with =emjupy--parse-ipynb= (ipynb).  It draws it with
+   =emjupy--draw-opened-notebook= (notebook), which turns on
+   =emjupy-mode= (mode) and calls =emjupy--redraw-notebook= (redraw).
+   It connects with =emjupy--attach-bound-kernel= (notebook).
 3. =emjupy-connect-kernel= (kernel) opens the WebSocket.  A notebook
    without a kernel gets one from =emjupy--spawn-and-connect-kernel=
    (kernel), started through a session so it runs in the notebook's
@@ -99,20 +100,22 @@ falls into place around them.
    =emjupy--schedule-redraw= (kernel).  A request is done only when its
    reply and its closing idle have both come: =emjupy--request-half-seen=
    (kernel).
-3. Drawing runs from a timer, not inside the socket callback:
+3. Drawing runs from a timer, not inside the socket callback.
    =emjupy--redraw-pending-output= (kernel) calls
-   =emjupy--redraw-cell-output= (redraw), which draws only the new text
-   when it can, with =emjupy--append-stream-output= (redraw), and the
-   cell's output box otherwise.  Escape codes in a stream -- progress
-   bars -- are applied by =emjupy--terminal-apply= (terminal).
+   =emjupy--redraw-cell-output= (redraw).  That function draws only the
+   new text when it can, with =emjupy--append-stream-output= (redraw);
+   otherwise it draws the cell's output box.  =emjupy--terminal-apply=
+   (terminal) applies the escape codes in a stream, as progress bars
+   use.
 
 ** Editing the cells
-1. A structural command -- =emjupy-split-cell= (commands), for one --
-   wraps its work in =emjupy--as-one-undo-step= (redraw): it syncs,
+1. A structural command, such as =emjupy-split-cell= (commands), wraps
+   its work in =emjupy--as-one-undo-step= (redraw).  That wrapper syncs,
    snapshots the cells, and records one undo step that restores them.
-2. It redraws only what changed, with =emjupy--redraw-cells-in-place=
-   (redraw), inside =emjupy--atomic-redraw= (redraw): a redraw finishes,
-   or the notebook is redrawn from its cells at once.
+2. The command redraws only what changed, with
+   =emjupy--redraw-cells-in-place= (redraw), inside
+   =emjupy--atomic-redraw= (redraw).  A redraw finishes, or the notebook
+   is redrawn from its cells at once.
 3. Positions in the undo history after the change are shifted by
    =emjupy--undo-adjust= (undo), which knows every entry shape
    =buffer-undo-list= can hold.
@@ -122,59 +125,62 @@ falls into place around them.
    which sends the request =emjupy--notebook-request= (ipynb) builds,
    after checking the file on the server has not changed since it was
    read.
-2. On idle, =emjupy--idle-save= (save) writes a recovery copy with
-   =emjupy--recovery-write= (save), in a folder made by
-   =emjupy--private-directory= (core), and saves to the server without
-   waiting, with =emjupy--autosave-async= (save).
+2. When Emacs is idle, =emjupy--idle-save= (save) writes a recovery copy
+   with =emjupy--recovery-write= (save), in a folder made by
+   =emjupy--private-directory= (core).  It then saves to the server
+   without waiting, with =emjupy--autosave-async= (save).
 
 ** Language support
 1. =emjupy-start-language-support= (eglot) gets the shadow buffer from
-   =emjupy--ensure-shadow-buffer= (eglot) -- all code cells as one Python
-   file, its text from =emjupy--build-shadow-content= (lsp) -- and Eglot
-   attached over the Jupyter server's WebSocket by =emjupy--eglot-connect=
-   (lsp), or to a local server when the Jupyter server has no
-   =jupyter-lsp=.
-2. In the notebook, completion and eldoc go through
-   =emjupy--cell-completion-at-point= and =emjupy--cell-eldoc-function=
-   (eglot), both via =emjupy--cell-shadow-delegate= (eglot), which maps
-   the position into the shadow buffer.  Definitions found there are
-   mapped back to cells by =emjupy--xref-remap= (eglot).
+   =emjupy--ensure-shadow-buffer= (eglot).  The shadow buffer holds all
+   code cells as one Python file; =emjupy--build-shadow-content= (lsp)
+   makes its text.  =emjupy--eglot-connect= (lsp) attaches Eglot over
+   the Jupyter server's WebSocket.  When the Jupyter server has no
+   =jupyter-lsp=, Eglot attaches to a local server instead.
+2. In the notebook, completion goes through
+   =emjupy--cell-completion-at-point= and eldoc through
+   =emjupy--cell-eldoc-function= (both in eglot).  Both use
+   =emjupy--cell-shadow-delegate= (eglot), which maps the position into
+   the shadow buffer.  =emjupy--xref-remap= (eglot) maps definitions
+   found there back to cells.
 
 ** A dropped connection
 =emjupy--kernel-connection-closed= (kernel) keeps the running cells and
-starts =emjupy--try-reconnect= (kernel); on reconnecting,
-=emjupy--adopt-kept-runs= (kernel) hands the cells to the new connection,
-and the server replays what they missed.
+starts =emjupy--try-reconnect= (kernel).  On reconnecting,
+=emjupy--adopt-kept-runs= (kernel) hands the cells to the new
+connection, and the server replays what they missed.
 
 ** A notebook opened through TRAMP
 =emjupy-open-this-notebook= (tramp-open) on a TRAMP file takes the route
-from TRAMP with =emjupy--ssh-route= (tramp-open), finds or starts a
+from TRAMP with =emjupy--ssh-route= (tramp-open).  It finds or starts a
 Jupyter server there, opens a tunnel with =emjupy--open-tunnel=
-(tramp-open), and opens the notebook on it.  How a server's files are
-reached in general is =emjupy--remote-root-for= (remote).
+(tramp-open), and opens the notebook on it.  =emjupy--remote-root-for=
+(remote) decides how a server's files are reached in general.
 
 * The hard parts
 
 Most functions are short.  A few carry the complexity, and a change near
 them deserves the slowest reading:
 
-- =emjupy--ensure-shadow-buffer= (eglot): where the shadow file lives,
-  when it is rebuilt, when to stop trying -- local and remote, with a
-  back-off so an unreachable host cannot hang Emacs.  Its steps that build
-  the file and buffer, from =emjupy--retire-moved-shadow= on, are in
-  =emjupy-shadow.el=; attaching Eglot, =emjupy--attach-plain-eglot=, in
+- =emjupy--ensure-shadow-buffer= (eglot) decides where the shadow file
+  lives, when it is rebuilt, and when to stop trying.  It covers local
+  and remote files, with a back-off so that an unreachable host cannot
+  hang Emacs.  The steps that build the file and the buffer, from
+  =emjupy--retire-moved-shadow= on, are in =emjupy-shadow.el=.
+  Attaching Eglot, =emjupy--attach-plain-eglot=, is in
   =emjupy-eglot.el=.
 - =emjupy--handle-ws-message= (kernel): every message type the kernel
   sends, and which cell it belongs to.
 - =emjupy--reconcile-rules= (render): the rules drawn so line numbers
   fall on code, not on the box lines.
-- =emjupy--undo-adjust= (undo) and =emjupy--as-one-undo-step= (redraw):
-  undo across redraws.  A wrong position here does not fail; it rewrites
-  the wrong text.  They are in two files on purpose: =emjupy--undo-adjust=
-  keeps positions right for the redraws, so it sits below them; the undo
-  step sits with the full redraw, as undoing a step redraws the notebook
-  and a full redraw records a step -- three functions calling each
-  other, which no file boundary can split.
+- =emjupy--undo-adjust= (undo) and =emjupy--as-one-undo-step= (redraw)
+  implement undo across redraws.  A wrong position here does not fail;
+  it rewrites the wrong text.  The two are in separate files on purpose.
+  =emjupy--undo-adjust= keeps positions right for the redraws, so it
+  sits below them.  The undo step sits with the full redraw: undoing a
+  step redraws the notebook, and a full redraw records a step.  Those
+  are three functions that call each other, which no file boundary can
+  split.
 - =emjupy--terminal-apply= (terminal): a small terminal emulator, for
   progress bars.
 
@@ -187,9 +193,10 @@ them deserves the slowest reading:
   =git log -L :NAME:FILE= shows every change to one function, with its
   reason.
 - *Inspect a live notebook:* =M-x emjupy-debug-check-invariants= reports
-  whether the buffer and the cells agree; =emjupy-report-box-geometry=
-  the widths drawn at; =emjupy-lsp-diagnose= which language server
-  answers and why; =emjupy-version= what is loaded, from where.
+  whether the buffer and the cells agree.  =emjupy-report-box-geometry=
+  reports the widths drawn at.  =emjupy-lsp-diagnose= reports which
+  language server answers, and why.  =emjupy-version= reports what is
+  loaded, and from where.
 - *The dependency graph*, above: =make dependency-graph= redraws it from
   the requires, into =html-content/=.
 
@@ -207,11 +214,11 @@ for:
 - *Undo.*  A command changing cells records one step, through
   =emjupy--as-one-undo-step=.  A redraw in place records nothing; a full
   rebuild records the one step that puts the cells back.
-- *Remote.*  Nothing on the path of every keystroke -- completion,
-  eldoc, redrawing -- waits on the network or calls TRAMP.
+- *Remote.*  Nothing on the path of every keystroke waits on the network
+  or calls TRAMP.  That path is completion, eldoc and redrawing.
 - *Style.*  Options under =;;;; Options=; messages start =[emjupy]=;
   =;;;###autoload= only on entry points; lines of 80 columns; comments
   give the reason.
-- *Tests and docs.*  A behaviour changed is a test changed or added,
-  unit and, if it touches a server, live; =make check= passes.  What a
-  user sees is in the user pages.
+- *Tests and docs.*  A change of behaviour comes with a changed or added
+  test: a unit test and, if it touches a server, a live one.
+  =make check= passes.  What a user sees is described in the user pages.
