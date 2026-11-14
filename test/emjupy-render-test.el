@@ -763,6 +763,37 @@ in the robustness fuzz test)."
       (should-not (buffer-modified-p))
       (should-not changed))))
 
+
+(ert-deftest emjupy-test-a-very-long-line-is-not-highlighted ()
+  "A cell with a line longer than `emjupy--fontify-max-line' is drawn plain.
+Font-lock's time grows with the square of a line's length: one line of
+32,000 characters took a minute to draw."
+  (let* ((long (concat "x = '" (make-string 32000 ?a) "'"))
+         (start (float-time))
+         (text (emjupy--fontify-as long 'code)))
+    (should (< (- (float-time) start) 2))
+    (should (equal text long))
+    (should-not (text-property-not-all 0 (length text) 'face nil text)))
+  ;; an ordinary cell is highlighted as before
+  (should (text-property-not-all
+           0 5 'face nil (emjupy--fontify-as "def f(): pass" 'code))))
+
+(ert-deftest emjupy-test-outputs-that-draw-nothing-make-no-box ()
+  "A cell whose outputs draw nothing has no output box, and stays sound.
+An output of a type nbformat does not have drew nothing, but left the
+cell a dead box: the check of the buffer's structure then failed."
+  (let ((out (make-hash-table :test 'equal)))
+    (puthash "output_type" "mystery" out)
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "1"
+                                  :outputs (vector out)))
+        buf nb
+      (ignore buf)
+      (let ((cell (aref (emjupy-notebook-cells nb) 0)))
+        (should-not (emjupy-cell-output-ov cell))
+        (should (integerp (emjupy--cell-end cell)))
+        (should-not (emjupy--check-invariants))))))
+
 (provide 'emjupy-render-test)
 
 ;;; emjupy-render-test.el ends here

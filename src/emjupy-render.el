@@ -521,9 +521,22 @@ highlights."
    ((fboundp 'markdown-mode) 'markdown-mode)
    (t nil)))
 
+(defconst emjupy--fontify-max-line 1000
+  "Longest line, in characters, of a cell that is still highlighted.
+Font-lock's time grows with the square of a line's length: one line of
+8,000 characters takes seconds, on every redraw.  Such a line is data.")
+
 (defun emjupy--fontify-as (text cell-type)
   "Return TEXT with font-lock faces applied appropriate for CELL-TYPE.
-`python-mode' for code, `emjupy--markdown-mode-fn' for markdown."
+`python-mode' for code, `emjupy--markdown-mode-fn' for markdown.  Return
+TEXT as it is if a line is longer than `emjupy--fontify-max-line'."
+  (if (string-match-p (format "[^\n]\\{%d\\}" (1+ emjupy--fontify-max-line))
+                      text)
+      text
+    (emjupy--fontify-as-1 text cell-type)))
+
+(defun emjupy--fontify-as-1 (text cell-type)
+  "Return TEXT highlighted for CELL-TYPE; see `emjupy--fontify-as'."
   (with-temp-buffer
     (insert text)
     ;; delay-mode-hooks avoids running the user's own mode hooks (linters,
@@ -1159,11 +1172,15 @@ rather than the notebook."
             ;; Kept inside the box, whatever kind of output it is.
             (setq widest (max widest (emjupy--finish-output-piece
                                       out piece-start)))))
-        (unless (string-suffix-p "\n" (buffer-substring-no-properties
-                                       (max (point-min) (- (point) 1))
-                                       (point)))
-          (insert "\n"))
-        (emjupy--make-output-overlay cell out-start widest pieces)))))
+        (if (= (point) out-start)
+            ;; Nothing drawn, as for an output of a type nbformat does
+            ;; not have: the cell has no box.
+            (setf (emjupy-cell-output-ov cell) nil)
+          (unless (string-suffix-p "\n" (buffer-substring-no-properties
+                                         (max (point-min) (- (point) 1))
+                                         (point)))
+            (insert "\n"))
+          (emjupy--make-output-overlay cell out-start widest pieces))))))
 
 ;;;; Drawing a cell
 

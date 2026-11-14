@@ -162,6 +162,41 @@ exporting it would silently drop every markdown cell."
       ;; the default destination sits beside the notebook
       (should (equal (emjupy--export-default-name nb) "subdir/analysis.py")))))
 
+
+(ert-deftest emjupy-test-parsing-takes-null-for-none ()
+  "Null where nbformat asks for an array or a source means none.
+Some tools write it so; each raised `wrong-type-argument'."
+  (let ((nb (emjupy--parse-ipynb
+             (concat "{\"cells\":null,\"metadata\":{},"
+                     "\"nbformat\":4,\"nbformat_minor\":5}"))))
+    (should (= 0 (length (emjupy-notebook-cells nb)))))
+  (let* ((nb (emjupy--parse-ipynb
+              (concat "{\"cells\":[{\"cell_type\":\"code\",\"metadata\":{},"
+                      "\"source\":null,\"outputs\":null,"
+                      "\"execution_count\":null},"
+                      "{\"cell_type\":\"markdown\",\"metadata\":{}}],"
+                      "\"metadata\":{},\"nbformat\":4,\"nbformat_minor\":5}")))
+         (cells (emjupy-notebook-cells nb)))
+    (should (equal "" (emjupy-cell-source (aref cells 0))))
+    (should-not (emjupy-cell-outputs (aref cells 0)))
+    (should (equal "" (emjupy-cell-source (aref cells 1))))))
+
+(ert-deftest emjupy-test-parsing-refuses-what-is-not-a-notebook ()
+  "Text that is not an nbformat 4 notebook is refused, saying why.
+Each raised a raw error; a format 3 notebook opened as empty, to be saved
+over the real one."
+  (dolist (case '(("this is not json" . "Not a notebook")
+                  ("" . "Not a notebook")
+                  ("[1,2]" . "not an object")
+                  ("{\"worksheets\":[],\"nbformat\":3}" . "too old")
+                  ("{\"cells\":[{\"source\":[\"x\"]}],\"nbformat\":4}"
+                   . "cell 1 has no cell_type")
+                  ("{\"cells\":[{\"cell_type\":\"code\",\"source\":[1]}],\"nbformat\":4}"
+                   . "source of cell 1 is not text")))
+    (let ((err (should-error (emjupy--parse-ipynb (car case))
+                             :type 'user-error)))
+      (should (string-search (cdr case) (error-message-string err))))))
+
 (provide 'emjupy-ipynb-test)
 
 ;;; emjupy-ipynb-test.el ends here

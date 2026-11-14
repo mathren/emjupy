@@ -498,7 +498,8 @@ They catch `json-error' now.  A reply that deep reaches callers as the
                       (apply #'concat (make-list 20000 "{\"a\": "))
                       "1" (make-string 20000 ?})
                       ", \"nbformat\": 4, \"nbformat_minor\": 5}")))
-    (should-error (emjupy--parse-ipynb json) :type 'json-error)
+    ;; a notebook's parser says so to the user, with the parser's reason
+    (should-error (emjupy--parse-ipynb json) :type 'user-error)
     (should-error (emjupy--http-interpret
                    (make-emjupy-server :base-url "127.0.0.1:9" :token "")
                    "GET" "/api/contents/deep.ipynb"

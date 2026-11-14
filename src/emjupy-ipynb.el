@@ -35,16 +35,56 @@ which Jupytext, VS Code and Spyder read back as markdown."
 
 ;;;; Reading and writing .ipynb
 
+(defun emjupy--ipynb-array (value)
+  "Return VALUE if it is a vector, else an empty vector.
+Some tools write null where nbformat asks for an array."
+  (if (vectorp value) value []))
+
+(defun emjupy--ipynb-source (source index)
+  "Return the text of SOURCE, the `source' of the cell at INDEX.
+SOURCE is a string, or an array of strings to join.  Null or missing
+means empty.  Signal a `user-error' for anything else."
+  (cond ((stringp source) source)
+        ((memq source '(nil :null)) "")
+        ((and (vectorp source) (seq-every-p #'stringp source))
+         (mapconcat #'identity source ""))
+        (t (user-error "[emjupy] Not a notebook: the source of cell %d is not text"
+                       (1+ index)))))
+
+(defun emjupy--ipynb-cell-type (c-data index)
+  "Return the type, a symbol, of C-DATA, the cell at INDEX.
+Signal a `user-error' if C-DATA is not a cell with a type."
+  (let ((type (and (hash-table-p c-data) (gethash "cell_type" c-data))))
+    (unless (stringp type)
+      (user-error "[emjupy] Not a notebook: cell %d has no cell_type"
+                  (1+ index)))
+    (intern type)))
+
 (defun emjupy--parse-ipynb (json-string)
-  "Parse strict nbformat v4 JSON-STRING into an `emjupy-notebook' struct."
-  (let* ((data (json-parse-string json-string :object-type 'hash-table
-                                  :array-type 'array))
-         (cells-data (gethash "cells" data))
+  "Parse JSON-STRING, an nbformat 4 notebook, into an `emjupy-notebook'.
+Null where an array or a source belongs means none.  Signal a
+`user-error' for text that is not a notebook, or one in an older format."
+  (let* ((data (condition-case err
+                   (json-parse-string json-string :object-type 'hash-table
+                                      :array-type 'array)
+                 (json-error
+                  (user-error "[emjupy] Not a notebook: %s"
+                              (error-message-string err)))))
+         (_ (unless (hash-table-p data)
+              (user-error "[emjupy] Not a notebook: its JSON is not an object")))
+         (format (gethash "nbformat" data))
+         (_ (when (and (integerp format) (< format 4))
+              (user-error
+               (concat "[emjupy] Notebook format %d is too old: "
+                       "`jupyter nbconvert --to notebook' converts it")
+               format)))
+         (cells-data (emjupy--ipynb-array (gethash "cells" data)))
          (metadata (gethash "metadata" data))
          (nb (make-emjupy-notebook
               :metadata metadata :cells (make-vector (length cells-data) nil))))
     (cl-loop for i from 0 below (length cells-data)
              for c-data = (aref cells-data i)
+             for type = (emjupy--ipynb-cell-type c-data i)
              do (aset (emjupy-notebook-cells nb) i
                       (make-emjupy-cell
                        :id (emjupy--new-cell-id)
@@ -53,12 +93,12 @@ which Jupytext, VS Code and Spyder read back as markdown."
                        ;; renumber cells for collaborators.
                        :nb-id (let ((v (gethash "id" c-data)))
                                 (and (stringp v) v))
-                       :type (intern (gethash "cell_type" c-data))
+                       :type type
                        :exec-count (gethash "execution_count" c-data)
-                       :source (let ((src (gethash "source" c-data)))
-                                 (if (vectorp src) (mapconcat #'identity src
-                                                              "") src))
-                       :outputs (gethash "outputs" c-data)
+                       :source (emjupy--ipynb-source (gethash "source" c-data)
+                                                     i)
+                       :outputs (let ((outputs (gethash "outputs" c-data)))
+                                  (and (vectorp outputs) outputs))
                        :metadata (gethash "metadata" c-data)
                        :attachments (gethash "attachments" c-data))))
     nb))

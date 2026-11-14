@@ -107,7 +107,8 @@ its text is not compared with its source."
   "Return where CELL ends in the buffer, its output box included."
   (let ((ov (emjupy-cell-overlay cell))
         (out (emjupy-cell-output-ov cell)))
-    (if (overlayp out)
+    ;; An output box deleted from the buffer has no end.
+    (if (and (overlayp out) (overlay-buffer out))
         (max (overlay-end ov) (overlay-end out))
       (overlay-end ov))))
 
