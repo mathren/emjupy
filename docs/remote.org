@@ -6,19 +6,20 @@ Running notebooks on another machine, over a tunnel or otherwise.
 
 * Notebooks on another machine
 
-An =.ipynb= opened through TRAMP opens on its own machine with
-=emjupy-open-this-notebook=, which makes a server and a tunnel to it,
-through any hops -- see [[file:usage.org][Using a notebook]], which also says what you see while
-the server starts.  What follows is for a server you started and
-tunnelled to yourself.
+=emjupy-open-this-notebook= opens an =.ipynb= that you reached through
+TRAMP on its own machine.  It makes a server there and a tunnel to it,
+through any hops; see [[file:usage.org][Using a notebook]], which also
+says what you see while the server starts.  The rest of this page is for
+a server that you started and tunnelled to yourself.
 
-Nothing needs configuring for a kernel elsewhere: it is reached over the
-Jupyter server's WebSocket, and so is the language server, with
-=jupyter-lsp= beside it -- see [[file:language-server.org][Language server support]].  The shadow
-file stays in a temporary directory here, its contents sent over the
-socket with paths rewritten to the kernel's working directory, so
-completion, documentation and =M-.= into your own modules describe the
-machine the code runs on.
+A kernel on another machine needs no configuration.  emjupy reaches it
+over the Jupyter server's WebSocket.  It reaches the language server the
+same way, when =jupyter-lsp= runs beside the kernel; see
+[[file:language-server.org][Language server support]].  The shadow file
+stays in a temporary directory on this machine.  emjupy sends its
+contents over the socket, with paths rewritten to the kernel's working
+directory.  So completion, documentation and =M-.= into your own modules
+describe the machine the code runs on.
 
 | Kernel runs     | =jupyter-lsp= on the server | =M-.= into your modules                          |
 |-----------------+---------------------------+------------------------------------------------|
@@ -28,24 +29,26 @@ machine the code runs on.
 
 ** Without =jupyter-lsp=, over SSH
 
-With no =jupyter-lsp= but SSH access, use a language server of your own
-and name the host: emjupy puts the shadow file beside the notebook there,
-over TRAMP, and =eglot= starts the language server there.
+Without =jupyter-lsp= but with SSH access, you can use a language server
+of your own: name the host.  emjupy then puts the shadow file next to
+the notebook on that host, over TRAMP, and =eglot= starts the language
+server there.
 
 #+begin_src elisp
 (setq emjupy-language-support 'local
       emjupy-shadow-host "/ssh:box:")
 #+end_src
 
-=emjupy-shadow-host= is a host, not a path: the directory comes from the
-kernel, so =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.  Unset,
-the shadow file goes to a local temporary directory: =M-.= will not find
-your own modules, but nothing is written to a path meaning something
-else here.  It has no effect while the server's language server is
-used, the shadow file being then always local: only on the local route,
-chosen or fallen back to.  =emjupy-shadow-directory= overrides where
-the file goes; =emjupy-shadow-beside-notebook= turns placing it beside the
-notebook off.
+=emjupy-shadow-host= is a host, not a path.  The directory comes from
+the kernel, so =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.
+When the option is unset, the shadow file goes to a local temporary
+directory.  =M-.= then does not find your own modules, but nothing is
+written to a path that means something else on this machine.  The option
+has no effect while the server's language server is in use, because the
+shadow file is then always local.  It applies only to the local route,
+whether chosen or fallen back to.  =emjupy-shadow-directory= overrides
+where the file goes.  =emjupy-shadow-beside-notebook= nil stops placing
+it next to the notebook.
 
 * Tunnelled servers
 
@@ -61,13 +64,13 @@ it, in order, from:
 1. =emjupy-remote-root=, if set: a complete path, used as given.
 2. The address, if it names a host other than =localhost=.
 3. =emjupy-ssh-host=, if set.
-4. The command line of the =ssh= process forwarding the port, read with
-   =ps= on this machine; the answer, none too, is kept a minute per
-   port, as a reference search maps every result.
+4. The command line of the =ssh= process that forwards the port, read
+   with =ps= on this machine.  emjupy keeps the answer, including none,
+   for a minute per port, because a reference search maps every result.
 
-Cases 2 to 4 give only the host; the directory comes from the kernel,
-which reports the notebook's own, so notebooks in different directories
-of one machine resolve to different roots unaided.
+Cases 2 to 4 give only the host.  The directory comes from the kernel,
+which reports the notebook's own.  So notebooks in different directories
+of one machine resolve to different roots without help.
 
 Set =emjupy-ssh-host= when no =ssh= process can be found -- a tunnel made
 outside Emacs by other means:
@@ -88,10 +91,10 @@ an SSH server's.
 
 * How the listing is ordered
 
-Directories, notebooks, other files, then the server's kernels; within
-each, most recently modified first, so this morning's notebook is not
-buried among those sharing its prefix.  Kernels, with no modification
-time, by name.
+The order is: directories, notebooks, other files, then the server's
+kernels.  Within each group, the most recently modified comes first, so
+this morning's notebook is not buried among others with the same prefix.
+Kernels have no modification time, and are sorted by name.
 
 * Opening files from the listing
 
@@ -106,16 +109,18 @@ address:
 | the server's root is known    | read-only copy over HTTP      |
 | none of the above             | an error saying what to set   |
 
-The HTTP copy uses the Contents API, needing only a kernel to have
-reported where the server's files are (see [[*Where the server's files are][below]]); read-only, its header
-line naming the original path.
+The HTTP copy uses the Contents API.  It needs only that a kernel has
+reported where the server's files are (see [[*Where the server's files
+are][below]]).  The copy is read-only, and its header line names the
+original path.
 
 * Multiple notebooks & multiple servers
 
-Each server owns its token and XSRF cookie; a notebook its kernel; a
-kernel its WebSocket and table of requests in flight.  So several
-notebooks, from several servers -- several =ssh= tunnels on different
-local ports -- can be open at once.  Run =emjupy-login= once per tunnel:
+Each server owns its token and XSRF cookie.  Each notebook owns its
+kernel.  Each kernel owns its WebSocket and its table of requests in
+flight.  So several notebooks from several servers can be open at once,
+over several =ssh= tunnels on different local ports.  Run =emjupy-login=
+once per tunnel:
 
 #+begin_example
 M-x emjupy-login RET 8888 RET     ;; tunnel to machine A
@@ -128,62 +133,72 @@ The workflow it is built around:
 2. Locally, =ssh -L X:localhost:X user@remote=.
 3. =M-x emjupy-login RET X RET=.
 
-=emjupy= adopts the kernel running behind the port, so opening a notebook
-puts you in the REPL you started; a port with none gets a fresh kernel,
-one with several asks which.  Each port keeps its own kernel, so several
-remote sessions stay live; =C-c M-z= gives one notebook another.  Logging
-in again to a known server updates its token on the same object, so its
-notebooks stay valid.
+=emjupy= adopts the kernel running behind the port, so opening a
+notebook puts you in the REPL you started.  A port with no kernel gets a
+fresh one; a port with several asks which.  Each port keeps its own
+kernel, so several remote sessions stay live.  =C-c M-z= gives a
+notebook another kernel.  Logging in again to a known server updates its
+token on the same object, so its notebooks stay valid.
 
 =C-c M-z= marks kernels driving another open notebook =[in
 use]=: two notebooks on one kernel share interpreter state, rarely what
 is wanted.
 
-Notebook buffers are named =*emjupy: PATH [SERVER]*=, as one path can
-exist on two servers; the =eglot= shadow file is qualified the same way,
-so two servers' =analysis.ipynb= do not clobber each other.
+Notebook buffers are named =*emjupy: PATH [SERVER]*=, because one path
+can exist on two servers.  The =eglot= shadow file is qualified the same
+way, so the =analysis.ipynb= of two servers do not overwrite each other.
 
-If a tunnel drops, the remote kernel keeps running, and emjupy reconnects
-by itself, every few seconds for =emjupy-reconnect-window= seconds (30).
-A tunnel emjupy opened itself, for a notebook opened through TRAMP, it
-opens again, on the same port.  Opened again through a new tunnel, a notebook on
-the same machine, from the server on the same port there, is the same
-notebook: its buffer is reached again, its edits kept.  The same path
-from a server on another port is another notebook, opened apart.
-A cell running meanwhile is not lost: the server keeps the kernel's
-messages and hands them to the same session reconnecting, so the cell
-gets everything it printed.  A cell run while it reconnects runs once
-it is back.  One whose run ended while disconnected, its
-end not kept, is ended too, its output perhaps incomplete.  If the
-connection does not return in time, the cells are ended, and
-=emjupy-reconnect-kernel= (=C-c C-x C-c=) reconnects by hand; session
-state survives either way.  =emjupy-reconnect-window= nil does not try.
-A kernel the server answers it no longer has -- it died, or was shut
-down -- is not waited for; a server that does not answer at all is said
-to have perhaps stopped.  A kernel shut down or culled while a cell runs
-on it, its connection left open, is noticed too: after
-=emjupy-kernel-check-interval= seconds (30) with nothing from it, emjupy
-asks the server; nil never asks.
+If a tunnel drops, the remote kernel keeps running.  emjupy reconnects
+by itself, every few seconds, for =emjupy-reconnect-window= seconds
+(30).  It reopens a tunnel that it opened itself, for a notebook opened
+through TRAMP, on the same port.
+
+A notebook opened again through a new tunnel is the same notebook, if it
+is on the same machine and comes from the server on the same port there.
+emjupy returns to its buffer, with its edits.  The same path from a
+server on another port is a different notebook, and opens separately.
+
+A cell that was running is not lost.  The server keeps the kernel's
+messages and hands them to the same session when it reconnects, so the
+cell gets everything it printed.  A cell that you run while emjupy
+reconnects runs once the connection is back.  If a run ended while
+disconnected and its end was not kept, emjupy ends the cell too; its
+output may be incomplete.  If a cell was sent just as the connection
+dropped, emjupy says that it may not have run, and names the key that
+runs it again.
+
+If the connection does not return in time, emjupy ends the running
+cells.  =emjupy-reconnect-kernel= (=C-c C-x C-c=) then reconnects by
+hand, and so does running a cell.  Session state survives either way.
+=emjupy-reconnect-window= nil disables reconnecting.
+
+emjupy does not wait for a kernel that the server says it no longer has,
+because it died or was shut down.  If the server does not answer at all,
+emjupy says that it may have stopped.  emjupy also notices a kernel that
+is shut down or culled while a cell runs on it and its connection stays
+open: after =emjupy-kernel-check-interval= seconds (30) without a
+message, it asks the server.  nil never asks.
 
 * Access tokens
 
-The token is resolved without asking where possible: an explicit
-argument, else the server's registered token, else none -- common for
-tunnelled servers started with =--IdentityProvider.token= -- and only then
-a prompt.  =C-u M-x emjupy-login= always prompts.
+emjupy resolves the token without asking where it can.  It uses an
+explicit argument; otherwise the server's registered token; otherwise
+none, which is common for tunnelled servers started with
+=--IdentityProvider.token=.  Only then does it prompt.
+=C-u M-x emjupy-login= always prompts.
 
 * If the token is the problem
 
-A tunnelled server still has a token.  emjupy remembers it per server --
-=C-u M-x emjupy-status= lists each open notebook with its server -- so
-it is typed again only to check the server from the shell, with =curl=
-say.
+A tunnelled server still has a token.  emjupy remembers it per server,
+so you type it again only to check the server from the shell, with
+=curl= for example.  =C-u M-x emjupy-status= lists each open notebook
+with its server.
 
 * Where the server's files are
 Jupyter does not publish its root directory, deliberately.  emjupy works
-it out: the kernel reports the directory it runs in, the notebook's own,
-and the Contents API the notebook's path relative to the root.  Take the
-second off the end of the first:
+it out from two facts.  The kernel reports the directory it runs in,
+which is the notebook's own.  The Contents API reports the notebook's
+path relative to the root.  Take the second off the end of the first:
 
 #+begin_example
  kernel cwd     /home/you/project/analysis
@@ -192,14 +207,14 @@ second off the end of the first:
 #+end_example
 
 So =emjupy-remote-root= rarely needs setting: once a notebook's kernel
-starts, browsing that server's files works.  Set it when the derived
-root is not wanted -- a local mirror, a path through a TRAMP hop emjupy
-cannot infer -- and it takes precedence.  A kernel started outside the
-notebook's folder does not line up, and emjupy says it cannot tell
-rather than invent a path.
+starts, browsing that server's files works.  Set it when you do not want
+the derived root, as for a local mirror, or a path through a TRAMP hop
+that emjupy cannot infer.  It then takes precedence.  A kernel started
+outside the notebook's folder does not match; emjupy then says it cannot
+tell, rather than invent a path.
 
-In the dashboard, =d= opens what the cursor is on: a directory in Dired,
-a notebook or file as its directory, point on it.
+In the dashboard, =d= opens what the cursor is on.  A directory opens in
+Dired.  A notebook or a file opens its directory, with point on it.
 
 * Recovering from a dropped connection
 
