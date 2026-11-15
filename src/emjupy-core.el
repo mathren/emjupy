@@ -85,9 +85,8 @@ other groups."
   "Seconds after which emjupy's work after a command is reported, or nil.
 When a number, any per-command work taking longer is logged with the
 name of the function responsible; 0.05 is a good starting point.  A hang
-is hard to attribute from the outside: this says which of emjupy's hooks
-is the slow one, or -- just as usefully -- that none of them is, and the
-time is going somewhere else entirely."
+is hard to attribute from the outside.  This says which of emjupy's
+hooks is slow, or that none is, and the time goes elsewhere."
   :type '(choice (const :tag "Off" nil) (number :tag "Seconds"))
   :group 'emjupy-advanced)
 
@@ -166,9 +165,10 @@ when the server is made, into SCHEME, HOST, PORT and PATH: \"http\" or
   ;; The kernel bound to this port.  One port, one kernel: notebooks opened from
   ;; this server attach to it.  C-c M-z overrides it for one notebook.
   kernel-id
-  ;; Where the files it serves are, as a file name Emacs can open -- a
-  ;; TRAMP name, hops and all -- when emjupy knows rather than infers it:
-  ;; for a server it started, or found, through a notebook opened by TRAMP.
+  ;; Where the files it serves are, as a file name Emacs can open, such as a
+  ;; TRAMP name with its hops.  Set only when emjupy knows the place rather
+  ;; than infers it: for a server it started, or found, through a notebook
+  ;; opened by TRAMP.
   files-root)
 
 (cl-defstruct emjupy-kernel
@@ -319,11 +319,11 @@ SHADOW-BUFFER holds its code for the language server."
   path server kernel cells metadata buffer shadow-buffer
   ;; Live LSP session against the server `jupyter-lsp' runs, if any.
   lsp
-  ;; How its language server is reached, once decided: `socket', the
-  ;; server's beside the kernel, in its environment; `local', one on this
-  ;; machine -- the fallback, marked in the mode line; nil until the
-  ;; server has been asked.  LSP-REASON says why.  Where its shadow file
-  ;; goes, and whether an ordinary Eglot may attach, follow from it.
+  ;; How its language server is reached, once decided.  `socket' means the
+  ;; server's own, beside the kernel, in its environment.  `local' means one on
+  ;; this machine: the fallback, marked in the mode line.  nil means the server
+  ;; has not been asked yet.  LSP-REASON says why.  Where its shadow file goes,
+  ;; and whether an ordinary Eglot may attach, follow from it.
   lsp-route lsp-reason
   ;; Where the kernel says it is running.  Absolute, on the kernel's own
   ;; filesystem, so only meaningful here when the kernel is local or

@@ -242,10 +242,10 @@ the buffer's structure; it rebuilds every rule."
            ((and anchor (eq (char-after anchor) ?\n))
             (let ((gap-end (and ov (overlay-start ov))))
               (cond
-               ;; Between two boxes: the rules hang on the separator as
-               ;; continuation lines, never numbered, and the box's last newline
-               ;; is hidden -- by a `display', as Emacs draws no overlay string
-               ;; at a hidden position.
+               ;; Between two boxes, the rules hang on the separator as
+               ;; continuation lines, which are never numbered.  The box's last
+               ;; newline is hidden by a `display': Emacs draws no overlay
+               ;; string at a hidden position.
                ((and gap-end (< (overlay-end prev) gap-end))
                 (let ((o (emjupy--hang-rules prev anchor rules)))
                   ;; A cell whose code is hidden, with nothing below it:
@@ -348,9 +348,9 @@ box says that it is collapsed rather than absent."
   "Regexp rules for `emjupy--markdown-fontify-fallback'.")
 
 ;; LaTeX preview in markdown cells, off by default.  Math is replaced on screen
-;; by an image, a `display' on an overlay, so the text and the saved cell stay
-;; the LaTeX written. org renders it, needing LaTeX and no other package;
-;; math-preview is used if it is what there is.
+;; by an image, a `display' on an overlay.  So the text and the saved cell keep
+;; the LaTeX as written.  Org renders it, and needs LaTeX but no other package.
+;; math-preview is used if that is what is installed.
 
 ;;;; The running indicator
 
@@ -1087,8 +1087,8 @@ the same text the same way."
       (goto-char (car folded))
       (setq widest (cdr folded)))
     ;; Paint this piece, not the box, so a figure, a warning and a traceback in
-    ;; one cell each read as what they are; a text property, so font-lock
-    ;; colours show through.
+    ;; one cell each look like what they are.  Use a text property, so
+    ;; font-lock colours show through.
     (let ((face (emjupy--output-face out)))
       (when face
         (font-lock-prepend-text-property piece-start (point) 'face face)
@@ -1103,8 +1103,8 @@ the same text the same way."
 
 (defun emjupy--drawn-state (pieces)
   "Return what drawing PIECES, a cell's outputs in order, drew, or nil.
-Recorded on the output box so output that only grew at its end can be
-added to it rather than drawn again: how many pieces, the last if it is
+Record on the output box what lets output that only grew at its end be
+added to, not drawn again: the number of pieces, the last piece if it is
 a stream, its text as drawn, and the width it was folded at."
   (let ((last-out (car (last pieces))))
     (when (and last-out (equal (gethash "output_type" last-out) "stream"))

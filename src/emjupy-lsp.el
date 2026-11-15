@@ -12,11 +12,11 @@
 
 ;;; Commentary:
 
-;; Talks LSP to the language server `jupyter-lsp' runs on the Jupyter server,
-;; over its WebSocket, as JupyterLab does: the server sits beside the kernel, so
-;; imports resolve where the code runs, and the document is synced in-band.
-;; Also builds the document's text -- every code cell, under a marker naming it
-;; -- and maps positions back, for this transport and Eglot's.
+;; This file talks LSP to the language server that `jupyter-lsp' runs on the
+;; Jupyter server, over its WebSocket, as JupyterLab does.  That server sits
+;; beside the kernel, so imports resolve where the code runs.  The document is
+;; synced in-band.  Also builds the document's text -- every code cell, under a
+;; marker naming it -- and maps positions back, for this transport and Eglot's.
 
 ;;; Code:
 
@@ -246,10 +246,10 @@ That is the option `emjupy-lsp-server', over `jupyter-lsp'.  Asked once.")
 (defun emjupy--ask-server-lsp (server then)
   "Ask SERVER, without waiting, whether it has option `emjupy-lsp-server'; THEN.
 Call THEN with no argument once the server has answered.  Remember the
-answer: offered, not offered, or 404, meaning no jupyter-lsp.  A failure
-of the network, or a timeout, is no answer, since jupyter-lsp finds its
-servers on the first request, which can be slow: ask again, up to three
-times, and only then take it as none, and say so."
+answer: offered, not offered, or 404, meaning no jupyter-lsp.  A network
+failure or a timeout is not an answer: jupyter-lsp finds its servers on
+the first request, which can be slow.  Ask again, up to three times.
+Only then take it as none, and say so."
   (let* ((key (emjupy-server-base-url server))
          (tries (gethash key emjupy--lsp-asking 0)))
     (puthash key (1+ tries) emjupy--lsp-asking)

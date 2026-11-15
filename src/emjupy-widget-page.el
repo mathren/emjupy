@@ -21,11 +21,11 @@
 ;; not refused for its origin, and works through a tunnel as the notebook
 ;; does.  It starts from the models emjupy already holds.
 ;;
-;; The widget's own JavaScript -- its module -- is asked of the kernel, as
-;; plotly.js is: widget packages put a copy for the classic notebook in
-;; their environment, which matches the kernel's version and needs no
-;; network.  A module the kernel has no copy of is fetched from a CDN by
-;; the widget manager, as it would be in any page.
+;; The widget's own JavaScript, its module, comes from the kernel, as plotly.js
+;; does.  Widget packages put a copy for the classic notebook in their
+;; environment.  That copy matches the kernel's version and needs no network.
+;; A module the kernel has no copy of is fetched from a CDN by the widget
+;; manager, as it would be in any page.
 
 ;;; Code:
 

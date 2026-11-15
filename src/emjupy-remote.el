@@ -171,9 +171,9 @@ search returns."
 
 (defun emjupy--ssh-host-forwarding-1 (port)
   "Look through this machine's processes for an SSH tunnel forwarding PORT.
-Run from a local directory, whatever the current buffer: from a TRAMP
-directory, such as that of a shadow file next to a remote notebook,
-`ps' would run on the remote machine, where the tunnel is not."
+Run `ps' from a local directory, whatever the current buffer.  From a
+TRAMP directory, such as that of a shadow file next to a remote
+notebook, it would run on the remote machine, where the tunnel is not."
   (let ((default-directory temporary-file-directory))
     (when (executable-find "ps")
       (let ((lines (split-string

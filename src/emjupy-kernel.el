@@ -34,22 +34,19 @@
 
 (defcustom emjupy-output-render-interval 0.15
   "Seconds to let cell output accumulate before redrawing.
-
-A redraw rebuilds the whole notebook, so doing one per arriving message
-is the difference between a progress bar and a frozen Emacs: a
-`tqdm' loop sends a message per iteration, and each redraw of a
-notebook with figures costs tens of milliseconds.  Coalescing them
-bounds the cost to one redraw per interval however fast the output
-comes."
+A redraw rebuilds the whole notebook, so one per arriving message would
+freeze Emacs.  A `tqdm' loop sends a message per iteration, and each
+redraw of a notebook with figures costs tens of milliseconds.
+Coalescing them bounds the cost to one redraw per interval however fast
+the output comes."
   :type 'number
   :group 'emjupy-advanced)
 
 (defcustom emjupy-reconnect-window 30
   "Seconds to keep trying to reconnect after a kernel's connection drops.
-Cells running meanwhile are kept running: the server keeps their output
-while the connection is down and hands it over when it is back, so a
-tunnel that drops for a moment loses nothing.  nil does not try: the
-cells are ended at once, and \\[emjupy-reconnect-kernel] reconnects."
+Cells running meanwhile are kept running.  The server keeps their output
+while the connection is down, and hands it over when it is back.  So a
+tunnel that drops for a moment loses nothing."
   :type '(choice (const :tag "Do not try" nil) number)
   :group 'emjupy-advanced)
 
@@ -123,8 +120,8 @@ If reconnecting gives up, this is mentioned: the server may have stopped.")
 (cl-defun emjupy--make-execute-request (code &key allow-stdin internal)
   "Return a Jupyter `execute_request' payload for CODE.
 The value is a cons of the message id and the serialized message.  With
-ALLOW-STDIN, the kernel may ask for input -- `input', `getpass', pdb --
-as a cell run by the user does; emjupy's own requests never do.  With
+ALLOW-STDIN, the kernel may ask for input (`input', `getpass', pdb), as
+for a cell run by the user.  emjupy's own requests never allow it.  With
 INTERNAL, it is emjupy's own: counted in no execution count, kept in no
 history, and stopping none of the user's queued cells if it fails."
   (let* ((msg-id (emjupy--uuid))
@@ -1185,9 +1182,9 @@ a cell deleted meanwhile."
           (emjupy--goto-cell cell 'beginning)
           (emjupy-execute-cell-at-point))))))
 
-;; The reconnect loop -- connecting sets a close handler, which starts the
-;; timer below, which connects again -- is a cycle on purpose: retrying is
-;; one.  It runs through a callback and a timer, never as recursion.
+;; The reconnect loop is a cycle on purpose, as retrying is one: connecting
+;; sets a close handler, the handler starts the timer below, and the timer
+;; connects again.  It runs through a callback and a timer, never as recursion.
 
 (defun emjupy--try-reconnect (buf kernel-id kernel-name deadline label)
   "Try once to reconnect BUF's notebook to KERNEL-ID, named KERNEL-NAME.
@@ -1579,12 +1576,10 @@ one cell each."
 
 (defun emjupy-interrupt-kernel ()
   "Interrupt whatever this notebook's kernel is running.
-
-The equivalent of an interrupt signal in a terminal: the running cell
-stops with a
-KeyboardInterrupt and the session -- variables, imports, everything --
-is left alone.  Use \\[emjupy-restart-kernel] when you want the session
-itself thrown away."
+This is the equivalent of an interrupt signal in a terminal.  The
+running cell stops with a KeyboardInterrupt.  The session is left alone:
+variables, imports, everything.  Use \\[emjupy-restart-kernel] when you
+want the session itself thrown away."
   (interactive)
   (let* ((nb (emjupy--notebook))
          (kernel (emjupy-notebook-kernel nb)))

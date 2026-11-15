@@ -10,10 +10,10 @@
 
 ;;; Commentary:
 
-;; An .ipynb file visited as text, opened as a notebook instead: on a
-;; Jupyter server started here, or, for a file reached through TRAMP, on
-;; one found or started on its own machine and reached through an SSH
-;; tunnel, across every hop.
+;; This file opens an .ipynb file visited as text as a notebook instead.  A
+;; local file opens on a Jupyter server started here.  A file reached through
+;; TRAMP opens on a server found or started on its own machine, reached through
+;; an SSH tunnel across every hop.
 
 ;;; Code:
 

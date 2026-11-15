@@ -380,10 +380,9 @@ The prompt names the outputs and the execution count that made them."
 
 (defun emjupy-clear-cell-output ()
   "Discard the output of the cell at point.
-
-The output box goes with it, so the cell shrinks back to just its
-source, and the execution count is cleared too: nothing has been run
-since, so leaving [In: 4] beside no output would claim otherwise.
+The output box goes with it, so the cell shrinks back to its source.
+The execution count is cleared too: nothing has run since, and [In: 4]
+beside no output would claim otherwise.
 
 Only the buffer is touched.  The notebook on the server keeps its
 outputs until you save.

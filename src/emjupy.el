@@ -15,12 +15,12 @@
 
 ;;; Commentary:
 
-;; emjupy edits and runs Jupyter notebooks in Emacs.  It talks to a
-;; running Jupyter server over the same HTTP and WebSocket API the
-;; browser uses, so a kernel on another machine works through an ssh
-;; tunnel, and the notebook stays a standard .ipynb that any other
-;; Jupyter tool opens.  Completion, documentation and `M-.' come through
-;; Eglot, from a language server running beside the kernel.
+;; emjupy edits and runs Jupyter notebooks in Emacs.  It talks to a running
+;; Jupyter server over the same HTTP and WebSocket API that the browser uses.
+;; So a kernel on another machine works through an ssh tunnel.  The notebook
+;; stays a standard .ipynb that any other Jupyter tool opens.  Completion,
+;; documentation and `M-.' come through Eglot, from a language server running
+;; beside the kernel.
 ;;
 ;; Remote kernels: log in to a server by its port -- the local end of a
 ;; tunnel -- and emjupy adopts the kernel already running there, so

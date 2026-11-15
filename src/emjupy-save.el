@@ -160,8 +160,8 @@ trips.  Edits made meanwhile stay unsaved until the next save."
 (defun emjupy--save-to-server (nb &optional overwrite)
   "Save NB to its server, and return non-nil.
 Unless OVERWRITE, first make sure the server copy is the one opened or
-last saved here, and signal `emjupy-save-conflict' if it changed since --
-saved from JupyterLab, say -- rather than overwrite that."
+last saved here.  If it changed since, as when saved from JupyterLab,
+signal `emjupy-save-conflict' rather than overwrite it."
   (with-current-buffer (emjupy-notebook-buffer nb)
     ;; Let an automatic save in progress finish first: sent earlier, it
     ;; could still arrive later and undo this save.

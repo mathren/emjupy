@@ -15,9 +15,10 @@
 ;;
 ;; A widget is a model in the kernel, announced and updated by comm messages;
 ;; the models are kept here, and a widget's output drawn from them.  Using a
-;; control sends the kernel the new value, as a browser would; what that changes
-;; -- an `interact' drawing its figure again -- comes back as output answering
-;; that message, so the message is remembered with the cell showing the widget.
+;; control sends the kernel the new value, as a browser would.  What that
+;; changes, such as an `interact' drawing its figure again, comes back as
+;; output answering that message.  So the message is remembered with the cell
+;; that shows the widget.
 ;;
 ;; Widgets that draw themselves in JavaScript open in a page of their own:
 ;; emjupy-widget-page.el.
@@ -77,9 +78,9 @@ in the state -- an image widget's value, say."
 
 (defun emjupy--widget-redraw (kernel)
   "Redraw the cells of KERNEL's notebook that show widgets.
-A widget changed in the kernel -- a progress bar moving, an image
-replaced -- is drawn anew; the redraw waits for the output timer, so
-many changes in a row cost one."
+A widget changed in the kernel, such as a moving progress bar or a
+replaced image, is drawn again.  The redraw waits for the output timer,
+so many changes in a row cost one redraw."
   (let* ((nb (emjupy-kernel-notebook kernel))
          (buf (and nb (emjupy-notebook-buffer nb))))
     (when (buffer-live-p buf)
@@ -120,10 +121,11 @@ many changes in a row cost one."
 
 ;;;; Drawing a widget from the shape of its state
 
-;; A widget is drawn from what its state holds, not its type: a value with
-;; bounds is stepped, option labels chosen from, children drawn in turn -- so a
-;; widget never named here is drawn too.  The rules, `emjupy-widget-rules', are
-;; tried in order; a widget none fits shows as its name.
+;; A widget is drawn from what its state holds, not from its type.  A value
+;; with bounds is stepped, option labels are chosen from, and children are
+;; drawn in turn.  So a widget never named here is drawn too.  The rules,
+;; `emjupy-widget-rules', are tried in order; a widget none fits shows as its
+;; name.
 
 (defun emjupy--widget-button (label id action &optional arg)
   "Return LABEL as a control acting on the widget with comm ID.

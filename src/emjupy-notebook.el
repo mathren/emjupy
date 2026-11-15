@@ -55,9 +55,9 @@ Jupyter's own default, and the one a tunnel is usually pointed at."
 (defvar emjupy--kernel-history nil
   "Minibuffer history for kernel choices.")
 
-;; Tokens deliberately have NO history: they are secrets, and a history
-;; would put them back on screen -- and into savehist, for anyone who
-;; persists it -- which is the whole thing `read-passwd' avoids.
+;; Tokens deliberately have NO history.  They are secrets.  A history would put
+;; them back on screen, and into savehist for anyone who saves it, which is
+;; what `read-passwd' avoids.
 
 (defun emjupy--read-token (prompt)
   "Read a token or password for PROMPT without echoing it.
@@ -85,8 +85,8 @@ trip; do not cache a no, as the server may still be starting."
     (or (and at (< (- (float-time) at) 2))
         (let ((inhibit-message t)
               (message-log-max nil))
-          ;; A failed request -- refused, or no server -- is the answer "no";
-          ;; anything else is a bug, and is raised rather than taken for it.
+          ;; A failed request (refused, or no server) means "no".  Any other
+          ;; error is a bug, and is signalled.
           (condition-case nil
               (when (emjupy--http-request "GET" server
                                           "/api/contents?content=0")
@@ -438,12 +438,11 @@ Changes since then, saved or not, are lost, so ask first."
 
 (defun emjupy-export-py (&optional local)
   "Export this notebook as a plain Python file in percent format.
-
-The default destination is beside the notebook itself, on the server it
-came from -- which is what makes this work for a remote kernel with no
-TRAMP and no extra configuration: the file is written through the same
-Contents API the notebook is read through, so it lands next to the
-.ipynb on that machine.
+The default destination is next to the notebook, on the server it came
+from.  The file is written through the same Contents API the notebook is
+read through, so it lands next to the .ipynb on that machine.  That
+makes this work for a remote kernel, without TRAMP or extra
+configuration.
 
 With a prefix argument, LOCAL, write to a local file instead.  A TRAMP
 file name works there, if you would rather push it somewhere else."

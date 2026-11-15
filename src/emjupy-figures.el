@@ -69,9 +69,9 @@ as (\"google-chrome\" \"--app=%s\"), say."
 (defcustom emjupy-plotly-js 'kernel
   "Where the plotly.js a figure page loads comes from.
 `kernel' asks the kernel that made the figure for its own copy, once per
-plotly version, and keeps it: it matches the figure, and needs no
-network, which also makes it work through a tunnel.  A string is used as
-the script's address instead -- a URL, such as a CDN's, or a file name."
+plotly version, and keeps it.  That copy matches the figure and needs no
+network, so it also works through a tunnel.  A string is used as the
+script's address instead -- a URL, such as a CDN's, or a file name."
   :type '(choice (const :tag "The kernel's own copy" kernel)
                  (string :tag "A URL or file name"))
   :group 'emjupy-advanced)

@@ -35,10 +35,9 @@
 
 (defcustom emjupy-language-support t
   "Which language server provides completion, eldoc and definitions.
-
 t means the one the notebook's server runs beside the kernel, through
-`jupyter-lsp', in the kernel's environment; if there is none, one on
-this machine is used instead, with a message and a mark in the mode
+`jupyter-lsp', in the kernel's environment.  If the server has none, one
+on this machine is used instead, with a message and a mark in the mode
 line.  `local' means always one on this machine.  nil means none.
 
 This one switch covers every use of a language server: completion,
@@ -98,8 +97,8 @@ the advice does nothing at all."
            ;; can be worked out from it -- so browsing its files needs no
            ;; configuration either.
            (emjupy--remember-server-root nb)
-           ;; The directory was the last thing missing: start now, so the
-           ;; handshake -- or its failure -- comes here, not at the first
+           ;; The directory was the last thing missing.  Start now, so the
+           ;; handshake, or its failure, happens here and not at the first
            ;; completion.
            (emjupy-start-language-support nb)))))))
 
@@ -124,11 +123,10 @@ That is, `emjupy-language-support' is `local', or the obsolete
 
 (defun emjupy-start-language-support (&optional nb)
   "Begin language support for NB, without waiting for it.
-
-The language server is the one beside the kernel, in its environment,
-reached over the server's WebSocket, when the server has one through
-`jupyter-lsp'; otherwise one on this machine -- the fallback, said, and
-marked in the mode line.  See `emjupy--decide-lsp-route'.
+Use the language server beside the kernel, in its environment, over the
+server's WebSocket, if the server offers one through `jupyter-lsp'.
+Otherwise use one on this machine, say so, and mark it in the mode line.
+See `emjupy--decide-lsp-route'.
 
 Called when a notebook learns where its kernel is, and available by
 hand.  Reports what it found rather than failing quietly."
@@ -150,10 +148,10 @@ hand.  Reports what it found rather than failing quietly."
 (defun emjupy--decide-lsp-route (nb)
   "Return how NB reaches its language server, deciding it the first time.
 The value is `socket' or `local', as `emjupy-notebook-lsp-route', or nil
-while the server is being asked, without waiting; this is called again
-once it answers, if the notebook is still open with its kernel
-connected.  Nothing attaches before the decision, so an ordinary Eglot
-cannot start first and win over the right server."
+while the server is being asked.  Asking does not wait: this is called
+again once the server answers, if the notebook is still open with its
+kernel connected.  Nothing attaches before the decision, so an ordinary
+Eglot cannot start first and win over the right server."
   (unless (emjupy-notebook-lsp-route nb)
     (let ((server (emjupy-notebook-server nb)))
       (cond
@@ -587,11 +585,12 @@ current JSON-RPC connection\"."
                                                          "s")))
       updated)))
 
-;; Eglot's commands are advised, against the manual's advice for packages:
-;; Eglot finds its server from the current buffer -- for a notebook, its
-;; shadow buffer -- with no way to act through another, and remapping keys
-;; would leave M-x failing.  Narrow: in notebook buffers only, on
-;; `emjupy-eglot-delegated-commands' only; `emjupy-eglot-remove-advice'.
+;; Eglot's commands are advised, against the manual's advice for packages.
+;; Eglot finds its server from the current buffer, and has no way to act
+;; through another; for a notebook, the server belongs to the shadow buffer.
+;; Remapping keys instead would leave M-x failing.  Narrow: in notebook buffers
+;; only, on `emjupy-eglot-delegated-commands' only;
+;; `emjupy-eglot-remove-advice'.
 
 (defun emjupy--eglot-command-advice (orig &rest args)
   "Around-advice running ORIG with ARGS in the shadow buffer, in notebooks.

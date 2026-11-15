@@ -215,9 +215,9 @@ validation even though it looks fine in emjupy."
 
 (defun emjupy--percent-export (nb)
   "Return NB's cells as a plain Python file in percent format.
-Plain `# %%' markers, as Jupytext, VS Code and Spyder read, and the
-markdown cells as comments -- not the shadow buffer, which has emjupy's
-own ids and code cells only."
+Use plain `# %%' markers, which Jupytext, VS Code and Spyder read, and
+write markdown cells as comments.  This is not the shadow buffer, which
+has emjupy's own ids and code cells only."
   (let ((chunks nil))
     (cl-loop for cell across (or (emjupy-notebook-cells nb) [])
              do (let ((source (or (emjupy-cell-source cell) "")))

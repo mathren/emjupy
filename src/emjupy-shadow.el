@@ -10,13 +10,13 @@
 
 ;;; Commentary:
 
-;; A language server reads files, and a notebook is not one: its code
-;; cells are kept in a hidden "shadow" buffer, one Python file, each cell
-;; after a marker naming it, with its file beside the notebook or in a
-;; temporary directory.  Here: the shadow file and buffer, mapping
-;; positions between cells and the shadow, and the buffers for editing one
-;; cell or all the code.  Attaching Eglot to the shadow, and what the
-;; language server answers, are in emjupy-eglot.el.
+;; A language server reads files, and a notebook is not one.  So the code cells
+;; are kept in a hidden "shadow" buffer: one Python file, each cell after a
+;; marker that names it.  Its file is next to the notebook, or in a temporary
+;; directory.  Here: the shadow file and buffer, mapping positions between
+;; cells and the shadow, and the buffers for editing one cell or all the code.
+;; Attaching Eglot to the shadow, and what the language server answers, are in
+;; emjupy-eglot.el.
 
 ;;; Code:
 
@@ -381,8 +381,8 @@ and find its modules."
 
 (defun emjupy--make-shadow-directory (path)
   "Make the directory PATH is in; return non-nil, or nil after backing off.
-A timeout, a file error -- unreachable, refused -- or TRAMP's user error
-backs off: the notebook stays open, without language support."
+A timeout, a file error (unreachable, refused) or TRAMP's user error
+makes this back off.  The notebook stays open, without language support."
   (condition-case err
       (with-timeout (emjupy-shadow-timeout
                      (emjupy--shadow-block "timed out")

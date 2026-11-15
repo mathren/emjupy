@@ -46,12 +46,11 @@ reason."
 
 (defcustom emjupy-output-color 'auto
   "Background behind ordinary cell output.
-
-`auto' (the default) derives a faint accent from the current theme by
-blending the default background `emjupy-output-blend' of the way toward
-the default foreground -- which tints a light theme slightly darker and
-a dark theme slightly lighter, so it works both ways round and picks up
-the theme's hue instead of forcing a neutral grey.
+`auto' (the default) derives a faint accent from the current theme.  It
+blends the default background `emjupy-output-blend' of the way toward
+the default foreground.  That tints a light theme slightly darker and a
+dark theme slightly lighter, and picks up the theme's hue rather than a
+neutral grey.
 
 A colour string (e.g. \"#f0f0f0\") is used verbatim.  nil disables the
 band, leaving output on the normal background.

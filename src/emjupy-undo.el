@@ -10,12 +10,13 @@
 
 ;;; Commentary:
 
-;; Undo entries hold buffer positions, not markers.  When a redraw replaces
-;; a stretch of the buffer, the entries after it must shift and those
-;; inside it must go, or the next undo rewrites the wrong text.  This is
-;; that bookkeeping.  The undo step a cell command records, and its
-;; snapshot of the cells, are with the redraws, in emjupy-redraw.el: undoing
-;; a step redraws the notebook, and redrawing it records a step.
+;; Undo entries hold buffer positions, not markers.  When a redraw replaces a
+;; stretch of the buffer, the entries after it must shift and those inside it
+;; must go, or the next undo rewrites the wrong text.  This is that
+;; bookkeeping.  The undo step that a cell command records, and its snapshot of
+;; the cells, are in emjupy-redraw.el, with the redraws.  The two depend on
+;; each other: undoing a step redraws the notebook, and redrawing records a
+;; step.
 
 ;;; Code:
 

@@ -124,9 +124,9 @@ drawn, and no carriage return or colour escape in it."
 
 (defun emjupy--views ()
   "Return what each window showing this buffer should keep in view.
-Each element is (WINDOW ANCHOR DISTANCE): ANCHOR is a marker at the
+Each element is (WINDOW ANCHOR DISTANCE).  ANCHOR is a marker at the
 start of the cursor's line, or of the window's first line if the cursor
-is not visible, and DISTANCE is that line's height from the window's top,
+is not visible.  DISTANCE is that line's height from the window's top,
 in pixels."
   (let (views)
     (dolist (w (get-buffer-window-list (current-buffer) nil t))
