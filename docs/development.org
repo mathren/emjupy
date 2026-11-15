@@ -12,57 +12,60 @@ make package                 # generates emjupy-i.j.k.tar
 then =M-x package-install-file RET emjupy-i.j.k.tar
 RET=, =i.j.k= being the version.
 
-It needs Emacs 30.1+ and =websocket= (1.15+). Installed as a package,
-the commands you start from -- =emjupy-login=, =emjupy-open-notebook=,
-=emjupy-server-dashboard= -- are autoloaded: no =require= needed.
+emjupy needs Emacs 30.1 or later, and =websocket= 1.15 or later.  When
+it is installed as a package, the commands you start from are
+autoloaded, so no =require= is needed.  They are =emjupy-login=,
+=emjupy-open-notebook= and =emjupy-server-dashboard=.
 
 * Which Emacs to develop against
 
-Emacs 30.1: the minimum the package declares, what CI runs, what most
-users have. =make versions= says which Emacs is in use, and whether it
-is the target.
+The target is Emacs 30.1: it is the minimum the package declares, what
+CI runs, and what most users have.  =make versions= says which Emacs is
+in use, and whether it is the target.
 
 * Source layout
 
-Sources in =src/=, a layer to a file, each requiring only those below
-it: [[file:reading-the-code.org][Reading the code]] lists them in that order, with what each holds,
-and draws the graph of their requires. =emjupy-pkg.el= is the package
-metadata for =make package= (MELPA makes its own);
-=emjupy-figure-window.py= the window interactive figures open in,
-shipped with them.  Tests in =test/=: the unit tests of each file in
-=emjupy-FILE-test.el=, what they share in =emjupy-test-helpers.el=; the
-notebooks they read in =test_notebooks/=.
+The sources are in =src/=, one layer per file, and each file requires
+only those below it.  [[file:reading-the-code.org][Reading the code]]
+lists them in that order, says what each holds, and draws the graph of
+their requires.  =emjupy-pkg.el= is the package metadata for
+=make package= (MELPA makes its own).  =emjupy-figure-window.py= is the
+window that interactive figures open in, and ships with the sources.
+The tests are in =test/=.  The unit tests of each file are in
+=emjupy-FILE-test.el=, and what they share is in
+=emjupy-test-helpers.el=.  The notebooks they read are in
+=test_notebooks/=.
 
 * Code rules
 
 ** Dependencies run one way
 
-No file calls or names anything defined in a file below it in the
-table -- except a keymap, which names its commands wherever they are
-defined, with a plain quote: a binding is resolved when the key is
+No file calls or names anything defined in a file below it in the table.
+A keymap is the exception: it names its commands wherever they are
+defined, with a plain quote.  A binding is resolved when the key is
 pressed, and a keymap reads best whole.  There are no =declare-function=
 forms for emjupy's own functions.  Each file requires the files whose
-functions it uses, and only those; each loads on its own -- =(require
-'emjupy-lsp)= in a fresh Emacs works -- which is what makes this
-checkable.
+functions it uses, and only those.  Each file loads on its own:
+=(require 'emjupy-lsp)= works in a fresh Emacs.  That is what makes the
+rule checkable.
 
-The graph of these requires is in [[file:reading-the-code.org][Reading the code]], drawn from the
-code by =tools/dependency-graph.py= when the site is built (=make
-dependency-graph= draws it alone); =dependencies.dot= has every require,
-for Graphviz.
+The graph of these requires is in [[file:reading-the-code.org][Reading
+the code]].  =tools/dependency-graph.py= draws it from the code when the
+site is built; =make dependency-graph= draws it alone.
+=dependencies.dot= has every require, for Graphviz.
 
 A lower layer tells a higher one something happened by running a hook:
 
-- =emjupy-kernel-connected-functions=: a kernel attached. =emjupy-mode=
-  hangs two handlers on it: ask the kernel where it runs, for the
-  language server; tell it the cell width.
+- =emjupy-kernel-connected-functions= runs when a kernel attaches.
+  =emjupy-mode= puts two handlers on it.  One asks the kernel where it
+  runs, for the language server.  The other tells it the cell width.
 - =emjupy-box-width-changed-functions=: the width cells are drawn at
   changed, so the kernel is told.
-- =emjupy-comm-functions=, run with each comm message, and
-  =emjupy-output-owner-functions=, asked which cell an output answering
-  no cell's request belongs to.  The widgets layer keeps its models
-  from the first, and claims with the second the output a moved slider
-  causes.
+- =emjupy-comm-functions= runs with each comm message.
+  =emjupy-output-owner-functions= is asked which cell owns an output
+  that answers no cell's request.  The widgets layer keeps its models
+  from the first.  With the second, it claims the output that a moved
+  slider causes.
 - =emjupy-widget-view-functions=: the drawing layer asks for a widget's
   controls; the widgets layer answers.
 
@@ -71,14 +74,14 @@ layer on -- not when a file loads.  Only hooks run upward; nothing is
 set to one function for a layer below to call.  The rest follows from
 where things are put:
 
-- A redraw happens whole or is put right by redrawing from the cells.
-  The redraws needing that -- a cell's output in place, every output
-  on a width change -- are in the redraw layer, so putting one right
-  is a plain call.
+- A redraw either completes, or is repaired by redrawing from the cells.
+  The redraws that need this are in the redraw layer: a cell's output in
+  place, and every output on a width change.  So repairing one is a
+  plain call.
 - Undo is in two files, on purpose: [[file:reading-the-code.org][Reading the code]] says why.
-- A keymap is defined whole where it is made: the output maps in the
-  drawing layer, the mode's map in emjupy-mode.el, the menu in
-  emjupy-notebook.el.
+- A keymap is defined whole where it is made.  The output maps are in
+  the drawing layer, the mode's map is in emjupy-mode.el, and the menu
+  is in emjupy-notebook.el.
 - A widget control drawn by the widget-page layer carries the function
   that opens it, which the widgets layer calls.
 
@@ -87,20 +90,21 @@ where things are put:
 Catch the failure you expect; let the rest through.  The package has no
 =ignore-errors=: it hides bugs along with the expected failure.
 
-- A failure with a precondition is checked, not caught: =window-live-p=,
-  =buffer-live-p=, =websocket-p= and =websocket-openp=,
-  =jsonrpc-running-p=, =xref-file-location-p=.
-- One found only by trying is caught by type: =json-error= -- the whole
-  family, as too-deep nesting or non-UTF-8 bytes are a =json-error= but
-  not a =json-parse-error= -- =jsonrpc-error=, =file-error=.
+- A failure with a precondition is checked, not caught.  The checks are
+  =window-live-p=, =buffer-live-p=, =websocket-p= and =websocket-openp=,
+  =jsonrpc-running-p=, and =xref-file-location-p=.
+- A failure found only by trying is caught by its type: =json-error=,
+  =jsonrpc-error= or =file-error=.  Catch =json-error=, the whole
+  family: too-deep nesting and non-UTF-8 bytes are a =json-error= but
+  not a =json-parse-error=.
 - A failed request to the Jupyter server signals =emjupy-http-error=, or
-  =emjupy-http-status= for an error status; both are children of
+  =emjupy-http-status= for an error status.  Both are children of
   =file-error=, which keeps their messages readable.
-  =emjupy--http-status-of= extracts the status; =emjupy--http-exists-p=
+  =emjupy--http-status-of= extracts the status.  =emjupy--http-exists-p=
   returns nil for a 404 instead of signalling.
-- A Contents API path goes through =emjupy--contents-path=, never a bare
-  =concat=: a name can hold =#= or =?=, so =a#b.ipynb= would be asked
-  for, and saved, as =a=.
+- A Contents API path goes through =emjupy--contents-path=, never
+  through a bare =concat=.  A name can hold =#= or =?=, so =a#b.ipynb=
+  would otherwise be requested, and saved, as =a=.
 - Background work that must not abort its command -- the language server
   warming up as a notebook opens -- uses =with-demoted-errors=.
 
@@ -128,16 +132,20 @@ Every file starts with the same header.  A Lisp file:
 The licence is given by its SPDX identifier alone.  Python, shell and the
 Makefile carry the copyright and SPDX lines as comments, after any =#!=.
 
-The code follows the Elisp manual's [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Tips.html][Tips and Conventions]] and the [[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs
-Lisp style guide]]: requires and compiler declarations at the top,
-Emacs's own indentation, =#'= for a function passed, =when= and =unless= for
-one branch, a docstring for every variable with a value, no code
-commented out, lines of 80 columns.  Beyond them, emjupy's own:
+The code follows the Elisp manual's
+[[https://www.gnu.org/software/emacs/manual/html_node/elisp/Tips.html][Tips
+and Conventions]] and the
+[[https://github.com/bbatsov/emacs-lisp-style-guide][Emacs Lisp style
+guide]].  That means: requires and compiler declarations at the top,
+Emacs's own indentation, =#'= for a function that is passed, =when= and
+=unless= for a single branch, a docstring for every variable with a
+value, no commented-out code, and lines of 80 columns.  emjupy adds its
+own rules:
 
-- Loading a file only defines things: hooks go in a layer's =-enable=
-  function, which =emjupy-mode= calls.  An optional or heavy library --
-  =xwidget=, =org= for LaTeX -- is required where it is needed, and
-  declared at the top with a comment saying why.
+- Loading a file only defines things.  Hooks go in a layer's =-enable=
+  function, which =emjupy-mode= calls.  An optional or heavy library,
+  such as =xwidget= or =org= for LaTeX, is required where it is needed.
+  It is declared at the top, with a comment that says why.
 - A keymap is a =defvar= whose value builds it whole, never a
   =define-key= at top level.
 - =;;;###autoload= only on commands that make sense before emjupy is
@@ -147,13 +155,14 @@ commented out, lines of 80 columns.  Beyond them, emjupy's own:
   =emjupy-eglot.el= says why.
 - Every file in sections: user options first, under =;;;; Options=, then
   a =;;;;= heading per part.  Messages start =[emjupy]=.
-- A user option goes in its subject's group, defined in emjupy-core.el,
-  and is =:safe= only if it changes nothing but how a notebook looks or is
-  exported: never one that runs a program, loads code, or reaches a file
-  or host.
+- A user option goes in its subject's group, defined in emjupy-core.el.
+  It is =:safe= only if it changes nothing but how a notebook looks or
+  is exported.  An option that runs a program, loads code, or reaches a
+  file or host is never =:safe=.
 - Comments say why, briefly.
-- Past 80 columns only a string long in itself -- a URL, a regexp, JSON, a
-  message someone may search for -- a file's first line, a test's name.
+- A line goes past 80 columns only for a string that is long in itself
+  (a URL, a regexp, JSON, a message someone may search for), for a
+  file's first line, or for a test's name.
 
 ** Words for what is on screen
 
@@ -168,8 +177,8 @@ Function names keep four verbs apart:
 - /refresh/: fetch again what may have changed elsewhere -- on the server,
   in the kernel, the theme (=emjupy-list-refresh=).
 
-The drawing layer is =emjupy-render.el= all the same, and two commands
-keep the names users know: =emjupy-re-render= redraws the notebook,
+The drawing layer is still called =emjupy-render.el=, and two commands
+keep the names users know.  =emjupy-re-render= redraws the notebook.
 =emjupy-refresh-appearance= re-reads the theme and redraws.
 
 * Makefile targets
@@ -203,11 +212,11 @@ Each check runs once per event:
 | tag                                 | =release.yml= only                                                                                             |
 | by hand                             | =set-version.yml=, or any of the above from the Actions tab                                                    |
 
-Everything needing only Emacs is one job, =check=.  On =main= the tests
-run once, in =coverage.yml=; the timing tests, skipped there, run on pull
-requests.  The release is one job, publishing nothing -- release,
-tarball, site -- until all of it passes.  It tests what it ships, as the
-version commit is often pushed with =[skip ci]=.
+Everything that needs only Emacs is one job, =check=.  On =main= the
+tests run once, in =coverage.yml=.  The timing tests are skipped there,
+and run on pull requests.  The release is one job.  It publishes nothing
+(release, tarball, site) until all of it passes.  It tests what it
+ships, because the version commit is often pushed with =[skip ci]=.
 
 Other branches run nothing until a pull request; a newer push cancels a
 run still going.  Build also runs for changes to the docs, the tools,
@@ -227,13 +236,13 @@ What CI runs, cheap checks first.
   #+begin_src bash
   pip install jupyter-server ipykernel jupyter-lsp 'python-lsp-server[all]'
   #+end_src
-- For =make lint=, package-lint: =M-x package-install RET package-lint=,
-  or =PACKAGE_LINT_DIR= naming a checkout.  It runs as MELPA runs it,
-  warnings failing too, and fails without package-lint or an archive
-  listing the dependencies -- MELPA, or the one =EMJUPY_PACKAGE_ARCHIVE=
-  names.
-- For melpazoid, a clone and Docker, as it runs in a container to match
-  MELPA:
+- =make lint= needs package-lint:
+  =M-x package-install RET package-lint=, or =PACKAGE_LINT_DIR= naming a
+  checkout.  It runs as MELPA runs it, so warnings fail too.  It fails
+  without package-lint, and without an archive that lists the
+  dependencies: MELPA, or the one =EMJUPY_PACKAGE_ARCHIVE= names.
+- melpazoid needs a clone and Docker, because it runs in a container to
+  match MELPA:
   #+begin_src bash
   git clone https://github.com/riscy/melpazoid ~/melpazoid
   #+end_src
@@ -282,24 +291,24 @@ With the integration variables set it covers the server-facing code
 too, as CI runs it.  Tests tagged =:timing= are left out: instrumented,
 time means nothing.
 
-The docs, with CI's link check -- every page and anchor linked to must
-exist:
+Build the docs and run CI's link check, which requires every linked page
+and anchor to exist:
 
 #+begin_src bash
 make docs                   # then open html-content/index.html
 python3 tools/check-links.py
 #+end_src
 
-The Org sources are checked too, with the test suite, the site unbuilt:
-=emjupy-test-every-link-in-the-docs-leads-somewhere= follows every
-internal link to its file, and to the heading it names.
+The Org sources are checked too, by the test suite, without building the
+site.  =emjupy-test-every-link-in-the-docs-leads-somewhere= follows
+every internal link to its file, and to the heading it names.
 
-Link to a section by its title -- =[[*Title]]= within a page,
-=[[file:page.org::*Title]]= to another -- with no =CUSTOM_ID= to manage:
-the site makes each heading's anchor the slug of its title, and resolves
-title links to it.  Renaming a heading changes its anchor, and links to
-it need its new title; =python3 tools/check-links.py= finds any that do
-not.
+Link to a section by its title: =[[*Title]]= within a page,
+=[[file:page.org::*Title]]= to another page.  There is no =CUSTOM_ID= to
+manage.  The site makes each heading's anchor from the slug of its
+title, and resolves title links to it.  Renaming a heading changes its
+anchor, so links to it need the new title.
+=python3 tools/check-links.py= finds any that do not have it.
 
 =.github/melpa-recipe= must list every file the package ships.
 =make recipe-check= checks it, as CI does: every file the Makefile ships
@@ -312,17 +321,18 @@ make recipe-check
 
 ** Compiling one file by hand
 
-=M-x byte-compile-file= compiles against =load-path=: with emjupy
+=M-x byte-compile-file= compiles against =load-path=.  If emjupy is also
 installed from an archive, =(require 'emjupy-core)= finds the INSTALLED
-copy, and a module added since is not found -- "Cannot open load file:
-emjupy-remote" is that, not a fault in the file.  =make compile= puts
-=src/= first; by hand, put the checkout first on =load-path=, or
-uninstall the package meanwhile.
+copy, and a module added since then is not found.  "Cannot open load
+file: emjupy-remote" means that, not a fault in the file.
+=make compile= puts =src/= first.  By hand, put the checkout first on
+=load-path=, or uninstall the package meanwhile.
 
 The tests, the scripts in =tools/=, =emjupy-pkg.el= and =publish.el= say
-=no-byte-compile=: not code to load compiled.  An install from git with
-package-vc -- or =use-package :vc= -- compiles the whole checkout, and
-without it reported an error compiling a test.
+=no-byte-compile=: they are not code to load compiled.  An install from
+git with package-vc, or with =use-package :vc=, compiles the whole
+checkout.  Without the mark, such an install reports an error when it
+compiles a test.
 
 * Tests
 
@@ -336,8 +346,8 @@ make test
 emacs -batch -Q -l test/emjupy-run-tests.el
 #+end_src
 
-=websocket= comes from =load-path=, then =EMJUPY_WEBSOCKET_DIR=, then
-GNU ELPA -- so the suite runs offline too:
+=websocket= comes from =load-path=, then from =EMJUPY_WEBSOCKET_DIR=,
+then from GNU ELPA.  So the suite runs offline too:
 
 #+begin_src bash
 EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket make test
@@ -346,10 +356,10 @@ EMJUPY_WEBSOCKET_DIR=/path/to/emacs-websocket make test
 ** Integration tests (real server, real kernel, real LSP)
 
 =emjupy-integration-test.el= runs real Python in a real kernel on a live
-Jupyter server.  Opt-in: they =ert-skip= unless the environment names a
-running server.  They catch what only a live server shows -- an image
-this Emacs cannot display, a WebSocket URL dropping its base path, a
-saved notebook no other tool opens.
+Jupyter server.  The tests are opt-in: they =ert-skip= unless the
+environment names a running server.  They catch what only a live server
+shows: an image this Emacs cannot display, a WebSocket URL that drops
+its base path, or a saved notebook that no other tool opens.
 
 | Variable           | Meaning                                                   |
 |--------------------+-----------------------------------------------------------|
@@ -417,33 +427,34 @@ the drop while it still fails.
 *** Expected failures
 
 A test of a known, unfixed fault is marked =:expected-result :failed=,
-the reason in its docstring: the suite stays green, the fault visible,
-and a fix shows as an unexpected pass -- the cue to unmark it.
+with the reason in its docstring.  The suite stays green and the fault
+stays visible.  A fix then shows as an unexpected pass, which is the cue
+to remove the mark.
 
 *** The notebook corpus
 
-=test_notebooks/test-corpus/= is written by =tools/make-notebook-corpus.py=
+=tools/make-notebook-corpus.py= writes =test_notebooks/test-corpus/=
 with =nbformat=, so each notebook is valid by Jupyter's own definition.
 =tools/check-roundtrip.py= compares a notebook with emjupy's save of it
--- cells, sources, outputs, metadata, attachments -- and validates the
-save; without =nbformat=, the round-trip test checks only that saving
+(cells, sources, outputs, metadata, attachments), and validates the
+save.  Without =nbformat=, the round-trip test checks only that saving
 twice changes nothing.  Add a new shape to the generator, not by hand.
-It gives each cell the same id every run, so it changes nothing unless
-the generator did; CI fails if the committed corpus differs from what it
-writes.
+The generator gives each cell the same id on every run, so the corpus
+changes only when the generator does.  CI fails if the committed corpus
+differs from what the generator writes.
 
-The notebooks beside it, to try emjupy on, are kept without outputs;
-CI checks with =nbstripout
---verify=.  =nbstripout --install= has git strip them as they are
-committed -- =.gitattributes= names them, not the corpus, whose outputs
-are what it tests.
+The notebooks next to it are for trying emjupy, and are kept without
+outputs; CI checks that with =nbstripout --verify=.
+=nbstripout --install= makes git strip them as they are committed.
+=.gitattributes= names those notebooks, and not the corpus, whose
+outputs are what it tests.
 
 *** Network faults
 
-=tools/faultproxy.py= sits between emjupy and the server and, on command,
-drops connections, stalls, delays or splits what it forwards.  The
-=emjupy-int-fault-*= tests start it in front of the test server, so need
-=python3=.  By hand:
+=tools/faultproxy.py= sits between emjupy and the server.  On command it
+drops connections, stalls, delays, or splits what it forwards.  The
+=emjupy-int-fault-*= tests start it in front of the test server, so they
+need =python3=.  By hand:
 
 #+begin_src bash
 python3 tools/faultproxy.py 127.0.0.1 8888     # prints its port and control port
@@ -458,14 +469,14 @@ without a fix, =make clean= first, or the test runs the compiled old code.
 ** Test hygiene
 
 A unit test must give the same answer on every machine.  Two detections
-would vary: an SSH tunnel's host, read from the process list, and
-whether LaTeX renders, from the programs installed.
-=emjupy-probe-environment= governs both; the unit test runner binds it
-to nil, and a test of the detection itself binds it to t and stubs what
-it examines.
+would vary: the host of an SSH tunnel, read from the process list, and
+whether LaTeX renders, which depends on the programs installed.
+=emjupy-probe-environment= governs both.  The unit test runner binds it
+to nil.  A test of the detection itself binds it to t, and stubs what
+the detection examines.
 
-- Test the key binding, not only its command: one bound to =DEL= alone
-  is not reached in a graphical Emacs, which sends =<backspace>=.
+- Test the key binding, not only its command.  A command bound to =DEL=
+  alone is not reached in a graphical Emacs, which sends =<backspace>=.
 - Do not wrap the action tested in =ignore-errors=: the error it
   swallows may be the failure.
 - A stub of a function Emacs itself uses calls through for the cases the
@@ -476,10 +487,11 @@ it examines.
 ** Invariants
 
 =M-x emjupy-debug-check-invariants= reports how a buffer and its cells
-disagree: for which cell, an overlay missing, overlapping, out of order,
-detached from its output box, or showing text the cell does not hold --
-what is displayed and what would be saved come apart.  Tests call it
-after every operation.
+disagree.  It names the cell, and says whether an overlay is missing,
+overlapping, out of order, or detached from its output box, or whether
+it shows text that the cell does not hold.  In each case, what is
+displayed and what would be saved have come apart.  Tests call it after
+every operation.
 
 ** Performance
 
@@ -499,24 +511,26 @@ support]].
 
 ** Releasing
 
-1. *Set the version.*  On GitHub: Actions, "Set version", "Run workflow",
-   with the new version as =X.Y.Z=.  It writes it everywhere the current
-   one is -- the =;; Version:= header, =emjupy-version=,
-   =src/emjupy-pkg.el=, the sample in =docs/usage.org= -- checks they
-   agree, and commits.  Locally: =make set-version X.Y.Z=.
-2. *Tag that commit* with the version and push the tag: the release runs
-   the tests, puts the tarball on the release page and publishes the
-   site, all from that commit.  Tag it yourself: a tag a workflow pushes
-   starts no other workflow.  A commit message with =[skip ci]= skips
-   tag pushes too, so tag a commit without it.
+1. *Set the version.*  On GitHub: Actions, "Set version", "Run
+   workflow", with the new version as =X.Y.Z=.  The workflow writes the
+   version everywhere the current one is: the =;; Version:= header,
+   =emjupy-version=, =src/emjupy-pkg.el=, and the sample in
+   =docs/usage.org=.  It checks that they agree, and commits.  Locally:
+   =make set-version X.Y.Z=.
+2. *Tag that commit* with the version, and push the tag.  The release
+   then runs the tests, puts the tarball on the release page, and
+   publishes the site, all from that commit.  Tag it yourself: a tag
+   that a workflow pushes starts no other workflow.  A commit message
+   with =[skip ci]= skips tag pushes too, so tag a commit without it.
 
 ** The package's own description
 
 =C-h P emjupy= shows the =;;; Commentary:= of =src/emjupy.el=: what
-emjupy is, what it needs, how to start -- for someone who has just
-installed it.  package.el would show a README instead, a web page of
-badges and links, so =make package='s tarball has none, as MELPA's
-does not.  A =package-vc= install, the whole checkout, shows the README.
+emjupy is, what it needs, and how to start.  It is written for someone
+who has just installed it.  package.el would otherwise show a README, a
+web page of badges and links.  So the tarball from =make package= has no
+README, like MELPA's.  A =package-vc= install is the whole checkout, and
+shows the README.
 
 The opening paragraph is the same in the Commentary, the README and
 =docs/index.org=; keep it so.  The one-line summary is the same in
@@ -524,10 +538,11 @@ The opening paragraph is the same in the Commentary, the README and
 
 ** Submitting to MELPA
 
-The recipe lists its files: they are in =src/=, where MELPA's default
-=:files= does not look, and by name, so a development file added there
-does not ship.  The tests, in =test/=, are not shipped.  It is kept at
-=.github/melpa-recipe=, which the melpazoid job reads too:
+The recipe lists its files, for two reasons.  They are in =src/=, where
+MELPA's default =:files= does not look.  They are listed by name, so
+that a development file added there does not ship.  The tests, in
+=test/=, are not shipped.  The recipe is kept at =.github/melpa-recipe=,
+which the melpazoid job reads too:
 
 #+begin_src elisp
 (emjupy :fetcher github
