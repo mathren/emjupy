@@ -327,9 +327,10 @@ unseen until then."
     rows))
 
 (ert-deftest emjupy-test-the-key-reference-is-the-keymap ()
-  "keybindings.org lists every key of a notebook buffer with its command,
-and its notebook-buffer section binds nothing the keymap does not.  The
-reference had drifted once, the keymap regrouped without it."
+  "keybindings.org lists every key of a notebook buffer with its command.
+Its notebook-buffer section, the top-level heading for `emjupy-mode',
+lists no key the keymap does not bind.  The section ends at the next
+top-level heading, whatever it is called."
   (skip-unless (file-directory-p emjupy-test--docs-directory))
   (let* ((text (with-temp-buffer
                  (insert-file-contents
@@ -345,14 +346,18 @@ reference had drifted once, the keymap regrouped without it."
                          found)
                    (setq start (match-end 0)))
                  found))
-         (section-end (string-match "^\\* The outline" text))
+         (section-start (string-match "^\\* =emjupy-mode=" text))
+         (section-end (or (and section-start
+                               (string-match "^\\* " text (1+ section-start)))
+                          (length text)))
          (bound (emjupy-test--bindings)))
     (dolist (b bound)
       (ert-info ((format "bound, not in the reference: %s %s" (car b) (cdr b)))
         (should (member b (mapcar #'cdr rows)))))
     (dolist (row rows)
       (let ((key (cadr row)))
-        (when (and (< (car row) section-end)
+        (should section-start)
+        (when (and (< section-start (car row) section-end)
                    (not (string-prefix-p "M-x " key)))
           (ert-info ((format "in the reference, not bound: %s %s"
                              key (cddr row)))

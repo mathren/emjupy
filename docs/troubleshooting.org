@@ -2,17 +2,16 @@
 #+PREVIOUS_PAGE: language-server.org
 #+NEXT_PAGE: design.org
 
-When something behaves unexpectedly.
-
-Start with =C-c C-x s= (=emjupy-status=) in the notebook.  It shows the
-notebook's server, its kernel and what the kernel is doing.  It shows
-the language server: the server's own or a fallback, and why.  It shows
-the remote machine the notebook is reached through, and emjupy's recent
-messages.  Look at it first, and send it with a report.
+When something behaves unexpectedly, start with =C-c C-x s=
+(=emjupy-status=) in the notebook to see:
+- notebook's server, its kernel and what it is doing.
+- the language server and whether it is a fallback and why.
+- the remote machine the notebook is reached through, and emjupy's
+  recent messages.
 
 * Something changed on a machine
 
-emjupy remembers, for the session, what it learns about servers and
+In each session, emjupy remembers what it learns about servers and
 machines: which server answers, which has a language server, and each
 machine's environments and conda.  That saves asking again at every
 opening.  Sometimes those facts change: an environment is removed, a
@@ -23,17 +22,16 @@ With =C-u=, emjupy also forgets the environment chosen for each folder.
 
 * Diagnosing slowness
 
-First find which part is slow.
-
-=emjupy-language-support= nil disables every path that contacts a
-language server.  That is: completion, eldoc, =M-.= (left to Emacs's
-other xref backends), the server started when a notebook opens, and the
-commands that ask a server for something, which then say there is none.
-Notebooks, kernels, output and rendering stay as they are.  If the delay
-goes away, it came from language support.  The setting takes effect at
-once, in notebooks already open.  =emjupy-edit-cell-externally= still
-opens all the code in one buffer, without a server.  Set back to t, a
-server starts when one is next needed.
+To diagnose which part is slow, set =emjupy-language-support= to nil to
+disable every path that contacts a language server. That is:
+completion, eldoc, =M-.= (left to Emacs's other xref backends), the
+server started when a notebook opens, and the commands that ask a
+server for something, which then say there is none. Notebooks,
+kernels, output and rendering stay as they are. If the delay goes
+away, it came from language support. The setting takes effect at once,
+in notebooks already open. =emjupy-edit-cell-externally= still opens all
+the code in one buffer, without a server. Set back to t, a server
+starts when one is next needed.
 
 =emjupy-slow-hook-threshold= is a number of seconds.  emjupy reports
 per-command work that takes longer, and names the function.

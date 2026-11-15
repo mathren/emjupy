@@ -2,8 +2,6 @@
 #+PREVIOUS_PAGE: index.org
 #+NEXT_PAGE: keybindings.org
 
-How a notebook behaves once it is open.
-
 * Opening notebooks
 
 ** Server dashboard
@@ -500,11 +498,10 @@ from; in a checkout, also the revision.  In a notebook buffer it adds
 the kernel's working directory and which language server answers:
 
 #+begin_example
-emjupy 0.2.5, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
+emjupy 0.2.6, git 3e8860a (2026-09-09), loaded from ~/.emacs.d/elpa/emjupy/;
 kernel cwd /home/you/project; language server beside the kernel
 #+end_example
 
 "On this machine" means the fallback server answers: for a kernel
 elsewhere, =M-.= will not find your own modules.  See
 [[file:language-server.org][Language server support]].
-

@@ -14,7 +14,7 @@ The same notebook with the =wombat= theme, in my setup:
 #+ATTR_HTML: :width 75%
 [[file:./images/screenshot-dark-colored.png]]
 
-Plotly figures and interactive plots with sliders open in an external
+Plotly figures and interactive plots open in an external
 window or browser (see [[file:usage.org::*Interactive output][Interactive output]]):
 
 #+CAPTION: Opening a plotly figure, and rotating it.
@@ -30,17 +30,15 @@ window or browser (see [[file:usage.org::*Interactive output][Interactive output
 * Cell appearance
 
 Cells are marked out by their rules alone, on the buffer's normal
-background.  Only a cell's *output* gets a faint band, on the output
-overlay, so it goes with the outputs when they are cleared.
+background.  Cell outputs gets a faint =emjupy-output-color= background
+overlay, removed when the output is cleared.
 
-=emjupy-output-color= sets the band.  Its default, ='auto=, blends the
-background toward the foreground by =emjupy-output-blend= (8%).  The
-band is then darker on a light theme and lighter on a dark one.  It is
-tinted by the theme, and follows theme switches.
+The default, ='auto=, blends the background toward the foreground by
+=emjupy-output-blend= (8%), darker/lighter on a light/dark theme.
 
 #+begin_src elisp
-(setq emjupy-output-color "#f0f0f0")   ;; pin a colour
-(setq emjupy-output-color nil)         ;; no band at all
+  (setq emjupy-output-color "#f0f0f0")   ;; pin a colour
+  (setq emjupy-output-color nil)         ;; no band at all
 #+end_src
 
 The band fills each output line edge to edge: the =emjupy-output= face
@@ -48,15 +46,27 @@ sets =:extend t=.  =M-x emjupy-refresh-appearance= re-derives the colour
 and redraws.  The faces are =emjupy-output= (the band) and
 =emjupy-box-line= (the rules).
 
-* Editing a rendered formula
+* Inline images need a graphical Emacs
 
-A rendered fragment is an image over its source, which stays in the
-buffer, editable but hidden.  =DEL= at the end of a rendered fragment
-removes the image, point after the source's last character; a second
-=DEL= deletes as usual.  =M-x emjupy-toggle-latex-preview= renders it
-again.
+Images are drawn only where Emacs can display them: =display-graphic-p=
+*and* =image-type-available-p=.  On a terminal frame, or in a build
+without images (=emacs-nox=), =create-image= *signals* an error.  In a
+WebSocket callback, that would leave the box blank.  So emjupy shows the
+output's =text/plain= instead, with a note that says why.
 
-* Scrolling past figures
+Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
+=image/svg+xml=.
+
+** Duplicate figures
+
+A cell that ends with a figure can receive it twice: as the
+=execute_result= repr, and as the inline backend's =display_data=.
+emjupy draws such a repeat once.  A repeat means the same bytes: two
+sizes are two pictures.  emjupy does this at *render* time only: the
+cell's outputs and the saved =.ipynb= keep what the kernel sent.
+=emjupy-deduplicate-image-outputs= =nil= draws both.
+
+** Scrolling past figures
 
 A tall inline image is one screen line, so line scrolling passes it in
 one step.  Either:
@@ -73,14 +83,7 @@ heights, recommended for notebooks with figures:
   :config (ultra-scroll-mode 1))
 #+end_src
 
-emjupy enables neither: both are global.
-
-* Inspecting the cell outlines
-
-The rule above an output box is an overlay string, so =M-x describe-char=
-cannot reach its columns.  =M-x emjupy-report-box-geometry= reports the
-width the rules are drawn at, the rule's in place, and the column the
-output background is aligned to.
+Since these are global, emjupy does not enables either by default.
 
 * Cell outlines
 
@@ -93,7 +96,14 @@ strings are rebuilt, so point, markers and undo are untouched.  When the
 buffer shows in two windows, the *narrower* one wins, because a rule
 sized for the wide window would wrap in the narrow one.
 
-* Cell outline artifacts
+** Inspecting the cell outlines
+
+The rule above an output box is an overlay string, so =M-x describe-char=
+cannot reach its columns.  =M-x emjupy-report-box-geometry= reports the
+width the rules are drawn at, the rule's in place, and the column the
+output background is aligned to.
+
+** Cell outline artifacts
 
 An outline is an overlay property, drawn even when the overlay is empty,
 so one whose cell is gone shows as a border with no cell.  A full redraw
@@ -143,22 +153,10 @@ re-run LaTeX, and a theme switch regenerates them.  =emjupy= uses a
 minimal preamble (amsmath and amssymb), not org's full package list,
 which a small TeX install lacks.
 
-* Inline images need a graphical Emacs
+** Editing a rendered formula
 
-Images are drawn only where Emacs can display them: =display-graphic-p=
-*and* =image-type-available-p=.  On a terminal frame, or in a build
-without images (=emacs-nox=), =create-image= *signals* an error.  In a
-WebSocket callback, that would leave the box blank.  So emjupy shows the
-output's =text/plain= instead, with a note that says why.
-
-Supported inline types: =image/png=, =image/jpeg=, =image/gif= and
-=image/svg+xml=.
-
-* Duplicate figures
-
-A cell that ends with a figure can receive it twice: as the
-=execute_result= repr, and as the inline backend's =display_data=.
-emjupy draws such a repeat once.  A repeat means the same bytes: two
-sizes are two pictures.  emjupy does this at *render* time only: the
-cell's outputs and the saved =.ipynb= keep what the kernel sent.
-=emjupy-deduplicate-image-outputs= =nil= draws both.
+LaTeX is rendered as an image over its source.  The source stays in the
+buffer, hidden but editable.  =DEL= at the end of a rendered fragment
+removes the image, point after the source's last character; a second
+=DEL= deletes as usual.  =M-x emjupy-toggle-latex-preview= renders it
+again (=C-c C-c= in a =markdown= cell).

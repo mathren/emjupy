@@ -4,52 +4,6 @@
 
 Running notebooks on another machine, over a tunnel or otherwise.
 
-* Notebooks on another machine
-
-=emjupy-open-this-notebook= opens an =.ipynb= that you reached through
-TRAMP on its own machine.  It makes a server there and a tunnel to it,
-through any hops; see [[file:usage.org][Using a notebook]], which also
-says what you see while the server starts.  The rest of this page is for
-a server that you started and tunnelled to yourself.
-
-A kernel on another machine needs no configuration.  emjupy reaches it
-over the Jupyter server's WebSocket.  It reaches the language server the
-same way, when =jupyter-lsp= runs beside the kernel; see
-[[file:language-server.org][Language server support]].  The shadow file
-stays in a temporary directory on this machine.  emjupy sends its
-contents over the socket, with paths rewritten to the kernel's working
-directory.  So completion, documentation and =M-.= into your own modules
-describe the machine the code runs on.
-
-| Kernel runs     | =jupyter-lsp= on the server | =M-.= into your modules                          |
-|-----------------+---------------------------+------------------------------------------------|
-| this machine    | either                    | works                                          |
-| another machine | installed                 | works                                          |
-| another machine | not installed             | no -- the fallback server here cannot see them |
-
-** Without =jupyter-lsp=, over SSH
-
-Without =jupyter-lsp= but with SSH access, you can use a language server
-of your own: name the host.  emjupy then puts the shadow file next to
-the notebook on that host, over TRAMP, and =eglot= starts the language
-server there.
-
-#+begin_src elisp
-(setq emjupy-language-support 'local
-      emjupy-shadow-host "/ssh:box:")
-#+end_src
-
-=emjupy-shadow-host= is a host, not a path.  The directory comes from
-the kernel, so =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.
-When the option is unset, the shadow file goes to a local temporary
-directory.  =M-.= then does not find your own modules, but nothing is
-written to a path that means something else on this machine.  The option
-has no effect while the server's language server is in use, because the
-shadow file is then always local.  It applies only to the local route,
-whether chosen or fallen back to.  =emjupy-shadow-directory= overrides
-where the file goes.  =emjupy-shadow-beside-notebook= nil stops placing
-it next to the notebook.
-
 * Tunnelled servers
 
 A server reached through an SSH tunnel answers at =localhost=:
@@ -89,14 +43,60 @@ For several servers, an alist keyed by server label:
 TRAMP cannot reuse the tunnel, which forwards the Jupyter HTTP port, not
 an SSH server's.
 
-* How the listing is ordered
+* Notebooks on another machine
 
-The order is: directories, notebooks, other files, then the server's
-kernels.  Within each group, the most recently modified comes first, so
-this morning's notebook is not buried among others with the same prefix.
+=emjupy-open-this-notebook= opens an =.ipynb= that you reached through
+TRAMP on its own machine.  It makes a server there and a tunnel to it,
+through any hops (see [[file:usage.org][Using a notebook)]], which also
+says what you see while the server starts.  The rest of this page is for
+a server that you started and tunnelled into.
+
+A kernel on another machine needs no configuration.  emjupy reaches it
+over the Jupyter server's WebSocket.  It reaches the language server the
+same way, when =jupyter-lsp= runs beside the kernel (see
+[[file:language-server.org][Language server support)]].  The shadow file
+stays in a temporary directory on this machine.  emjupy sends its
+contents over the socket, with paths rewritten to the kernel's working
+directory.  So completion, documentation and =M-.= into your own modules
+describe the (remote) machine the code runs on.
+
+| Kernel runs     | jupyter - lsp = on the server | =M-.= into your modules                          |
+|-----------------+-------------------------------+------------------------------------------------|
+| this machine    | either                        | works                                          |
+| another machine | installed                     | works                                          |
+| another machine | not installed                 | no -- the fallback server here cannot see them |
+#+TBLFM: $2=jupyter-lsp= on the server
+
+** Without =jupyter-lsp=, over SSH
+
+Without =jupyter-lsp= but with SSH access, you can use a language server
+of your own: name the host.  emjupy then puts the shadow file next to
+the notebook on that host, over TRAMP, and =eglot= starts the language
+server there.
+
+#+begin_src elisp
+(setq emjupy-language-support 'local
+      emjupy-shadow-host "/ssh:box:")
+#+end_src
+
+=emjupy-shadow-host= is a host, not a path.  The directory comes from
+the kernel, so =/srv/nb/analysis= becomes =/ssh:box:/srv/nb/analysis=.
+When the option is unset, the shadow file goes to a local temporary
+directory.  =M-.= then does not find your own modules, but nothing is
+written to a path that means something else on this machine.  The option
+has no effect while the server's language server is in use, because the
+shadow file is then always local.  It applies only to the local route,
+whether chosen or fallen back to.  =emjupy-shadow-directory= overrides
+where the file goes.  =emjupy-shadow-beside-notebook= nil stops placing
+it next to the notebook.
+
+* =M-x emjupy-list-notebooks=
+
+Lists directories, notebooks, other files, then the server's kernels.
+Within each group, the most recently modified comes first, except
 Kernels have no modification time, and are sorted by name.
 
-* Opening files from the listing
+** Opening files from the listing
 
 =RET= on a file in the server dashboard opens it, by what emjupy can
 address:
@@ -187,7 +187,7 @@ none, which is common for tunnelled servers started with
 =--IdentityProvider.token=.  Only then does it prompt.
 =C-u M-x emjupy-login= always prompts.
 
-* If the token is the problem
+** If the token is the problem
 
 A tunnelled server still has a token.  emjupy remembers it per server,
 so you type it again only to check the server from the shell, with

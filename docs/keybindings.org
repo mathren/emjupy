@@ -84,7 +84,7 @@
 |---------+-------------+----------------------------------------------------|
 | =C-c C-v= | =emjupy-menu= | A menu of every command, grouped by what it is for |
 
-* The outline
+* Outline
 
 | Key     | Command    | Effect                                                 |
 |---------+------------+--------------------------------------------------------|
@@ -94,7 +94,7 @@
 In the panel: =RET= or a click goes to a heading, =n= and =p= move between
 them, =g= draws it anew, =q= hides it.
 
-* The debugger (=C-c C-d=)
+* Debugger (=C-c C-d=)
 
 | Key           | Command                          | Effect                                         |
 |---------------+----------------------------------+------------------------------------------------|
@@ -135,7 +135,7 @@ notebook.  =C-c C-c= runs the cell in the notebook, but commits an edit.
 =C-c C-k= deletes the cell in the notebook, but discards an edit.
 =C-c '= opens an edit buffer from the notebook, and commits from it.
 
-* The server dashboard
+* Server dashboard
 
 Its keys are in [[file:usage.org::*Server dashboard][Using a notebook]]:
 open, go up, refresh, shut a kernel down, create, hand to Dired.
