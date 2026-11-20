@@ -254,6 +254,63 @@ being looked for is usually known by kind."
     (should (= built 1))
     (should (equal opened "/ssh:box:/home/me/data/table.csv"))))
 
+
+(defmacro emjupy-test--creating-notebook (name &rest body)
+  "Run BODY with NAME typed for the new notebook, and nothing sent.
+Bind `put' to the (SERVER . PATH) the notebook was written to."
+  (declare (indent 1))
+  `(let ((put nil))
+     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) ,name))
+               ((symbol-function 'emjupy--http-exists-p) #'ignore)
+               ((symbol-function 'emjupy--http-request)
+                (lambda (_method server path &rest _)
+                  (setq put (cons server path)) t))
+               ((symbol-function 'emjupy-open-notebook) #'ignore))
+       ,@body)))
+
+(ert-deftest emjupy-test-a-notebook-is-created-next-to-a-notebook ()
+  "From a notebook, a new notebook goes next to it, on the same server.
+The command read the dashboard's server, nil outside a dashboard, and
+failed with \"Wrong type argument: arrayp, nil\"."
+  (let ((server (make-emjupy-server :base-url "127.0.0.1:5561" :token "t")))
+    (emjupy-test--with-notebook
+        (vector (make-emjupy-cell :id 1 :type 'code :source "1"))
+        buf nb
+      (ignore buf)
+      (setf (emjupy-notebook-server nb) server
+            (emjupy-notebook-path nb) "proj/sub/a.ipynb")
+      (emjupy-test--creating-notebook "new"
+        (emjupy-create-new-notebook)
+        (should (eq (car put) server))
+        (should (equal (cdr put)
+                       (emjupy--contents-path "proj/sub/new.ipynb")))))))
+
+(ert-deftest emjupy-test-a-notebook-is-created-on-the-current-server ()
+  "Outside a dashboard or a notebook, a new notebook goes to the current
+server's root; with no server known, the command says to log in."
+  (let ((server (make-emjupy-server :base-url "127.0.0.1:5562" :token "t")))
+    (with-temp-buffer
+      (let ((emjupy--current-server server))
+        (emjupy-test--creating-notebook "fresh.ipynb"
+          (emjupy-create-new-notebook)
+          (should (eq (car put) server))
+          (should (equal (cdr put) (emjupy--contents-path "fresh.ipynb")))))
+      (let ((emjupy--current-server nil))
+        (emjupy-test--creating-notebook "x"
+          (should-error (emjupy-create-new-notebook) :type 'user-error)
+          (should-not put))))))
+
+(ert-deftest emjupy-test-a-notebook-is-created-where-the-dashboard-is ()
+  "In a dashboard, a new notebook goes into the directory it shows."
+  (let ((server (make-emjupy-server :base-url "127.0.0.1:5563" :token "t")))
+    (with-temp-buffer
+      (setq-local emjupy-list--server server)
+      (setq-local emjupy-list--path "data")
+      (emjupy-test--creating-notebook "b"
+        (emjupy-create-new-notebook)
+        (should (eq (car put) server))
+        (should (equal (cdr put) (emjupy--contents-path "data/b.ipynb")))))))
+
 (provide 'emjupy-dashboard-test)
 
 ;;; emjupy-dashboard-test.el ends here

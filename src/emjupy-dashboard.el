@@ -291,14 +291,34 @@ one, and TRAMP already knows how to reach another machine."
     (puthash "id" (format "%08x" (random (expt 16 8))) cell)
     cell))
 
+(defun emjupy--new-notebook-place ()
+  "Return (SERVER . DIR) for a new notebook made from the current buffer.
+In a server dashboard, the server and directory it shows.  In a
+notebook, the notebook's server and directory, on its own machine for a
+remote notebook.  Elsewhere, the current server and its root.  DIR is
+relative to the server's root, \"\" for the root itself."
+  (cond (emjupy-list--server (cons emjupy-list--server emjupy-list--path))
+        (emjupy--buffer-notebook
+         (cons (emjupy--server)
+               (directory-file-name
+                (or (file-name-directory
+                     (or (emjupy-notebook-path emjupy--buffer-notebook) ""))
+                    ""))))
+        (t (cons (emjupy--server) ""))))
+
 (defun emjupy-create-new-notebook ()
-  "Create a new notebook in the directory being shown, and open it.
-The notebook starts with one empty code cell, so there is somewhere to
-type."
+  "Create a new notebook, and open it.
+In a server dashboard, create it in the directory shown.  In a notebook,
+create it next to that notebook, on the same server.  Elsewhere, create
+it at the root of the current server.  The notebook starts with one
+empty code cell, so there is somewhere to type."
   (interactive)
-  (let* ((server emjupy-list--server)
-         (dir emjupy-list--path)
-         (raw (read-string "New notebook name: " nil 'emjupy--notebook-history))
+  (let* ((place (emjupy--new-notebook-place))
+         (server (car place))
+         (dir (cdr place))
+         (raw (read-string (format "New notebook in %s/ on %s: "
+                                   dir (emjupy--server-label server))
+                           nil 'emjupy--notebook-history))
          (name (if (string-match-p "\\.ipynb\\'" raw) raw (concat raw
                                                                   ".ipynb")))
          (path (if (string-empty-p dir)
